@@ -109,6 +109,7 @@
       footer_refund: "سياسة الاسترداد",
       footer_contact: "تواصل",
       footer_rights: "جميع الحقوق محفوظة",
+      footer_dash: "لوحة التحكم",
     },
     en: {
       nav_home: "Home",
@@ -211,6 +212,7 @@
       footer_refund: "Refund policy",
       footer_contact: "Contact",
       footer_rights: "All rights reserved",
+      footer_dash: "Dashboard",
     },
   };
 
