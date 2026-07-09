@@ -581,4 +581,18 @@
   });
 
   render();
+
+  /* ---------- Aria voice: live KPI summary (read on demand only) ---------- */
+  window.ARIA_TEXT = function () {
+    const v = (id) => $("#" + id + " .tile-value").textContent;
+    const rangeLabel = range === 7 ? "آخر سبعة أيام" : range === 30 ? "آخر ثلاثين يوماً" : "آخر تسعين يوماً";
+    return (
+      "لوحة تحكم نيكسيوس، ملخص " + rangeLabel + ". " +
+      "إجمالي الحجوزات " + v("kpiBookings") + ". " +
+      "الإيرادات " + v("kpiRevenue") + " ريال سعودي. " +
+      "متوسط الإشغال " + v("kpiOcc") + ". " +
+      "الالتزام بالمواعيد " + v("kpiOnTime") + ". " +
+      "الأسطول الآن: مئة واثنان وثلاثون باصاً في الخدمة، وسبع رحلات متأخرة."
+    );
+  };
 })();

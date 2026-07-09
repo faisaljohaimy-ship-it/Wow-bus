@@ -396,6 +396,24 @@
   /* ---------- Footer year ---------- */
   document.getElementById("year").textContent = new Date().getFullYear();
 
+  /* ---------- Aria voice: what she reads (localized) ---------- */
+  window.ARIA_TEXT = function () {
+    if (lang === "ar") {
+      return (
+        "مرحباً بك في نيكسيوس، منصة حجز رحلات الباصات الذكية. " +
+        "قارن الأسعار بين شركات النقل، اختر مقعدك المفضل، وتتبع رحلتك لحظة بلحظة. " +
+        "ابحث عن رحلتك الآن من نموذج الحجز، أو تصفح الوجهات الشائعة والأسئلة المتكررة. " +
+        "سافر بذكاء وراحة وأمان مع نيكسيوس."
+      );
+    }
+    return (
+      "Welcome to Neexios, the smart bus booking platform. " +
+      "Compare prices across carriers, pick your favorite seat, and track your trip in real time. " +
+      "Search for your trip in the booking form, or browse popular routes and frequently asked questions. " +
+      "Travel smart, comfortably, and safely with Neexios."
+    );
+  };
+
   /* ---------- Init ---------- */
   if (lang !== "ar") applyLang();
 })();
