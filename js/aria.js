@@ -75,7 +75,21 @@
     "  </button>" +
     "</form>";
 
-  document.body.append(launcher, panel);
+  /* ---------- the Start/Stop switch — fixed at the TOP RIGHT of the page.
+     One click: Aria starts talking (page summary / live KPIs).
+     Same click while she talks: total silence. Nothing ever auto-starts. */
+  const startBtn = document.createElement("button");
+  startBtn.id = "ariaStart";
+  startBtn.className = "aria-start";
+  startBtn.type = "button";
+  startBtn.setAttribute("aria-pressed", "false");
+  startBtn.setAttribute("aria-label", "بدء حديث أريا / إيقافه");
+  startBtn.innerHTML =
+    '<svg class="ic-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>' +
+    '<svg class="ic-halt" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>' +
+    '<span class="aria-start-label">ابدأ</span>';
+
+  document.body.append(launcher, panel, startBtn);
 
   const msgsEl = panel.querySelector("#ariaMsgs");
   const chipsEl = panel.querySelector("#ariaChips");
@@ -90,6 +104,7 @@
   let listening = false;
   let rec = null;
   let greeted = false;
+  let voiceHintShown = false;
 
   /* ============ voice out ============ */
   function voices() { return synth ? synth.getVoices() : []; }
@@ -145,11 +160,12 @@
     };
     rec.onend = () => {
       listening = false;
+      // no continuous loop: one exchange per activation. If recognition
+      // ended without a captured question, voice mode switches itself off.
+      if (voiceMode && !speaking) voiceMode = false;
       ui();
-      // keep the conversation alive while voice mode is on and Aria isn't talking
-      if (voiceMode && !speaking) setTimeout(() => { if (voiceMode && !speaking) startListening(); }, 350);
     };
-    rec.onerror = () => { listening = false; ui(); };
+    rec.onerror = () => { listening = false; voiceMode = false; ui(); };
     try { rec.start(); listening = true; } catch (e) { listening = false; }
     ui();
   }
@@ -170,7 +186,12 @@
     } else {
       voiceMode = true;
       if (SR) {
-        addMsg("aria", isAr() ? "تم تفعيل المحادثة الصوتية 🎙 تفضل، أنا أستمع إليك." : "Voice chat is on 🎙 Go ahead, I'm listening.");
+        if (!voiceHintShown) {
+          voiceHintShown = true;
+          addMsg("aria", isAr()
+            ? "تفضل بسؤالك 🎙 سأستمع لك مرة واحدة وأرد ثم أصمت — اضغط الأيقونة متى أردت سؤالاً جديداً."
+            : "Go ahead 🎙 I'll listen once, reply, then go quiet — press the icon again for a new question.");
+        }
         startListening();
       } else {
         addMsg("aria", isAr()
@@ -181,8 +202,41 @@
     ui();
   });
 
+  /* ============ top-right Start/Stop behavior ============ */
+  let startSpeaking = false; // speech launched from the top button
+
+  function startLabel() {
+    const lbl = startBtn.querySelector(".aria-start-label");
+    lbl.textContent = startSpeaking ? (isAr() ? "إيقاف" : "Stop") : (isAr() ? "ابدأ" : "Start");
+    startBtn.classList.toggle("talking", startSpeaking);
+    startBtn.setAttribute("aria-pressed", String(startSpeaking));
+  }
+
+  startBtn.addEventListener("click", () => {
+    if (startSpeaking || speaking) {
+      // same button = stop everything
+      startSpeaking = false;
+      voiceMode = false;
+      stopListening();
+      silence();
+      startLabel();
+      return;
+    }
+    const text = typeof window.ARIA_TEXT === "function" ? window.ARIA_TEXT() : document.title;
+    startSpeaking = true;
+    startLabel();
+    speak(text, () => { startSpeaking = false; startLabel(); });
+  });
+
+  /* keep the label in the right language after a language toggle */
+  document.addEventListener("click", (e) => {
+    if (e.target && e.target.id === "langToggle") setTimeout(startLabel, 50);
+  });
+  startLabel(); // pick up a saved English preference on load
+
   /* ============ UI state ============ */
   function ui() {
+    if (!speaking && startSpeaking) { startSpeaking = false; startLabel(); }
     voiceBtn.classList.toggle("live", voiceMode);
     voiceBtn.classList.toggle("listening", listening);
     voiceBtn.classList.toggle("talking", speaking);
@@ -259,7 +313,8 @@
       const answer = brain(userText);
       addMsg("aria", answer);
       if (voiceMode) {
-        speak(answer, () => { if (voiceMode) startListening(); });
+        // speak the one reply, then go quiet — never talk or listen continuously
+        speak(answer, () => { voiceMode = false; ui(); });
       }
     }, 550);
   }

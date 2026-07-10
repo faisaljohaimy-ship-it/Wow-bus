@@ -28,6 +28,39 @@
 .aria-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
 .aria-btn.open { background: #16324a; }
 
+/* ---------- Start/Stop switch — fixed TOP RIGHT of the page ---------- */
+.aria-start {
+  position: fixed;
+  top: 84px;           /* just below the site header */
+  right: 16px;         /* physical right, per request */
+  z-index: 190;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #0e7a5f, #2a78d6);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 800;
+  box-shadow: 0 6px 18px rgba(14, 90, 122, 0.4);
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.aria-start:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(14, 90, 122, 0.45); }
+.aria-start svg { width: 15px; height: 15px; flex-shrink: 0; }
+.aria-start .ic-halt { display: none; }
+.aria-start.talking { background: #c0392b; box-shadow: 0 6px 18px rgba(192, 57, 43, 0.4); animation: aria-glow 1.2s ease-in-out infinite; }
+.aria-start.talking .ic-play { display: none; }
+.aria-start.talking .ic-halt { display: block; }
+@keyframes aria-glow { 50% { box-shadow: 0 6px 26px rgba(192, 57, 43, 0.7); } }
+
+@media (max-width: 480px) {
+  .aria-start { top: 80px; right: 10px; padding: 8px 14px; font-size: 0.82rem; }
+}
+
 /* ---------- panel ---------- */
 .aria-panel {
   position: fixed;
