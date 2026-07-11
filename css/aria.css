@@ -1,0 +1,250 @@
+/* ============================================================
+   أريا — واجهة المساعدة الذكية (مشتركة بين الموقع واللوحة)
+   Dark glassy chat panel; voice toggle at the TOP-RIGHT (RTL)
+   ============================================================ */
+
+/* ---------- launcher ---------- */
+.aria-btn {
+  position: fixed;
+  bottom: 22px;
+  inset-inline-end: 22px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #0e7a5f, #2a78d6);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(14, 90, 122, 0.45);
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.aria-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(14, 90, 122, 0.5); }
+.aria-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
+.aria-btn.open { background: #16324a; }
+
+/* ---------- Start/Stop switch — fixed TOP RIGHT of the page ---------- */
+.aria-start {
+  position: fixed;
+  top: 84px;           /* just below the site header */
+  right: 16px;         /* physical right, per request */
+  z-index: 190;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #0e7a5f, #2a78d6);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 800;
+  box-shadow: 0 6px 18px rgba(14, 90, 122, 0.4);
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.aria-start:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(14, 90, 122, 0.45); }
+.aria-start svg { width: 15px; height: 15px; flex-shrink: 0; }
+.aria-start .ic-halt { display: none; }
+.aria-start.talking { background: #c0392b; box-shadow: 0 6px 18px rgba(192, 57, 43, 0.4); animation: aria-glow 1.2s ease-in-out infinite; }
+.aria-start.talking .ic-play { display: none; }
+.aria-start.talking .ic-halt { display: block; }
+@keyframes aria-glow { 50% { box-shadow: 0 6px 26px rgba(192, 57, 43, 0.7); } }
+
+@media (max-width: 480px) {
+  .aria-start { top: 80px; right: 10px; padding: 8px 14px; font-size: 0.82rem; }
+}
+
+/* ---------- panel ---------- */
+.aria-panel {
+  position: fixed;
+  bottom: 82px;
+  inset-inline-end: 22px;
+  z-index: 210;
+  width: min(380px, calc(100vw - 24px));
+  height: min(560px, calc(100vh - 110px));
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px;
+  overflow: hidden;
+  background: linear-gradient(165deg, #0d1f33 0%, #0b2b33 60%, #0d1f2c 100%);
+  border: 1px solid rgba(120, 200, 255, 0.18);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+  color: #e8f2f5;
+  font-size: 0.92rem;
+  direction: rtl;
+}
+
+/* ---------- header ---------- */
+.aria-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(120, 200, 255, 0.14);
+}
+/* voice toggle is first in DOM → far RIGHT in RTL */
+.aria-id { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; order: 2; }
+.aria-voice { order: 1; }
+.aria-close { order: 3; }
+
+.aria-avatar { width: 38px; height: 38px; flex-shrink: 0; border-radius: 50%; overflow: hidden; box-shadow: 0 0 0 2px rgba(53, 208, 165, 0.5); }
+.aria-id strong { display: block; font-size: 0.98rem; line-height: 1.2; }
+.aria-id strong small { font-size: 0.6rem; letter-spacing: 0.2em; color: #6fd8c1; font-weight: 700; }
+.aria-status { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: #9fb8c4; }
+.aria-status i { width: 7px; height: 7px; border-radius: 50%; background: #35d0a5; box-shadow: 0 0 6px #35d0a5; }
+.aria-status i.listen { background: #fab219; box-shadow: 0 0 6px #fab219; animation: aria-pulse 1s infinite; }
+.aria-status i.talk { background: #4a9fe8; box-shadow: 0 0 6px #4a9fe8; animation: aria-pulse 0.7s infinite; }
+
+.aria-ic {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(120, 200, 255, 0.25);
+  background: rgba(255, 255, 255, 0.05);
+  color: #bfe3ef;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.aria-ic:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+.aria-ic svg { width: 19px; height: 19px; }
+
+/* voice icon states: live (armed) / listening / talking */
+.aria-voice.live { background: #0e7a5f; border-color: #35d0a5; color: #fff; }
+.aria-voice.listening { background: #8a6100; border-color: #fab219; }
+.aria-voice.talking { background: #1c5cab; border-color: #4a9fe8; }
+.voice-rings { position: absolute; inset: -3px; border-radius: 50%; pointer-events: none; }
+.aria-voice.listening .voice-rings,
+.aria-voice.talking .voice-rings {
+  border: 2px solid currentColor;
+  opacity: 0;
+  animation: aria-ring 1.4s ease-out infinite;
+}
+@keyframes aria-ring { 0% { transform: scale(0.7); opacity: 0.7; } 100% { transform: scale(1.5); opacity: 0; } }
+@keyframes aria-pulse { 50% { opacity: 0.4; } }
+
+/* ---------- messages ---------- */
+.aria-msgs {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 14px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 200, 255, 0.3) transparent;
+}
+.msg {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  line-height: 1.7;
+  white-space: pre-line;
+  animation: aria-in 0.25s ease;
+}
+.msg.aria {
+  align-self: flex-start;
+  background: rgba(74, 159, 232, 0.14);
+  border: 1px solid rgba(120, 200, 255, 0.18);
+  border-start-start-radius: 4px;
+}
+.msg.user {
+  align-self: flex-end;
+  background: linear-gradient(135deg, #0e7a5f, #12977a);
+  color: #fff;
+  border-start-end-radius: 4px;
+}
+@keyframes aria-in { from { opacity: 0; transform: translateY(6px); } }
+
+.msg.typing { display: flex; gap: 4px; padding: 14px 16px; }
+.msg.typing i {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #7fc4e8;
+  animation: aria-dots 1s infinite;
+}
+.msg.typing i:nth-child(2) { animation-delay: 0.16s; }
+.msg.typing i:nth-child(3) { animation-delay: 0.32s; }
+@keyframes aria-dots { 0%, 60%, 100% { transform: none; opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
+
+/* ---------- quick chips ---------- */
+.aria-chips {
+  display: flex;
+  gap: 6px;
+  padding: 6px 14px 10px;
+  flex-wrap: wrap;
+}
+.aria-chips button {
+  border: 1px solid rgba(120, 200, 255, 0.3);
+  background: transparent;
+  color: #bfe3ef;
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.aria-chips button:hover { background: rgba(120, 200, 255, 0.15); color: #fff; }
+
+/* ---------- input ---------- */
+.aria-input {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid rgba(120, 200, 255, 0.14);
+}
+.aria-input input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(120, 200, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8f2f5;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+.aria-input input::placeholder { color: #7d99a6; }
+.aria-input input:focus { outline: none; border-color: #35d0a5; box-shadow: 0 0 0 3px rgba(53, 208, 165, 0.18); }
+.aria-input button {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #0e7a5f, #2a78d6);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: transform 0.15s, filter 0.15s;
+}
+.aria-input button:hover { filter: brightness(1.15); }
+.aria-input button svg { width: 18px; height: 18px; transform: scaleX(-1); }
+
+/* ---------- responsive ---------- */
+@media (max-width: 480px) {
+  .aria-panel {
+    inset-inline: 8px;
+    width: auto;
+    bottom: 78px;
+    height: min(70vh, calc(100vh - 96px));
+  }
+  .aria-btn { bottom: 16px; inset-inline-end: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msg, .voice-rings, .aria-status i, .msg.typing i { animation: none !important; }
+}

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>لوحة التحكم | Neexios Operations</title>
+  <meta name="description" content="لوحة تحكم عمليات نيكسيوس — مؤشرات الأداء، الحجوزات، المسارات، وكثافة الطلب في الوقت الفعلي.">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/dashboard.css">
+  <link rel="stylesheet" href="css/aria.css">
+</head>
+<body>
+
+  <!-- ===== Top bar ===== -->
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <div class="brand">
+        <svg viewBox="0 0 40 40" aria-hidden="true">
+          <rect x="4" y="8" width="32" height="20" rx="6" fill="currentColor" opacity="0.15"/>
+          <rect x="4" y="8" width="32" height="14" rx="6" fill="currentColor"/>
+          <circle cx="12" cy="30" r="4" fill="currentColor"/>
+          <circle cx="28" cy="30" r="4" fill="currentColor"/>
+        </svg>
+        <div>نيكسيوس<small>OPERATIONS</small></div>
+      </div>
+      <span class="topbar-title">لوحة تحكم العمليات</span>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="themeToggle" aria-label="تبديل الوضع الليلي">
+          <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+          <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+        <a href="index.html" class="back-link">← <span>الموقع الرئيسي</span></a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- ===== Head + filter row (scopes everything below) ===== -->
+    <div class="page-head">
+      <div>
+        <h1>نظرة عامة على العمليات</h1>
+        <p>بيانات توضيحية (Demo) — تتحدث جميع البطاقات والرسوم مع تغيير النطاق الزمني</p>
+      </div>
+      <div class="seg" id="rangeSeg" role="group" aria-label="النطاق الزمني">
+        <button data-range="7" aria-pressed="false">٧ أيام</button>
+        <button data-range="30" aria-pressed="true">٣٠ يوماً</button>
+        <button data-range="90" aria-pressed="false">٩٠ يوماً</button>
+      </div>
+    </div>
+
+    <!-- ===== KPI row ===== -->
+    <section class="kpis" aria-label="مؤشرات الأداء الرئيسية">
+      <div class="card tile" id="kpiBookings">
+        <span class="tile-label">إجمالي الحجوزات</span>
+        <span class="tile-value">—</span>
+        <div class="tile-meta">
+          <span class="tile-delta"></span>
+          <svg class="tile-spark" viewBox="0 0 88 28" aria-hidden="true"></svg>
+        </div>
+      </div>
+      <div class="card tile" id="kpiRevenue">
+        <span class="tile-label">الإيرادات (ر.س)</span>
+        <span class="tile-value">—</span>
+        <div class="tile-meta">
+          <span class="tile-delta"></span>
+          <svg class="tile-spark" viewBox="0 0 88 28" aria-hidden="true"></svg>
+        </div>
+      </div>
+      <div class="card tile" id="kpiOcc">
+        <span class="tile-label">متوسط الإشغال</span>
+        <span class="tile-value">—</span>
+        <div class="tile-meta">
+          <span class="tile-delta"></span>
+          <svg class="tile-spark" viewBox="0 0 88 28" aria-hidden="true"></svg>
+        </div>
+      </div>
+      <div class="card tile" id="kpiOnTime">
+        <span class="tile-label">الالتزام بالمواعيد</span>
+        <span class="tile-value">—</span>
+        <div class="tile-meta">
+          <span class="tile-delta"></span>
+          <svg class="tile-spark" viewBox="0 0 88 28" aria-hidden="true"></svg>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Charts grid ===== -->
+    <div class="grid">
+
+      <!-- Line: bookings trend -->
+      <section class="card span-2">
+        <div class="card-head">
+          <div>
+            <h2>الحجوزات اليومية</h2>
+            <p>الفترة الحالية مقارنة بالفترة السابقة المكافئة</p>
+          </div>
+          <button class="tbl-toggle" aria-pressed="false">جدول</button>
+        </div>
+        <div class="chart-visual">
+          <div class="legend">
+            <span class="key"><i class="line-key" style="border-top-color: var(--s1)"></i> الفترة الحالية</span>
+            <span class="key"><i class="line-key" style="border-top-color: var(--dim)"></i> الفترة السابقة</span>
+          </div>
+          <div class="chart-body" id="lineChart"></div>
+        </div>
+        <div class="chart-table table-scroll">
+          <table class="data-table" id="lineTable">
+            <thead><tr><th>التاريخ</th><th>الفترة الحالية</th><th>الفترة السابقة</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Donut: channels -->
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>الحجوزات حسب القناة</h2>
+            <p>توزيع مصادر الحجز</p>
+          </div>
+        </div>
+        <div class="chart-body donut-wrap">
+          <div id="donutChart"></div>
+          <div class="donut-legend" id="donutLegend"></div>
+        </div>
+      </section>
+
+      <!-- Bars: top routes -->
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>أكثر المسارات حجزاً</h2>
+            <p>أعلى ٦ مسارات خلال النطاق المحدد</p>
+          </div>
+          <button class="tbl-toggle" aria-pressed="false">جدول</button>
+        </div>
+        <div class="chart-visual">
+          <div class="chart-body" id="barChart"></div>
+        </div>
+        <div class="chart-table table-scroll">
+          <table class="data-table" id="barTable">
+            <thead><tr><th>المسار</th><th>الحجوزات</th><th>الحصة</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Heatmap: demand by weekday x hour -->
+      <section class="card span-2">
+        <div class="card-head">
+          <div>
+            <h2>كثافة الطلب</h2>
+            <p>الحجوزات حسب اليوم ووقت الانطلاق</p>
+          </div>
+          <button class="tbl-toggle" aria-pressed="false">جدول</button>
+        </div>
+        <div class="chart-visual">
+          <div class="chart-body" id="heatChart"></div>
+          <div class="heat-scale">
+            <span id="heatMin">—</span>
+            <span class="ramp" aria-hidden="true"></span>
+            <span id="heatMax">—</span>
+            <span>حجوزات / فترة</span>
+          </div>
+        </div>
+        <div class="chart-table table-scroll">
+          <table class="data-table" id="heatTable">
+            <thead><tr><th>اليوم</th><th>00–06</th><th>06–12</th><th>12–18</th><th>18–24</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Fleet status -->
+      <section class="card span-3">
+        <div class="card-head">
+          <div>
+            <h2>حالة الأسطول الآن</h2>
+            <p>لقطة حية لحالة الباصات والرحلات</p>
+          </div>
+        </div>
+        <div class="status-row" id="fleetRow"></div>
+      </section>
+
+      <!-- Recent bookings -->
+      <section class="card span-3">
+        <div class="card-head">
+          <div>
+            <h2>أحدث الحجوزات</h2>
+            <p>آخر العمليات الواردة عبر جميع القنوات</p>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table" id="recentTable">
+            <thead>
+              <tr><th>رقم الحجز</th><th>المسافر</th><th>المسار</th><th>الوقت</th><th>المقاعد</th><th>المبلغ</th><th>الحالة</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <p class="foot-note">لوحة تحكم Neexios التشغيلية — بيانات توضيحية مولّدة محلياً لأغراض العرض</p>
+  </main>
+
+  <script src="js/dashboard.js"></script>
+  <script src="js/aria.js"></script>
+</body>
+</html>
