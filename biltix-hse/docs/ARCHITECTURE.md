@@ -591,3 +591,317 @@ served), opens each route in headless Chromium, waits for render, and reports co
 errors, page errors, failed requests, blank canvases, horizontal overflow, and writes
 screenshots `<route>-<theme>-<viewport>.png` to `--out`. Exit code 1 when any error.
 Use a port unique to you (stated in your task) so parallel agents do not collide.
+
+---
+---
+
+# PART B — AI-Powered Risk Management Platform scope (from the client proposal)
+
+The client proposal ("AI-Powered Risk Management Platform — Architecture, Capabilities &
+Detailed Proposal", v2) widens the product: the HSE module above becomes the **Site /
+Safety pillar** of a five-domain **Risk Cockpit**. Everything in Part A stays valid; Part B
+adds entities, APIs, views and shell changes. File ownership for Part B:
+
+```
+js/data/platform-seed.js        (owner: PLATFORM-DATA)   all new entities (section B3)
+js/core/platform-selectors.js   (owner: PLATFORM-DATA)   pure derived data for the platform (section B4)
+js/core/store.js                (owner: PLATFORM-CORE)   add state.platform merge, re-anchoring, CRUD (section B5)
+js/data/platform-live.js        (owner: PLATFORM-CORE)   AI pipeline / validation / alert simulation (section B6)
+js/app.js, index.html           (owner: PLATFORM-CORE)   grouped navigation, product naming, cockpit as home (section B7)
+js/views/index.js               (owner: PLATFORM-CORE)   new registry order (section B7)
+css/platform.css                (owner: PLATFORM-CORE)   styles for nav groups + platform-only components (section B8)
+js/views/cockpit.js, airisks.js, tasks.js            (owner: PLATFORM-VIEWS-1)
+js/views/contracts.js, bom.js, schedule.js           (owner: PLATFORM-VIEWS-2)
+js/views/cost.js, dataquality.js, engine.js, alerts.js, roadmap.js   (owner: PLATFORM-VIEWS-3)
+```
+Part A files keep their owners; Part B agents never edit Part A files except where
+listed above (store.js, app.js, index.html, views/index.js are re-assigned to PLATFORM-CORE).
+
+## B1. Product framing
+
+- Product name: **بلتكس — منصة إدارة المخاطر بالذكاء الاصطناعي** (Biltix AI Risk Management Platform).
+  Short brand text in the app bar: "بلتكس Risk AI"; tagline: "قمرة قيادة المخاطر — خمسة مجالات، تصنيف فوري، معالجة مُتتبعة".
+  The HSE pillar keeps its own titles (نظرة عامة على السلامة, الرادار الحي, …).
+- Five-layer architecture (unchanged principle: the platform **reads** client systems and
+  **writes back only** risk flags, scores, alerts and mitigation tasks):
+  1. Integration Layer (REST/SDK connectors + webhooks): Biltix Application modules
+     (العقود, BoM/BoQ, الجدول الزمني, تقارير الموقع, التكلفة والميزانية, الصور), Enterprise
+     connectors (Primavera P6 EPPM Web Services, Autodesk Platform Services for BIM/CAD,
+     Oracle ERP/CRM — primary; SAP/Zoho/HubSpot configurable), External feeds (commodity
+     price indices, currency rates, weather NCM, GIS layers).
+  2. Data Validation & Cleansing Layer (schema checks, de-duplication, completeness,
+     consistency) — nothing reaches the AI engine until it passes.
+  3. Risk Data Lake (structured + unstructured, normalized, versioned, auditable).
+  4. AI Risk Engine — five pipelines on a shared scoring & explainability layer:
+     Contract NLP, BoM Forecasting, Schedule Model (delay probability + Monte Carlo),
+     Site Image/Report AI (predictive analytics on photos & daily reports), Cost Forecast
+     (EVM + time-series). Output: 0–100 score + plain-language driver explanation.
+  5. Backend Risk Classification Logic: type **Financial / Safety / Delay / Conflict**
+     + rating **Red / Yellow / Green**; then Alerting & Workflow (threshold → alert queue;
+     critical → immediate escalation via Email/Slack/Teams; write-back to the PM app;
+     mitigation task created & assigned); then the Risk Cockpit.
+  Cross-cutting: security & access control, audit/versioning, model explainability,
+  human-in-the-loop overrides (every override is logged and fed back for recalibration).
+
+## B2. Classification rules (single definition, in platform-selectors.js)
+
+- `score` is 0–100. **Rating**: `red` if score ≥ 70 (حرج — تدخل فوري), `yellow` if 40–69
+  (مرتفع — مراقبة), `green` if < 40 (ضمن حدود التحمل). Tone mapping: red→`critical`,
+  yellow→`warning`, green→`good`. Arabic labels: أحمر / أصفر / أخضر.
+- **Type**: `Financial` (مالي), `Safety` (سلامة), `Delay` (تأخير), `Conflict` (نزاع).
+- **Category / domain** (= pipeline): `contract` (العقود), `bom` (المواد والتوريد), `schedule`
+  (الجدول الزمني), `site` (الموقع والسلامة), `cost` (التكلفة).
+- Alert threshold (settings.platform.alertThreshold, default 60): score > threshold →
+  alert; score ≥ criticalThreshold (default 85) → **immediate escalation** queue; otherwise
+  → standard alert queue. Below threshold → logged to the register only.
+- **Category score** = round(0.5 × max(open scores) + 0.5 × mean(open scores)) over open
+  AI risks of that category (0 when none). **Consolidated score** = Σ weight × category
+  score with default weights contract .20, bom .20, schedule .25, site .20, cost .15
+  (settings.platform.weights; must sum to 1). Both exposed with 12-week trends.
+
+## B3. Platform data schema (js/data/platform-seed.js → `export default platformSeed`)
+
+Projects = the six HSE sites (same ids S1..S6). Anchor date 2026-11-09. All Arabic text
+except codes/standards/system names. Counts are minimums.
+
+```js
+platformSeed = {
+  projects: [ { id:'S1', budgetSAR, contractValueSAR, startDate, plannedFinish, forecastFinish, percentComplete, plannedPercent,
+                evm:{ BAC, PV, EV, AC, CPI, SPI, EAC, ETC, VAC }, currencyExposure:[{code:'USD',pct},{code:'EUR',pct},{code:'CNY',pct}], weights?:null } ×6 ],
+  contracts: [ ≥10: { id, code:'CT-2026-014', projectId, title, counterparty, type:'عقد رئيسي'|'عقد من الباطن'|'أمر شراء'|'عطاء', valueSAR, currency, signedAt, endsAt,
+                status:'ساري'|'قيد التفاوض'|'منتهٍ', riskScore, subcontractorSharePct,
+                clauses:[ ≥4 each: { id, ref:'14.2', title, excerpt (1–2 Arabic sentences), flag:null|'ambiguous'|'payment'|'liquidated-damages'|'insurance-missing'|'indemnity-missing'|'warranty-missing'|'obligation'|'force-majeure',
+                                      severity 0–100, explanation, redline (suggested wording), benchmark (e.g. 'المعيار السوقي: 30 يوماً؛ البند الحالي: 90 يوماً'), status:'مفتوح'|'قيد المراجعة القانونية'|'مُعالج' } ],
+                obligations:[ { id, text, due, owner, status:'قادم'|'متأخر'|'منجز', clauseRef } ] } ],
+  suppliers: [ ≥12: { id, name, category, country, shareOfSpendPct, financialHealth 0–100, deliveryPerformancePct, singleSource:boolean, leadTimeDays, creditRating:'A'|'B'|'C', riskScore } ],
+  commodities: [ 6: حديد التسليح, الأسمنت, النحاس, الألمنيوم, الديزل, الخشب — { id, name, unit, series:[24 monthly prices], forecast:[6], volatilityPct, exposureSAR, trend:'صاعد'|'هابط'|'مستقر' } ],
+  boqItems: [ ≥18: { id, code, projectId, description, unit, boqQty, bimQty, variancePct, unitPrice, supplierId, leadTimeDays, requiredBy, orderBy, specCompliance:'مطابق'|'غير مطابق'|'قيد المراجعة', riskScore } ],
+  scheduleTasks: [ ≥30: { id, code:'A1020', projectId, name, wbs, start, finish, baselineFinish, floatDays, critical:boolean, percentComplete, delayProbability 0–1, expectedDelayDays, subcontractorId, trade, weatherSensitive:boolean } ],
+  monteCarlo: { [projectId]: { p50, p80, p90 (ISO dates), histogram:[{ days, prob }] (≥12 bins), runs:5000 } },
+  resources: [ ≥12: { id, projectId, trade, planned, available, utilizationPct, nextWeekGap } ],
+  approvals: [ ≥8: { id, projectId, authority (أمانة الرياض, الدفاع المدني, الشركة السعودية للكهرباء, هيئة تطوير بوابة الدرعية, المركز الوطني للرقابة على الالتزام البيئي, …), type, submittedAt, statutoryDays, elapsedDays, status:'قيد المعالجة'|'معتمد'|'متأخر'|'مطلوب استكمال', riskScore } ],
+  subcontractors: [ ≥8: { id, name, projectId, trade, plannedProgressPct, actualProgressPct, trend:[8], scorecard 0–100, openNotices } ],
+  weather: { [projectId]: { next7:[ { date, tempMax, windKmh, dustRisk:'منخفض'|'متوسط'|'عالٍ', rainProb, delayRisk 0–1 } ] } },
+  costLines: [ ≥24: { id, projectId, wbs, name, budget, actual, committed, forecast, variancePct } ],
+  changeOrders: [ ≥10: { id, code:'CO-031', projectId, title, amountSAR, status:'مقترح'|'قيد الاعتماد'|'معتمد'|'مرفوض', submittedAt, impactDays, driver } ],
+  currencies: [ USD (3.75 pegged), EUR, CNY, INR, TRY, GBP: { code, nameAr, rate, change30dPct, exposureSAR, forecast30d } ],
+  labourIndex: [ ≥6: { region, trade, series:[12], change12mPct } ],
+  aiRisks: [ ≥60 across all 5 categories, all 6 projects, ~35% red, 40% yellow, 25% green:
+    { id, code:'AIR-1042', projectId, category, type, score, title, driverExplanation (plain Arabic, names the specific clause/line/task/reading and why it matters),
+      evidence:{ kind:'clause'|'boq'|'task'|'inspection'|'cost'|'image'|'sensor'|'supplier'|'approval'|'changeOrder', ref, excerpt, sourceSystem:'Biltix — العقود'|'Primavera P6'|'Autodesk APS'|'Oracle ERP'|'Biltix — تقارير الموقع'|'بوابة الحساسات'|'المركز الوطني للأرصاد'|'مؤشرات السلع'|'أسعار الصرف', link? },
+      recommendation:{ action, rationale, effort:'منخفض'|'متوسط'|'عالٍ', impact (expected reduction e.g. 'خفض الدرجة إلى ~35'), alternatives:[≤2] },
+      pipeline:'contract-nlp'|'bom-forecast'|'schedule-model'|'site-ai'|'cost-forecast', modelVersion, confidence 0–1, detectedAt, updatedAt,
+      status:'مكتشف'|'تنبيه'|'مهمة مُسندة'|'قيد المعالجة'|'مغلق'|'مُتجاوز', owner, dueDate, taskId, escalated:boolean,
+      stakeholders:['PM'|'Legal'|'Procurement'|'Site'|'Finance'|'PMO'],
+      responseParams:{ PM:{ scheduleImpactDays, costImpactSAR, criticalPath:boolean }, Legal:{ clauseRef, exposureSAR, disputeLikelihood }, Procurement:{ supplier, leadTimeDays, alternates }, Site:{ location, hazard, controls }, Finance:{ budgetImpactSAR, cashflowMonth }, PMO:{ trend, kpi, portfolioRank } } (include only the roles in stakeholders),
+      overrides:[ { at, by, fromAction, toAction, reason } ], history:[ { at, by, text } ] } ],
+  tasks: [ ≥18: { id, code:'MT-0231', riskId, projectId, title, owner, dueDate, status:'جديدة'|'قيد التنفيذ'|'متأخرة'|'مغلقة', source:'ai-accepted'|'ai-edited'|'manual', writeback:{ target:'Biltix PM', status:'synced'|'pending'|'failed', at }, createdAt, closedAt, outcome } ],
+  alerts: [ ≥14: { id, riskId, projectId, severity:'critical'|'routine', queue:'immediate'|'standard', channels:['email','slack','teams','whatsapp'], sentAt, acknowledged:boolean, ackBy, ackAt, title } ],
+  pipelines: [ 5: { id, name (EN), nameAr, description, techniques:[...], inputs:[...], status:'running'|'idle'|'training'|'degraded', lastRun, runsToday, avgLatencyMs, precision, recall, calibrationError, driftScore 0–1, version:'v2.3.1',
+                   featureImportance:[ ≥5 { feature, weight } ], acceptanceRatePct, overridesLast30d, risksLast30d, kris:[ ≥5 { indicator, technique, inputs, mitigation } ] /* exactly the KRI matrix rows from the proposal, in Arabic */ } ],
+  validation: { sources:[ ≥8: { id, name, recordsIn, passed, rejected, deduplicated, completenessPct, consistencyPct, lastBatch } ],
+                rules:[ ≥10: { id, name, type:'schema'|'dedupe'|'completeness'|'consistency', hitsToday, enabled:true } ],
+                quarantine:[ ≥12: { id, sourceId, recordRef, reason, at, status:'معلّق'|'مُصحح'|'مرفوض' } ] },
+  connectors: [ ≥12 enterprise connectors (distinct from Part A integrations): primavera-p6 (Oracle Primavera P6 EPPM Web Services), autodesk-aps (Autodesk Platform Services — Model Derivative / BIM 360), oracle-erp (Oracle Fusion ERP), oracle-crm, sap-s4 (configurable), zoho-crm (configurable), hubspot (configurable), biltix-contracts, biltix-boq, biltix-schedule, biltix-site-reports, biltix-cost, biltix-images, feed-commodities, feed-fx-sama, feed-weather-ncm, feed-gis —
+                { id, name, vendor, layer:'enterprise'|'biltix'|'external', api, mode:'read'|'read+writeback', entities:[...], status:'connected'|'degraded'|'disconnected'|'configurable', lastSync, recordsPerDay, latencyMs, writeback:[...], description, configFields:[...] } ],
+  auditLog: [ ≥20: { id, at, actor, action:'override'|'accept'|'escalate'|'writeback'|'model-update'|'validation'|'login'|'config', target, detail } ],
+  roadmap: { scopeItems:[7 from §5.1], assumptions:[6 from §5.2], outOfScope:[...],
+             milestones:[ { id:'M0', name:'تخصيص الفريق وانطلاق المشروع', deliverables:[...], month:0, paymentPct:null, status:'منجز'|'جارٍ'|'قادم' }, 'M1' الاستكشاف ومعمارية التكامل, 'M2' بناء التكاملات وطبقة التحقق, 'M3' تحسينات محرك المخاطر, 'M4' قمرة القيادة ومعاملات الاستجابة واختبار القبول والإطلاق ],
+             paymentNote:'النسب تُستكمل مع العميل؛ المجموع 100%' },
+};
+```
+Payment percentages are **null in the seed** (the proposal leaves them blank); the roadmap view
+lets the user fill them (persisted in settings.platform.paymentPct) and validates the 100% total.
+
+## B4. platform-selectors.js (`export const psel = {...}`, pure)
+
+```js
+rating(score) => 'red'|'yellow'|'green'; ratingTone(rating) => 'critical'|'warning'|'good'; ratingLabel(rating) => 'أحمر'|'أصفر'|'أخضر';
+typeLabel(type), categoryLabel(cat), categoryIcon(cat) (contract→'file-text', bom→'list', schedule→'calendar', site→'helmet', cost→'chart'), pipelineLabel(id);
+platform(state) => state.platform;                         // accessor (never undefined after store load)
+filteredAiRisks(state, filters) => open+closed filtered by site/range/search;
+openAiRisks(state, filters);
+categoryScores(state, filters) => [{ category, label, score, rating, open, red, yellow, green, trend:[12] }] (B2 formula);
+consolidatedScore(state, filters) => { score, rating, delta, trend:[12], weights };
+typeDistribution(state, filters) => [{ type, label, value }];
+ratingDistribution(state, filters) => [{ rating, label, value }];
+alertQueue(state) => { immediate:[...alerts], standard:[...] } (unacknowledged first, newest first);
+tasksByStatus(state) => [{ status, items }]; overdueTasks(state);
+evm(state, projectId) => { BAC, PV, EV, AC, CPI, SPI, EAC, ETC, VAC, SV, CV, percentComplete, plannedPercent, status:'ضمن الميزانية'|'تحذير'|'تجاوز' };
+costForecast(state, projectId) => { months:[labels], budget:[], actual:[], forecast:[] };
+contractFlags(state, filters) => [{ contract, clause }] ranked by severity; obligationsCalendar(state, days=60);
+supplierConcentration(state) => ranked by shareOfSpendPct with singleSource flag; commodityExposure(state);
+boqVariance(state, filters) => items with |variancePct| ≥ 5 ranked; longLeadItems(state, days=45);
+criticalPathSlippage(state, filters) => critical tasks ranked by delayProbability × expectedDelayDays; monteCarlo(state, projectId);
+approvalsAtRisk(state) => elapsedDays/statutoryDays ≥ 0.8 or status 'متأخر'; subcontractorPerformance(state);
+weatherDelayRisk(state, projectId);
+validationSummary(state) => { recordsIn, passed, rejected, deduplicated, passRatePct, completenessPct, consistencyPct, quarantineOpen, bySource };
+pipelineHealth(state) => pipelines with derived health tone;
+responseParams(risk) => [{ role, label (مدير المشروع/القانونية/المشتريات/الموقع/المالية/مكتب إدارة المشاريع), rows:[[label, value]] }];
+riskFlowStage(risk) => index 0..7 for the flow stepper (مُلتقط → مُتحقق → في بحيرة البيانات → مُقيَّم → مُصنَّف → تنبيه → مهمة → مغلق);
+riskTimeline(risk) => merged history + overrides + task + alerts sorted by time;
+```
+
+## B5. store.js additions (PLATFORM-CORE)
+
+- Import `platformSeed` from `../data/platform-seed.js`; on load, `state.platform` = deep clone
+  (saved state wins when present, same version key); re-anchor ALL platform date fields by the
+  same dayDelta used for Part A (contracts signedAt/endsAt, obligations.due, boqItems requiredBy/orderBy,
+  scheduleTasks start/finish/baselineFinish, monteCarlo p50/p80/p90, approvals.submittedAt,
+  weather dates, changeOrders.submittedAt, aiRisks detectedAt/updatedAt/dueDate/history/overrides,
+  tasks dueDate/createdAt/closedAt/writeback.at, alerts sentAt/ackAt, pipelines.lastRun,
+  validation lastBatch & quarantine.at, auditLog.at, connectors.lastSync).
+- Settings additions (DEFAULT_SETTINGS.platform): `{ weights:{contract:.2,bom:.2,schedule:.25,site:.2,cost:.15}, alertThreshold:60, criticalThreshold:85, channels:{email:true,slack:true,teams:false,whatsapp:false}, paymentPct:{M0:null,M1:null,M2:null,M3:null,M4:null}, writebackEnabled:true }`.
+- Methods (each persists, emits `store:change`, appends to `platform.auditLog` where noted):
+  `addAiRisk(obj)`, `updateAiRisk(id, patch)`,
+  `acceptRecommendation(riskId, {owner, dueDate, escalate})` → creates task (source 'ai-accepted', writeback pending→synced after 1.5 s via setTimeout, emits feed event 'تمت الكتابة العكسية إلى Biltix PM'), sets risk.status 'مهمة مُسندة', owner/dueDate/taskId, audit 'accept';
+  `overrideRecommendation(riskId, {action, reason, owner, dueDate, escalate})` → logs override on the risk, creates task (source 'ai-edited'), status 'مهمة مُسندة', audit 'override';
+  `escalateRisk(riskId, channels)` → adds alert {severity:'critical', queue:'immediate'}, risk.escalated=true, bus 'alert', audit 'escalate';
+  `dismissAiRisk(riskId, reason)` → status 'مُتجاوز', audit;
+  `addTask(obj)`, `updateTask(id, patch)` (closing a task closes its risk with outcome + audit 'close');
+  `ackAlert(id, by)`, `updateValidation(patch)`, `updatePipeline(id, patch)`, `updateConnector(id, patch)`, `pushAudit(entry)`, `resolveQuarantine(id, status)`.
+- `store.platformFilters` not needed: the global filters (site/range/search) apply.
+
+## B6. platform-live.js (`export const platformLive = { start({store,bus}), stop(), pause(), resume() }`)
+
+Started by app.js after `live.start`. Seeded RNG. Every 4–9 s one of: a **pipeline run** feed
+event (type 'ai', e.g. "محرك العقود NLP: بند غامض في CT-2026-014 §14.2 — الدرجة 72 (أحمر)"), a
+**validation** event ("طبقة التحقق: رفض 3 سجلات مكررة من Oracle ERP · اكتمال 98.4%"), a
+**connector** sync event ("Primavera P6: مزامنة 412 نشاطاً · المسار الحرج محدّث"), a
+**write-back** event, or a **task** status event. Every ~3 min a new AI risk is detected
+(`store.addAiRisk`) with realistic content for a random category; if score > alertThreshold an
+alert is added (queue by criticalThreshold) and bus 'alert' fires for critical ones (the Part A
+banner shows it). Every 30 s pipelines' lastRun/runsToday/latency jitter and validation
+counters increase (`updateValidation`); every 60 s overdue tasks are re-flagged 'متأخرة' with a
+feed event. Respects settings.feedPaused and document.hidden.
+
+## B7. Shell changes (PLATFORM-CORE)
+
+- Navigation becomes **grouped** (rail sections with small uppercase-style Arabic group labels):
+  1. قمرة القيادة: `cockpit` (الرئيسية, 'CPT-00'), `airisks` (سجل المخاطر الذكي, 'AIR-01'), `tasks` (مهام المعالجة, 'AIR-02'), `alerts` (التنبيهات والتصعيد, 'AIR-03')
+  2. مجالات المخاطر: `contracts` (مخاطر العقود, 'DOM-01'), `bom` (مخاطر المواد والتوريد, 'DOM-02'), `schedule` (مخاطر الجدول الزمني, 'DOM-03'), `cost` (مخاطر التكلفة, 'DOM-04'), `overview` (مخاطر الموقع والسلامة → the HSE overview, 'DOM-05' shown here, its own code stays SEC-01 inside the view)
+  3. السلامة والصحة المهنية (HSE): `radar`, `risks`, `incidents`, `permits`, `inspections`, `training`, `compliance`
+  4. المنصة: `engine` (محرك الذكاء الاصطناعي, 'PLT-01'), `dataquality` (جودة البيانات والتحقق, 'PLT-02'), `integrations`, `reports`, `roadmap` (خارطة الطريق والمقترح, 'PLT-03'), `settings`
+  `views/index.js` exports `views` (flat array in this order) and `navGroups` ([{id,label,viewIds}]).
+  Default route = `cockpit`. Bottom tab bar: cockpit, airisks, overview, radar, المزيد.
+- App bar: brand text "بلتكس Risk AI" + tagline from B1; the integrations pill counts Part A
+  integrations **and** platform connectors; add a **consolidated score pill** (score + rating dot)
+  that navigates to cockpit; the command palette indexes AI risks (code/title), contracts, tasks.
+- Filters row: unchanged (site select = المشروع).
+- `window.biltix` also exposes `psel` and `platformLive`.
+
+## B8. css/platform.css (PLATFORM-CORE)
+
+Nav group labels (.rail-group, .rail-group-label), score pill (.score-pill with rating dot),
+rating badges (.rating.is-red/.is-yellow/.is-green — reuse tone colors, never new hues),
+type chips (.type-chip), flow stepper (.flow with 8 nodes + animated packet that moves along
+the stage line every 2.4 s; reduced-motion: static), pipeline diagram (.pipeline-map: five layer
+rows connected by vertical connectors with pulsing dots; dark/light), evidence block
+(.evidence with mono ref and source system chip), recommendation card (.recommendation with
+accept/override actions), response-parameter table (.response-params role tabs), KRI matrix
+table (.kri-table 4 columns), EVM strip (.evm-strip), Monte Carlo histogram wrapper, roadmap
+Gantt (.roadmap-gantt five milestone bars), quarantine list, connector cards variant
+(.connector-card with layer stripe: enterprise=brand, biltix=accent, external=gold).
+
+## B9. Views (Part B) — each exports `default { id, code, title, icon, render(container, ctx) }`;
+ctx additionally carries `psel` and `platformLive`.
+
+1. `cockpit.js` 'cockpit' CPT-00 "قمرة قيادة المخاطر" icon 'radar'. Row 1: hero card with the
+   **consolidated score** gauge (charts.gauge, inverted tone: higher = worse → tone from rating),
+   delta vs previous period, 12-week trend sparkline, weights legend (click → settings);
+   beside it five **category tiles** (contract/bom/schedule/site/cost) each with score, rating
+   badge with icon, open/red counts, sparkline, click → the domain view (site → `overview`).
+   Row 2: **flow strip** (.flow, B8) visualizing the end-to-end pipeline with live packet
+   animation and live counters per stage (ingested today, validated %, risks scored, classified,
+   alerts, tasks, closed) from psel/validationSummary. Row 3: ranked open red risks table
+   (code, title, project, category, type chip, score, rating, owner, due; row click → opens the
+   same risk drawer as airisks via a shared exported function from airisks.js? NO — cross-view
+   imports are not allowed; instead router.navigate('airisks', {risk:id}) which opens the drawer),
+   alert queue card (immediate first) with acknowledge buttons, pipeline health strip (five mini
+   cards: status dot, last run relative, runs today, acceptance rate), data-quality mini card
+   (pass rate meter, quarantine count → dataquality), type distribution segmented bar, rating
+   distribution segmented bar (status tones). Row 4: projects table (name, consolidated project
+   score, CPI/SPI, percent complete vs planned, red count, next milestone).
+2. `airisks.js` 'airisks' AIR-01 "سجل المخاطر الذكي" icon 'shield-alert'. Toolbar: category
+   chips, type chips, rating segmented (الكل/أحمر/أصفر/أخضر), status select, pipeline select,
+   sort (score desc default). dataTable: code, title, project, category (icon+label), type chip,
+   score (mono) + rating badge, pipeline, confidence %, detected (fmt.relative), owner, status.
+   Row click (and `?risk=ID` param) → **risk drawer implementing the proposal's user flow**:
+   header (code, title, rating badge, type chip, score ring), flow stepper (psel.riskFlowStage),
+   sections: (a) الدليل من المصدر — evidence block with source system chip, ref in mono, excerpt;
+   (b) تفسير المحرك — plain-language driver explanation + confidence meter + model version +
+   feature importance mini bars (from the pipeline); (c) الإجراء الموصى به — recommendation card
+   with effort/impact chips and alternatives; actions: **قبول التوصية** (one click → modal asking
+   owner + due date + escalate checkbox → store.acceptRecommendation), **تعديل / تجاوز**
+   (modal: new action text, reason (required), owner, due, escalate → store.overrideRecommendation),
+   **تصعيد فوري** (channels checkboxes → store.escalateRisk), **تجاهل** (reason → dismissAiRisk);
+   (d) معاملات الاستجابة لأصحاب المصلحة — role tabs (psel.responseParams) so every stakeholder
+   sees their data points; (e) السجل الزمني — psel.riskTimeline incl. overrides and write-back;
+   (f) الكتابة العكسية — status of the linked task's writeback to Biltix PM. Toasts on each action.
+   Side column: type distribution + top projects by red count (ranked bars).
+3. `tasks.js` 'tasks' AIR-02 "مهام المعالجة" icon 'file-check'. KPI strip (مفتوحة, متأخرة,
+   أُغلقت هذا الشهر, متوسط زمن الإغلاق, نسبة القبول مقابل التعديل). components.kanban across
+   task statuses with task cards (code, title, risk code + rating dot, owner, due with overdue
+   tone, source badge ai-accepted/ai-edited/manual, writeback chip synced/pending/failed with
+   'إعادة المزامنة' for failed); onMove → store.updateTask; detail drawer with link to the risk
+   (router.navigate('airisks',{risk})), outcome textarea on close (feeds "model recalibration"
+   audit). 'مهمة يدوية' modal → store.addTask.
+4. `alerts.js` 'alerts' AIR-03 "التنبيهات والتصعيد" icon 'bell'. Two columns: التصعيد الفوري
+   (critical, channels icons, ack button, time) and قائمة التنبيهات القياسية; thresholds card
+   (alertThreshold/criticalThreshold sliders → store.setSettings platform) with a live preview of
+   how many open risks would alert; channels card (email/slack/teams/whatsapp toggles + 'إرسال
+   تنبيه تجريبي' via sources.postWebhook when settings.alertWebhook is set); write-back log table
+   (from auditLog action 'writeback').
+5. `contracts.js` 'contracts' DOM-01 "مخاطر العقود" icon 'file-text'. KPI strip (عقود مراقبة,
+   بنود مُعلَّمة, التزامات خلال 30 يوماً, تركّز المقاولين من الباطن); contracts dataTable (code,
+   title, counterparty, type, value fmt.compact SAR, flagged clauses count, risk score + rating,
+   status); drawer: clause list with flag badges, excerpt, explanation, benchmark, redline
+   suggestion, 'إحالة للقانونية' button (creates task); obligations calendar (next 60 days list
+   with due badges); subcontractor concentration ranked bars (one hue, label share %); KRI
+   matrix table for the contract pipeline (from pipelines[contract-nlp].kris).
+6. `bom.js` 'bom' DOM-02 "مخاطر المواد والتوريد (BoM)" icon 'list'. Commodity price lineChart
+   (choose a commodity via segmented; series: actual + forecast as a second series labelled
+   'توقع' — two series legend), volatility/exposure tiles, supplier concentration ranked bars
+   with single-source badges, BoQ↔BIM variance dataTable (code, description, BoQ qty, BIM qty,
+   variance % with tone, supplier, lead time, order-by date with overdue tone, spec compliance
+   badge), long-lead items list, KRI matrix.
+7. `schedule.js` 'schedule' DOM-03 "مخاطر الجدول الزمني" icon 'calendar'. Critical-path
+   slippage dataTable (code, task, project, finish vs baseline, float, delay probability as a
+   meter, expected delay days, subcontractor), **Monte Carlo** card: histogram as barChart
+   (days → probability) + P50/P80/P90 tiles (fmt.date), resource utilization ranked bars with
+   over-allocation tone, weather risk 7-day strip (per selected project: temp, wind, dust,
+   rain, delay risk meter), regulatory approvals table (authority, type, elapsed/statutory as a
+   meter, status badge, escalation button → task), subcontractor performance sparklines, KRI matrix.
+8. `cost.js` 'cost' DOM-04 "مخاطر التكلفة" icon 'chart'. EVM strip per selected project (CPI,
+   SPI, EAC, ETC, VAC with tone chips and formula hints), cost trend lineChart (budget / actual /
+   forecast — three series with legend), commodity inflation impact tiles, currency exposure
+   table (code, rate, 30d change signed, exposure, forecast, hedging recommendation chip),
+   change-order creep (segmentedBar by status + table), labour index sparklines, cost lines
+   variance dataTable (tone by variance), KRI matrix.
+9. `engine.js` 'engine' PLT-01 "محرك الذكاء الاصطناعي والتفسير" icon 'sliders'. Pipeline map
+   (.pipeline-map of the five layers from B1 with the five model cards), per-pipeline cards:
+   status, version, last run, runs today, latency, precision/recall/calibration/drift meters,
+   feature importance ranked bars, acceptance vs override segmented bar (human-in-the-loop),
+   KRI matrix (collapsible), 'إعادة تدريب' / 'إيقاف مؤقت' buttons (simulated status change via
+   store.updatePipeline + toast), explainability note card (how the 0–100 score and the driver
+   explanation are produced), audit log table (versioning/overrides).
+10. `dataquality.js` 'dataquality' PLT-02 "جودة البيانات وطبقة التحقق" icon 'badge-check'.
+    Summary tiles (records in today, pass rate meter, deduplicated, completeness, consistency,
+    quarantine open); per-source table (source, records in, passed, rejected, deduplicated,
+    completeness %, consistency %, last batch); rules table with hits and enabled toggles
+    (store.updateValidation); quarantine queue with resolve actions (مُصحح / مرفوض →
+    store.resolveQuarantine) and reasons; a 'لا يصل أي سجل إلى المحرك قبل اجتياز التحقق' principle
+    banner with the validation gate position in the flow.
+11. `roadmap.js` 'roadmap' PLT-03 "خارطة الطريق والمقترح التفصيلي" icon 'calendar'. Architecture
+    card (five layers + v2 additions as a vertical layer diagram built with DOM, not an image),
+    scope-of-work checklist (7 items), assumptions list, milestones Gantt (M0–M4 bars by month,
+    status), milestone table with deliverables and **editable payment %** inputs (settings
+    platform.paymentPct; live total with validation to 100%), integration principle note
+    (read-only + write-back of flags/alerts), 'تصدير المقترح' (print).
+
+## B10. Definition of done for Part B
+
+Same as §11, plus: the cockpit loads in < 1.5 s on a cold start with no console errors; every
+rating/type is shown with icon + label (never color alone); the risk drawer actions persist
+across reload and appear in the audit log and the tasks kanban; group navigation works on all
+breakpoints; the HSE pillar keeps working unchanged.
