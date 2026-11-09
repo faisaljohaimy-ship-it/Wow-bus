@@ -241,12 +241,14 @@ export default {
           h('span', { class: 'text-xs muted' }, 'يتبع مرشح المشروع في شريط الفلاتر'),
         );
       }
-      const options = [{ value: 'portfolio', label: 'المحفظة' }, ...data.projects.map((p) => ({ value: p.id, label: projectCode(data.state, p.id) }))];
-      const seg = segmented({ options, value: data.scopeId, ariaLabel: 'اختيار المشروع', onChange: (v) => { localProject = v; schedule(); } });
-      seg.el.classList.add('seg-sm');
+      const options = [{ value: 'portfolio', label: 'المحفظة', icon: 'layers' }, ...data.projects.map((p) => ({ value: p.id, label: projectCode(data.state, p.id), icon: 'building', title: projectName(data.state, p.id) }))];
+      const chips = h('div', { class: 'chip-group', role: 'group', 'aria-label': 'اختيار المشروع' }, ...options.map((o) => {
+        const active = o.value === data.scopeId;
+        return h('button', { type: 'button', class: ['chip', 'is-sm', active ? 'is-active' : null], 'aria-pressed': active ? 'true' : 'false', title: o.title || undefined, onClick: () => { localProject = o.value; schedule(); } }, svgIcon(o.icon, 12), h('span', {}, o.label));
+      }));
       return h('div', { class: 'toolbar' },
         h('span', { class: 'text-sm muted' }, 'نطاق العرض:'),
-        seg.el,
+        chips,
         h('span', { class: 'toolbar-spacer' }),
         h('span', { class: 'text-xs muted' }, data.scopeId === 'portfolio' ? `إجمالي ${fmt.num(data.projects.length)} مشاريع` : projectName(data.state, data.scopeId)),
       );
@@ -324,7 +326,6 @@ export default {
       const fallbackTable = () => simpleTable(['الشهر', 'الميزانية', 'الفعلي', 'المتوقع'], arr(f && f.months).map((m, i) => [m, sar(arr(f.budget)[i]), arr(f.actual)[i] == null ? '—' : sar(arr(f.actual)[i]), sar(arr(f.forecast)[i])]));
       return card({
         code: 'CST-02', title: 'اتجاه التكلفة', subtitle: 'الميزانية التراكمية مقابل الفعلي والمتوقع (ر.س)',
-        className: 'col-span-8',
         body: f ? chartOr(chart) : emptyState({ title: 'لا تتوفر سلسلة التكلفة لهذا النطاق' }),
         tableView: f ? tableOf(chart, fallbackTable) : null,
       });

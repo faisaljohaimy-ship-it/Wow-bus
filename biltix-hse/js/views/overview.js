@@ -339,9 +339,20 @@ export default {
       }
       styleUrgentList(urgentHost.querySelector('.urgent-list'));
     };
+    // Width-only, deferred to the next frame: mutating layout inside the observer callback would
+    // re-trigger it in the same frame ("ResizeObserver loop completed with undelivered notifications").
     let layoutObserver = null;
+    let lastLayoutWidth = -1;
+    let layoutRaf = 0;
+    const onRootResize = (w) => {
+      const width = Math.round(w);
+      if (width === lastLayoutWidth || width === 0) return;
+      lastLayoutWidth = width;
+      if (layoutRaf) cancelAnimationFrame(layoutRaf);
+      layoutRaf = requestAnimationFrame(() => { layoutRaf = 0; if (!destroyed) applyLayout(width); });
+    };
     if (typeof ResizeObserver === 'function') {
-      layoutObserver = new ResizeObserver((entries) => { for (const e of entries) applyLayout(e.contentRect.width); });
+      layoutObserver = new ResizeObserver((entries) => { for (const e of entries) onRootResize(e.contentRect.width); });
       layoutObserver.observe(root);
     } else {
       applyLayout(root.getBoundingClientRect().width || 1200);
@@ -715,6 +726,7 @@ export default {
       timers.splice(0).forEach((t) => { clearInterval(t); clearTimeout(t); });
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
       if (layoutObserver) { try { layoutObserver.disconnect(); } catch { /* ignore */ } layoutObserver = null; }
+      if (layoutRaf) { cancelAnimationFrame(layoutRaf); layoutRaf = 0; }
       if (sweep) {
         try { if (typeof sweep.stop === 'function') sweep.stop(); } catch { /* ignore */ }
         try { if (R.radarLoop && typeof R.radarLoop.remove === 'function') R.radarLoop.remove(sweep); } catch { /* ignore */ }

@@ -328,8 +328,19 @@ export default {
     // Six chips in one row when the strip is wide enough, otherwise balanced 3+3 / 2+2+2 (never 5+1).
     const fitStrip = (w) => { strip.style.gridTemplateColumns = w >= 900 ? 'repeat(6, minmax(0, 1fr))' : w >= 520 ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))'; };
     let stripObserver = null;
+    let lastStripWidth = -1;
+    let stripRaf = 0;
     if (typeof ResizeObserver === 'function') {
-      stripObserver = new ResizeObserver((entries) => { for (const e of entries) fitStrip(e.contentRect.width); });
+      // Width-only and deferred a frame so the column change never re-enters the observer loop.
+      stripObserver = new ResizeObserver((entries) => {
+        for (const e of entries) {
+          const w = Math.round(e.contentRect.width);
+          if (w === lastStripWidth || w === 0) continue;
+          lastStripWidth = w;
+          if (stripRaf) cancelAnimationFrame(stripRaf);
+          stripRaf = requestAnimationFrame(() => { stripRaf = 0; if (!destroyed) fitStrip(w); });
+        }
+      });
       stripObserver.observe(strip);
     } else {
       fitStrip(strip.getBoundingClientRect().width || 900);
@@ -644,6 +655,7 @@ export default {
       timers.splice(0).forEach((t) => { clearInterval(t); clearTimeout(t); });
       Object.keys(radars).forEach((k) => { killRadar(radars[k]); radars[k] = null; });
       if (stripObserver) { try { stripObserver.disconnect(); } catch { /* ignore */ } stripObserver = null; }
+      if (stripRaf) { cancelAnimationFrame(stripRaf); stripRaf = 0; }
       if (paused) { try { if (loop && typeof loop.resume === 'function') loop.resume(); } catch { /* ignore */ } }
       sweepCard.tip.hidden = true;
     };
