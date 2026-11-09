@@ -176,22 +176,23 @@ export const inspectionsView = {
     const table = dataTable({
       caption: 'جدول التفتيش والتدقيق',
       pageSize: 10,
+      dense: true,
       initialSort: { key: 'date', dir: 'asc' },
       emptyText: 'لا توجد تفتيشات ضمن النافذة الزمنية والموقع المحددين',
       onRowClick: (row) => openDrawer(row.id),
       columns: [
-        { key: 'code', label: 'الرمز', mono: true, width: 104, render: (r) => h('span', { class: 'mono' }, r.code) },
-        { key: 'type', label: 'النوع', render: (r) => h('span', { class: 'row gap-1 nowrap' }, svgIcon(typeIcon(r.type), 14), r.type) },
+        { key: 'code', label: 'الرمز', mono: true, width: 92, render: (r) => h('span', { class: 'mono' }, r.code) },
+        { key: 'type', label: 'النوع', render: (r) => h('span', { class: 'row gap-1' }, svgIcon(typeIcon(r.type), 14), r.type) },
         {
           key: 'siteId', label: 'الموقع', sortValue: (r) => siteName(state(), r.siteId),
           render: (r) => {
             const site = (state().sites || []).find((s) => s && s.id === r.siteId);
             return h('span', { class: 'stack gap-1', title: site ? site.name : '' },
-              h('span', { class: 'truncate', style: { maxInlineSize: '16ch' } }, site ? site.name : '—'),
+              h('span', { class: 'truncate', style: { maxInlineSize: '14ch' } }, site ? site.name : '—'),
               site ? h('span', { class: 'mono text-xs muted' }, site.code) : null);
           },
         },
-        { key: 'inspector', label: 'المفتش', render: (r) => h('span', { class: 'truncate', style: { maxInlineSize: '16ch', display: 'inline-block', verticalAlign: 'middle' }, title: r.inspector || '' }, r.inspector || '—') },
+        { key: 'inspector', label: 'المفتش', render: (r) => h('span', { class: 'truncate', style: { maxInlineSize: '14ch', display: 'inline-block', verticalAlign: 'middle' }, title: r.inspector || '' }, r.inspector || '—') },
         {
           key: 'date', label: 'التاريخ', sortValue: (r) => parseDate(r.date),
           render: (r) => {
@@ -206,7 +207,7 @@ export const inspectionsView = {
           key: 'score', label: 'الدرجة', align: 'end', sortValue: (r) => (r.score === null || r.score === undefined ? null : Number(r.score)),
           render: (r) => {
             if (r.score === null || r.score === undefined) return h('span', { class: 'muted' }, '—');
-            const row = h('span', { class: 'progress-row', style: { minInlineSize: '110px' } });
+            const row = h('span', { class: 'progress-row', style: { minInlineSize: '88px' } });
             row.appendChild(progress({ value: Number(r.score), max: 100, tone: scoreTone(r.score), label: `الدرجة ${fmt.pct(Number(r.score))}` }));
             row.appendChild(h('span', { class: 'progress-value' }, fmt.pct(Number(r.score))));
             return row;
@@ -216,7 +217,7 @@ export const inspectionsView = {
           key: 'checklistDone', label: 'قائمة التحقق', sortValue: (r) => (Number(r.checklistTotal) ? (Number(r.checklistDone) || 0) / Number(r.checklistTotal) : 0),
           render: (r) => {
             const total = Number(r.checklistTotal) || 0; const done = Number(r.checklistDone) || 0;
-            const row = h('span', { class: 'progress-row', style: { minInlineSize: '120px' } });
+            const row = h('span', { class: 'progress-row', style: { minInlineSize: '96px' } });
             row.appendChild(progress({ value: done, max: Math.max(total, 1), tone: total && done >= total ? 'good' : null, label: `بنود قائمة التحقق المنجزة ${fmt.num(done)} من ${fmt.num(total)}` }));
             row.appendChild(h('span', { class: 'progress-value' }, `${fmt.num(done)}/${fmt.num(total)}`));
             return row;
@@ -273,7 +274,7 @@ export const inspectionsView = {
         cell('منجزة', fmt.num(done.length), 'good', `من ${fmt.num(rows.length)}`),
         cell('متأخرة', fmt.num(overdue), overdue ? 'critical' : 'neutral'),
         cell('ملاحظات مفتوحة', fmt.num(findings.open), findings.open ? 'serious' : 'good', `من ${fmt.num(findings.total)}`),
-        cell('متوسط الدرجة', mean === null ? '—' : fmt.pct(mean), scoreTone(mean), scores.length ? `${fmt.num(scores.length)} تفتيشاً` : ''),
+        cell('متوسط الدرجة', mean === null ? '—' : fmt.pct(mean), scoreTone(mean), scores.length ? `عبر ${fmt.num(scores.length)} تفتيشاً` : ''),
       );
     }
 

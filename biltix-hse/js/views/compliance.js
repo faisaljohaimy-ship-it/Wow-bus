@@ -326,18 +326,17 @@ export default {
         initialSort: { key: 'status', dir: 'asc' },
         onRowClick: (r) => openLegal(r),
         columns: [
-          { key: 'title', label: 'المتطلب', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.title || '—'), r.ref ? h('span', { class: 'text-xs muted' }, String(r.ref)) : null) },
-          { key: 'authority', label: 'الجهة التنظيمية' },
-          { key: 'owner', label: 'المسؤول' },
+          { key: 'title', label: 'المتطلب', width: '42%', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.title || '—'), r.owner ? h('span', { class: 'text-xs muted' }, `المسؤول: ${r.owner}`) : null) },
+          { key: 'authority', label: 'الجهة التنظيمية', width: '22%', render: (r) => h('span', { class: 'text-sm' }, r.authority || '—') },
           { key: 'status', label: 'الحالة', render: (r) => badge(r.status || '—', r.tone), sortValue: (r) => ({ 'فجوة': 0, 'جزئي': 1, 'ممتثل': 2 })[r.status] ?? 3 },
-          { key: 'lastReview', label: 'آخر مراجعة', render: (r) => (r.lastReview ? fmt.date(r.lastReview) : '—'), sortValue: (r) => (r.lastReview ? new Date(r.lastReview).getTime() : 0) },
+          { key: 'lastReview', label: 'آخر مراجعة', render: (r) => h('span', { class: 'nowrap' }, r.lastReview ? fmt.date(r.lastReview) : '—'), sortValue: (r) => (r.lastReview ? new Date(r.lastReview).getTime() : 0) },
           { key: 'nextReview', label: 'المراجعة القادمة', sortValue: (r) => (r.nextReview ? new Date(r.nextReview).getTime() : 0), render: (r) => {
             if (!r.nextReview) return '—';
             const d = r.daysToReview;
             const overdue = Number.isFinite(d) && d < 0;
             const soon = Number.isFinite(d) && d >= 0 && d <= 30;
             return h('div', { class: 'stack gap-1' },
-              h('span', { class: overdue ? 'urgent-due is-overdue' : 'num' }, fmt.date(r.nextReview)),
+              h('span', { class: overdue ? 'urgent-due is-overdue nowrap' : 'nowrap' }, fmt.date(r.nextReview)),
               overdue ? badge('متأخرة', 'critical') : soon ? badge(d === 0 ? 'اليوم' : `خلال ${fmt.num(d)} ${d === 1 ? 'يوم' : d <= 10 ? 'أيام' : 'يوماً'}`, 'warning') : null,
             );
           } },

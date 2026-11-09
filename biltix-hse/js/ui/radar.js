@@ -239,6 +239,14 @@ function fmtValue(v, numerals) {
   s = s.replace(/\.0$/, '');
   return localizeDigits(s, numerals);
 }
+/** Value + unit; a percent sign hugs the number (RTL bidi would otherwise float it away). */
+function fmtValueUnit(v, unit, numerals) {
+  const n = fmtValue(v, numerals);
+  const u = unit == null ? '' : String(unit).trim();
+  if (!u) return n;
+  if (u === '%' || u === '٪') return n + (numerals === 'arab' ? '٪' : '%');
+  return `${n} ${u}`;
+}
 function fitText(ctx, text, maxWidth) {
   const s = String(text ?? '').trim();
   if (!s || !(maxWidth > 0)) return '';
@@ -472,10 +480,6 @@ function tick(ts) {
   let dt = loop.last ? (ts - loop.last) / 1000 : 1 / 60;
   loop.last = ts;
   if (dt > MAX_DT) dt = MAX_DT;
-  if (dt > 0) {
-    const inst = 1 / dt;
-    loop.fps = loop.fps ? loop.fps + (inst - loop.fps) * 0.08 : inst;
-  }
   // Reduced motion: slow breathing only → ~30 fps is plenty, halves the work.
   if (loop.reduced) {
     loop.reducedAccum += dt;
@@ -485,6 +489,10 @@ function tick(ts) {
     }
     dt = loop.reducedAccum;
     loop.reducedAccum = 0;
+  }
+  if (dt > 0) {
+    const inst = 1 / dt;
+    loop.fps = loop.fps ? loop.fps + (inst - loop.fps) * 0.08 : inst;
   }
   for (const radar of loop.radars) {
     try {
@@ -1013,7 +1021,7 @@ export class SweepRadar extends RadarBase {
     const h = this.height;
     const o = this.opts;
     const minSide = Math.min(w, h);
-    const labelPx = minSide >= 460 ? 11 : 10;
+    const labelPx = minSide >= 460 ? 11 : minSide >= 340 ? 10 : 9;
     const hasLabels = Array.isArray(o.sectorLabels) && o.sectorLabels.some(Boolean);
     const showLabels = !!o.showLabels && hasLabels && minSide >= 260;
     const margin = showLabels ? 12 + labelPx + 9 : 12;
@@ -1280,7 +1288,7 @@ export class SweepRadar extends RadarBase {
     ctx.font = font;
     const key = `${g.R}|${font}|${labels.join('|')}`;
     if (!this._labels || this._labels.key !== key) {
-      const chord = (TAU * g.labelR) / sectors - 16;
+      const chord = (TAU * g.labelR) / sectors - 10;
       const items = [];
       for (let i = 0; i < sectors; i++) {
         const raw = labels[i];
@@ -1553,7 +1561,7 @@ export class SensorRadar extends RadarBase {
       const styles = lines.map(() => ({ font: labelFont, color: p.ink2 }));
       if (o.showValues) {
         const v = this._cur[i];
-        const text = typeof o.formatValue === 'function' ? String(o.formatValue(v, ax)) : `${fmtValue(v, p.numerals)}${ax.unit ? ` ${ax.unit}` : ''}`;
+        const text = typeof o.formatValue === 'function' ? String(o.formatValue(v, ax)) : fmtValueUnit(v, ax.unit, p.numerals);
         lines.push(text);
         styles.push({ font: valueFont, color: over[i] ? mixColor(p.critical, p.ink1, p.light ? 0.15 : 0.3) : p.ink1 });
       }
@@ -2221,15 +2229,16 @@ export class ComplianceRadar extends RadarBase {
       ctx.shadowBlur = 0;
     }
 
-    /* target label pill at the top of the target ring */
+    /* target label pill: rides the target ring midway between two axes (never over a score) */
     {
       const text = `${o.targetLabel} ${localizeDigits(String(Math.round(target)), p.numerals)}`;
       ctx.font = `500 9.5px ${p.fontMono}`;
       const tw = ctx.measureText(text).width;
       const pw = tw + 12;
       const ph = 15;
-      const px = cx - pw / 2;
-      const py = cy - tn * R - ph / 2;
+      const [lx, ly] = polar(cx, cy, norm360(this._rot + stepDeg / 2), tn * R);
+      const px = lx - pw / 2;
+      const py = ly - ph / 2;
       roundRect(ctx, px, py, pw, ph, 4);
       ctx.fillStyle = rgba(p.bg1, 0.92);
       ctx.fill();
@@ -2239,7 +2248,7 @@ export class ComplianceRadar extends RadarBase {
       ctx.fillStyle = p.gold;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(text, cx, py + ph / 2 + 0.5);
+      ctx.fillText(text, lx, py + ph / 2 + 0.5);
     }
 
     /* vertex dots + score labels at tips */

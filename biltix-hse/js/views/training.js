@@ -338,11 +338,10 @@ export default {
         onRowClick: (r) => openWorker(data, r.worker, null),
         initialSort: { key: 'daysLeft', dir: 'asc' },
         columns: [
-          { key: 'name', label: 'العامل', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.name), h('span', { class: 'text-xs muted' }, r.role)) },
-          { key: 'company', label: 'الشركة' },
-          { key: 'site', label: 'الموقع' },
-          { key: 'course', label: 'الدورة', render: (r) => h('div', { class: 'row gap-1 wrap' }, h('span', {}, r.course), r.mandatory ? badge('إلزامية', 'brand') : null) },
-          { key: 'expiresAt', label: 'تاريخ الانتهاء', render: (r) => fmt.date(r.expiresAt), sortValue: (r) => new Date(r.expiresAt).getTime() },
+          { key: 'name', label: 'العامل', width: '34%', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.name), h('span', { class: 'text-xs muted' }, [r.role, r.company].filter(Boolean).join(' · '))) },
+          { key: 'site', label: 'الموقع', width: '18%', render: (r) => h('span', { class: 'text-sm' }, r.site) },
+          { key: 'course', label: 'الدورة', width: '24%', render: (r) => h('div', { class: 'stack gap-1' }, h('span', {}, r.course), r.mandatory ? badge('إلزامية', 'brand') : null) },
+          { key: 'expiresAt', label: 'الانتهاء', render: (r) => h('span', { class: 'nowrap' }, fmt.date(r.expiresAt)), sortValue: (r) => new Date(r.expiresAt).getTime() },
           { key: 'daysLeft', label: 'المتبقي', render: (r) => badge(daysLabel(r.daysLeft), r.tone), sortValue: (r) => r.daysLeft },
         ],
         rows,
@@ -367,8 +366,10 @@ export default {
       const parts = STATUS_ORDER.map((k) => ({ id: k, label: STATUS[k].label, value: data.summary[k] || 0, color: STATUS[k].color }));
       const seg = total ? makeChart('segmentedBar', { parts, tall: true, valueFormat: (v) => fmt.num(v), ariaLabel: 'توزيع حالات الشهادات: سارية، تنتهي قريباً، منتهية، غير مكتملة' }) : null;
       const list = kv(STATUS_ORDER.map((k) => [
-        h('span', { class: ['row', 'gap-1', `tone-${STATUS[k].tone}`] }, glyph(STATUS[k].tone, 12), h('span', {}, STATUS[k].label)),
-        h('span', { class: 'num' }, `${fmt.num(data.summary[k] || 0)} (${fmt.pct(total ? ((data.summary[k] || 0) / total) * 100 : 0)})`),
+        `${STATUS[k].glyph} ${STATUS[k].label}`,
+        h('span', { class: ['row', 'gap-2', `tone-${STATUS[k].tone}`] },
+          glyph(STATUS[k].tone, 12),
+          h('span', { class: 'num' }, `${fmt.num(data.summary[k] || 0)} (${fmt.pct(total ? ((data.summary[k] || 0) / total) * 100 : 0)})`)),
       ]));
       list.classList.add('is-compact');
 

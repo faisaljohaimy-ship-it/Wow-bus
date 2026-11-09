@@ -35,6 +35,10 @@ const PRIORITY_LABEL = { critical: 'عاجل', serious: 'مرتفع', warning: '
 let currentPeriod = '30d';
 let uidCounter = 0;
 const uid = (prefix) => `rpt-${prefix}-${(++uidCounter).toString(36)}`;
+/** art.js reference (set on render) so action icons use the shared RTL-aware icon set when available. */
+let artRef = null;
+/** Local icon name → art.js icon name. */
+const ART_NAMES = { csv: 'table', json: 'export', doc: 'file-text', arrow: 'arrow-start' };
 
 /* ────────────────────────────── static icons (no data inside) ────────────────────────────── */
 
@@ -52,6 +56,15 @@ const ICONS = {
 };
 
 function icon(name, size = 16) {
+  if (artRef && typeof artRef.icon === 'function' && typeof artRef.hasIcon === 'function') {
+    try {
+      const artName = ART_NAMES[name] || name;
+      if (artRef.hasIcon(artName)) {
+        const node = artRef.icon(artName, size);
+        if (node instanceof Node) { node.classList.add('icon'); return node; }
+      }
+    } catch { /* fall back to the local glyph */ }
+  }
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('width', String(size));
@@ -338,6 +351,7 @@ function render(container, ctx) {
   const charts = ctx.charts || {};
   const sources = ctx.sources || {};
   const art = ctx.art || {};
+  artRef = art;
   const { h, card, statTile, badge, button, segmented, toast, emptyState, kv } = components;
   const copy = makeCopy(fmt);
   const subs = [];
@@ -527,12 +541,26 @@ function render(container, ctx) {
     return wrap;
   }
 
-  function sectionEl(code, title, lead, { breakBefore = false } = {}) {
+  function sectionEl(code, title, lead, { breakBefore = false, narrative = null } = {}) {
     const id = uid('sec');
     const header = h('header', { class: 'row between wrap gap-3 report-section-head' },
       h('div', { class: 'row gap-2 wrap' }, h('span', { class: 'code-tag' }, code), h('h2', { id, class: 'report-section-title' }, title)),
       lead ? h('p', { class: 'muted text-sm' }, lead) : null);
-    return h('section', { class: ['report-section', 'stack', 'gap-3', breakBefore ? 'print-break' : null], 'aria-labelledby': id }, header);
+    return h('section', { class: ['report-section', 'stack', 'gap-3', breakBefore ? 'print-break' : null], 'aria-labelledby': id }, header, narrative);
+  }
+
+  /** Section object produced by sources.buildReport (when the engine returned one). */
+  function builtSection(d, id) {
+    const list = d.built && Array.isArray(d.built.sections) ? d.built.sections : [];
+    return list.find((s) => s && s.id === id) || null;
+  }
+
+  /** The engine's narrative sentences for a section, rendered as an analytical note. */
+  function narrativeBlock(d, id) {
+    const s = builtSection(d, id);
+    const lines = s && Array.isArray(s.narrative) ? s.narrative.filter((x) => typeof x === 'string' && x.trim()) : [];
+    if (!lines.length) return null;
+    return h('div', { class: 'note tone-accent report-narrative-note print-avoid' }, h('p', { class: 'text-sm', style: { maxInlineSize: '100ch' } }, lines.join(' ')));
   }
 
   function simpleTable(caption, headers, rows) {
@@ -655,7 +683,7 @@ function render(container, ctx) {
       statTile({ label: 'المخاطر الحرجة المفتوحة', value: k.criticalRisks, delta: dl.criticalRisks, deltaGoodWhen: 'down', tone: k.criticalRisks > 0 ? 'critical' : 'good' }),
       statTile({ label: 'إغلاق الإجراءات التصحيحية', value: k.capaClosure, unit: '%', delta: dl.capaClosure, deltaGoodWhen: 'up', tone: toneFor(k.capaClosure) }),
       statTile({ label: 'الامتثال التدريبي', value: k.trainingCompliance, unit: '%', delta: dl.trainingCompliance, deltaGoodWhen: 'up', tone: toneFor(k.trainingCompliance) }));
-    const sec = sectionEl('RPT-02', 'مؤشرات الأداء', 'التغير محسوب مقارنةً بالفترة السابقة المماثلة في الطول.');
+    const sec = sectionEl('RPT-02', 'مؤشرات الأداء', 'التغير محسوب مقارنةً بالفترة السابقة المماثلة في الطول.', { narrative: narrativeBlock(d, 'kpis') });
     sec.appendChild(tiles);
     return sec;
   }
@@ -684,7 +712,7 @@ function render(container, ctx) {
       () => charts.barChart({ items: causes.map((c) => ({ id: c.label, label: c.label, value: c.value })), horizontal: true, height: Math.max(140, causes.length * 34), valueFormat: fmt.num, color: 'var(--s1)', showValues: true, maxBars: 6, ariaLabel: 'الأسباب الجذرية الأكثر تكراراً' }),
       () => simpleTable('الأسباب الجذرية', ['السبب الجذري', 'العدد', 'النسبة', 'التراكمي'], causes.map((c) => [c.label, fmt.num(c.value), fmt.pct(c.pct), fmt.pct(c.cumulativePct)])),
     );
-    const sec = sectionEl('RPT-03', 'الحوادث', `${copy.count(d.kpis.incidentsInPeriod, NOUNS.report)} خلال الفترة، ${fmt.num(d.kpis.openIncidents)} ما تزال مفتوحة.`, { breakBefore: true });
+    const sec = sectionEl('RPT-03', 'الحوادث', `${copy.count(d.kpis.incidentsInPeriod, NOUNS.report)} خلال الفترة، ${fmt.num(d.kpis.openIncidents)} ما تزال مفتوحة.`, { breakBefore: true, narrative: narrativeBlock(d, 'incidents') });
     sec.appendChild(h('div', { class: 'grid-12' },
       h('div', { class: 'col-span-8' }, chartCard({ code: 'RPT-03A', title: 'اتجاه الحوادث', subtitle: 'الحوادث مقابل الحوادث الوشيكة لكل أسبوع', chart: line })),
       h('div', { class: 'col-span-4' }, chartCard({ code: 'RPT-03B', title: 'البلاغات حسب النوع', subtitle: 'ضمن فترة التقرير', chart: seg })),
@@ -725,7 +753,7 @@ function render(container, ctx) {
       () => simpleTable('المخاطر المفتوحة حسب الفئة', ['الفئة', 'العدد'], cats.map((c) => [c.label, fmt.num(c.value)])),
     );
     const k = d.kpis;
-    const sec = sectionEl('RPT-04', 'المخاطر', `${copy.count(k.openRisks, NOUNS.risk)} مفتوحة — ${fmt.num(k.criticalRisks)} حرجة، ${fmt.num(k.highRisks)} عالية، ${fmt.num(k.overdueRisks)} متأخرة.`);
+    const sec = sectionEl('RPT-04', 'المخاطر', `${copy.count(k.openRisks, NOUNS.risk)} مفتوحة — ${fmt.num(k.criticalRisks)} حرجة، ${fmt.num(k.highRisks)} عالية، ${fmt.num(k.overdueRisks)} متأخرة.`, { narrative: narrativeBlock(d, 'risks') });
     sec.appendChild(h('div', { class: 'grid-12' },
       h('div', { class: 'col-span-5' }, chartCard({ code: 'RPT-04A', title: 'مصفوفة المخاطر', subtitle: 'المخاطر المفتوحة حسب الشدة والاحتمالية', chart: heat })),
       h('div', { class: 'col-span-7' }, cats.length
@@ -754,7 +782,7 @@ function render(container, ctx) {
         h('span', { class: 'muted mono' }, fmt.time(p.expiresAt)))))
       : h('p', { class: 'muted text-sm' }, 'لا توجد تصاريح نشطة تنتهي خلال الساعة القادمة.');
     const total = d.permits.reduce((s, p) => s + p.value, 0);
-    const sec = sectionEl('RPT-05', 'تصاريح العمل', `${copy.count(total, NOUNS.permit)} ضمن النطاق — ${fmt.num(value('معلق'))} معلقة.`);
+    const sec = sectionEl('RPT-05', 'تصاريح العمل', `${copy.count(total, NOUNS.permit)} ضمن النطاق — ${fmt.num(value('معلق'))} معلقة.`, { narrative: narrativeBlock(d, 'permits') });
     sec.appendChild(h('div', { class: 'grid-12' },
       h('div', { class: 'col-span-8' }, chartCard({ code: 'RPT-05A', title: 'التصاريح حسب الحالة', subtitle: 'مسودة · بانتظار الاعتماد · نشط · معلق · مغلق', chart: seg })),
       h('div', { class: 'col-span-4' }, card({ code: 'RPT-05B', title: 'الوضع الحالي', body: h('div', { class: 'stack gap-3' }, facts, h('hr', { class: 'divider' }), h('p', { class: 'text-xs muted' }, 'التصاريح النشطة التي تنتهي خلال الساعة القادمة'), list) }))));
@@ -780,7 +808,7 @@ function render(container, ctx) {
         h('span', { class: 'stack gap-1' }, h('strong', {}, x.worker.name), h('span', { class: 'muted text-xs' }, x.course.name)),
         badge(fmt.date(x.expiresAt, { style: 'short' }), x.tone || 'warning'))))
       : h('p', { class: 'muted text-sm' }, 'لا توجد شهادات تنتهي خلال الستين يوماً القادمة.');
-    const sec = sectionEl('RPT-06', 'التدريب', `الامتثال التدريبي ${fmt.pct(d.kpis.trainingCompliance)} — الهدف ${fmt.pct(TRAINING_TARGET)} لكل دورة إلزامية.`, { breakBefore: true });
+    const sec = sectionEl('RPT-06', 'التدريب', `الامتثال التدريبي ${fmt.pct(d.kpis.trainingCompliance)} — الهدف ${fmt.pct(TRAINING_TARGET)} لكل دورة إلزامية.`, { breakBefore: true, narrative: narrativeBlock(d, 'training') });
     sec.appendChild(h('div', { class: 'grid-12' },
       h('div', { class: 'col-span-8' }, items.length
         ? chartCard({ code: 'RPT-06A', title: 'إتمام الدورات التدريبية', subtitle: 'نسبة العمال الحاصلين على شهادة سارية لكل دورة', chart: bars })
@@ -818,7 +846,7 @@ function render(container, ctx) {
         ['الفجوات الموثقة', fmt.num(gaps)],
         ['السجل القانوني', d.legal.length ? legalRow : '—'],
       ]));
-    const sec = sectionEl('RPT-07', 'الامتثال', `ISO 45001:2018 — متوسط ${fmt.pct(d.isoOverall)} مقابل مستهدف ${fmt.pct(ISO_TARGET)}.`);
+    const sec = sectionEl('RPT-07', 'الامتثال', `ISO 45001:2018 — متوسط ${fmt.pct(d.isoOverall)} مقابل مستهدف ${fmt.pct(ISO_TARGET)}.`, { narrative: narrativeBlock(d, 'compliance') });
     sec.appendChild(h('div', { class: 'grid-12' },
       h('div', { class: 'col-span-4' }, card({ code: 'RPT-07A', title: 'الامتثال العام', body: overall })),
       h('div', { class: 'col-span-8' }, d.iso.length
@@ -875,23 +903,36 @@ function render(container, ctx) {
       out.push({ tone: top.pct >= 30 ? 'serious' : 'warning', title: `معالجة السبب الجذري الأكثر تكراراً: «${top.label}»`, detail: `يمثل ${fmt.pct(top.pct)} من البلاغات المحللة في الفترة — يُوصى بمراجعة إجراءات العمل والإشراف والتدريب المرتبطة به.`, href: '#/incidents', section: 'الحوادث' });
     }
 
+    // Engine recommendations (sources.buildReport) for topics the derived list does not cover.
+    const engine = builtSection(d, 'recommendations');
+    const engineItems = engine && Array.isArray(engine.items) ? engine.items : [];
+    const ENGINE_TOPICS = ['تكامل', 'الإجراءات التصحيحية', 'السجل القانوني', 'الامتثال التدريبي', 'متطلبًا نظاميًا'];
+    for (const item of engineItems) {
+      const text = item && typeof item.text === 'string' ? item.text.trim() : '';
+      if (!text || !ENGINE_TOPICS.some((t) => text.includes(t))) continue;
+      if (out.some((r) => r.title === text)) continue;
+      out.push({ tone: TONE_RANK[item.tone] !== undefined ? item.tone : 'warning', title: text, detail: '', href: null, section: null });
+    }
+
     if (!out.length) {
       out.push({ tone: 'good', title: 'لا توجد توصيات عاجلة لهذه الفترة', detail: 'يُوصى بالاستمرار في برنامج التفتيش الدوري وتعزيز الإبلاغ عن الحوادث الوشيكة والمحافظة على نسب الامتثال التدريبي.', href: '#/overview', section: 'نظرة عامة' });
     }
     out.sort((a, b) => (TONE_RANK[a.tone] ?? 9) - (TONE_RANK[b.tone] ?? 9));
-    return out.slice(0, 8);
+    return out.slice(0, 9);
   }
 
   function recommendationsSection(d) {
     const recs = buildRecommendations(d);
     const list = h('ol', { class: 'urgent-list report-recs', style: { padding: 0, margin: 0 } }, recs.map((r, i) => {
       const ic = components.glyph(r.tone, 15);
-      const link = h('a', { href: r.href, class: 'text-xs print-hide', onClick: (e) => { e.preventDefault(); const id = String(r.href).replace(/^#\//, '').split('?')[0]; if (router && typeof router.navigate === 'function') router.navigate(id); else location.hash = r.href; } }, `فتح ${r.section}`);
+      const link = r.href
+        ? h('a', { href: r.href, class: 'text-xs print-hide', onClick: (e) => { e.preventDefault(); const id = String(r.href).replace(/^#\//, '').split('?')[0]; if (router && typeof router.navigate === 'function') router.navigate(id); else location.hash = r.href; } }, `فتح ${r.section}`)
+        : h('span', { class: 'text-xs muted print-hide' }, 'محرك التقارير');
       return h('li', { class: ['urgent-item', `tone-${r.tone}`] },
         h('span', { class: 'urgent-icon', 'aria-hidden': 'true' }, ic),
         h('div', { class: 'urgent-text' },
           h('div', { class: 'row gap-2 wrap' }, badge(PRIORITY_LABEL[r.tone] || 'معلومة', r.tone), h('strong', {}, `${fmt.num(i + 1)}. ${r.title}`)),
-          h('span', { class: 'urgent-sub' }, r.detail)),
+          r.detail ? h('span', { class: 'urgent-sub' }, r.detail) : null),
         h('span', { class: 'urgent-due' }, link));
     }));
     const sec = sectionEl('RPT-08', 'التوصيات', 'مشتقة من الإجراءات العاجلة وفجوات الامتثال والتدريب، مرتبة حسب الأولوية.');

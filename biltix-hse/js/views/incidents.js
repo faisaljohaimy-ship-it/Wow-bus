@@ -341,10 +341,13 @@ export const incidentsView = {
       }, trendTable);
       const totalInc = trend.reduce((s, b) => s + b.incidents, 0);
       const totalNm = trend.reduce((s, b) => s + b.nearMisses, 0);
-      chartsHost.appendChild(h('div', { class: 'col-span-7' }, card({
+      /* inline-start column: trend above the type distribution; Pareto fills the other column */
+      const mainCol = h('div', { class: 'col-span-7 stack gap-4' });
+      mainCol.appendChild(card({
         code: 'SEC-04.A', title: 'اتجاه الحوادث', subtitle: `آخر 12 أسبوعاً — ${fmt.num(totalInc)} حادثاً و${fmt.num(totalNm)} حادثاً وشيكاً`,
         body: trendChart.el, tableView: trendChart.table,
-      })));
+      }));
+      chartsHost.appendChild(mainCol);
 
       /* Pareto of root causes — ranked bars + cumulative % as a muted direct label */
       const pareto = sel.rootCausePareto(st, gf);
@@ -362,10 +365,10 @@ export const incidentsView = {
       const typeChart = total > 0
         ? safeChart(charts, 'segmentedBar', { parts, tall: true, valueFormat: (v) => fmt.num(v), ariaLabel: 'توزيع الحوادث حسب النوع' }, typeTable)
         : { el: emptyState({ title: 'لا توجد حوادث في الفترة المحددة', text: 'وسّع الفترة الزمنية أو غيّر الموقع لعرض التوزيع.' }), table: typeTable };
-      chartsHost.appendChild(h('div', { class: 'col-span-12' }, card({
+      mainCol.appendChild(card({
         code: 'SEC-04.C', title: 'التوزيع حسب النوع', subtitle: `${fmt.num(total)} حادثاً في الفترة والموقع المحددين`,
         body: typeChart.el, tableView: typeChart.table,
-      })));
+      }));
     }
 
     function paletteColor(index) {

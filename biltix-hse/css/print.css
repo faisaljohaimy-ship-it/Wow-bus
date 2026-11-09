@@ -145,6 +145,16 @@
   .print-avoid { break-inside: avoid; }
   .print-keep-next, h2, h3 { break-after: avoid; page-break-after: avoid; }
 
+  /* Report preview (reports.js) becomes the document body */
+  .report { padding: 0 !important; border: 0 !important; box-shadow: none !important; background: none !important; }
+  .report::before { display: none; }
+  .report-section { break-inside: auto; padding-block-start: 5mm; border-block-start: 1px solid var(--line); }
+  .report-section-head { break-after: avoid; }
+  .report-section-title { font-size: 14pt; }
+  .report-narrative p { font-size: 10.5pt; line-height: 1.6; color: var(--ink-1); max-inline-size: none; }
+  .report-voice-hint, .report-actions { display: none !important; }
+  .logo-lockup { color: var(--ink-1); }
+
   /* Report cover / footer blocks */
   .report-cover { display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm; padding-block-end: 4mm; border-block-end: 2px solid var(--line-2); }
   .report-cover-title { font-size: 22pt; font-weight: 700; }

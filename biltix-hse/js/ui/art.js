@@ -546,6 +546,8 @@ const BACKDROP_CSS = [
   '.bx-bd-glow-core{animation:bx-bd-breathe 11s ease-in-out infinite}',
   '@media (prefers-reduced-motion:reduce){:root:not([data-motion="full"]) .bx-bd-glow,:root:not([data-motion="full"]) .bx-bd-glow-core{animation:none}}',
   ':root[data-motion="reduce"] .bx-bd-glow,:root[data-motion="reduced"] .bx-bd-glow,:root[data-motion="reduce"] .bx-bd-glow-core,:root[data-motion="reduced"] .bx-bd-glow-core{animation:none}',
+  '@media (max-width:720px){.bx-bd-iso{transform:translate(10px,-186px) scale(.7)}}',
+  '@media print{.backdrop-art{display:none}}',
 ].join('\n');
 
 // Sparse isometric cluster, drawn back-to-front. [tx, ty, a, b, c] in a 360×240 local box.
@@ -648,6 +650,8 @@ export function backdrop() {
   BACKDROP_BLOCKS.forEach(([tx, ty, a, b, c]) => {
     const f = isoFaces(tx, ty, a, b, c);
     const block = el('g', { class: 'iso-block' });
+    // opaque page-coloured silhouette: hides the edges of blocks behind this one inside the 6 % group (hidden-line removal)
+    block.appendChild(el('polygon', { points: pts([f.top[0], f.top[1], f.right[3], f.right[2], f.left[3], f.top[3]]), fill: 'var(--bg-0)' }));
     block.appendChild(el('polygon', { points: pts(f.left), fill: 'currentColor', opacity: '0.16' }));
     block.appendChild(el('polygon', { points: pts(f.right), fill: 'currentColor', opacity: '0.32' }));
     block.appendChild(el('polygon', { points: pts(f.top), fill: 'currentColor', opacity: '0.62' }));

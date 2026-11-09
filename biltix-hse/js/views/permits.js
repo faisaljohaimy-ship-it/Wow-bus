@@ -172,7 +172,8 @@ export const permitsView = {
         h('p', { class: 'view-lead' }, 'لوحة تصاريح العمل الخطرة من المسودة حتى الإغلاق: اعتماد، تعليق، عدّ تنازلي حي لانتهاء الصلاحية، وقراءات فحص الغازات للأماكن المغلقة والأعمال الساخنة.')),
       h('div', { class: 'view-actions' }, button('تصريح جديد', { variant: 'primary', icon: 'file-check', onClick: () => openNewPermitModal() }))));
 
-    const stripHost = h('div', { class: 'summary-strip', role: 'group', 'aria-label': 'ملخص التصاريح حسب الحالة' });
+    /* six cells (five statuses + "expiring within the hour") must share one row on desktop */
+    const stripHost = h('div', { class: 'summary-strip', role: 'group', 'aria-label': 'ملخص التصاريح حسب الحالة', style: { gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))' } });
     const expiringHost = h('div', { class: 'stack' });
     const toolbar = h('div', { class: 'toolbar' });
     const boardHost = h('div', { class: 'stack' });

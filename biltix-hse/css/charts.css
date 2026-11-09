@@ -26,6 +26,9 @@
   font-family: var(--font-sans);
 }
 .chart svg:focus-visible { outline-offset: 4px; border-radius: 6px; }
+/* charts.js mounts legends (≥2 series) into this host above the svg */
+.chart-legend-host { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-inline-size: 0; }
+.chart-legend-host:empty { display: none; }
 .chart text {
   fill: var(--ink-2);
   font-family: var(--font-sans);
@@ -167,14 +170,13 @@ button.legend-item:hover { color: var(--ink-1); }
    Tooltip (singleton #tooltip; DOM built with textContent by charts.js)
    -------------------------------------------------------------------------- */
 
-/* Anchored at the viewport's physical top-left (inline-END in this RTL document),
-   because charts.js positions it from clientX/clientY, which are always physical.
-   Setting the start edge instead would over-constrain `left` in RTL. */
+/* charts.js positions the singleton with inline styles on inset-block-start /
+   inset-inline-start (it converts clientX to an inline-start offset in RTL), so the
+   stylesheet anchors the same two edges and leaves inline-end alone. */
 #tooltip, .tooltip {
   position: fixed;
   inset-block-start: 0;
-  inset-inline-end: 0;
-  inset-inline-start: auto;
+  inset-inline-start: 0;
   z-index: var(--z-tooltip);
   pointer-events: none;
   min-inline-size: 120px;
@@ -191,8 +193,9 @@ button.legend-item:hover { color: var(--ink-1); }
   color: var(--ink-1);
   will-change: transform;
 }
-:root[dir="ltr"] #tooltip, :root[dir="ltr"] .tooltip { inset-inline-end: auto; inset-inline-start: 0; }
 #tooltip[hidden], .tooltip[hidden] { display: none; }
+/* overview.js clones the tooltip look for radar hover inside the frame (absolute, z 2) */
+.radar-frame .tooltip, .radar-tip { position: absolute; max-inline-size: 240px; }
 .tooltip-title {
   margin-block-end: 6px;
   padding-block-end: 6px;

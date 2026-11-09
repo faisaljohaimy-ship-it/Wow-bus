@@ -94,8 +94,17 @@ export default {
   icon: 'plug',
 
   render(container, ctx) {
-    const { store, bus, sel, fmt, charts, components, sources, router } = ctx;
+    const { store, bus, sel, fmt, charts, components, sources, router, art } = ctx;
     const { h, card, badge, button, segmented, modal, toast, emptyState, liveDot, svgIcon, glyph, formField, readForm, kv } = components;
+
+    /** Seed icon names → art.js names when they differ; resolved through art.hasIcon when available. */
+    const ICON_ALIAS = { document: 'dms', watch: 'wearable', users: 'user', database: 'erp', chat: 'teams', sheet: 'sheets', sensor: 'sensor', camera: 'cctv' };
+    function connectorIcon(g, size = 22) {
+      const candidates = [g && g.icon, ICON_ALIAS[g && g.icon], g && g.id, 'plug'].filter(Boolean);
+      const has = art && typeof art.hasIcon === 'function' ? (n) => { try { return !!art.hasIcon(n); } catch { return false; } } : () => true;
+      const name = candidates.find(has) || 'plug';
+      return svgIcon(name, size);
+    }
 
     const root = h('section', { class: 'view view-integrations' });
     container.appendChild(root);
@@ -194,7 +203,6 @@ export default {
         cell('connected', 'متصل', fmt.num(s.connected), 'good'),
         cell('degraded', 'أداء متدهور', fmt.num(s.degraded), 'warning'),
         cell('disconnected', 'غير متصل', fmt.num(s.disconnected), 'critical'),
-        cell('configurable', 'قابل للإعداد', fmt.num(s.configurable), 'neutral'),
         cell('events', 'إجمالي الأحداث بالساعة', fmt.num(s.eventsPerHour), null, liveDot('accent')),
         cell('latency', 'متوسط زمن الاستجابة', `${fmt.num(s.meanLatencyMs)} م.ث`, null, glyph('clock', 12)),
       );
@@ -203,7 +211,9 @@ export default {
       const s = summary();
       const set = (k, v) => { const n = summaryRefs.get(k); if (n && n.textContent !== v) n.textContent = v; };
       set('connected', fmt.num(s.connected)); set('degraded', fmt.num(s.degraded)); set('disconnected', fmt.num(s.disconnected));
-      set('configurable', fmt.num(s.configurable)); set('events', fmt.num(s.eventsPerHour)); set('latency', `${fmt.num(s.meanLatencyMs)} م.ث`);
+      set('events', fmt.num(s.eventsPerHour)); set('latency', `${fmt.num(s.meanLatencyMs)} م.ث`);
+      const head = root.querySelector('[data-role="connected-count"]');
+      if (head) head.textContent = `${fmt.num(s.connected)} من ${fmt.num(s.total)} متصل`;
     }
 
     /* ───────────────────────── chips ───────────────────────── */
@@ -250,7 +260,7 @@ export default {
 
       const el = h('article', { class: 'int-card', 'data-status': g.status || 'configurable', 'data-id': g.id, 'aria-label': g.name || g.id },
         h('div', { class: 'int-head' },
-          h('span', { class: 'int-icon', 'aria-hidden': 'true' }, svgIcon(g.icon || 'plug', 22)),
+          h('span', { class: 'int-icon', 'aria-hidden': 'true' }, connectorIcon(g, 22)),
           h('div', { class: 'int-titles' }, h('span', { class: 'int-name' }, g.name || g.id), h('span', { class: 'int-vendor' }, g.vendor || '—')),
           refs.statusHost,
         ),
@@ -298,15 +308,17 @@ export default {
       refs.sparkHost.replaceChildren(sparkFor(g));
       const uptime = Number(g.uptimePct);
       const realType = testTypeFor(g);
-      refs.meta.replaceChildren(
-        badge(CATEGORY_LABEL[g.category] || g.category || 'غير مصنف', 'neutral', { icon: svgIcon('tag', 12) }),
+      refs.meta.replaceChildren(...[
+        badge(CATEGORY_LABEL[g.category] || g.category || 'غير مصنف', 'neutral', { icon: svgIcon('grid', 12) }),
         Number.isFinite(uptime) ? badge(`توافر ${fmt.pct(uptime, uptime % 1 ? 1 : 0)}`, uptime >= 99 ? 'good' : uptime >= 95 ? 'warning' : 'critical') : null,
         realType ? badge({ json: 'JSON API', sheets: 'CSV', supabase: 'REST', webhook: 'Webhook' }[realType], 'brand', { icon: svgIcon('plug', 12) }) : null,
         mono(g.id, 'text-xs muted'),
-      );
-      const showError = g.lastError && (g.status === 'degraded' || g.status === 'disconnected');
+      ].filter(Boolean));
+      const showError = Boolean(g.lastError) && (g.status === 'degraded' || g.status === 'disconnected');
       refs.error.hidden = !showError;
-      refs.error.replaceChildren(showError ? h('div', { class: ['note', `tone-${meta.tone}`], role: 'status' }, h('span', { class: 'row gap-2' }, glyph(meta.tone, 14), h('span', {}, String(g.lastError)))) : null);
+      refs.error.replaceChildren(...(showError
+        ? [h('div', { class: ['note', `tone-${meta.tone}`], role: 'status' }, h('span', { class: 'row gap-2' }, glyph(meta.tone, 14), h('span', {}, String(g.lastError))))]
+        : []));
     }
 
     function renderGrid() {
@@ -359,7 +371,7 @@ export default {
       const realType = testTypeFor(g);
       const body = h('div', { class: 'stack gap-4' },
         h('div', { class: 'row gap-3' },
-          h('span', { class: 'int-icon', 'aria-hidden': 'true' }, svgIcon(g.icon || 'plug', 22)),
+          h('span', { class: 'int-icon', 'aria-hidden': 'true' }, connectorIcon(g, 22)),
           kv([['المزوّد', g.vendor || '—'], ['الفئة', CATEGORY_LABEL[g.category] || g.category || '—'], ['الحالة', badge(meta.label, meta.tone)]]),
         ),
         fields.length ? form : h('div', { class: 'note' }, 'لا يتطلب هذا التكامل إعدادات إضافية؛ يمكنك اختبار الاتصال مباشرة.'),
@@ -499,7 +511,7 @@ export default {
 
       const testBtn = button('اختبار الاتصال', { variant: 'outline', icon: svgIcon('plug', 16), onClick: () => { runTest(); } });
       const importBtn = button('استيراد المخاطر', { variant: 'primary', icon: svgIcon('download', 16), onClick: () => { runImport(); } });
-      const templateBtn = button('تنزيل قالب CSV', { variant: 'ghost', icon: svgIcon('file', 16), onClick: downloadTemplate });
+      const templateBtn = button('تنزيل قالب CSV', { variant: 'ghost', icon: svgIcon('file-text', 16), onClick: downloadTemplate });
 
       /* Alert webhook */
       const fHook = formField({ label: 'رابط Webhook للتنبيهات', name: 'alertWebhook', type: 'url', value: settings.alertWebhook || '', placeholder: 'https://hooks.example.com/biltix-hse', hint: 'تُرسل التنبيهات الحرجة إلى هذا الرابط بطلب POST بصيغة JSON (يناسب n8n وZapier وMake وSlack Webhooks).' });
@@ -578,7 +590,7 @@ export default {
           h('p', { class: 'view-lead' }, 'حالة الاتصال بأنظمة الموقع والجهات الخارجية وقنوات التنبيه في الزمن الحقيقي، مع إعداد مصدر البيانات الخارجي لاستيراد سجل المخاطر.'),
         ),
         h('div', { class: 'view-actions' },
-          h('span', { class: 'row gap-2 text-sm ink-2' }, liveDot('accent'), h('span', {}, `${fmt.num(s.connected)} من ${fmt.num(s.total)} متصل`)),
+          h('span', { class: 'row gap-2 text-sm ink-2' }, liveDot('accent'), h('span', { 'data-role': 'connected-count' }, `${fmt.num(s.connected)} من ${fmt.num(s.total)} متصل`)),
         ),
       );
     }

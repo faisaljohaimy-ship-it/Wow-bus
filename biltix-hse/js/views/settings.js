@@ -45,6 +45,10 @@ const DEFAULTS = storeModule.DEFAULT_SETTINGS || FALLBACK_DEFAULTS;
 
 let uidCounter = 0;
 const uid = (prefix) => `set-${prefix}-${(++uidCounter).toString(36)}`;
+/** art.js reference (set on render) so icons use the shared RTL-aware icon set when available. */
+let artRef = null;
+/** Local icon name → art.js icon name. */
+const ART_NAMES = { send: 'webhook', image: 'file-text' };
 
 /* ────────────────────────────── static icons ────────────────────────────── */
 
@@ -63,6 +67,15 @@ const ICONS = {
 };
 
 function icon(name, size = 16) {
+  if (artRef && typeof artRef.icon === 'function' && typeof artRef.hasIcon === 'function') {
+    try {
+      const artName = ART_NAMES[name] || name;
+      if (artRef.hasIcon(artName)) {
+        const node = artRef.icon(artName, size);
+        if (node instanceof Node) { node.classList.add('icon'); return node; }
+      }
+    } catch { /* fall back to the local glyph */ }
+  }
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('width', String(size));
@@ -183,6 +196,7 @@ function render(container, ctx) {
   const { store, bus, fmt, components, router } = ctx;
   const sources = ctx.sources || {};
   const art = ctx.art || {};
+  artRef = art;
   const { h, card, badge, button, segmented, toast, modal, formField, kv, liveDot } = components;
   const subs = [];
   const timers = new Set();

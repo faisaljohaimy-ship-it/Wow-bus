@@ -1,0 +1,420 @@
+/**
+ * Biltix Risk AI — view: التنبيهات والتصعيد (js/views/alerts.js) — AIR-03
+ *
+ * Alerting & workflow layer: the immediate-escalation queue (critical) and the standard
+ * alert queue with acknowledge actions (store.ackAlert), the alert / critical threshold
+ * sliders (store.setSettings → settings.platform) with a live preview of how many open AI
+ * risks would alert, the notification channel toggles with a test alert through
+ * sources.postWebhook when settings.alertWebhook is set, and the write-back log derived
+ * from platform.auditLog (action 'writeback').
+ *
+ * Contract: docs/ARCHITECTURE.md §4, §7 (sources.postWebhook), B2 (thresholds), B3
+ * (alerts, auditLog, tasks), B4 (psel.alertQueue, openAiRisks), B5 (ackAlert, settings
+ * defaults), B9.4. Data reaches the DOM only through textContent / components.h.
+ */
+
+const STYLE_ID = 'view-alerts-style';
+const STYLE_TEXT = `@layer views {
+  .alert-queue { display: flex; flex-direction: column; gap: 10px; min-inline-size: 0; }
+  .alert-queue .alert-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding: 12px 14px; border: 1px solid var(--line); border-inline-start: 3px solid var(--tone, var(--line-2)); border-radius: var(--radius-ctl); background: var(--bg-2); min-inline-size: 0; }
+  .alert-queue .alert-item.is-acked { opacity: .72; }
+  .alert-queue .alert-item-body { display: flex; flex-direction: column; gap: 6px; min-inline-size: 0; }
+  .alert-queue .alert-item-title { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-1); line-height: 1.45; overflow-wrap: anywhere; }
+  .alert-queue .alert-item-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: var(--fs-xs); color: var(--ink-3); }
+  .alert-queue .alert-item-actions { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 6px; }
+  .channel-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: var(--radius-pill); background: var(--bg-1); border: 1px solid var(--line); font-size: 11px; color: var(--ink-2); }
+  .channel-chip > svg { inline-size: 12px; block-size: 12px; }
+  .threshold-row { display: grid; grid-template-columns: minmax(0, 1fr) 4.5em; gap: 6px 12px; align-items: center; }
+  .threshold-row label { font-size: var(--fs-sm); color: var(--ink-1); font-weight: 500; }
+  .threshold-row input[type="range"] { inline-size: 100%; accent-color: var(--tone, var(--brand)); block-size: 22px; margin: 0; }
+  .threshold-row output { font-family: var(--font-mono); font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--tone-ink, var(--ink-1)); text-align: end; }
+  .threshold-scale { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); }
+  .preview-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius-ctl); overflow: hidden; }
+  .preview-cell { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--bg-1); min-inline-size: 0; }
+  .preview-cell .summary-value { font-size: var(--fs-xl); }
+  .channel-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 10px; border-block-end: 1px solid var(--line); }
+  .channel-row:last-child { border-block-end: 0; }
+  .channel-row-text { display: flex; flex-direction: column; gap: 1px; min-inline-size: 0; }
+  @media (max-width: 720px) { .preview-strip { grid-template-columns: minmax(0, 1fr); } .alert-queue .alert-item { grid-template-columns: minmax(0, 1fr); } .alert-queue .alert-item-actions { flex-direction: row; align-items: center; } }
+}`;
+
+const DEFAULT_ALERT = 60;
+const DEFAULT_CRITICAL = 85;
+const MIN_GAP = 5;
+const CHANNELS = [
+  { key: 'email', label: 'البريد الإلكتروني', icon: 'mail', hint: 'رسالة لكل تنبيه مع رابط التفاصيل' },
+  { key: 'slack', label: 'Slack', icon: 'slack', hint: 'قناة #risk-alerts مع أزرار القبول' },
+  { key: 'teams', label: 'Microsoft Teams', icon: 'teams', hint: 'بطاقة تكيفية في قناة إدارة المشروع' },
+  { key: 'whatsapp', label: 'واتساب للأعمال', icon: 'whatsapp', hint: 'للتصعيد الفوري فقط — قالب معتمد' },
+];
+const CHANNEL_BY_KEY = Object.fromEntries(CHANNELS.map((c) => [c.key, c]));
+const RATING_LABEL = { red: 'أحمر', yellow: 'أصفر', green: 'أخضر' };
+const RATING_TONE = { red: 'critical', yellow: 'warning', green: 'good' };
+const CLOSED_STATUSES = new Set(['مغلق', 'مُتجاوز']);
+const WB_STATUS = { synced: { label: 'متزامن', tone: 'good' }, pending: { label: 'قيد المزامنة', tone: 'warning' }, failed: { label: 'فشل', tone: 'critical' } };
+
+const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
+const arr = (v) => (Array.isArray(v) ? v : []);
+const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+function ensureStyle() {
+  if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = STYLE_TEXT;
+  document.head.appendChild(style);
+}
+
+export default {
+  id: 'alerts',
+  code: 'AIR-03',
+  title: 'التنبيهات والتصعيد',
+  icon: 'bell',
+
+  render(container, ctx) {
+    const { store, bus, fmt, charts, components, psel, sources, router } = ctx;
+    const { h, card, statTile, badge, dataTable, button, toast, emptyState, svgIcon, glyph, liveDot } = components;
+
+    ensureStyle();
+    const root = h('section', { class: 'view view-alerts' });
+    container.appendChild(root);
+
+    let raf = 0;
+    let restoreFocusId = null;
+    let testing = false;
+
+    /* ───────────────────────── helpers ───────────────────────── */
+
+    const mono = (text, extra = []) => h('span', { class: ['mono', 'num', ...arr(extra)] }, String(text ?? '—'));
+    const now = () => (typeof store.now === 'function' ? store.now() : new Date());
+
+    function makeChart(name, opts) {
+      if (!charts || typeof charts[name] !== 'function') return null;
+      try { const c = charts[name](opts); return c && c.el instanceof Node ? c : null; } catch (err) { console.warn(`[alerts] charts.${name} failed`, err); return null; }
+    }
+    function ratingOf(score) {
+      const r = safe(() => psel.rating(score), null);
+      if (r) return r;
+      return score >= 70 ? 'red' : (score >= 40 ? 'yellow' : 'green');
+    }
+    function ratingBadge(score) {
+      const r = ratingOf(num(score));
+      const el = badge(safe(() => psel.ratingLabel(r), RATING_LABEL[r]) || RATING_LABEL[r], safe(() => psel.ratingTone(r), RATING_TONE[r]) || RATING_TONE[r]);
+      el.classList.add('rating', `is-${r}`);
+      return el;
+    }
+    function channelChip(key) {
+      const c = CHANNEL_BY_KEY[key] || { label: String(key), icon: 'bell' };
+      return h('span', { class: 'channel-chip', title: c.label }, svgIcon(c.icon, 12), h('span', {}, c.label));
+    }
+    function switchBtn({ id, on, label, onToggle }) {
+      return h('button', { type: 'button', id, role: 'switch', class: ['switch', on ? 'is-on' : null], 'aria-checked': on ? 'true' : 'false', 'aria-label': label, title: label, onClick: () => onToggle(!on) });
+    }
+    function projectName(state, id) { const s = arr(state.sites).find((x) => x.id === id); return s ? s.name : (id || '—'); }
+
+    /* ───────────────────────── store bridges ───────────────────────── */
+
+    function ack(alert) {
+      const by = 'المستخدم الحالي';
+      if (typeof store.ackAlert === 'function') store.ackAlert(alert.id, by);
+      else store.update((s) => { const a = arr(s.platform && s.platform.alerts).find((x) => x.id === alert.id); if (a) { a.acknowledged = true; a.ackBy = by; a.ackAt = now().toISOString(); } return `platform.alerts.${alert.id}`; });
+    }
+    function saveThresholds(alertThreshold, criticalThreshold) {
+      store.setSettings({ platform: { alertThreshold, criticalThreshold } });
+    }
+    function saveChannel(key, on) {
+      store.setSettings({ platform: { channels: { [key]: on } } });
+    }
+
+    /* ───────────────────────── data ───────────────────────── */
+
+    function collect() {
+      const state = store.state;
+      const plat = safe(() => psel.platform(state), null) || state.platform || {};
+      const filters = store.filters || { siteId: 'all', range: 30, search: '' };
+      const siteId = filters.siteId || 'all';
+      const range = num(filters.range, 30);
+      const since = now().getTime() - range * 86_400_000;
+      const settings = (state.settings && state.settings.platform) || {};
+      const alertThreshold = clamp(num(settings.alertThreshold, DEFAULT_ALERT), 10, 95);
+      const criticalThreshold = clamp(num(settings.criticalThreshold, DEFAULT_CRITICAL), alertThreshold + MIN_GAP, 100);
+      const channels = { email: true, slack: true, teams: false, whatsapp: false, ...(settings.channels || {}) };
+      const webhook = typeof state.settings.alertWebhook === 'string' ? state.settings.alertWebhook.trim() : '';
+
+      const risksById = new Map(arr(plat.aiRisks).map((r) => [r.id, r]));
+      let queue = safe(() => psel.alertQueue(state), null);
+      if (!queue || !Array.isArray(queue.immediate)) {
+        const all = arr(plat.alerts).slice().sort((a, b) => Number(a.acknowledged) - Number(b.acknowledged) || (Date.parse(b.sentAt) || 0) - (Date.parse(a.sentAt) || 0));
+        queue = { immediate: all.filter((a) => a.queue === 'immediate'), standard: all.filter((a) => a.queue !== 'immediate') };
+      }
+      const visible = (a) => (siteId === 'all' || a.projectId === siteId) && (!a.acknowledged || (Date.parse(a.sentAt) || 0) >= since);
+      const decorate = (a) => ({ ...a, risk: risksById.get(a.riskId) || null });
+      const immediate = arr(queue.immediate).filter(visible).map(decorate);
+      const standard = arr(queue.standard).filter(visible).map(decorate);
+      const allVisible = immediate.concat(standard);
+      const pending = allVisible.filter((a) => !a.acknowledged);
+      const last24 = arr(plat.alerts).filter((a) => (siteId === 'all' || a.projectId === siteId) && (Date.parse(a.sentAt) || 0) >= now().getTime() - 86_400_000).length;
+      const ackDurations = arr(plat.alerts).filter((a) => a.acknowledged && a.ackAt && a.sentAt).map((a) => (Date.parse(a.ackAt) || 0) - (Date.parse(a.sentAt) || 0)).filter((d) => d > 0);
+      const meanAckMs = ackDurations.length ? ackDurations.reduce((a, b) => a + b, 0) / ackDurations.length : null;
+
+      let openRisks = safe(() => psel.openAiRisks(state, filters), null);
+      if (!Array.isArray(openRisks)) openRisks = arr(plat.aiRisks).filter((r) => !CLOSED_STATUSES.has(r.status) && (siteId === 'all' || r.projectId === siteId));
+      const scores = openRisks.map((r) => num(r.score));
+
+      const tasks = arr(plat.tasks).filter((t) => siteId === 'all' || t.projectId === siteId);
+      const wbCounts = tasks.reduce((acc, t) => { const s = t.writeback && t.writeback.status; if (s) acc[s] = (acc[s] || 0) + 1; return acc; }, {});
+      const writebackLog = arr(plat.auditLog).filter((e) => e.action === 'writeback' && (Date.parse(e.at) || 0) >= since).sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
+
+      return { state, plat, siteId, range, alertThreshold, criticalThreshold, channels, webhook, immediate, standard, pending, last24, meanAckMs, openRisks, scores, tasks, wbCounts, writebackLog };
+    }
+
+    function previewCounts(scores, alertT, criticalT) {
+      const immediate = scores.filter((s) => s >= criticalT).length;
+      const standard = scores.filter((s) => s > alertT && s < criticalT).length;
+      return { immediate, standard, register: scores.length - immediate - standard };
+    }
+
+    /* ───────────────────────── sections ───────────────────────── */
+
+    function buildHead(data) {
+      const pendingImmediate = data.immediate.filter((a) => !a.acknowledged);
+      const actions = [];
+      if (pendingImmediate.length) {
+        actions.push(button(`تأكيد كل التصعيدات (${fmt.num(pendingImmediate.length)})`, { variant: 'outline', size: 'sm', icon: glyph('good', 14), onClick: () => { pendingImmediate.forEach(ack); toast(`تم تأكيد ${fmt.num(pendingImmediate.length)} تصعيداً فورياً`, { tone: 'good' }); } }));
+      }
+      actions.push(button('سجل المخاطر الذكي', { variant: 'ghost', size: 'sm', icon: 'shield-alert', onClick: () => router.navigate('airisks', { rating: 'red' }) }));
+      return h('div', { class: 'view-head' },
+        h('div', { class: 'view-head-text' },
+          h('span', { class: 'code-tag' }, 'AIR-03'),
+          h('h1', { tabindex: '-1' }, 'التنبيهات والتصعيد'),
+          h('p', { class: 'view-lead' }, `ما يتجاوز عتبة التنبيه (${fmt.num(data.alertThreshold)}) يدخل قائمة التنبيهات القياسية، وما يبلغ عتبة الحرج (${fmt.num(data.criticalThreshold)}) يُصعَّد فوراً عبر القنوات المفعّلة ويُكتب عكسياً إلى تطبيق إدارة المشاريع.`),
+        ),
+        h('div', { class: 'view-actions' }, ...actions),
+      );
+    }
+
+    function buildKpis(data) {
+      const pendingImmediate = data.immediate.filter((a) => !a.acknowledged).length;
+      return h('div', { class: 'kpi-row' },
+        statTile({ label: 'تنبيهات غير مؤكدة', value: data.pending.length, icon: 'bell', tone: data.pending.length ? 'warning' : 'good', hint: 'تنتظر التأكيد من المالك' }),
+        statTile({ label: 'تصعيد فوري معلّق', value: pendingImmediate, icon: 'alert', tone: pendingImmediate ? 'critical' : 'good', hint: `الدرجة ≥ ${fmt.num(data.criticalThreshold)}` }),
+        statTile({ label: 'تنبيهات آخر 24 ساعة', value: data.last24, icon: 'clock', hint: data.siteId === 'all' ? 'كل المشاريع' : projectName(data.state, data.siteId) }),
+        statTile({ label: 'متوسط زمن التأكيد', value: data.meanAckMs ? fmt.duration(data.meanAckMs) : '—', icon: 'badge-check', tone: data.meanAckMs ? (data.meanAckMs <= 2 * 3_600_000 ? 'good' : (data.meanAckMs <= 8 * 3_600_000 ? 'warning' : 'serious')) : null, hint: 'من الإرسال حتى التأكيد' }),
+      );
+    }
+
+    function alertItem(data, a, severityTone) {
+      const risk = a.risk;
+      const title = a.title || (risk && risk.title) || 'تنبيه';
+      const item = h('article', { class: ['alert-item', `tone-${severityTone}`, a.acknowledged ? 'is-acked' : null], 'data-id': String(a.id) });
+      const body = h('div', { class: 'alert-item-body' });
+      body.appendChild(h('div', { class: 'row wrap gap-2' },
+        badge(a.severity === 'critical' ? 'حرج' : 'قياسي', severityTone),
+        risk ? ratingBadge(risk.score) : null,
+        risk ? mono(risk.code, ['text-xs']) : null,
+        risk ? h('span', { class: 'text-xs muted' }, `الدرجة ${fmt.num(num(risk.score))}`) : null,
+      ));
+      body.appendChild(h('div', { class: 'alert-item-title' }, title));
+      body.appendChild(h('div', { class: 'alert-item-meta' },
+        h('span', {}, projectName(data.state, a.projectId)),
+        h('span', { 'aria-hidden': 'true' }, '·'),
+        h('span', { title: fmt.dateTime(a.sentAt) }, `أُرسل ${fmt.relative(a.sentAt)}`),
+        h('span', { 'aria-hidden': 'true' }, '·'),
+        h('span', { class: 'row gap-1 wrap' }, ...arr(a.channels).map(channelChip)),
+      ));
+      item.appendChild(body);
+      const actions = h('div', { class: 'alert-item-actions' });
+      if (a.acknowledged) {
+        actions.appendChild(h('span', { class: 'row gap-1 text-xs muted' }, glyph('good', 13), h('span', {}, `أكده ${a.ackBy || '—'} ${a.ackAt ? fmt.relative(a.ackAt) : ''}`)));
+      } else {
+        actions.appendChild(button('تأكيد الاستلام', { variant: severityTone === 'critical' ? 'primary' : 'outline', size: 'sm', icon: glyph('good', 14), onClick: () => { ack(a); toast(`تم تأكيد استلام التنبيه${risk ? ` ${risk.code}` : ''}`, { tone: 'good' }); } }));
+      }
+      if (risk) actions.appendChild(button('التفاصيل', { variant: 'ghost', size: 'sm', icon: 'file-text', onClick: () => router.navigate('airisks', { risk: risk.id }) }));
+      item.appendChild(actions);
+      return item;
+    }
+
+    function buildQueueCard(data, { id, code, title, subtitle, items, tone, emptyTitle }) {
+      const pending = items.filter((a) => !a.acknowledged).length;
+      const list = items.length
+        ? h('div', { class: 'alert-queue', role: 'list', 'aria-label': title }, ...items.slice(0, 12).map((a) => alertItem(data, a, tone)))
+        : emptyState({ icon: glyph('good', 32), title: emptyTitle, text: 'لا توجد تنبيهات بحاجة إلى إجراء في هذا النطاق.' });
+      return card({
+        id, code, title, subtitle, className: 'col-span-6',
+        actions: [badge(pending ? `${fmt.num(pending)} بانتظار التأكيد` : 'لا شيء معلّق', pending ? tone : 'good'), pending ? liveDot(tone) : null],
+        body: list,
+        footer: items.length > 12 ? h('p', { class: 'text-xs muted' }, `يُعرض أحدث 12 من ${fmt.num(items.length)} تنبيهاً`) : null,
+      });
+    }
+
+    function buildThresholdsCard(data) {
+      let alertT = data.alertThreshold;
+      let criticalT = data.criticalThreshold;
+      const counts = () => previewCounts(data.scores, alertT, criticalT);
+
+      const previewValues = { immediate: h('span', { class: 'summary-value mono num' }), standard: h('span', { class: 'summary-value mono num' }), register: h('span', { class: 'summary-value mono num' }) };
+      const previewHints = { immediate: h('span', { class: 'text-xs muted' }), standard: h('span', { class: 'text-xs muted' }), register: h('span', { class: 'text-xs muted' }) };
+      const segHost = h('div', { class: 'stack gap-1' });
+      let segChart = null;
+
+      const alertOut = h('output', { for: 'thr-alert', id: 'thr-alert-out' });
+      const criticalOut = h('output', { for: 'thr-critical', id: 'thr-critical-out' });
+      const alertInput = h('input', { type: 'range', id: 'thr-alert', min: '10', max: '95', step: '1', 'aria-label': 'عتبة التنبيه', 'aria-describedby': 'thr-alert-hint' });
+      const criticalInput = h('input', { type: 'range', id: 'thr-critical', min: '15', max: '100', step: '1', 'aria-label': 'عتبة التصعيد الفوري', 'aria-describedby': 'thr-critical-hint' });
+      alertInput.value = String(alertT); criticalInput.value = String(criticalT);
+
+      function paint() {
+        alertOut.textContent = fmt.num(alertT); criticalOut.textContent = fmt.num(criticalT);
+        alertInput.setAttribute('aria-valuetext', `${fmt.num(alertT)} من 100`); criticalInput.setAttribute('aria-valuetext', `${fmt.num(criticalT)} من 100`);
+        const c = counts();
+        previewValues.immediate.textContent = fmt.num(c.immediate); previewValues.standard.textContent = fmt.num(c.standard); previewValues.register.textContent = fmt.num(c.register);
+        previewHints.immediate.textContent = `الدرجة ≥ ${fmt.num(criticalT)}`; previewHints.standard.textContent = `${fmt.num(alertT)} < الدرجة < ${fmt.num(criticalT)}`; previewHints.register.textContent = `الدرجة ≤ ${fmt.num(alertT)}`;
+        const parts = [{ id: 'immediate', label: 'تصعيد فوري', value: c.immediate, color: 'var(--critical)' }, { id: 'standard', label: 'تنبيه قياسي', value: c.standard, color: 'var(--warning)' }, { id: 'register', label: 'سجل فقط', value: c.register, color: 'var(--good)' }].filter((p) => p.value > 0);
+        if (segChart && typeof segChart.update === 'function') { try { segChart.update({ parts }); return; } catch { /* rebuild below */ } }
+        segHost.replaceChildren();
+        segChart = parts.length ? makeChart('segmentedBar', { parts, tall: false, valueFormat: (v) => fmt.num(v), ariaLabel: 'توزيع المخاطر المفتوحة على قوائم التنبيه' }) : null;
+        if (segChart) segHost.appendChild(segChart.el);
+      }
+      alertInput.addEventListener('input', () => { alertT = clamp(num(alertInput.value, alertT), 10, 95); if (criticalT < alertT + MIN_GAP) { criticalT = clamp(alertT + MIN_GAP, 15, 100); criticalInput.value = String(criticalT); } paint(); });
+      criticalInput.addEventListener('input', () => { criticalT = clamp(num(criticalInput.value, criticalT), 15, 100); if (criticalT < alertT + MIN_GAP) { criticalT = clamp(alertT + MIN_GAP, 15, 100); criticalInput.value = String(criticalT); } paint(); });
+      const commit = (e) => { restoreFocusId = e && e.target ? e.target.id : null; saveThresholds(alertT, criticalT); toast(`تم حفظ العتبات: تنبيه > ${fmt.num(alertT)} · تصعيد ≥ ${fmt.num(criticalT)}`, { tone: 'good' }); };
+      alertInput.addEventListener('change', commit); criticalInput.addEventListener('change', commit);
+      paint();
+
+      const scale = () => h('div', { class: 'threshold-scale', 'aria-hidden': 'true' }, h('span', {}, '0'), h('span', {}, '40'), h('span', {}, '70'), h('span', {}, '100'));
+      const body = h('div', { class: 'stack gap-4' },
+        h('div', { class: 'threshold-row tone-warning' }, h('label', { for: 'thr-alert' }, 'عتبة التنبيه'), alertOut, alertInput, h('span', {}), h('div', { class: 'stack', style: { gap: '2px' } }, scale(), h('span', { class: 'text-xs muted', id: 'thr-alert-hint' }, 'الدرجة التي تتجاوزها تنشئ تنبيهاً قياسياً وتُسند مهمة معالجة'))),
+        h('div', { class: 'threshold-row tone-critical' }, h('label', { for: 'thr-critical' }, 'عتبة التصعيد الفوري'), criticalOut, criticalInput, h('span', {}), h('div', { class: 'stack', style: { gap: '2px' } }, scale(), h('span', { class: 'text-xs muted', id: 'thr-critical-hint' }, `الدرجة التي تبلغها تُصعَّد فوراً عبر القنوات المفعّلة (أعلى من عتبة التنبيه بـ ${fmt.num(MIN_GAP)} على الأقل)`))),
+        h('div', { class: 'stack gap-2' },
+          h('span', { class: 'text-sm semibold' }, `معاينة حية على ${fmt.num(data.openRisks.length)} مخاطرة مفتوحة`),
+          h('div', { class: 'preview-strip', role: 'group', 'aria-label': 'معاينة أثر العتبات' },
+            h('div', { class: 'preview-cell tone-critical' }, h('span', { class: 'summary-label' }, glyph('critical', 12), h('span', {}, 'تصعيد فوري')), previewValues.immediate, previewHints.immediate),
+            h('div', { class: 'preview-cell tone-warning' }, h('span', { class: 'summary-label' }, glyph('warning', 12), h('span', {}, 'تنبيه قياسي')), previewValues.standard, previewHints.standard),
+            h('div', { class: 'preview-cell tone-good' }, h('span', { class: 'summary-label' }, glyph('good', 12), h('span', {}, 'سجل فقط')), previewValues.register, previewHints.register),
+          ),
+          segHost,
+        ),
+      );
+      const isDefault = data.alertThreshold === DEFAULT_ALERT && data.criticalThreshold === DEFAULT_CRITICAL;
+      return card({
+        code: 'ALR-03', title: 'عتبات التنبيه والتصعيد', subtitle: 'تُطبَّق على الدرجة 0–100 لكل مخاطرة جديدة أو مُحدَّثة',
+        className: 'col-span-6',
+        actions: [button('استعادة الافتراضي', { variant: 'ghost', size: 'sm', icon: 'refresh', onClick: () => { saveThresholds(DEFAULT_ALERT, DEFAULT_CRITICAL); toast('تمت استعادة العتبات الافتراضية (60 / 85)', { tone: 'neutral' }); }, attrs: { disabled: isDefault } })],
+        body,
+        footer: h('p', { class: 'text-xs muted' }, 'التقييم اللوني ثابت (أحمر ≥ 70، أصفر 40–69، أخضر < 40)؛ العتبات تحدد فقط ما يُنبَّه عليه ويُصعَّد.'),
+      });
+    }
+
+    function buildChannelsCard(data) {
+      const rows = CHANNELS.map((c) => h('div', { class: 'channel-row' },
+        h('div', { class: 'row gap-3' },
+          h('span', { class: 'tile-icon', 'aria-hidden': 'true', style: { color: data.channels[c.key] ? 'var(--brand)' : 'var(--ink-3)' } }, svgIcon(c.icon, 18)),
+          h('div', { class: 'channel-row-text' }, h('span', { class: 'text-sm semibold' }, c.label), h('span', { class: 'text-xs muted' }, c.hint)),
+        ),
+        h('div', { class: 'row gap-2' },
+          h('span', { class: 'text-xs muted' }, data.channels[c.key] ? 'مفعّلة' : 'معطّلة'),
+          switchBtn({ id: `ch-${c.key}`, on: !!data.channels[c.key], label: `${data.channels[c.key] ? 'تعطيل' : 'تفعيل'} قناة ${c.label}`, onToggle: (next) => { restoreFocusId = `ch-${c.key}`; saveChannel(c.key, next); toast(next ? `تم تفعيل قناة ${c.label}` : `تم تعطيل قناة ${c.label}`, { tone: next ? 'good' : 'neutral' }); } }),
+        ),
+      ));
+      const enabled = CHANNELS.filter((c) => data.channels[c.key]);
+
+      let webhookBlock;
+      if (data.webhook) {
+        const testBtn = button(testing ? 'جارٍ الإرسال…' : 'إرسال تنبيه تجريبي', { variant: 'primary', size: 'sm', icon: 'bell', attrs: { disabled: testing || !enabled.length, 'aria-busy': testing ? 'true' : undefined }, onClick: async () => {
+          if (testing) return;
+          if (!sources || typeof sources.postWebhook !== 'function') { toast('وحدة المصادر غير متاحة حالياً', { tone: 'warning' }); return; }
+          testing = true; testBtn.disabled = true; testBtn.setAttribute('aria-busy', 'true');
+          const payload = { type: 'test', source: 'Biltix Risk AI', title: 'تنبيه تجريبي من منصة بلتكس لإدارة المخاطر', severity: 'routine', queue: 'standard', channels: enabled.map((c) => c.key), thresholds: { alert: data.alertThreshold, critical: data.criticalThreshold }, sentAt: now().toISOString() };
+          try {
+            const res = await sources.postWebhook(data.webhook, payload);
+            if (res && res.ok) toast(`وصل التنبيه التجريبي إلى Webhook (HTTP ${fmt.num(num(res.status, 200))})`, { tone: 'good' });
+            else toast(res && res.message ? String(res.message) : `تعذر إرسال التنبيه التجريبي${res && res.status ? ` (HTTP ${fmt.num(num(res.status))})` : ''}`, { tone: 'warning' });
+          } catch (err) { toast('تعذر الوصول إلى عنوان Webhook — تحقق من العنوان والشبكة', { tone: 'critical' }); console.warn('[alerts] test webhook failed', err); }
+          finally { testing = false; schedule(); }
+        } });
+        webhookBlock = h('div', { class: 'stack gap-2' },
+          h('div', { class: 'row between wrap' }, h('span', { class: 'text-sm semibold' }, 'Webhook التنبيهات'), badge('مضبوط', 'good')),
+          h('span', { class: 'mono text-xs ltr truncate', dir: 'ltr', title: data.webhook, style: { display: 'block', color: 'var(--ink-2)' } }, data.webhook),
+          h('div', { class: 'row wrap gap-2' }, testBtn, button('تعديل العنوان', { variant: 'ghost', size: 'sm', icon: 'sliders', onClick: () => router.navigate('integrations', { section: 'datasource' }) })),
+          !enabled.length ? h('span', { class: 'text-xs muted' }, 'فعّل قناة واحدة على الأقل لإرسال اختبار.') : null,
+        );
+      } else {
+        webhookBlock = h('div', { class: 'note', style: { '--tone': 'var(--warning)' } }, h('strong', {}, 'لم يُضبط عنوان Webhook. '), 'اضبط عنوان التنبيهات (n8n / Zapier / نظام داخلي) من صفحة التكاملات لتفعيل الإرسال التجريبي والتصعيد الخارجي. ', button('فتح التكاملات', { variant: 'ghost', size: 'sm', icon: 'link', onClick: () => router.navigate('integrations', { section: 'datasource' }) }));
+      }
+
+      return card({
+        code: 'ALR-04', title: 'قنوات الإشعار', subtitle: 'القنوات التي يُرسل عبرها التصعيد الفوري والتنبيهات القياسية',
+        className: 'col-span-6',
+        actions: [badge(`${fmt.num(enabled.length)} / ${fmt.num(CHANNELS.length)} مفعّلة`, enabled.length ? 'brand' : 'warning')],
+        body: h('div', { class: 'stack gap-4' }, h('div', { class: 'stack', style: { gap: '0' } }, ...rows), webhookBlock),
+      });
+    }
+
+    function buildWritebackCard(data) {
+      const chips = Object.entries(WB_STATUS).map(([k, s]) => badge(`${s.label}: ${fmt.num(num(data.wbCounts[k]))}`, data.wbCounts[k] ? s.tone : 'neutral'));
+      const table = dataTable({
+        dense: true, pageSize: 8, emptyText: `لا توجد عمليات كتابة عكسية خلال آخر ${fmt.num(data.range)} يوماً`, caption: 'سجل الكتابة العكسية إلى Biltix PM',
+        columns: [
+          { key: 'at', label: 'الوقت', render: (e) => h('span', { class: 'text-xs nowrap', title: fmt.dateTime(e.at) }, fmt.dateTime(e.at)), sortValue: (e) => Date.parse(e.at) || 0 },
+          { key: 'actor', label: 'المنفّذ', render: (e) => e.actor || 'النظام' },
+          { key: 'target', label: 'الهدف', mono: true, render: (e) => mono(e.target || '—') },
+          { key: 'detail', label: 'التفاصيل', sortable: false, render: (e) => h('span', { class: 'text-sm' }, e.detail || '—') },
+          { key: 'status', label: 'الحالة', sortable: false, render: (e) => { const t = data.tasks.find((x) => x.code === e.target || x.id === e.target); const s = t && t.writeback ? WB_STATUS[t.writeback.status] : null; return s ? badge(s.label, s.tone) : badge('مُسجَّل', 'brand'); } },
+        ],
+        rows: data.writebackLog.map((e, i) => ({ id: e.id || `wb-${i}`, ...e })), initialSort: { key: 'at', dir: 'desc' },
+      });
+      return card({
+        code: 'ALR-05', title: 'سجل الكتابة العكسية', subtitle: 'أعلام المخاطر والدرجات ومهام المعالجة المكتوبة إلى تطبيق إدارة المشاريع',
+        actions: chips,
+        body: table.el,
+        footer: h('div', { class: 'row between wrap' }, h('span', { class: 'text-xs muted' }, 'المنصة لا تكتب في أنظمة العميل سوى أعلام المخاطر والدرجات والتنبيهات ومهام المعالجة.'), button('مهام المعالجة', { variant: 'ghost', size: 'sm', icon: 'file-check', onClick: () => router.navigate('tasks') })),
+      });
+    }
+
+    /* ───────────────────────── build ───────────────────────── */
+
+    function build() {
+      raf = 0;
+      const data = collect();
+      const frag = document.createDocumentFragment();
+      frag.append(
+        buildHead(data),
+        buildKpis(data),
+        h('div', { class: 'grid-12' },
+          buildQueueCard(data, { id: 'alerts-immediate', code: 'ALR-01', title: 'التصعيد الفوري', subtitle: `حرج — الدرجة ≥ ${fmt.num(data.criticalThreshold)}؛ أُرسل عبر كل القنوات المفعّلة`, items: data.immediate, tone: 'critical', emptyTitle: 'لا توجد تصعيدات فورية' }),
+          buildQueueCard(data, { id: 'alerts-standard', code: 'ALR-02', title: 'قائمة التنبيهات القياسية', subtitle: `الدرجة > ${fmt.num(data.alertThreshold)} — مهمة معالجة مُسندة مع مهلة`, items: data.standard, tone: 'warning', emptyTitle: 'قائمة التنبيهات القياسية فارغة' }),
+        ),
+        h('div', { class: 'grid-12' }, buildThresholdsCard(data), buildChannelsCard(data)),
+        buildWritebackCard(data),
+      );
+      root.replaceChildren(frag);
+      if (restoreFocusId) {
+        const el = root.querySelector(`#${CSS.escape(restoreFocusId)}`);
+        restoreFocusId = null;
+        if (el) { try { el.focus({ preventScroll: true }); } catch { /* ignore */ } }
+      }
+    }
+
+    function schedule() {
+      if (raf) return;
+      raf = requestAnimationFrame(build);
+    }
+
+    const NOISY = /^(feed|sensors|integrations|settings)/;
+    const unsubs = [
+      bus.on('store:change', (payload) => { const path = payload && payload.path ? String(payload.path) : '*'; if (!NOISY.test(path)) schedule(); }),
+      bus.on('filters:change', (payload) => { const key = payload && payload.key; if (!key || key === 'siteId' || key === 'range') schedule(); }),
+      bus.on('settings:change', () => schedule()),
+    ];
+
+    build();
+
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      unsubs.forEach((u) => { try { if (typeof u === 'function') u(); } catch { /* ignore */ } });
+      root.remove();
+    };
+  },
+};

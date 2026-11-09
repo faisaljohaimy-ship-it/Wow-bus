@@ -379,25 +379,28 @@ const ALIAS_INDEX = (() => {
   return exact;
 })();
 
-/** Map actual headers → canonical field names (exact normalised match first, then containment). */
+/**
+ * Map actual headers → canonical field names. Exact normalised matches win; remaining
+ * headers fall back to containment. Several headers may feed the same field (a sheet
+ * mixing Arabic and English columns): per row the first non-empty value is used, and an
+ * exact match is never displaced by a containment match.
+ */
 function mapHeaders(headers) {
   const mapping = new Map();
-  const used = new Set();
+  const exactFields = new Set();
   const pending = [];
   for (const hd of headers) {
     const key = bare(hd);
     const field = ALIAS_INDEX.get(key);
-    if (field && !used.has(field)) { mapping.set(hd, field); used.add(field); } else pending.push(hd);
+    if (field) { mapping.set(hd, field); exactFields.add(field); } else pending.push(hd);
   }
   for (const hd of pending) {
     const key = bare(hd);
     if (!key) continue;
-    let found = null;
     for (const [alias, field] of ALIAS_INDEX) {
-      if (used.has(field) || alias.length < 3) continue;
-      if (key.includes(alias) || alias.includes(key)) { found = field; break; }
+      if (exactFields.has(field) || alias.length < 3) continue;
+      if (key.includes(alias) || alias.includes(key)) { mapping.set(hd, field); break; }
     }
-    if (found) { mapping.set(hd, found); used.add(found); }
   }
   return mapping;
 }
@@ -540,7 +543,10 @@ export function mapRiskRows(records, { sites = arr(seed && seed.sites), categori
   const defaultSite = arr(sites)[0] ? arr(sites)[0].id : 'S1';
   list.forEach((record, index) => {
     const row = {};
-    for (const [hd, field] of mapping) if (record[hd] !== undefined) row[field] = record[hd];
+    for (const [hd, field] of mapping) {
+      if (record[hd] === undefined || text(record[hd]) === '') continue;
+      if (row[field] === undefined || text(row[field]) === '') row[field] = record[hd];
+    }
     const hazard = text(row.hazard) || text(row.description);
     if (!hazard) { skipped += 1; return; }
     const rowNo = index + 2;
