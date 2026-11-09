@@ -366,7 +366,7 @@ function isOpenRisk(r) {
 
 /** B2 category score over a list of (open) scores. */
 function categoryScoreOf(scores) {
-  const list = scores.map((s) => num(s)).filter((s) => Number.isFinite(s));
+  const list = arr(scores).map((s) => num(s)).filter((s) => Number.isFinite(s));
   if (!list.length) return 0;
   return clamp(Math.round(0.5 * max(list) + 0.5 * mean(list)), 0, 100);
 }
@@ -426,21 +426,23 @@ function openAsOf(r, atMs) {
 }
 
 /**
- * 12-week category trend. Weeks with real history use the B2 formula over the risks
- * open at that time; weeks before the first detection fall back to a smooth, deterministic
- * ramp toward the current value (so the sparkline is never a flat zero line).
+ * 12-week category trend (deterministic pseudo-history). For every week the B2 formula is
+ * applied to the risks open at that time; where the history is sparse (fewer risks than today)
+ * the value is blended toward a smooth ramp to the current score, weighted by how complete
+ * the week's history is, so the sparkline is never a flat zero line nor dominated by a single
+ * early detection. The last point is always the current score.
  */
-function categoryTrend(risks, currentScore, ends, seedKey) {
+function categoryTrend(risks, currentScore, currentOpen, ends, seedKey) {
   const out = [];
+  const last = ends.length - 1;
   for (let i = 0; i < ends.length; i += 1) {
     const open = risks.filter((r) => openAsOf(r, ends[i]));
-    if (open.length) out.push(categoryScoreOf(open.map((r) => r.score)));
-    else if (currentScore > 0) {
-      const ramp = 0.72 + 0.28 * (i / (ends.length - 1));
-      out.push(clamp(Math.round(currentScore * ramp + jitter(`${seedKey}:${i}`, 2.5)), 0, 100));
-    } else out.push(0);
+    const real = open.length ? categoryScoreOf(open.map((r) => r.score)) : 0;
+    const ramp = currentScore > 0 ? clamp(currentScore * (0.72 + 0.28 * (i / Math.max(last, 1))) + jitter(`${seedKey}:${i}`, 2.5), 0, 100) : 0;
+    const frac = currentOpen > 0 ? clamp(open.length / currentOpen, 0, 1) : (open.length ? 1 : 0);
+    out.push(clamp(Math.round(frac * real + (1 - frac) * ramp), 0, 100));
   }
-  if (out.length) out[out.length - 1] = currentScore;
+  if (out.length) out[last] = currentScore;
   return out;
 }
 
@@ -465,7 +467,7 @@ function categoryScores(state, filters, now) {
       red: openCat.filter((x) => rating(x.score) === 'red').length,
       yellow: openCat.filter((x) => rating(x.score) === 'yellow').length,
       green: openCat.filter((x) => rating(x.score) === 'green').length,
-      trend: categoryTrend(all.filter((x) => x.category === c.id), score, ends, c.id),
+      trend: categoryTrend(all.filter((x) => x.category === c.id), score, openCat.length, ends, c.id),
     };
   });
 }

@@ -282,7 +282,7 @@ export default {
           quarantineOpen: ((platform.validation && platform.validation.quarantine) || []).filter((q) => q.status === 'معلّق').length, bySource: sources };
       })();
 
-      const queue = viaPsel(psel, 'alertQueue', () => psel.alertQueue(state), null) || (() => {
+      const queue = viaPsel(psel, 'alertQueue', () => psel.alertQueue(state, filters), null) || (() => {
         const list = (platform.alerts || []).slice().sort((a, b) => Number(!!a.acknowledged) - Number(!!b.acknowledged) || (Date.parse(b.sentAt) || 0) - (Date.parse(a.sentAt) || 0));
         return { immediate: list.filter((a) => a.queue === 'immediate'), standard: list.filter((a) => a.queue !== 'immediate') };
       })();

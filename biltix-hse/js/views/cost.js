@@ -146,7 +146,10 @@ export default {
       return { BAC, PV, EV, AC, CPI, SPI, EAC, ETC: EAC - AC, VAC: BAC - EAC, SV: EV - PV, CV: EV - AC, percentComplete: BAC ? (EV / BAC) * 100 : 0, plannedPercent: BAC ? (PV / BAC) * 100 : 0, status: CPI >= 1 ? 'ضمن الميزانية' : (CPI >= 0.9 ? 'تحذير' : 'تجاوز'), projects: parts.length };
     }
 
-    function forecastFor(state, ids) {
+    function forecastFor(state, ids, scopeId) {
+      // psel.costForecast aggregates the portfolio itself when asked for 'all'; per-project summing is the fallback.
+      const direct = safe(() => psel.costForecast(state, scopeId === 'portfolio' ? 'all' : scopeId), null);
+      if (direct && Array.isArray(direct.months) && direct.months.length) return direct;
       const series = ids.map((id) => safe(() => psel.costForecast(state, id), null)).filter((f) => f && Array.isArray(f.months) && f.months.length);
       if (!series.length) return null;
       if (series.length === 1) return series[0];
@@ -173,13 +176,14 @@ export default {
       const inScope = (pid) => ids.includes(pid);
 
       const evm = scopeId === 'portfolio' ? aggregateEvm(state, ids) : evmFor(state, scopeId);
-      const forecast = forecastFor(state, ids);
+      const forecast = forecastFor(state, ids, scopeId);
 
-      const commodities = arr(plat.commodities).map((c) => {
+      const viaPsel = safe(() => psel.commodityExposure(state), null);
+      const commodities = (Array.isArray(viaPsel) && viaPsel.length ? viaPsel : arr(plat.commodities)).map((c) => {
         const series = arr(c.series); const fc = arr(c.forecast);
-        const last = num(series[series.length - 1]); const fcLast = num(fc[fc.length - 1], last);
-        const impactPct = last ? ((fcLast / last) - 1) * 100 : 0;
-        return { ...c, impactPct, impactSAR: num(c.exposureSAR) * (impactPct / 100) };
+        const last = num(c.lastPrice, num(series[series.length - 1])); const fcLast = num(fc[fc.length - 1], last);
+        const impactPct = num(c.forecastChangePct, last ? ((fcLast / last) - 1) * 100 : 0);
+        return { ...c, impactPct, impactSAR: num(c.impactSAR, num(c.exposureSAR) * (impactPct / 100)) };
       }).sort((a, b) => Math.abs(b.impactSAR) - Math.abs(a.impactSAR));
 
       const currencies = arr(plat.currencies).map((c) => ({ ...c, advice: hedgeAdvice(c) })).sort((a, b) => num(b.exposureSAR) - num(a.exposureSAR));
@@ -320,7 +324,7 @@ export default {
             { id: 'actual', label: 'الفعلي', color: 'var(--s2)', values: arr(f.actual).map((v) => (v === null || v === undefined ? null : num(v))) },
             { id: 'forecast', label: 'المتوقع', color: 'var(--s3)', values: arr(f.forecast).map((v) => num(v)) },
           ],
-          labels: arr(f.months).map(String), height: 240, yFormat: (v) => fmt.compact(v), ariaLabel: 'اتجاه التكلفة: الميزانية مقابل الفعلي والمتوقع',
+          labels: arr(f.labels && f.labels.length ? f.labels : f.months).map((m) => (m instanceof Date ? fmt.date(m, { style: 'short' }) : String(m))), height: 240, yFormat: (v) => fmt.compact(v), ariaLabel: 'اتجاه التكلفة: الميزانية مقابل الفعلي والمتوقع',
         });
       }
       const fallbackTable = () => simpleTable(['الشهر', 'الميزانية', 'الفعلي', 'المتوقع'], arr(f && f.months).map((m, i) => [m, sar(arr(f.budget)[i]), arr(f.actual)[i] == null ? '—' : sar(arr(f.actual)[i]), sar(arr(f.forecast)[i])]));
@@ -385,11 +389,9 @@ export default {
         dense: true, pageSize: 6, emptyText: 'لا توجد أوامر تغيير في هذا النطاق', caption: 'أوامر التغيير',
         columns: [
           { key: 'code', label: 'الرمز', mono: true, render: (r) => mono(r.code) },
-          { key: 'title', label: 'العنوان', render: (r) => h('span', { class: 'truncate', title: r.title || '' }, r.title || '—') },
-          { key: 'amountSAR', label: 'القيمة', align: 'end', mono: true, render: (r) => sar(r.amountSAR), sortValue: (r) => num(r.amountSAR) },
-          { key: 'impactDays', label: 'الأثر (يوم)', align: 'end', mono: true, render: (r) => fmt.num(num(r.impactDays)) },
+          { key: 'title', label: 'الأمر', render: (r) => h('span', { class: 'stack', style: { gap: '2px' } }, h('span', { title: r.title || '' }, r.title || '—'), h('span', { class: 'text-xs muted' }, `${data.scopeId === 'portfolio' ? `${projectCode(data.state, r.projectId)} · ` : ''}أثر ${fmt.num(num(r.impactDays))} يوماً · قُدّم ${fmt.relative(r.submittedAt)}${r.driver ? ` · ${r.driver}` : ''}`)) },
+          { key: 'amountSAR', label: 'القيمة', align: 'end', render: (r) => h('span', { class: 'mono num nowrap' }, sar(r.amountSAR)), sortValue: (r) => num(r.amountSAR) },
           { key: 'status', label: 'الحالة', render: (r) => toneBadge(r.status || '—', CO_TONE[r.status] || 'neutral') },
-          { key: 'submittedAt', label: 'التقديم', render: (r) => h('span', { class: 'text-xs', title: fmt.date(r.submittedAt) }, fmt.relative(r.submittedAt)) },
         ],
         rows: data.changeOrders, initialSort: { key: 'amountSAR', dir: 'desc' },
       });
@@ -475,7 +477,7 @@ export default {
           { key: 'title', label: 'المخاطرة', render: (r) => h('span', { class: 'stack', style: { gap: '1px' } }, h('span', { class: 'truncate', title: r.title || '' }, r.title || '—'), h('span', { class: 'text-xs muted' }, projectCode(data.state, r.projectId))) },
           { key: 'type', label: 'النوع', render: (r) => typeChip(r.type) },
           { key: 'score', label: 'الدرجة', align: 'end', render: (r) => h('span', { class: 'row gap-2', style: { justifyContent: 'flex-end' } }, mono(fmt.num(num(r.score))), ratingBadge(r.score)), sortValue: (r) => num(r.score) },
-          { key: 'owner', label: 'المالك', render: (r) => r.owner || '—' },
+          { key: 'owner', label: 'المالك', render: (r) => { const o = String(r.owner || '—'); const short = o.split(/\s[—-]\s/)[0]; return h('span', { class: 'nowrap', title: o }, short); } },
           { key: 'status', label: 'الحالة', render: (r) => badge(r.status || '—', 'neutral') },
         ],
         rows, initialSort: { key: 'score', dir: 'desc' },

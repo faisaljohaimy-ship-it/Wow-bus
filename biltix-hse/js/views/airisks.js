@@ -440,7 +440,7 @@ export default {
 
     function flowStepper(risk) {
       const fallbackStage = { 'مغلق': 7, 'مهمة مُسندة': 6, 'قيد المعالجة': 6, 'تنبيه': 5, 'مُتجاوز': 4, 'مكتشف': 4 }[risk.status];
-      const stage = Math.max(0, Math.min(FLOW_STAGES.length - 1, num(viaPsel(psel, 'riskFlowStage', () => psel.riskFlowStage(risk), fallbackStage), 4)));
+      const stage = Math.max(0, Math.min(FLOW_STAGES.length - 1, num(viaPsel(psel, 'riskFlowStage', () => psel.riskFlowStage(risk, stateOf()), fallbackStage), 4)));
       return h('ol', { class: 'stepper is-sm risk-flow', 'aria-label': `مرحلة المخاطرة في مسار المعالجة: ${FLOW_STAGES[stage]}` }, FLOW_STAGES.map((label, i) => h('li', {
         class: ['step', i < stage ? 'is-done' : null, i === stage ? 'is-current' : null], 'aria-current': i === stage ? 'step' : undefined,
       }, h('span', { class: 'step-dot' }, i < stage ? glyph('good', 12) : null), h('span', { class: 'step-label' }, label))));
@@ -594,7 +594,8 @@ export default {
     }
 
     function timelineSection(risk, task) {
-      const items = (viaPsel(psel, 'riskTimeline', () => psel.riskTimeline(risk), null) || fallbackTimeline(risk, task)).slice().reverse();
+      const items = (viaPsel(psel, 'riskTimeline', () => psel.riskTimeline(risk, stateOf()), null) || fallbackTimeline(risk, task))
+        .slice().sort((a, b) => (Date.parse(a.at || a.ts || a.date) || 0) - (Date.parse(b.at || b.ts || b.date) || 0)).reverse();
       if (!items.length) return section('05', 'السجل الزمني', emptyState({ title: 'لا توجد أحداث مسجلة بعد' }));
       return section('05', 'السجل الزمني', h('ol', { class: 'timeline', 'aria-label': 'السجل الزمني للمخاطرة — الأحدث أولاً' }, items.map((it) => {
         const kind = text(it.kind || it.type) || 'history';

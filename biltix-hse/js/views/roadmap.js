@@ -228,7 +228,8 @@ export default {
         const span = Math.max(0.5, Math.min(months - start, m.duration));
         const tone = STATUS_TONE[m.status] || 'neutral';
         const bar = h('div', { class: ['roadmap-bar', m.status === 'منجز' ? 'is-done' : null, m.status === 'جارٍ' ? 'is-active' : null, m.status === 'قادم' ? 'is-upcoming' : null], 'data-status': m.status || 'قادم',
-          style: { '--start': String(Math.floor(start)), '--span': String(Math.max(1, Math.round(span))), position: 'absolute', insetBlockStart: '5px', blockSize: '22px', margin: '0', insetInlineStart: `calc(${((start / months) * 100).toFixed(3)}% + 2px)`, inlineSize: `calc(${((span / months) * 100).toFixed(3)}% - 4px)` },
+          // grid-column 1/-1 makes the whole track the containing block, so the percentage offsets below are exact.
+          style: { '--start': String(Math.floor(start)), '--span': String(Math.max(1, Math.round(span))), gridColumn: '1 / -1', gridRow: '1', position: 'absolute', insetBlockStart: '5px', blockSize: '22px', margin: '0', insetInlineStart: `calc(${((start / months) * 100).toFixed(3)}% + 2px)`, inlineSize: `calc(${((span / months) * 100).toFixed(3)}% - 4px)` },
           title: `${m.name || m.id} — ${m.status || ''} · من الشهر ${fmt.num(Math.floor(start) + 1)}، ${fmt.num(span, { maximumFractionDigits: 1 })} شهر` },
           glyph(tone, 12), h('span', {}, m.status || '—'));
         gantt.appendChild(h('div', { class: 'roadmap-row', role: 'row' },

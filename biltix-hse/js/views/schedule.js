@@ -411,19 +411,17 @@ export default {
         initialSort: { key: '_weighted', dir: 'desc' },
         columns: [
           { key: 'code', label: 'الرمز', mono: true, width: 96, render: (r) => mono(r.code) },
-          { key: 'name', label: 'النشاط', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.name), h('span', { class: 'text-xs muted row gap-2 wrap' }, mono(r.wbs || '—'), h('span', {}, r.trade || ''), r.weatherSensitive ? badge('حساس للطقس', 'warning', { icon: svgIcon('sun', 12) }) : null)) },
-          { key: 'projectId', label: 'المشروع', render: (r) => siteName(data.state, r.projectId), sortValue: (r) => siteName(data.state, r.projectId) },
+          { key: 'name', label: 'النشاط', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.name), h('span', { class: 'text-xs muted row gap-2 wrap', style: { alignItems: 'center' } }, mono(r.wbs || '—'), h('span', {}, r.trade || ''), h('span', {}, siteName(data.state, r.projectId)), r._sub ? h('span', {}, r._sub.name) : null, r.weatherSensitive ? badge('حساس للطقس', 'warning', { icon: svgIcon('sun', 12) }) : null)) },
           { key: 'finish', label: 'النهاية مقابل خط الأساس', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'nowrap' }, fmt.date(r.finish, { style: 'short' })), r._slip !== null && r._slip !== 0 ? badge(r._slip > 0 ? `+${daysWord(r._slip)}` : `−${daysWord(r._slip)}`, r._slip > 14 ? 'critical' : r._slip > 0 ? 'warning' : 'good') : badge('مطابق', 'good')), sortValue: (r) => r._slip ?? 0 },
           { key: 'floatDays', label: 'الفائض', align: 'end', render: (r) => h('span', { class: num(r.floatDays) <= 0 ? 'is-overdue semibold' : null }, `${fmt.num(num(r.floatDays))} يوم`), sortValue: (r) => num(r.floatDays) },
           { key: '_p', label: 'احتمال التأخير', render: (r) => probMeter(r._p, `احتمال تأخير ${r.code}`), sortValue: (r) => r._p },
           { key: '_exp', label: 'التأخير المتوقع', align: 'end', render: (r) => h('div', { class: 'stack gap-1', style: { alignItems: 'flex-end' } }, mono(`${fmt.num(r._exp)} يوم`), h('span', { class: 'text-xs muted nowrap' }, `مرجّح ${fmt.num(r._weighted, { maximumFractionDigits: 1 })}`)), sortValue: (r) => r._exp },
-          { key: 'subcontractor', label: 'مقاول الباطن', render: (r) => (r._sub ? r._sub.name : h('span', { class: 'muted' }, '—')), sortValue: (r) => (r._sub ? r._sub.name : '') },
         ],
         rows,
       });
       const el = card({
         code: 'SCH-01', title: 'انزلاق المسار الحرج', className: 'col-span-7',
-        subtitle: `${fmt.num(rows.length)} نشاطاً حرجاً — مرتبة حسب (احتمال التأخير × الأيام المتوقعة) · انقر لفتح النشاط`,
+        subtitle: `${fmt.num(rows.length)} نشاطاً حرجاً — مرتبة حسب (احتمال التأخير × الأيام المتوقعة) · السطر الثاني: WBS · الحرفة · المشروع · مقاول الباطن`,
         body: table.el,
       });
       el.dataset.section = 'critical';
@@ -533,9 +531,7 @@ export default {
         emptyText: data.search ? 'لا توجد موافقات مطابقة للبحث' : 'لا توجد موافقات ضمن هذا النطاق',
         initialSort: { key: '_ratio', dir: 'desc' },
         columns: [
-          { key: 'authority', label: 'الجهة', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.authority), h('span', { class: 'text-xs muted' }, siteName(data.state, r.projectId))) },
-          { key: 'type', label: 'نوع الموافقة' },
-          { key: 'submittedAt', label: 'تاريخ التقديم', render: (r) => fmt.date(r.submittedAt, { style: 'short' }), sortValue: (r) => (fmt.toDate(r.submittedAt) || new Date(0)).getTime() },
+          { key: 'authority', label: 'الجهة ونوع الموافقة', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.authority), h('span', { class: 'text-sm' }, r.type), h('span', { class: 'text-xs muted' }, `${siteName(data.state, r.projectId)} · قُدِّمت ${fmt.date(r.submittedAt, { style: 'short' })}`)) },
           { key: '_ratio', label: 'المنقضي / النظامي', render: (r) => ratioMeter(r.elapsedDays, r.statutoryDays, `المدة المنقضية لموافقة ${r.authority}`), sortValue: (r) => r._ratio },
           { key: 'status', label: 'الحالة', render: (r) => statusBadge(r.status, APPROVAL_STATUS_TONE) },
           { key: 'riskScore', label: 'الدرجة', render: (r) => scoreCell(r.riskScore), sortValue: (r) => num(r.riskScore) },
@@ -560,7 +556,9 @@ export default {
       const rows = data.subcontractors;
       const scoreTone = (v) => (v >= 80 ? 'good' : v >= 60 ? 'warning' : 'critical');
       const scoreLabel = (v) => (v >= 80 ? 'جيد' : v >= 60 ? 'مقبول' : 'ضعيف');
-      const list = rows.length ? h('ul', { class: 'urgent-list', 'aria-label': 'أداء مقاولي الباطن' }, ...rows.map((s) => {
+      // Two-up at wide widths when the list is long, so the card stays level with the approvals table.
+      const listStyle = rows.length > 6 ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '8px' } : undefined;
+      const list = rows.length ? h('ul', { class: 'urgent-list', 'aria-label': 'أداء مقاولي الباطن', style: listStyle }, ...rows.map((s) => {
         const sc = num(s.scorecard);
         const spark = makeChart('sparkline', { values: (s.trend || []).map(num), width: 88, height: 26, color: 'var(--ink-3)', accentLast: true });
         return h('li', { class: ['urgent-item', `tone-${scoreTone(sc)}`] },

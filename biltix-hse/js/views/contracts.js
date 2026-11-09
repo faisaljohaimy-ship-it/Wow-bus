@@ -471,8 +471,7 @@ export default {
         initialSort: { key: 'riskScore', dir: 'desc' },
         columns: [
           { key: 'code', label: 'الرمز', mono: true, width: 120, render: (r) => mono(r.code) },
-          { key: 'title', label: 'العقد', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.title), h('span', { class: 'text-xs muted' }, siteName(data.state, r.projectId))) },
-          { key: 'counterparty', label: 'الطرف المقابل' },
+          { key: 'title', label: 'العقد والطرف المقابل', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.title), h('span', { class: 'text-xs muted' }, `${r.counterparty || '—'} · ${siteName(data.state, r.projectId)}`)) },
           { key: 'type', label: 'النوع', render: (r) => badge(r.type || '—', r.type === SUBCONTRACT_TYPE ? 'accent' : 'neutral') },
           { key: 'valueSAR', label: 'القيمة', align: 'end', render: (r) => mono(sar(r.valueSAR)), sortValue: (r) => Number(r.valueSAR) || 0 },
           { key: '_flagged', label: 'بنود مُعلَّمة', align: 'center', render: (r) => (r._flagged ? badge(fmt.num(r._flagged), ratingTone(ratingOf(r._maxSev))) : badge('0', 'good')), sortValue: (r) => r._flagged },
@@ -521,8 +520,7 @@ export default {
         onRowClick: (r) => openContract(data, r.contract, r.clauseId),
         initialSort: { key: 'severity', dir: 'desc' },
         columns: [
-          { key: 'code', label: 'العقد', mono: true, render: (r) => h('div', { class: 'stack gap-1' }, mono(r.code), h('span', { class: 'text-xs muted' }, r.counterparty)) },
-          { key: 'ref', label: 'المادة', mono: true, render: (r) => h('div', { class: 'stack gap-1' }, mono(`§${r.ref}`), h('span', { class: 'text-xs' }, r.title)) },
+          { key: 'code', label: 'العقد والمادة', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, mono(r.code), mono(`§${r.ref}`, 'semibold')), h('span', { class: 'text-sm' }, r.title), h('span', { class: 'text-xs muted' }, r.counterparty)), sortValue: (r) => `${r.code} ${r.ref}` },
           { key: 'flag', label: 'العلامة', render: (r) => flagBadge(r.clause) },
           { key: 'severity', label: 'الخطورة', render: (r) => scoreCell(r.severity), sortValue: (r) => r.severity },
           { key: 'status', label: 'الحالة', render: (r) => statusBadge(r.status, CLAUSE_STATUS_TONE) },

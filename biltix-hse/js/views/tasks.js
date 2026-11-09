@@ -213,7 +213,7 @@ export default {
       const inSite = (t) => !filters.siteId || filters.siteId === 'all' || t.projectId === filters.siteId;
       const all = (platformOf().tasks || []).filter(inSite);
       const open = tasks.filter((t) => t.status !== 'مغلقة');
-      const fromPsel = viaPsel(psel, 'overdueTasks', () => psel.overdueTasks(stateOf()), null);
+      const fromPsel = viaPsel(psel, 'overdueTasks', () => psel.overdueTasks(stateOf(), filters, now), null);
       const overdue = open.filter((t) => t.status === 'متأخرة' || isOverdue(t.dueDate, now) || (Array.isArray(fromPsel) && fromPsel.some((o) => o && o.id === t.id)));
       const closed = all.filter((t) => t.status === 'مغلقة');
       const closedThisMonth = closed.filter((t) => sameMonth(t.closedAt, now)).length;
