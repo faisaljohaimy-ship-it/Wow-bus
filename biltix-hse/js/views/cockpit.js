@@ -200,6 +200,24 @@ export default {
     }
     const tableViewOf = (chart) => (chart && typeof chart.table === 'function' ? () => chart.table() : null);
 
+    /**
+     * charts.gauge colours itself with Safety-Index semantics (higher = better). The consolidated
+     * risk score is the inverse (higher = worse), so recolour the arc/track from the rating tone
+     * and hide the gauge's own tone chip — the rating badge beside the gauge carries icon + label.
+     */
+    function invertGaugeTone(gauge, tone, ariaLabel) {
+      const el = gauge && gauge.el instanceof Node ? gauge.el : gauge;
+      if (!(el instanceof Element)) return;
+      try {
+        const color = `var(--${tone})`;
+        const arc = el.querySelector('.gauge-arc'); const track = el.querySelector('.gauge-track'); const chip = el.querySelector('.gauge-chip'); const svg = el.querySelector('svg');
+        if (arc) arc.style.stroke = color;
+        if (track) track.style.stroke = `color-mix(in srgb, ${color} 22%, var(--bg-2))`;
+        if (chip) chip.style.display = 'none';
+        if (svg) svg.setAttribute('aria-label', ariaLabel);
+      } catch (err) { warnOnce('gauge.invert', err); }
+    }
+
     function fallbackGauge(score, rating, label) {
       return h('div', { class: 'stack gap-1 gauge-fallback', style: { alignItems: 'center' } },
         scoreNum(score, rating), h('span', { class: 'muted text-xs' }, label), progress({ value: score, max: 100, tone: ratingTone(psel, rating), label }));
@@ -321,8 +339,9 @@ export default {
       const score = Math.round(num(c.score));
       const rating = c.rating || ratingOf(psel, score);
       const tone = ratingTone(psel, rating);
-      const gauge = chartOr('gauge', () => charts.gauge({ value: score, max: 100, size: 196, label: 'الدرجة الموحدة', sublabel: ratingLabel(psel, rating) }), () => fallbackGauge(score, rating, 'الدرجة الموحدة'));
-      const gaugeWrap = h('div', { class: ['score-hero-gauge', `tone-${tone}`], 'data-rating': rating, role: 'img', 'aria-label': `الدرجة الموحدة للمخاطر ${fmt.num(score)} من 100 — تصنيف ${ratingLabel(psel, rating)}` }, gauge);
+      const gauge = chartOr('gauge', () => charts.gauge({ value: score, max: 100, size: 196, label: 'الدرجة الموحدة من 100', sublabel: '' }), () => fallbackGauge(score, rating, 'الدرجة الموحدة'));
+      invertGaugeTone(gauge, tone, `الدرجة الموحدة للمخاطر ${fmt.num(score)} من 100 — تصنيف ${ratingLabel(psel, rating)}`);
+      const gaugeWrap = h('div', { class: ['score-hero-gauge', `tone-${tone}`], 'data-rating': rating }, gauge);
       const trend = Array.isArray(c.trend) ? c.trend.filter(isNum) : [];
       const spark = trend.length >= 2 ? chartOr('sparkline', () => charts.sparkline({ values: trend, width: 160, height: 34, color: 'var(--ink-3)', accentLast: true }), () => null) : null;
       const weights = c.weights && typeof c.weights === 'object' ? c.weights : {};

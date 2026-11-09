@@ -546,7 +546,7 @@ function render(container, ctx) {
     const header = h('header', { class: 'row between wrap gap-3 report-section-head' },
       h('div', { class: 'row gap-2 wrap' }, h('span', { class: 'code-tag' }, code), h('h2', { id, class: 'report-section-title' }, title)),
       lead ? h('p', { class: 'muted text-sm' }, lead) : null);
-    return h('section', { class: ['report-section', 'stack', 'gap-3', breakBefore ? 'print-break' : null], 'aria-labelledby': id }, header, narrative);
+    return h('section', { class: ['report-section', 'stack', 'gap-3', 'print-avoid', breakBefore ? 'print-break' : null], 'aria-labelledby': id }, header, narrative);
   }
 
   /** Section object produced by sources.buildReport (when the engine returned one). */
@@ -644,7 +644,7 @@ function render(container, ctx) {
   function summarySection(d) {
     const k = d.kpis;
     const paragraphs = summaryParagraphs(d);
-    const strip = h('div', { class: 'summary-strip' },
+    const strip = h('div', { class: 'summary-strip', style: { gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' } },
       stripCell('مؤشر السلامة', fmt.num(k.safetyIndex), '/100', k.deltas.safetyIndex, 'up'),
       stripCell('البلاغات في الفترة', fmt.num(k.incidentsInPeriod), '', k.deltas.incidentsInPeriod, 'down'),
       stripCell('المخاطر الحرجة المفتوحة', fmt.num(k.criticalRisks), '', k.deltas.criticalRisks, 'down'),
@@ -712,7 +712,7 @@ function render(container, ctx) {
       () => charts.barChart({ items: causes.map((c) => ({ id: c.label, label: c.label, value: c.value })), horizontal: true, height: Math.max(140, causes.length * 34), valueFormat: fmt.num, color: 'var(--s1)', showValues: true, maxBars: 6, ariaLabel: 'الأسباب الجذرية الأكثر تكراراً' }),
       () => simpleTable('الأسباب الجذرية', ['السبب الجذري', 'العدد', 'النسبة', 'التراكمي'], causes.map((c) => [c.label, fmt.num(c.value), fmt.pct(c.pct), fmt.pct(c.cumulativePct)])),
     );
-    const sec = sectionEl('RPT-03', 'الحوادث', `${copy.count(d.kpis.incidentsInPeriod, NOUNS.report)} خلال الفترة، ${fmt.num(d.kpis.openIncidents)} ما تزال مفتوحة.`, { breakBefore: true, narrative: narrativeBlock(d, 'incidents') });
+    const sec = sectionEl('RPT-03', 'الحوادث', `${copy.count(d.kpis.incidentsInPeriod, NOUNS.report)} خلال الفترة، ${fmt.num(d.kpis.openIncidents)} ما تزال مفتوحة.`, { narrative: narrativeBlock(d, 'incidents') });
     sec.appendChild(h('div', { class: 'grid-12' },
       h('div', { class: 'col-span-7' }, chartCard({ code: 'RPT-03A', title: 'اتجاه الحوادث', subtitle: 'الحوادث مقابل الحوادث الوشيكة لكل أسبوع', chart: line })),
       h('div', { class: 'col-span-5' }, chartCard({ code: 'RPT-03B', title: 'حسب النوع', subtitle: 'توزيع البلاغات ضمن فترة التقرير', chart: seg })),
@@ -810,7 +810,7 @@ function render(container, ctx) {
         h('span', { class: 'stack gap-1' }, h('strong', {}, x.worker.name), h('span', { class: 'muted text-xs' }, x.course.name)),
         badge(fmt.date(x.expiresAt, { style: 'short' }), x.tone || 'warning'))))
       : h('p', { class: 'muted text-sm' }, 'لا توجد شهادات تنتهي خلال الستين يوماً القادمة.');
-    const sec = sectionEl('RPT-06', 'التدريب', `الامتثال التدريبي ${fmt.pct(d.kpis.trainingCompliance)} — الهدف ${fmt.pct(TRAINING_TARGET)} لكل دورة إلزامية.`, { breakBefore: true, narrative: narrativeBlock(d, 'training') });
+    const sec = sectionEl('RPT-06', 'التدريب', `الامتثال التدريبي ${fmt.pct(d.kpis.trainingCompliance)} — الهدف ${fmt.pct(TRAINING_TARGET)} لكل دورة إلزامية.`, { narrative: narrativeBlock(d, 'training') });
     sec.appendChild(h('div', { class: 'grid-12' },
       h('div', { class: 'col-span-7' }, items.length
         ? chartCard({ code: 'RPT-06A', title: 'إتمام الدورات التدريبية', subtitle: 'نسبة العمال الحاصلين على شهادة سارية لكل دورة', chart: bars })
@@ -962,15 +962,16 @@ function render(container, ctx) {
 
   function printCover(d) {
     const cover = h('header', { class: 'report-only is-row report-cover' },
-      h('div', { class: 'row gap-3' }, lockup(), h('div', { class: 'stack gap-1' },
+      h('div', { class: 'stack gap-2', style: { flex: '1 1 auto', minInlineSize: '0' } },
+        lockup(),
         h('div', { class: 'report-cover-title' }, d.period.title),
         h('div', {}, `${d.period.label} · ${d.period.rangeLabel}`),
-        h('div', {}, d.site ? `النطاق: ${d.site.name} (${d.site.code || d.site.id})` : 'النطاق: جميع المواقع'))),
-      h('div', { class: 'report-cover-meta' },
+        h('div', {}, d.site ? `النطاق: ${d.site.name} (${d.site.code || d.site.id})` : 'النطاق: جميع المواقع')),
+      h('div', { class: 'report-cover-meta stack gap-1', style: { flex: '0 0 auto', whiteSpace: 'nowrap', fontFamily: 'var(--font-sans)' } },
         h('div', {}, `إعداد: ${PREPARED_BY}`),
         h('div', {}, `تاريخ الإصدار: ${fmt.date(d.now)}`),
         h('div', {}, `${fmt.hijri(d.now)}`),
-        h('div', {}, `المرجع: HSE-RPT-${isoDate(d.now).replace(/-/g, '')}`)));
+        h('div', { class: 'row gap-1', style: { justifyContent: 'flex-end' } }, 'المرجع: ', h('span', { class: 'mono' }, `HSE-RPT-${isoDate(d.now).replace(/-/g, '')}`))));
     return cover;
   }
 

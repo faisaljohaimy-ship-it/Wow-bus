@@ -336,9 +336,10 @@ export default {
     }
 
     /* ───────────── radar cards ───────────── */
-    function radarCard({ code, title, subtitle, caption, wide, large, landscape, legend, tableView, sideTitle, actions = [] }) {
+    function radarCard({ code, title, subtitle, caption, wide, large, landscape, legend, tableView, sideTitle, actions = [], sideBadges = [] }) {
       const canvas = h('canvas', { class: 'radar-canvas', role: 'img', 'aria-label': title });
-      const captionEl = h('span', { class: 'radar-caption' }, caption);
+      // Mono caption only where no rim labels can collide with it (the site plan); dials carry it in the card subtitle.
+      const captionEl = h('span', { class: 'radar-caption', hidden: !caption }, caption || '');
       // The site plan is a 30°-sheared parallelogram → 4:3 frame (`.is-landscape`); the dials stay square.
       const frame = h('div', { class: ['radar-frame', landscape ? 'is-landscape' : 'is-wide', large ? 'is-hero' : null] },
         canvas, h('span', { class: 'radar-status' }, C.liveDot('accent'), 'مباشر'), captionEl);
@@ -347,7 +348,7 @@ export default {
       const tele = h('ul', { class: 'radar-telemetry', role: 'list' });
       const updatedText = h('span', {});
       const side = h('div', { class: 'radar-side' },
-        h('span', { class: 'radar-side-title' }, sideTitle),
+        h('div', { class: 'row between wrap' }, h('span', { class: 'radar-side-title' }, sideTitle), ...sideBadges),
         tele,
         toneLegend(legend),
         h('span', { class: 'tele-updated' }, ico('clock', 13), updatedText));
@@ -358,7 +359,7 @@ export default {
 
     const sweepCard = radarCard({
       code: 'RDR-01', title: 'رادار المخاطر', subtitle: 'المخاطر المفتوحة موزعة على 12 قطاعًا بحسب فئة الخطر — الأشد تقترب من المركز',
-      caption: `SWEEP · ${SWEEP_DEG_PER_SEC}°/s · 12 SECTORS`, wide: true, large: true, sideTitle: 'القياسات',
+      wide: true, large: true, sideTitle: 'القياسات',
       legend: TIERS.map((t) => ({ tone: t.tone, label: t.tier })),
       tableView: () => simpleTable('المخاطر الظاهرة على الرادار', ['الكود', 'الخطر', 'الموقع', 'الفئة', 'الدرجة', 'المستوى'],
         currentBlips().map((b) => [String(b.code || ''), String(b.label || ''), siteName(b.siteId) || '—', categoryName(b.categoryId), fmt.num(Number(b.score) || 0), String(b.tier || '')]),
@@ -367,7 +368,7 @@ export default {
     const sensorSiteBadge = C.badge('', 'neutral', { icon: ico('building', 12) });
     const sensorCard = radarCard({
       code: 'RDR-02', title: 'رادار الحساسات', subtitle: 'قراءات لحظية من بوابة الحساسات (غازات، ضوضاء، حرارة، غبار، رياح) مقابل حدود الإنذار',
-      caption: 'SENSOR', wide: false, sideTitle: 'القراءات الحية', actions: [sensorSiteBadge],
+      wide: false, sideTitle: 'القراءات الحية', sideBadges: [sensorSiteBadge],
       legend: [{ tone: 'accent', label: 'القراءة الحية' }, { tone: 'warning', label: 'قريب من الحد' }, { tone: 'critical', label: 'تجاوز حد الإنذار' }],
       tableView: () => {
         const axes = currentAxes;
@@ -379,7 +380,7 @@ export default {
     const planSiteBadge = C.badge('', 'neutral', { icon: ico('building', 12) });
     const planCard = radarCard({
       code: 'RDR-03', title: 'رادار مخطط الموقع', subtitle: 'مناطق الموقع بمنظور أيزومتري مع حركة العمال والمعدات ونبضات مواضع الخطر',
-      caption: 'PLAN', wide: false, landscape: true, sideTitle: 'الحركة على الموقع', actions: [planSiteBadge],
+      caption: 'PLAN', wide: false, landscape: true, sideTitle: 'الحركة على الموقع', sideBadges: [planSiteBadge],
       legend: [{ tone: 'neutral', label: 'عامل' }, { tone: 'accent', label: 'مركبة / رافعة' }, { tone: 'critical', label: 'خطر حرج' }, { tone: 'serious', label: 'خطر عالٍ' }, { tone: 'warning', label: 'خطر متوسط' }],
       tableView: () => {
         const site = siteById(followedSite);
@@ -391,7 +392,7 @@ export default {
     });
     const complianceCard = radarCard({
       code: 'RDR-04', title: 'رادار الامتثال ISO 45001', subtitle: `درجات بنود المعيار من 4 إلى 10 مقابل حلقة المستهدف ${fmt.pct(ISO_TARGET)} — الفجوات مظللة`,
-      caption: 'ISO 45001 · CLAUSES 4–10', wide: true, large: true, sideTitle: 'درجات البنود',
+      wide: true, large: true, sideTitle: 'درجات البنود',
       legend: [{ tone: 'accent', label: 'درجة البند' }, { tone: 'neutral', label: `المستهدف ${fmt.pct(ISO_TARGET)}` }, { tone: 'warning', label: 'فجوة دون المستهدف' }],
       tableView: () => simpleTable('درجات بنود ISO 45001', ['البند', 'الدرجة', 'الفجوات', 'الحالة'],
         isoClauses().map((c) => [`${c.id} — ${c.title}`, fmt.pct(Number(c.score) || 0), fmt.num(Number(c.gaps) || 0), (Number(c.score) || 0) >= ISO_TARGET ? 'ضمن المستهدف' : 'دون المستهدف']), [false, true, true, false]),
@@ -484,7 +485,6 @@ export default {
         getPings: () => pingsFor(followedSite),
         getHazards: () => hazardsFor(followedSite),
       }, 'SitePlanRadar');
-      sensorCard.captionEl.textContent = `SENSOR · ${(sensorSiteObj && sensorSiteObj.code) || followedSite}`;
       planCard.captionEl.textContent = `PLAN · ${(site && site.code) || followedSite}`;
       sensorCard.canvas.setAttribute('aria-label', `رادار الحساسات — ${sensorSiteObj ? sensorSiteObj.name : ''}`);
       planCard.canvas.setAttribute('aria-label', `رادار مخطط الموقع — ${site ? site.name : ''}`);

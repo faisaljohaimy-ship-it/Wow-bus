@@ -241,8 +241,7 @@ export default {
     const canvas = h('canvas', { class: 'radar-canvas', role: 'img', 'aria-label': 'رادار المخاطر الحي' });
     const frame = h('div', { class: 'radar-frame is-wide' },
       canvas,
-      h('span', { class: 'radar-status' }, C.liveDot('accent'), 'مباشر'),
-      h('span', { class: 'radar-caption' }, 'SWEEP · 12 SECTORS · 22°/s'));
+      h('span', { class: 'radar-status' }, C.liveDot('accent'), 'مباشر'));
     const tip = h('div', { class: 'tooltip radar-tip', hidden: true, style: { position: 'absolute', insetBlockStart: '0', insetInlineStart: '0', pointerEvents: 'none', zIndex: '2' } });
     const radarWrap = h('div', { style: { position: 'relative', maxInlineSize: '560px', marginInline: 'auto', inlineSize: '100%' } }, frame, tip);
     const radarLegendHost = h('div');
@@ -282,7 +281,8 @@ export default {
       code: 'PTW-STS', title: 'تصاريح العمل حسب الحالة', subtitle: 'توزيع التصاريح ضمن النطاق المحدد',
       body: h('div', { class: 'stack gap-3' }, permitsHost, permitsListHost), tableView: permitsTable, className: 'col-span-4',
     });
-    root.appendChild(h('div', { class: 'grid-12' }, matrixCard, trendCard, permitsCard));
+    const row3 = h('div', { class: 'grid-12' }, matrixCard, trendCard, permitsCard);
+    root.appendChild(row3);
 
     /* ───────────── row 4: sites + urgent ───────────── */
     const sitesHost = h('div');
@@ -301,6 +301,51 @@ export default {
     root.appendChild(h('div', { class: 'grid-12' }, sitesCard, urgentCard));
 
     container.appendChild(root);
+
+    /* ───────────── width-aware layout (rows 3–4) ─────────────
+       With the live feed open the main column is ~840px at 1440px. Below 1100px three cards per
+       row squeeze chart titles into four lines and hide the sites table's trailing columns, so the
+       trend chart and the sites table take the full row and the urgent list goes two-up. */
+    let narrowLayout = false;
+    const setSpan = (el, n) => {
+      ['col-span-4', 'col-span-6', 'col-span-8', 'col-span-12'].forEach((c) => el.classList.remove(c));
+      el.classList.add(`col-span-${n}`);
+    };
+    const styleUrgentList = (list) => {
+      if (!list) return;
+      if (narrowLayout && root.getBoundingClientRect().width >= 640) {
+        list.style.display = 'grid';
+        list.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+        list.style.alignItems = 'start';
+      } else {
+        list.style.display = '';
+        list.style.gridTemplateColumns = '';
+        list.style.alignItems = '';
+      }
+    };
+    const applyLayout = (w) => {
+      const narrow = w < 1100;
+      if (narrow === narrowLayout && row3.dataset.layout) return;
+      narrowLayout = narrow;
+      row3.dataset.layout = narrow ? 'narrow' : 'wide';
+      if (narrow) {
+        setSpan(matrixCard, 6); setSpan(permitsCard, 6); setSpan(trendCard, 12);
+        row3.append(matrixCard, permitsCard, trendCard);
+        setSpan(sitesCard, 12); setSpan(urgentCard, 12);
+      } else {
+        setSpan(matrixCard, 4); setSpan(trendCard, 4); setSpan(permitsCard, 4);
+        row3.append(matrixCard, trendCard, permitsCard);
+        setSpan(sitesCard, 8); setSpan(urgentCard, 4);
+      }
+      styleUrgentList(urgentHost.querySelector('.urgent-list'));
+    };
+    let layoutObserver = null;
+    if (typeof ResizeObserver === 'function') {
+      layoutObserver = new ResizeObserver((entries) => { for (const e of entries) applyLayout(e.contentRect.width); });
+      layoutObserver.observe(root);
+    } else {
+      applyLayout(root.getBoundingClientRect().width || 1200);
+    }
 
     /* ───────────── data helpers ───────────── */
     function openRisks(st, f) {
@@ -507,7 +552,7 @@ export default {
         urgentHost.replaceChildren(C.emptyState({ icon: ico('check', 32), title: 'كل شيء ضمن المواعيد', text: 'لا توجد مخاطر متأخرة أو تصاريح على وشك الانتهاء أو تفتيشات متأخرة في هذا النطاق.' }));
         return;
       }
-      urgentHost.replaceChildren(h('ul', { class: 'urgent-list', role: 'list' }, items.map((a) => {
+      const list = h('ul', { class: 'urgent-list', role: 'list' }, items.map((a) => {
         const meta = KIND_META[a.kind] || { label: 'إجراء', icon: 'alert' };
         const tone = a.tone || 'warning';
         const dueMs = parseMs(a.due);
@@ -520,7 +565,9 @@ export default {
           h('span', { class: 'urgent-due' },
             C.badge(TONE_LABEL[tone] || tone, tone),
             h('span', {}, Number.isFinite(dueMs) ? (overdue ? `منذ ${fmt.date(a.due, { style: 'short' })}` : fmt.date(a.due, { style: 'short' })) : '—'))));
-      })));
+      }));
+      styleUrgentList(list);
+      urgentHost.replaceChildren(list);
     }
 
     function renderRadarMeta(st, f) {
@@ -667,6 +714,7 @@ export default {
       subs.splice(0).forEach((off) => { try { off(); } catch { /* ignore */ } });
       timers.splice(0).forEach((t) => { clearInterval(t); clearTimeout(t); });
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      if (layoutObserver) { try { layoutObserver.disconnect(); } catch { /* ignore */ } layoutObserver = null; }
       if (sweep) {
         try { if (typeof sweep.stop === 'function') sweep.stop(); } catch { /* ignore */ }
         try { if (R.radarLoop && typeof R.radarLoop.remove === 'function') R.radarLoop.remove(sweep); } catch { /* ignore */ }

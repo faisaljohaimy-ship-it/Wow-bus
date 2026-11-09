@@ -90,7 +90,7 @@ export default {
 
     function legendItem(statusKey, count) {
       const s = STATUS[statusKey];
-      const key = h('span', { class: 'legend-key', style: { '--key': s.color, background: s.color } });
+      const key = h('span', { class: 'legend-key', style: { '--key': s.color, background: s.color, boxShadow: 'inset 0 0 0 1px var(--line-2)' } });
       const g = glyph(s.tone, 12);
       return h('span', { class: ['matrix-legend-item', `tone-${s.tone}`] },
         key,
@@ -271,7 +271,13 @@ export default {
         rows, cols, cells,
         colorFor: (v) => STATUS[STATUS_BY_CODE[v] || 'missing'].color,
         labelFor: (v) => STATUS[STATUS_BY_CODE[v] || 'missing'].glyph,
-        onCellClick: (v, ri, ci) => openWorker(data, data.shownWorkers[ri], data.courses[ci] ? data.courses[ci].id : null),
+        // charts.js may call onCellClick(value, ri, ci) per the contract or onCellClick({value, ri, ci, row, col}); accept both.
+        onCellClick: (a, b, c) => {
+          const info = a && typeof a === 'object' ? a : { value: a, ri: b, ci: c };
+          const ri = Number(info.ri); const ci = Number(info.ci);
+          if (!Number.isInteger(ri) || !data.shownWorkers[ri]) return;
+          openWorker(data, data.shownWorkers[ri], Number.isInteger(ci) && data.courses[ci] ? data.courses[ci].id : null);
+        },
         cellSize: 'auto',
         ariaLabel: 'مصفوفة التدريب: حالة شهادات العمال في كل دورة تدريبية',
         rowTitle: 'العامل',

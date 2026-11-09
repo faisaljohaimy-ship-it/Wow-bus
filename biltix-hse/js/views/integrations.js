@@ -145,7 +145,7 @@ export default {
     function sparkFor(g) {
       const id = g.id;
       const values = history.has(id) ? history.get(id) : seedHistory(g);
-      if (!values.length) return h('span', { class: 'text-xs muted' }, 'لا توجد قراءات بعد');
+      if (!values.length || (g.status === 'configurable' && values.every((v) => !v))) return h('span', { class: 'text-xs muted' }, 'لا توجد قراءات بعد');
       if (charts && typeof charts.sparkline === 'function') {
         try {
           const sp = charts.sparkline({ values, width: 120, height: 28, color: 'var(--ink-3)', accentLast: true });
@@ -302,11 +302,12 @@ export default {
       const hasSync = g.lastSync && g.status !== 'configurable';
       refs.sync.textContent = hasSync ? fmt.relative(g.lastSync) : '—';
       refs.sync.title = hasSync ? fmt.dateTime(g.lastSync) : '';
-      refs.latency.textContent = g.status === 'configurable' || !Number.isFinite(Number(g.latencyMs)) ? '—' : `${fmt.num(g.latencyMs)} م.ث`;
+      const latency = g.latencyMs === null || g.latencyMs === undefined || g.latencyMs === '' ? NaN : Number(g.latencyMs);
+      refs.latency.textContent = g.status === 'configurable' || !Number.isFinite(latency) ? '—' : `${fmt.num(latency)} م.ث`;
       refs.events.textContent = g.status === 'configurable' ? '—' : fmt.num(g.eventsPerHour || 0);
       refs.footSync.replaceChildren(glyph('clock', 12), h('span', {}, hasSync ? `آخر مزامنة ${fmt.relative(g.lastSync)}` : 'لم تتم المزامنة بعد'));
       refs.sparkHost.replaceChildren(sparkFor(g));
-      const uptime = Number(g.uptimePct);
+      const uptime = g.uptimePct === null || g.uptimePct === undefined || g.uptimePct === '' ? NaN : Number(g.uptimePct);
       const realType = testTypeFor(g);
       refs.meta.replaceChildren(...[
         badge(CATEGORY_LABEL[g.category] || g.category || 'غير مصنف', 'neutral', { icon: svgIcon('grid', 12) }),

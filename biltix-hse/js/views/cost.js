@@ -257,7 +257,8 @@ export default {
       const cell = h('div', { class: ['evm-cell', `tone-${tone}`], 'data-tone': tone, 'data-metric': code });
       cell.appendChild(h('span', { class: 'evm-label' }, h('abbr', { class: 'mono evm-abbr', title: label }, code), h('span', {}, label)));
       cell.appendChild(h('span', { class: 'evm-value mono num' }, value));
-      cell.appendChild(h('span', { class: 'evm-status' }, toneBadge(statusLabel, tone), formulaHint(formula)));
+      cell.appendChild(h('span', { class: 'evm-status' }, toneBadge(statusLabel, tone)));
+      cell.appendChild(h('span', { class: 'evm-hint', style: { whiteSpace: 'nowrap' } }, formulaHint(formula)));
       if (hint) cell.appendChild(h('span', { class: 'evm-hint' }, hint));
       return cell;
     }
@@ -275,17 +276,18 @@ export default {
         evmCell({ code: 'VAC', label: 'الانحراف عند الإنجاز', value: `${e.VAC < 0 ? '−' : ''}${sar(Math.abs(e.VAC))}`, tone: vacTone(e.VAC), statusLabel: vacLabel(e.VAC), formula: 'VAC = BAC − EAC', hint: e.VAC < 0 ? 'قيمة سالبة: التكلفة المتوقعة تتجاوز الميزانية' : 'قيمة موجبة: وفر متوقع مقابل الميزانية' }),
       );
 
-      const facts = h('div', { class: 'hero-facts evm-facts', style: { gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' } },
+      const signedSar = (v) => `${v < 0 ? '−' : ''}${sar(Math.abs(v))}`;
+      const facts = h('div', { class: 'hero-facts evm-facts', style: { gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' } },
         ...[
-          ['BAC', 'الميزانية عند الإنجاز', sarFull(e.BAC), 'neutral'],
-          ['PV', 'القيمة المخططة', sarFull(e.PV), 'neutral'],
-          ['EV', 'القيمة المكتسبة', sarFull(e.EV), 'neutral'],
-          ['AC', 'التكلفة الفعلية', sarFull(e.AC), 'neutral'],
-          ['SV', 'انحراف الجدول (EV − PV)', `${e.SV < 0 ? '−' : ''}${sarFull(Math.abs(e.SV))}`, e.SV >= 0 ? 'good' : 'warning'],
-          ['CV', 'انحراف التكلفة (EV − AC)', `${e.CV < 0 ? '−' : ''}${sarFull(Math.abs(e.CV))}`, e.CV >= 0 ? 'good' : 'critical'],
-        ].map(([code, label, value, tone]) => h('div', { class: ['fact', `tone-${tone}`] },
+          ['BAC', 'الميزانية عند الإنجاز', sar(e.BAC), sarFull(e.BAC), 'neutral'],
+          ['PV', 'القيمة المخططة', sar(e.PV), sarFull(e.PV), 'neutral'],
+          ['EV', 'القيمة المكتسبة', sar(e.EV), sarFull(e.EV), 'neutral'],
+          ['AC', 'التكلفة الفعلية', sar(e.AC), sarFull(e.AC), 'neutral'],
+          ['SV', 'انحراف الجدول (EV − PV)', signedSar(e.SV), `${e.SV < 0 ? '−' : ''}${sarFull(Math.abs(e.SV))}`, e.SV >= 0 ? 'good' : 'warning'],
+          ['CV', 'انحراف التكلفة (EV − AC)', signedSar(e.CV), `${e.CV < 0 ? '−' : ''}${sarFull(Math.abs(e.CV))}`, e.CV >= 0 ? 'good' : 'critical'],
+        ].map(([code, label, value, full, tone]) => h('div', { class: ['fact', `tone-${tone}`], title: full },
           h('span', { class: 'fact-label row gap-1' }, mono(code, ['text-xs']), h('span', {}, label)),
-          h('span', { class: 'fact-value mono num' }, value),
+          h('span', { class: 'fact-value mono num row gap-1' }, tone === 'neutral' ? null : glyph(tone, 13), h('span', {}, value)),
         )),
       );
 

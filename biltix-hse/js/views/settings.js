@@ -264,7 +264,7 @@ function render(container, ctx) {
       'aria-checked': checked ? 'true' : 'false', 'aria-labelledby': labelId, 'aria-describedby': hintId || undefined,
       onClick: () => { const next = sw.getAttribute('aria-checked') !== 'true'; set(next); onChange(next); },
     });
-    const el = h('div', { class: 'field is-inline' }, sw, h('label', { class: 'field-label', id: labelId, for: id }, label), hint ? h('p', { class: 'field-hint', id: hintId }, hint) : null);
+    const el = h('div', { class: 'field is-inline', style: { flexWrap: 'wrap' } }, sw, h('label', { class: 'field-label', id: labelId, for: id }, label), hint ? h('p', { class: 'field-hint', id: hintId }, hint) : null);
     return { el, set };
   }
 

@@ -205,9 +205,9 @@ export default {
       const chart = items.length ? makeChart('barChart', { items, horizontal: true, height: Math.max(160, items.length * 30 + 40), valueFormat: (v) => fmt.pct(v, 1), color: 'var(--s1)', showValues: true, maxBars: 12, sorted: false, ariaLabel: 'معدل الاجتياز حسب المصدر' }) : null;
       const weakest = items[0];
       return card({
-        code: 'DQ-02', title: 'معدل الاجتياز حسب المصدر', subtitle: 'الأدنى أولاً — المصادر التي تحتاج تنظيفاً عند المنبع',
+        code: 'DQ-02', title: 'معدل الاجتياز حسب المصدر', subtitle: weakest ? `الأدنى أولاً — «${weakest.label}» يحتاج تنظيفاً عند المنبع` : 'الأدنى أولاً — المصادر التي تحتاج تنظيفاً عند المنبع',
         className: 'col-span-4',
-        actions: weakest ? [badge(`الأدنى: ${weakest.label}`, pctTone(weakest.value))] : [],
+        actions: weakest ? [badge(`الأدنى ${fmt.pct(weakest.value, 1)}`, pctTone(weakest.value))] : [],
         body: items.length ? chartOr(chart) : emptyState({ title: 'لا توجد مصادر' }),
         tableView: items.length ? tableOf(chart, () => simpleTable(['المصدر', 'معدل الاجتياز'], items.map((i) => [i.label, fmt.pct(i.value, 1)]))) : null,
       });

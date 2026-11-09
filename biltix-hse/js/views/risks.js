@@ -419,7 +419,7 @@ export default {
 
       const items = categoryCounts();
       catHost.replaceChildren(items.length
-        ? chartOrEmpty(() => charts.barChart({ items, horizontal: true, height: Math.max(160, Math.min(items.length, 8) * 34 + 24), valueFormat: fmt.num, color: 'var(--s1)', showValues: true, maxBars: 8, ariaLabel: 'المخاطر المفتوحة حسب الفئة' }), 'أعلى الفئات')
+        ? chartOrEmpty(() => charts.barChart({ items, horizontal: true, height: Math.max(160, Math.min(items.length, 12) * 30 + 24), valueFormat: fmt.num, color: 'var(--s1)', showValues: true, maxBars: 12, ariaLabel: 'المخاطر المفتوحة حسب الفئة' }), 'أعلى الفئات')
         : C.emptyState({ title: 'لا توجد مخاطر مفتوحة', text: 'لا تنطبق المرشّحات الحالية على أي مخاطرة مفتوحة.' }));
     }
 
@@ -453,8 +453,8 @@ export default {
       const history = arr(risk.history).filter(Boolean).slice().sort((a, b) => (parseMs(b.at) || 0) - (parseMs(a.at) || 0));
       const barRow = (label, value, t) => h('div', { class: 'bar-pair-row' },
         h('span', {}, label),
-        C.progress({ value, max: 25, tone: toneOf(t), label: `${label}: ${fmt.num(value)} من ${fmt.num(25)}` }),
-        h('span', { class: 'progress-value' }, `${fmt.num(value)} · ${t}`));
+        C.progress({ value, max: 25, tone: toneOf(t), label: `${label}: ${fmt.num(value)} من ${fmt.num(25)} — ${t}` }),
+        h('span', { class: 'progress-value' }, fmt.num(value)));
       const statusSeg = C.segmented({
         options: riskStatuses().map((st) => ({ value: st, label: st })),
         value: risk.status, ariaLabel: 'تغيير حالة المخاطرة',
@@ -487,7 +487,7 @@ export default {
         section('الدرجة الكامنة مقابل المتبقية',
           h('div', { class: 'bar-pair' }, barRow('الكامنة', s, tier), barRow('المتبقية', res, rTier)),
           h('p', { class: 'text-xs muted', style: { marginBlockStart: '8px' } },
-            `الاحتمالية ${fmt.num(Number(risk.likelihood) || 0)} × الشدة ${fmt.num(Number(risk.severity) || 0)} = ${fmt.num(s)} → بعد الضوابط ${fmt.num(Number(risk.residualLikelihood ?? risk.likelihood) || 0)} × ${fmt.num(Number(risk.residualSeverity ?? risk.severity) || 0)} = ${fmt.num(res)}${reduction > 0 ? ` (خفض بنسبة ${fmt.pct(reduction)})` : ''}`)),
+            `الاحتمالية ${fmt.num(Number(risk.likelihood) || 0)} × الشدة ${fmt.num(Number(risk.severity) || 0)} = ${fmt.num(s)} (${tier}) → بعد الضوابط ${fmt.num(Number(risk.residualLikelihood ?? risk.likelihood) || 0)} × ${fmt.num(Number(risk.residualSeverity ?? risk.severity) || 0)} = ${fmt.num(res)} (${rTier})${reduction > 0 ? ` — خفض بنسبة ${fmt.pct(reduction)}` : ''}`)),
         section('هرمية الضوابط', controlsHierarchy(risk)),
         section('تغيير الحالة', statusSeg.el, h('p', { class: 'text-xs muted', style: { marginBlockStart: '8px' } }, 'يُسجَّل كل تغيير في السجل الزمني مع اسم المستخدم والتاريخ.')),
         section('السجل الزمني', history.length
@@ -577,7 +577,9 @@ export default {
         source: C.formField({ label: 'المصدر', name: 'source', type: 'text', value: r.source, placeholder: 'تفتيش، جولة سلامة، تحليل حادث، بلاغ عامل…' }),
         legalRef: C.formField({ label: 'المرجع النظامي', name: 'legalRef', type: 'text', value: r.legalRef, placeholder: 'مثال: لائحة السلامة والصحة المهنية — المادة 12' }),
       };
-      ['hazard', 'description', 'legalRef'].forEach((k) => F[k].classList.add('span-2'));
+      ['hazard', 'description'].forEach((k) => F[k].classList.add('span-2'));
+      // Sub-grids keep related fields together whatever column count .form-grid resolves to.
+      const subGrid = (cols, ...children) => h('div', { class: 'span-2', style: { display: 'grid', gridTemplateColumns: cols, gap: 'var(--space-3)' } }, ...children);
 
       /* live score preview */
       const preview = h('div', { class: 'note span-2', 'aria-live': 'polite' });
@@ -587,11 +589,12 @@ export default {
         const rl = Number(F.residualLikelihood.querySelector('select').value) || 0;
         const rs = Number(F.residualSeverity.querySelector('select').value) || 0;
         const sc = L * S; const rsc = rl * rs;
-        preview.replaceChildren(
+        preview.replaceChildren(...[
           h('div', { class: 'row wrap gap-3' },
             h('span', { class: 'row gap-2' }, h('span', { class: 'muted' }, 'الدرجة الكامنة:'), h('strong', { class: 'mono' }, `${fmt.num(L)} × ${fmt.num(S)} = ${fmt.num(sc)}`), C.tierBadge(tierOf(sc))),
             h('span', { class: 'row gap-2' }, h('span', { class: 'muted' }, 'المتبقية:'), h('strong', { class: 'mono' }, `${fmt.num(rl)} × ${fmt.num(rs)} = ${fmt.num(rsc)}`), C.tierBadge(tierOf(rsc)))),
-          rsc > sc ? h('p', { class: 'text-xs', style: { marginBlockStart: '6px', color: 'var(--tone-ink)' } }, 'تنبيه: الدرجة المتبقية أعلى من الكامنة — راجع تقدير الضوابط.') : null);
+          rsc > sc ? h('p', { class: 'text-xs', style: { marginBlockStart: '6px' } }, C.badge('الدرجة المتبقية أعلى من الكامنة — راجع تقدير الضوابط', 'warning')) : null,
+        ].filter(Boolean));
       };
 
       /* controls repeater */
@@ -617,12 +620,16 @@ export default {
       })).filter((c) => c.text);
 
       const form = h('form', { class: 'form-grid', novalidate: true, onSubmit: (e) => { e.preventDefault(); submit(); } },
-        F.siteId, F.categoryId, F.hazard, F.activity, F.description,
+        F.hazard,
+        subGrid('repeat(auto-fit, minmax(180px, 1fr))', F.siteId, F.categoryId, F.activity),
+        F.description,
         h('div', { class: 'form-section-title span-2' }, 'التقييم'),
-        F.likelihood, F.severity, F.residualLikelihood, F.residualSeverity, preview,
+        subGrid('repeat(2, minmax(0, 1fr))', F.likelihood, F.severity, F.residualLikelihood, F.residualSeverity),
+        preview,
         controlsBlock,
         h('div', { class: 'form-section-title span-2' }, 'المتابعة'),
-        F.owner, F.dueDate, F.status, F.source, F.legalRef);
+        subGrid('repeat(auto-fit, minmax(180px, 1fr))', F.owner, F.dueDate, F.status),
+        subGrid('minmax(0, 1fr) minmax(0, 2fr)', F.source, F.legalRef));
       form.addEventListener('change', updatePreview);
       updatePreview();
 

@@ -6,9 +6,10 @@
  *   KPI strip   مفتوحة · متأخرة · أُغلقت هذا الشهر · متوسط زمن الإغلاق · نسبة القبول مقابل التعديل
  *   Kanban      components.kanban across the task statuses (جديدة / قيد التنفيذ / متأخرة / مغلقة);
  *               cards show code, title, linked risk code + rating badge, owner, due (overdue tone),
- *               source badge (توصية مقبولة / مُعدّلة / يدوية) and the write-back chip
- *               (synced / pending / failed with «إعادة المزامنة»). onMove → store.updateTask;
- *               moving into «مغلقة» asks for the outcome first (feeds model recalibration).
+ *               source badge (.source-badge: توصية مقبولة / مُعدّلة / يدوية) and the write-back chip
+ *               (.writeback-chip: synced / pending / failed with «إعادة المزامنة»). onMove →
+ *               store.updateTask; moving into «مغلقة» asks for the outcome first (it feeds model
+ *               recalibration through the audit log).
  *   Drawer      task details, linked risk (→ #/airisks?risk=ID), write-back status, actions.
  *   Modal       «مهمة يدوية» → store.addTask (source 'manual').
  *
@@ -30,11 +31,7 @@ const WRITEBACK_RESYNC_MS = 1500;
 
 const TASK_STATUSES = ['جديدة', 'قيد التنفيذ', 'متأخرة', 'مغلقة'];
 const TASK_STATUS_TONE = { 'جديدة': 'brand', 'قيد التنفيذ': 'accent', 'متأخرة': 'critical', 'مغلقة': 'good' };
-const SOURCE_META = {
-  'ai-accepted': { label: 'توصية مقبولة', tone: 'accent' },
-  'ai-edited': { label: 'توصية مُعدّلة', tone: 'warning' },
-  manual: { label: 'يدوية', tone: 'neutral' },
-};
+const SOURCE_LABEL = { 'ai-accepted': 'توصية مقبولة', 'ai-edited': 'توصية مُعدّلة', manual: 'يدوية' };
 const WRITEBACK_META = {
   synced: { label: 'مُزامن مع Biltix PM', tone: 'good' },
   pending: { label: 'بانتظار المزامنة', tone: 'warning' },
@@ -71,6 +68,12 @@ function safe(key, fn, fallback) {
     return fallback;
   }
 }
+function viaPsel(psel, key, fn, fallback) { return psel ? safe(`psel.${key}`, fn, fallback) : fallback; }
+let pselLoad = null;
+function loadPsel() {
+  if (!pselLoad) pselLoad = import('../core/platform-selectors.js').then((m) => (m && (m.psel || m.default)) || null).catch(() => null);
+  return pselLoad;
+}
 const isNum = (n) => typeof n === 'number' && Number.isFinite(n);
 const num = (n, d = 0) => (isNum(n) ? n : d);
 const text = (v) => (typeof v === 'string' ? v.trim() : (v == null ? '' : String(v)));
@@ -87,37 +90,32 @@ function localISO(date) {
 function sameMonth(iso, date) { const d = defaultFmt.toDate(iso); return !!d && d.getFullYear() === date.getFullYear() && d.getMonth() === date.getMonth(); }
 function monthsAgo(date, n) { return new Date(date.getFullYear(), date.getMonth() - n, 1); }
 
-function ratingOf(psel, score) {
-  return safe('psel.rating', () => psel.rating(score), score >= 70 ? 'red' : score >= 40 ? 'yellow' : 'green');
-}
-function ratingTone(psel, rating) {
-  return safe('psel.ratingTone', () => psel.ratingTone(rating), (RATING_META[rating] || RATING_META.green).tone);
-}
-function ratingLabel(psel, rating) {
-  return safe('psel.ratingLabel', () => psel.ratingLabel(rating), (RATING_META[rating] || RATING_META.green).label);
-}
-function ratingBadge(psel, rating) {
-  const b = badge(ratingLabel(psel, rating), ratingTone(psel, rating));
-  b.classList.add('rating', `is-${rating}`);
-  return b;
+const localRating = (score) => (score >= 70 ? 'red' : score >= 40 ? 'yellow' : 'green');
+function ratingOf(psel, score) { return viaPsel(psel, 'rating', () => psel.rating(score), localRating(score)); }
+function ratingTone(psel, rating) { return viaPsel(psel, 'ratingTone', () => psel.ratingTone(rating), (RATING_META[rating] || RATING_META.green).tone); }
+function ratingLabel(psel, rating) { return viaPsel(psel, 'ratingLabel', () => psel.ratingLabel(rating), (RATING_META[rating] || RATING_META.green).label); }
+function ratingBadge(psel, rating, { sm = false } = {}) {
+  return h('span', { class: ['rating', `is-${rating}`, sm ? 'is-sm' : null], 'data-rating': rating }, glyph(ratingTone(psel, rating), 12), h('span', {}, ratingLabel(psel, rating)));
 }
 function typeChip(psel, type) {
-  const meta = TYPE_META[type] || { icon: 'neutral', label: String(type || '—') };
-  const label = safe('psel.typeLabel', () => psel.typeLabel(type), meta.label);
-  return h('span', { class: ['type-chip', `is-${String(type || 'unknown').toLowerCase()}`], 'data-type': type || '' }, svgIcon(meta.icon, 13), h('span', { class: 'type-chip-label' }, label));
+  const meta = TYPE_META[type] || { icon: 'alert-circle', label: String(type || '—') };
+  const label = viaPsel(psel, 'typeLabel', () => psel.typeLabel(type), meta.label);
+  return h('span', { class: ['type-chip', `is-${String(type || 'unknown').toLowerCase()}`], 'data-type': type || '' }, svgIcon(meta.icon, 12), h('span', {}, label));
 }
 const statusBadge = (status) => badge(status || '—', TASK_STATUS_TONE[status] || 'neutral');
-const sourceBadge = (source) => { const m = SOURCE_META[source] || { label: source || '—', tone: 'neutral' }; return badge(m.label, m.tone); };
+const sourceBadge = (source) => h('span', { class: 'source-badge', 'data-source': source || '' }, SOURCE_LABEL[source] || source || '—');
+function writebackChip(wb) {
+  const status = wb && wb.status ? String(wb.status) : '';
+  const meta = WRITEBACK_META[status] || { label: status || 'بدون كتابة عكسية', tone: 'neutral' };
+  return h('span', { class: 'writeback-chip', 'data-status': status, role: 'status' }, glyph(meta.tone === 'neutral' ? 'neutral' : meta.tone, 11), meta.label);
+}
 
 function viewHead({ code, title, lead, actions = [] }) {
-  const textEl = h('div', { class: 'view-head-text' },
-    h('span', { class: 'code-tag' }, code),
-    h('h1', {}, title),
-    lead ? h('p', { class: 'view-lead' }, lead) : null);
+  const textEl = h('div', { class: 'view-head-text' }, h('span', { class: 'code-tag' }, code), h('h1', {}, title), lead ? h('p', { class: 'view-lead' }, lead) : null);
   return h('div', { class: 'view-head' }, textEl, actions.length ? h('div', { class: 'view-actions' }, actions) : null);
 }
-function section(title, ...children) {
-  return h('section', { class: 'drawer-section' }, h('h3', { class: 'drawer-section-title' }, title), ...children);
+function section(tag, title, ...children) {
+  return h('section', { class: 'drawer-section' }, h('h3', { class: 'drawer-section-title is-platform' }, h('span', { class: 'mono', 'aria-hidden': 'true' }, tag), title), ...children);
 }
 
 /* ------------------------------------------------------------------ */
@@ -135,7 +133,7 @@ export default {
     const bus = ctx.bus || defaultBus;
     const fmt = ctx.fmt || defaultFmt;
     const router = ctx.router;
-    const psel = ctx.psel;
+    let psel = ctx.psel || null;
 
     let alive = true;
     let raf = 0;
@@ -157,6 +155,8 @@ export default {
     const canStore = (name) => typeof store[name] === 'function';
     const requireStore = (name) => { if (canStore(name)) return true; toast(`الإجراء غير متاح: وظيفة المتجر ${name} غير محمّلة`, { tone: 'critical' }); return false; };
 
+    if (!psel) loadPsel().then((p) => { if (p && alive && !psel) { psel = p; schedule(); } });
+
     /* ---------------- scaffold ---------------- */
 
     const root = h('section', { class: 'view view-tasks' });
@@ -166,10 +166,10 @@ export default {
       lead: 'كل مهمة تُولَّد من قبول توصية المحرك أو تعديلها (أو تُضاف يدوياً)، تُسند إلى مالك، وتُكتب عكسياً إلى Biltix PM. اسحب البطاقات بين الأعمدة أو استخدم زر النقل؛ إغلاق المهمة يتطلب تسجيل النتيجة لتغذية إعادة معايرة النماذج.',
       actions: [
         button('سجل المخاطر الذكي', { variant: 'ghost', size: 'sm', icon: 'shield-alert', onClick: () => navigate('airisks') }),
-        button('مهمة يدوية', { variant: 'primary', size: 'sm', icon: 'file-check', onClick: () => manualTaskFlow() }),
+        button('مهمة يدوية', { variant: 'primary', size: 'sm', icon: 'plus', onClick: () => manualTaskFlow() }),
       ],
     }));
-    const kpiHost = h('div', { class: 'kpi-row tasks-kpis', role: 'region', 'aria-label': 'مؤشرات مهام المعالجة' });
+    const kpiHost = h('div', { class: 'kpi-row tasks-kpis', role: 'region', 'aria-label': 'مؤشرات مهام المعالجة', style: { gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' } });
     const boardHost = h('div', { class: 'tasks-board' });
     root.append(kpiHost, boardHost);
     container.appendChild(root);
@@ -201,15 +201,17 @@ export default {
     }
 
     function kpis(tasks, now) {
+      const filters = store.filters || {};
+      const inSite = (t) => !filters.siteId || filters.siteId === 'all' || t.projectId === filters.siteId;
+      const all = (platformOf().tasks || []).filter(inSite);
       const open = tasks.filter((t) => t.status !== 'مغلقة');
-      const overdueFromPsel = safe('psel.overdueTasks', () => psel.overdueTasks(stateOf()), null);
-      const overdue = open.filter((t) => t.status === 'متأخرة' || isOverdue(t.dueDate, now) || (Array.isArray(overdueFromPsel) && overdueFromPsel.some((o) => o && o.id === t.id)));
-      const closed = (platformOf().tasks || []).filter((t) => t.status === 'مغلقة' && (!store.filters || store.filters.siteId === 'all' || t.projectId === store.filters.siteId));
+      const fromPsel = viaPsel(psel, 'overdueTasks', () => psel.overdueTasks(stateOf()), null);
+      const overdue = open.filter((t) => t.status === 'متأخرة' || isOverdue(t.dueDate, now) || (Array.isArray(fromPsel) && fromPsel.some((o) => o && o.id === t.id)));
+      const closed = all.filter((t) => t.status === 'مغلقة');
       const closedThisMonth = closed.filter((t) => sameMonth(t.closedAt, now)).length;
       const closedLastMonth = closed.filter((t) => sameMonth(t.closedAt, monthsAgo(now, 1))).length;
       const durations = closed.map((t) => { const a = Date.parse(t.createdAt); const b = Date.parse(t.closedAt); return Number.isFinite(a) && Number.isFinite(b) && b >= a ? (b - a) / DAY_MS : null; }).filter((d) => d !== null);
       const avgClose = durations.length ? Math.round((durations.reduce((s, d) => s + d, 0) / durations.length) * 10) / 10 : null;
-      const all = (platformOf().tasks || []);
       const accepted = all.filter((t) => t.source === 'ai-accepted').length;
       const edited = all.filter((t) => t.source === 'ai-edited').length;
       const manual = all.filter((t) => t.source === 'manual').length;
@@ -225,7 +227,7 @@ export default {
       kpiHost.append(
         statTile({ label: 'مهام مفتوحة', value: k.open.length, icon: 'file-check', tone: 'brand', hint: `${fmt.num(newCount)} جديدة · ${fmt.num(inProgress)} قيد التنفيذ` }),
         statTile({ label: 'متأخرة', value: k.overdue.length, icon: 'clock', tone: k.overdue.length ? 'critical' : 'good', hint: k.overdue.length ? 'تجاوزت تاريخ الاستحقاق دون إغلاق' : 'لا توجد مهام متأخرة' }),
-        statTile({ label: 'أُغلقت هذا الشهر', value: k.closedThisMonth, icon: 'good', tone: 'good', delta: k.closedThisMonth - k.closedLastMonth, deltaGoodWhen: 'up', hint: 'مقارنة بالشهر الماضي' }),
+        statTile({ label: 'أُغلقت هذا الشهر', value: k.closedThisMonth, icon: 'check-circle', tone: 'good', delta: k.closedThisMonth - k.closedLastMonth, deltaGoodWhen: 'up', hint: 'مقارنة بالشهر الماضي' }),
         statTile({ label: 'متوسط زمن الإغلاق', value: k.avgClose, unit: 'يوم', icon: 'clock', hint: 'من إنشاء المهمة حتى إغلاقها' }),
         statTile({ label: 'القبول مقابل التعديل', value: k.acceptance, unit: '%', icon: 'sliders', tone: k.acceptance === null ? null : (k.acceptance >= 70 ? 'good' : 'warning'), hint: `${fmt.num(k.accepted)} مقبولة كما هي · ${fmt.num(k.edited)} مُعدّلة · ${fmt.num(k.manual)} يدوية` }),
       );
@@ -239,31 +241,25 @@ export default {
         glyph(overdue ? 'critical' : 'clock', 12), h('span', {}, fmt.date(iso, { style: 'short' })), overdue ? h('span', { class: 'sr-only' }, ' — متأخر') : null);
     }
 
-    function writebackChip(task, { withResync = true } = {}) {
-      const wb = task.writeback || {};
-      const meta = WRITEBACK_META[wb.status] || { label: wb.status ? String(wb.status) : 'بدون كتابة عكسية', tone: 'neutral' };
-      return h('span', { class: 'row gap-1 wrap writeback-chip' },
-        badge(meta.label, meta.tone),
-        withResync && wb.status === 'failed' && canStore('updateTask') ? button('إعادة المزامنة', { variant: 'outline', size: 'sm', onClick: (e) => { e.stopPropagation(); resync(task); } }) : null);
-    }
-
     function taskCard(task, now) {
       const risk = riskOf(task);
       const overdue = task.status !== 'مغلقة' && (task.status === 'متأخرة' || isOverdue(task.dueDate, now));
+      const wb = task.writeback || {};
       const el = h('div', { class: ['task-card stack gap-2', overdue ? 'is-overdue' : null], 'data-task': task.id },
         h('div', { class: 'row between gap-2 wrap' },
           h('span', { class: 'mono text-xs muted' }, task.code || task.id),
           risk
-            ? h('span', { class: 'row gap-1 task-risk-ref', title: risk.title }, h('span', { class: 'mono text-xs' }, risk.code), ratingBadge(psel, ratingOf(psel, num(risk.score))))
+            ? h('span', { class: 'row gap-1 task-risk-ref', title: risk.title }, h('span', { class: 'mono text-xs' }, risk.code), ratingBadge(psel, ratingOf(psel, num(risk.score)), { sm: true }))
             : badge('بدون مخاطرة مرتبطة', 'neutral')),
         h('p', { class: 'kanban-card-title' }, task.title || '—'),
         h('div', { class: 'kanban-card-meta' },
           h('span', { title: 'المالك' }, svgIcon('user', 12), task.owner || '—'),
           h('span', { class: overdue ? 'is-overdue' : null, title: 'تاريخ الاستحقاق' }, dueCell(task.dueDate, now, task.status === 'مغلقة')),
-          h('span', { title: 'المشروع' }, svgIcon('helmet', 12), projectName(task.projectId))),
+          h('span', { title: 'المشروع' }, svgIcon('building', 12), projectName(task.projectId))),
         h('div', { class: 'kanban-card-foot' },
-          h('span', { class: 'row gap-1 wrap' }, sourceBadge(task.source), writebackChip(task)),
-          button('', { variant: 'ghost', size: 'sm', icon: glyph('chevronEnd', 15), onClick: (e) => { e.stopPropagation(); openTask(task.id); }, attrs: { 'aria-label': `تفاصيل المهمة ${task.code || ''}` } })));
+          h('span', { class: 'row gap-1 wrap' }, sourceBadge(task.source), writebackChip(wb),
+            wb.status === 'failed' && (canStore('retryWriteback') || canStore('updateTask')) ? button('إعادة المزامنة', { variant: 'outline', size: 'sm', icon: 'refresh', onClick: (e) => { e.stopPropagation(); resync(task); } }) : null),
+          button('', { variant: 'ghost', size: 'sm', icon: 'chevron-end', onClick: (e) => { e.stopPropagation(); openTask(task.id); }, attrs: { 'aria-label': `تفاصيل المهمة ${task.code || ''}` } })));
       el.addEventListener('click', (e) => { if (e.target.closest('button,a,input,select')) return; openTask(task.id); });
       return el;
     }
@@ -277,8 +273,8 @@ export default {
     function setStatus(task, status, { silent = false } = {}) {
       if (!requireStore('updateTask')) return;
       try {
-        store.updateTask(task.id, { status });
-        if (!silent) toast(`نُقلت المهمة ${task.code || ''} إلى «${status}»`, { tone: TASK_STATUS_TONE[status] === 'critical' ? 'warning' : 'accent' });
+        store.updateTask(task.id, { status, by: USER });
+        if (!silent) toast(`نُقلت المهمة ${task.code || ''} إلى «${status}»`, { tone: status === 'متأخرة' ? 'warning' : 'accent' });
       } catch (err) { warnOnce('store.updateTask', err); toast('تعذر تحديث حالة المهمة', { tone: 'critical' }); }
     }
 
@@ -292,7 +288,7 @@ export default {
         const outcome = text(readForm(form).outcome);
         if (!outcome) { toast('أدخل نتيجة المعالجة', { tone: 'warning' }); return false; }
         try {
-          store.updateTask(task.id, { status: 'مغلقة', outcome });
+          store.updateTask(task.id, { status: 'مغلقة', outcome, by: USER });
           toast(`أُغلقت المهمة ${task.code || ''} وسُجّلت النتيجة`, { tone: 'good' });
         } catch (err) { warnOnce('store.updateTask', err); toast('تعذر إغلاق المهمة', { tone: 'critical' }); return false; }
         return undefined;
@@ -303,18 +299,20 @@ export default {
     }
 
     function resync(task) {
-      if (!canStore('updateTask')) return;
-      const wb = task.writeback || {};
       try {
+        if (canStore('retryWriteback')) {
+          store.retryWriteback(task.id);
+          toast('بدأت إعادة مزامنة المهمة مع Biltix PM', { tone: 'accent', title: task.code });
+          return;
+        }
+        if (!canStore('updateTask')) return;
+        const wb = task.writeback || {};
         store.updateTask(task.id, { writeback: { ...wb, target: wb.target || 'Biltix PM', status: 'pending', at: localISO(nowDate()) } });
         toast('بدأت إعادة مزامنة المهمة مع Biltix PM', { tone: 'accent', title: task.code });
         addTimer(() => {
-          try {
-            store.updateTask(task.id, { writeback: { ...wb, target: wb.target || 'Biltix PM', status: 'synced', at: localISO(nowDate()) } });
-            toast('تمت الكتابة العكسية إلى Biltix PM', { tone: 'good', title: task.code });
-          } catch (err) { warnOnce('store.updateTask', err); }
+          try { store.updateTask(task.id, { writeback: { ...wb, target: wb.target || 'Biltix PM', status: 'synced', at: localISO(nowDate()) } }); toast('تمت الكتابة العكسية إلى Biltix PM', { tone: 'good', title: task.code }); } catch (err) { warnOnce('store.updateTask', err); }
         }, WRITEBACK_RESYNC_MS);
-      } catch (err) { warnOnce('store.updateTask', err); toast('تعذر بدء إعادة المزامنة', { tone: 'critical' }); }
+      } catch (err) { warnOnce('store.retryWriteback', err); toast('تعذر بدء إعادة المزامنة', { tone: 'critical' }); }
     }
 
     function manualTaskFlow() {
@@ -354,7 +352,6 @@ export default {
       const risk = riskOf(task);
       const overdue = task.status !== 'مغلقة' && (task.status === 'متأخرة' || isOverdue(task.dueDate, now));
       const wb = task.writeback || {};
-      const wbMeta = WRITEBACK_META[wb.status] || { label: wb.status ? String(wb.status) : 'بدون كتابة عكسية', tone: 'neutral' };
       const details = kv([
         ['الحالة', h('span', { class: 'row gap-1 wrap' }, statusBadge(task.status), overdue ? badge('متأخرة عن الاستحقاق', 'critical') : null)],
         ['المصدر', sourceBadge(task.source)],
@@ -368,31 +365,33 @@ export default {
       details.classList.add('is-compact');
 
       const riskBlock = risk
-        ? h('div', { class: ['recommendation', `tone-${ratingTone(psel, ratingOf(psel, num(risk.score)))}`, 'stack', 'gap-2'] },
-          h('div', { class: 'row wrap gap-2' }, h('span', { class: 'mono' }, risk.code), ratingBadge(psel, ratingOf(psel, num(risk.score))), typeChip(psel, risk.type), h('span', { class: 'mono num text-xs muted' }, `الدرجة ${fmt.num(num(risk.score))}`)),
-          h('p', { class: 'semibold' }, risk.title),
-          risk.recommendation && risk.recommendation.action ? h('p', { class: 'text-sm ink-2' }, risk.recommendation.action) : null,
-          h('div', { class: 'row' }, button('فتح المخاطرة في السجل الذكي', { variant: 'outline', size: 'sm', icon: 'shield-alert', onClick: () => { closeDrawer(); navigate('airisks', { risk: risk.id }); } })))
+        ? h('div', { class: 'recommendation is-decided' },
+          h('div', { class: 'recommendation-head' },
+            h('h4', {}, h('span', { class: 'mono' }, risk.code)),
+            h('div', { class: 'recommendation-chips' }, ratingBadge(psel, ratingOf(psel, num(risk.score))), typeChip(psel, risk.type), h('span', { class: 'recommendation-chip' }, 'الدرجة ', h('span', { class: 'mono' }, fmt.num(num(risk.score)))))),
+          h('p', { class: 'recommendation-action' }, risk.title),
+          risk.recommendation && risk.recommendation.action ? h('p', { class: 'recommendation-rationale' }, risk.recommendation.action) : null,
+          h('div', { class: 'recommendation-actions' }, button('فتح المخاطرة في السجل الذكي', { variant: 'outline', size: 'sm', icon: 'shield-alert', onClick: () => { closeDrawer(); navigate('airisks', { risk: risk.id }); } })))
         : h('p', { class: 'note text-sm' }, 'هذه مهمة يدوية غير مرتبطة بمخاطرة مكتشفة.');
 
       const wbBlock = h('div', { class: 'stack gap-2' },
-        kv([['الهدف', wb.target || 'Biltix PM'], ['الحالة', h('span', { class: 'row gap-2 wrap' }, badge(wbMeta.label, wbMeta.tone), wb.at ? h('span', { class: 'text-xs muted' }, fmt.relative(wb.at)) : null)]]),
-        wb.status === 'failed' && canStore('updateTask') ? h('div', { class: 'row' }, button('إعادة المزامنة', { variant: 'primary', size: 'sm', onClick: () => resync(task) })) : null,
+        kv([['الهدف', wb.target || 'Biltix PM'], ['الحالة', h('span', { class: 'row gap-2 wrap' }, writebackChip(wb), wb.at ? h('span', { class: 'text-xs muted', title: fmt.dateTime(wb.at) }, fmt.relative(wb.at)) : null)]]),
+        wb.status === 'failed' && (canStore('retryWriteback') || canStore('updateTask')) ? h('div', { class: 'row' }, button('إعادة المزامنة', { variant: 'primary', size: 'sm', icon: 'refresh', onClick: () => resync(task) })) : null,
         settings().platform && settings().platform.writebackEnabled === false ? h('p', { class: 'note tone-warning text-xs' }, 'الكتابة العكسية معطّلة في الإعدادات.') : null);
 
       const actions = h('div', { class: 'row wrap gap-2' });
       if (task.status !== 'مغلقة') {
-        if (task.status !== 'قيد التنفيذ') actions.appendChild(button('بدء التنفيذ', { variant: 'outline', icon: 'sliders', onClick: () => setStatus(task, 'قيد التنفيذ') }));
-        actions.appendChild(button('إغلاق المهمة وتسجيل النتيجة', { variant: 'primary', icon: 'good', onClick: () => closeFlow(task) }));
+        if (task.status !== 'قيد التنفيذ') actions.appendChild(button('بدء التنفيذ', { variant: 'outline', icon: 'play', onClick: () => setStatus(task, 'قيد التنفيذ') }));
+        actions.appendChild(button('إغلاق المهمة وتسجيل النتيجة', { variant: 'primary', icon: 'check', onClick: () => closeFlow(task) }));
       } else {
-        actions.appendChild(button('إعادة فتح المهمة', { variant: 'outline', onClick: () => setStatus(task, 'قيد التنفيذ') }));
+        actions.appendChild(button('إعادة فتح المهمة', { variant: 'outline', icon: 'refresh', onClick: () => setStatus(task, 'قيد التنفيذ') }));
       }
 
       return h('div', { class: 'task-drawer-body' },
         h('div', { class: 'drawer-section' }, details),
-        section('المخاطرة المرتبطة', riskBlock),
-        section('الكتابة العكسية إلى Biltix PM', wbBlock),
-        section('الإجراءات', actions));
+        section('01', 'المخاطرة المرتبطة', riskBlock),
+        section('02', 'الكتابة العكسية إلى Biltix PM', wbBlock),
+        section('03', 'الإجراءات', actions));
     }
 
     const subtitleOf = (task) => `${task.code || task.id} · ${projectName(task.projectId)}`;
@@ -471,7 +470,7 @@ export default {
     subs.push(bus.on('store:change', (payload) => {
       const path = payload && typeof payload.path === 'string' ? payload.path : '*';
       if (path.startsWith('feed')) return;
-      if (/validation|pipelines|connectors|quarantine/.test(path) && !/tasks|aiRisks/.test(path)) return;
+      if (/validation|pipelines|connectors|quarantine|auditLog/.test(path) && !/tasks|aiRisks/.test(path)) return;
       schedule();
     }));
     subs.push(bus.on('filters:change', schedule));
