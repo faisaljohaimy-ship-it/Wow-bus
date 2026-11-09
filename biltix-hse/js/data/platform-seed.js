@@ -1131,3 +1131,93 @@ const weather = {
   ]),
 };
 
+// ------------------------------------------------------------------
+// 13. بنود التكلفة (Oracle ERP) — variancePct = (التوقع − الميزانية) / الميزانية
+// ------------------------------------------------------------------
+
+function costLine(c) {
+  return { ...c, variancePct: r1(((c.forecast - c.budget) / c.budget) * 100) };
+}
+
+const costLines = [
+  costLine({ id: 'CL1',  projectId: 'S1', wbs: '1.3',  name: 'الهيكل الخرساني (نواة وبلاطات)',          budget: 412_000_000, actual: 171_000_000, committed: 198_000_000, forecast: 441_000_000 }),
+  costLine({ id: 'CL2',  projectId: 'S1', wbs: '1.5',  name: 'الواجهات الزجاجية',                        budget: 212_000_000, actual: 31_000_000,  committed: 212_000_000, forecast: 226_000_000 }),
+  costLine({ id: 'CL3',  projectId: 'S1', wbs: '1.6',  name: 'الأعمال الكهروميكانيكية والمصاعد',          budget: 386_000_000, actual: 62_000_000,  committed: 240_000_000, forecast: 394_000_000 }),
+  costLine({ id: 'CL4',  projectId: 'S1', wbs: '1.9',  name: 'المصاريف العامة وإدارة الموقع',              budget: 148_000_000, actual: 71_000_000,  committed: 71_000_000,  forecast: 163_000_000 }),
+  costLine({ id: 'CL5',  projectId: 'S1', wbs: '1.2',  name: 'المعدات والرافعات البرجية',                 budget: 64_000_000,  actual: 39_000_000,  committed: 52_000_000,  forecast: 66_000_000 }),
+  costLine({ id: 'CL6',  projectId: 'S2', wbs: '2.5',  name: 'التشطيبات الداخلية والخارجية',              budget: 142_000_000, actual: 118_000_000, committed: 139_000_000, forecast: 141_000_000 }),
+  costLine({ id: 'CL7',  projectId: 'S2', wbs: '2.6',  name: 'الأعمال الكهروميكانيكية MEP',                budget: 148_000_000, actual: 121_000_000, committed: 148_000_000, forecast: 156_000_000 }),
+  costLine({ id: 'CL8',  projectId: 'S2', wbs: '2.7',  name: 'المرافق الخارجية وتوصيلات الخدمات',         budget: 38_000_000,  actual: 27_000_000,  committed: 34_000_000,  forecast: 43_000_000 }),
+  costLine({ id: 'CL9',  projectId: 'S2', wbs: '2.9',  name: 'المصاريف العامة',                           budget: 51_000_000,  actual: 44_000_000,  committed: 44_000_000,  forecast: 54_000_000 }),
+  costLine({ id: 'CL10', projectId: 'S3', wbs: '3.2',  name: 'الألواح الكهروضوئية والهياكل',              budget: 980_000_000, actual: 560_000_000, committed: 942_000_000, forecast: 1_046_000_000 }),
+  costLine({ id: 'CL11', projectId: 'S3', wbs: '3.4',  name: 'المحطة الفرعية 380 ك.ف والربط',              budget: 310_000_000, actual: 128_000_000, committed: 276_000_000, forecast: 352_000_000 }),
+  costLine({ id: 'CL12', projectId: 'S3', wbs: '3.5',  name: 'نظام تخزين الطاقة BESS',                     budget: 420_000_000, actual: 84_000_000,  committed: 414_000_000, forecast: 447_000_000 }),
+  costLine({ id: 'CL13', projectId: 'S3', wbs: '3.3',  name: 'العاكسات والكابلات DC/AC',                   budget: 290_000_000, actual: 171_000_000, committed: 268_000_000, forecast: 311_000_000 }),
+  costLine({ id: 'CL14', projectId: 'S3', wbs: '3.9',  name: 'المعسكر والمصاريف العامة',                   budget: 160_000_000, actual: 94_000_000,  committed: 94_000_000,  forecast: 174_000_000 }),
+  costLine({ id: 'CL15', projectId: 'S4', wbs: '4.3',  name: 'الهياكل الفولاذية',                          budget: 92_000_000,  actual: 58_000_000,  committed: 90_000_000,  forecast: 96_000_000 }),
+  costLine({ id: 'CL16', projectId: 'S4', wbs: '4.4',  name: 'الأسقف والتكسية',                            budget: 41_000_000,  actual: 22_000_000,  committed: 38_000_000,  forecast: 40_000_000 }),
+  costLine({ id: 'CL17', projectId: 'S4', wbs: '4.5',  name: 'الأرضيات الصناعية والأعمال المدنية',          budget: 56_000_000,  actual: 19_000_000,  committed: 31_000_000,  forecast: 54_000_000 }),
+  costLine({ id: 'CL18', projectId: 'S4', wbs: '4.6',  name: 'أنظمة الإطفاء والكهروميكانيك',               budget: 48_000_000,  actual: 6_000_000,   committed: 29_000_000,  forecast: 47_000_000 }),
+  costLine({ id: 'CL19', projectId: 'S5', wbs: '5.2',  name: 'الأعمال الترابية والحفر الصخري',              budget: 386_000_000, actual: 71_000_000,  committed: 162_000_000, forecast: 468_000_000 }),
+  costLine({ id: 'CL20', projectId: 'S5', wbs: '5.3',  name: 'الطرق الداخلية والرصف',                      budget: 214_000_000, actual: 18_000_000,  committed: 96_000_000,  forecast: 221_000_000 }),
+  costLine({ id: 'CL21', projectId: 'S5', wbs: '5.4',  name: 'شبكات المياه والصرف',                        budget: 168_000_000, actual: 4_000_000,   committed: 52_000_000,  forecast: 170_000_000 }),
+  costLine({ id: 'CL22', projectId: 'S5', wbs: '5.9',  name: 'المعدات الثقيلة والوقود',                    budget: 142_000_000, actual: 36_000_000,  committed: 58_000_000,  forecast: 161_000_000 }),
+  costLine({ id: 'CL23', projectId: 'S6', wbs: '6.5',  name: 'الأنظمة الطبية (غازات، عزل، ضغط سالب)',       budget: 74_000_000,  actual: 61_000_000,  committed: 73_000_000,  forecast: 77_000_000 }),
+  costLine({ id: 'CL24', projectId: 'S6', wbs: '6.6',  name: 'الكهرباء والمولدات والربط',                   budget: 58_000_000,  actual: 49_000_000,  committed: 57_000_000,  forecast: 59_000_000 }),
+  costLine({ id: 'CL25', projectId: 'S6', wbs: '6.4',  name: 'التشطيبات الطبية والأسقف',                    budget: 46_000_000,  actual: 38_000_000,  committed: 45_000_000,  forecast: 46_000_000 }),
+  costLine({ id: 'CL26', projectId: 'S6', wbs: '6.9',  name: 'المصاريف العامة والتشغيل التجريبي',           budget: 31_000_000,  actual: 27_000_000,  committed: 27_000_000,  forecast: 33_000_000 }),
+];
+
+// ------------------------------------------------------------------
+// 14. أوامر التغيير — زحف التكلفة
+// ------------------------------------------------------------------
+
+const changeOrders = [
+  { id: 'CO1',  code: 'CO-027', projectId: 'S1', title: 'تعديل تصميم نواة البرج — زيادة سماكة الجدران 24–30',            amountSAR: 18_400_000, status: 'معتمد',        submittedAt: d(-74), impactDays: 12, driver: 'تغيير تصميمي من الاستشاري' },
+  { id: 'CO2',  code: 'CO-031', projectId: 'S1', title: 'تعويض إيقاف الأعمال بسبب العواصف الترابية (11 يوماً)',           amountSAR: 6_900_000,  status: 'مرفوض',        submittedAt: d(-41), impactDays: 11, driver: 'ظروف جوية' },
+  { id: 'CO3',  code: 'CO-034', projectId: 'S1', title: 'تغيير مواصفة الزجاج العازل إلى ثلاثي الطبقات',                 amountSAR: 14_200_000, status: 'قيد الاعتماد', submittedAt: d(-16), impactDays: 0,  driver: 'طلب صاحب العمل' },
+  { id: 'CO4',  code: 'CO-012', projectId: 'S2', title: 'تمديد شبكة الصرف لربط المبنى C بغرفة التفتيش الجديدة',          amountSAR: 2_350_000,  status: 'معتمد',        submittedAt: d(-120), impactDays: 6, driver: 'اشتراطات الجهات الخدمية' },
+  { id: 'CO5',  code: 'CO-015', projectId: 'S2', title: 'استبدال بلاط البورسلين غير المطابق (الدفعة 4)',                 amountSAR: 1_120_000,  status: 'مقترح',        submittedAt: d(-9),  impactDays: 8,  driver: 'عدم مطابقة المواصفات' },
+  { id: 'CO6',  code: 'CO-048', projectId: 'S3', title: 'زيادة سعة BESS من 300 إلى 320 ميجاواط ساعة (4 حاويات إضافية)',  amountSAR: 27_600_000, status: 'قيد الاعتماد', submittedAt: d(-22), impactDays: 15, driver: 'طلب صاحب العمل' },
+  { id: 'CO7',  code: 'CO-052', projectId: 'S3', title: 'تعويض تأخر جاهزية محطة النقل 380 ك.ف',                          amountSAR: 41_000_000, status: 'مقترح',        submittedAt: d(-5),  impactDays: 40, driver: 'تأخر جهة خارجية' },
+  { id: 'CO8',  code: 'CO-049', projectId: 'S3', title: 'تعديل مسار الكابلات 33 ك.ف لتفادي وادٍ موسمي',                  amountSAR: 8_300_000,  status: 'معتمد',        submittedAt: d(-58), impactDays: 9,  driver: 'ظروف موقع' },
+  { id: 'CO9',  code: 'CO-009', projectId: 'S4', title: 'إضافة رصيف تحميل ثالث للمستودع 2',                              amountSAR: 3_900_000,  status: 'معتمد',        submittedAt: d(-66), impactDays: 5,  driver: 'طلب صاحب العمل' },
+  { id: 'CO10', code: 'CO-021', projectId: 'S5', title: 'إعادة تصنيف الحفر إلى صخر صلب — الحزمة 2B (285,000 م³)',        amountSAR: 62_800_000, status: 'مقترح',        submittedAt: d(-6),  impactDays: 63, driver: 'ظروف جيوتقنية غير منظورة' },
+  { id: 'CO11', code: 'CO-018', projectId: 'S5', title: 'تحويل مسار طريق النقل الداخلي لحماية موقع أثري',                 amountSAR: 9_700_000,  status: 'قيد الاعتماد', submittedAt: d(-30), impactDays: 18, driver: 'اشتراطات هيئة التراث' },
+  { id: 'CO12', code: 'CO-033', projectId: 'S6', title: 'إضافة غرفتي عزل بضغط سالب في الطابق الثاني',                    amountSAR: 4_600_000,  status: 'معتمد',        submittedAt: d(-88), impactDays: 14, driver: 'اشتراطات وزارة الصحة' },
+  { id: 'CO13', code: 'CO-036', projectId: 'S6', title: 'تعويض العمل الليلي للربط الكهربائي مع المبنى القائم',             amountSAR: 1_350_000,  status: 'مقترح',        submittedAt: d(-3),  impactDays: 0,  driver: 'قيود تشغيل المستشفى' },
+];
+
+// ------------------------------------------------------------------
+// 15. العملات — الدولار مربوط بسعر 3.75 ريال
+// ------------------------------------------------------------------
+
+const currencies = [
+  { code: 'USD', nameAr: 'الدولار الأمريكي', rate: 3.75,   change30dPct: 0.0,  exposureSAR: 1_012_000_000, forecast30d: 3.75,   pegged: true },
+  { code: 'EUR', nameAr: 'اليورو',           rate: 4.36,   change30dPct: 3.1,  exposureSAR: 318_000_000,   forecast30d: 4.41,   pegged: false },
+  { code: 'CNY', nameAr: 'اليوان الصيني',    rate: 0.527,  change30dPct: 1.4,  exposureSAR: 606_000_000,   forecast30d: 0.531,  pegged: false },
+  { code: 'INR', nameAr: 'الروبية الهندية',  rate: 0.0423, change30dPct: -0.9, exposureSAR: 24_000_000,    forecast30d: 0.0419, pegged: false },
+  { code: 'TRY', nameAr: 'الليرة التركية',   rate: 0.0893, change30dPct: -4.2, exposureSAR: 37_000_000,    forecast30d: 0.0861, pegged: false },
+  { code: 'GBP', nameAr: 'الجنيه الإسترليني', rate: 4.95,  change30dPct: 1.8,  exposureSAR: 19_000_000,    forecast30d: 4.99,   pegged: false },
+];
+
+// ------------------------------------------------------------------
+// 16. مؤشر تكلفة العمالة — 12 شهراً (الأساس 100 = نوفمبر 2025)
+// ------------------------------------------------------------------
+
+function labour(l) {
+  const s = l.series;
+  return { ...l, months: months(12), change12mPct: r1(((s[s.length - 1] - s[0]) / s[0]) * 100) };
+}
+
+const labourIndex = [
+  labour({ id: 'LI1', region: 'الرياض',           trade: 'حدادو تسليح',             series: [100, 100.8, 101.5, 102.4, 103.6, 104.1, 105.0, 106.2, 107.4, 108.1, 109.3, 110.6] }),
+  labour({ id: 'LI2', region: 'الرياض',           trade: 'كهربائيون',               series: [100, 100.5, 101.1, 101.9, 102.2, 103.0, 103.8, 104.3, 105.1, 105.9, 106.4, 107.2] }),
+  labour({ id: 'LI3', region: 'جدة',              trade: 'فنيو تكييف وتشغيل',        series: [100, 100.6, 101.4, 102.0, 102.9, 103.5, 104.6, 105.2, 106.0, 106.8, 107.9, 108.7] }),
+  labour({ id: 'LI4', region: 'نيوم / تبوك',      trade: 'كهربائيو جهد عالٍ',        series: [100, 101.2, 102.6, 104.1, 105.8, 107.3, 109.0, 110.8, 112.5, 114.1, 115.9, 117.8] }),
+  labour({ id: 'LI5', region: 'المنطقة الشرقية',  trade: 'لحامون معتمدون',           series: [100, 100.4, 100.9, 101.6, 102.1, 102.8, 103.3, 104.0, 104.6, 105.1, 105.8, 106.3] }),
+  labour({ id: 'LI6', region: 'الرياض / القدية',  trade: 'مشغلو معدات ثقيلة',        series: [100, 100.9, 101.8, 102.9, 104.2, 105.1, 106.4, 107.8, 108.9, 110.2, 111.6, 112.9] }),
+  labour({ id: 'LI7', region: 'المدينة المنورة',  trade: 'فنيو غازات طبية',          series: [100, 100.7, 101.3, 102.2, 103.1, 104.0, 104.8, 105.9, 106.7, 107.6, 108.8, 109.9] }),
+  labour({ id: 'LI8', region: 'المملكة',          trade: 'عمال بناء عامون',          series: [100, 100.3, 100.7, 101.2, 101.6, 102.0, 102.5, 102.9, 103.4, 103.8, 104.3, 104.8] }),
+];
+
