@@ -167,10 +167,14 @@ button.legend-item:hover { color: var(--ink-1); }
    Tooltip (singleton #tooltip; DOM built with textContent by charts.js)
    -------------------------------------------------------------------------- */
 
+/* Anchored at the viewport's physical top-left (inline-END in this RTL document),
+   because charts.js positions it from clientX/clientY, which are always physical.
+   Setting the start edge instead would over-constrain `left` in RTL. */
 #tooltip, .tooltip {
   position: fixed;
   inset-block-start: 0;
-  inset-inline-start: 0;
+  inset-inline-end: 0;
+  inset-inline-start: auto;
   z-index: var(--z-tooltip);
   pointer-events: none;
   min-inline-size: 120px;
@@ -187,6 +191,7 @@ button.legend-item:hover { color: var(--ink-1); }
   color: var(--ink-1);
   will-change: transform;
 }
+:root[dir="ltr"] #tooltip, :root[dir="ltr"] .tooltip { inset-inline-end: auto; inset-inline-start: 0; }
 #tooltip[hidden], .tooltip[hidden] { display: none; }
 .tooltip-title {
   margin-block-end: 6px;

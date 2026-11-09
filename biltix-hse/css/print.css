@@ -40,7 +40,7 @@
 
   body.app {
     display: block;
-    background: #FFFFFF !important;
+    background: var(--bg-1) !important;
     background-image: none !important;
     color: var(--ink-1);
     font-size: 11pt;
@@ -51,7 +51,9 @@
   .appbar, .rail, .filters, .feed, .tabbar, .toast-stack, .cmdk, .backdrop,
   .alert-banner, .skip-link, .menu, .modal-backdrop, .drawer-backdrop, #tooltip, .tooltip,
   .card-actions, .card-view-toggle, .view-actions, .toolbar, .chip-group, .pager, .form-actions,
-  .btn, .noscript, .print-hide, .feed-open, .feed-close, .rail-toggle { display: none !important; }
+  .btn, .noscript, .print-hide, .feed-open, .feed-close, .rail-toggle, .kanban-move, .kanban-grip,
+  .sort-ic, .chip-remove, .countdown-icon { display: none !important; }
+  .sort-btn { pointer-events: none; }
 
   /* Report-only blocks (cover header, signatures, footers) appear in print */
   .report-only { display: block !important; }
@@ -90,10 +92,11 @@
     break-inside: avoid;
     page-break-inside: avoid;
     border: 1px solid var(--line-2) !important;
-    background: #FFFFFF !important;
-    background-image: none !important;
+    background: var(--bg-1) !important;
+    background-image: none !important;   /* also drops the CAD corner brackets */
   }
   .card.is-hero::before, .card.is-hero::after { display: none; }
+  .card.is-framed { --bracket: transparent; }
   .card-head { padding: 4mm 4mm 0; }
   .card-body { padding: 3mm 4mm 4mm; }
   .card-foot { padding: 2mm 4mm; }

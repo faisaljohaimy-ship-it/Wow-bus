@@ -12,10 +12,9 @@
 
 :root {
   --dir: 1;                              /* +1 LTR, -1 RTL; multiplies translateX for inline-end slides */
-  --ink-on-dark: #F5F8FD;                /* text on solid status / brand fills (theme-independent) */
-  --ink-on-light: #0E1726;               /* text on warning / accent fills (theme-independent) */
+  /* --ink-on-dark / --ink-on-light live in tokens.css (helper tokens). */
   --tabbar-h: 60px;
-  --rail-current: var(--rail-w);         /* swapped to --rail-w-collapsed by .is-rail-collapsed */
+  --rail-current: var(--rail-w);         /* swapped to --rail-w-collapsed by body.rail-collapsed (app.js) */
   --z-backdrop: 0; --z-main: 1; --z-rail: 10; --z-filters: 20; --z-appbar: 30; --z-banner: 35;
   --z-tabbar: 40; --z-feed: 45; --z-overlay: 60; --z-toast: 70; --z-menu: 80; --z-cmdk: 90; --z-tooltip: 100; --z-skip: 110;
   /* Mashrabiya lattice: 48px tile, eight-point star (two squares, one rotated 45°) + connectors to the tile edges.
@@ -109,6 +108,8 @@ body.app {
   isolation: isolate;
 }
 
+/* app.js writes body.rail-collapsed; the .is-* spellings are kept for views. */
+body.rail-collapsed,
 body.is-rail-collapsed,
 html.is-rail-collapsed body { --rail-current: var(--rail-w-collapsed); }
 body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
@@ -164,16 +165,19 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
   inset: 0;
   pointer-events: none;
   background: var(--ink-1);
-  opacity: .05;
-  -webkit-mask-image: var(--lattice);
-  mask-image: var(--lattice);
-  -webkit-mask-size: 48px 48px;
-  mask-size: 48px 48px;
-  -webkit-mask-repeat: repeat;
-  mask-repeat: repeat;
-  -webkit-mask-position: center;
-  mask-position: center;
+  opacity: .085;
+  -webkit-mask-image: var(--lattice), linear-gradient(90deg, transparent, black 18%, black 82%, transparent);
+  mask-image: var(--lattice), linear-gradient(90deg, transparent, black 18%, black 82%, transparent);
+  -webkit-mask-size: 48px 48px, 100% 100%;
+  mask-size: 48px 48px, 100% 100%;
+  -webkit-mask-repeat: repeat, no-repeat;
+  mask-repeat: repeat, no-repeat;
+  -webkit-mask-position: center, center;
+  mask-position: center, center;
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
 }
+:root[data-theme="light"] .appbar::before { opacity: .07; }
 /* Gold ornament hairline on the bar's lower edge. */
 .appbar::after {
   content: "";
@@ -214,6 +218,7 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
 }
 .rail-toggle-bars i:nth-child(2) { inline-size: 70%; }
 .rail-toggle:hover .rail-toggle-bars i:nth-child(2) { inline-size: 100%; }
+.rail-collapsed .rail-toggle-bars i:nth-child(2),
 .is-rail-collapsed .rail-toggle-bars i:nth-child(2) { inline-size: 45%; }
 
 /* Brand */
@@ -312,9 +317,22 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
 }
 .pill:hover { border-color: var(--line-2); background: var(--bg-2); color: var(--ink-1); }
 .pill-value { color: var(--ink-1); font-weight: 500; }
+/* app.js sets data-tone="good|warning|serious" from the connector mix */
+.pill[data-tone="warning"] { border-color: color-mix(in srgb, var(--warning) 45%, var(--line)); background: color-mix(in srgb, var(--warning) 9%, var(--bg-2)); }
+.pill[data-tone="serious"] { border-color: color-mix(in srgb, var(--serious) 50%, var(--line)); background: color-mix(in srgb, var(--serious) 10%, var(--bg-2)); }
+.pill[data-tone="serious"] .pill-value { color: color-mix(in srgb, var(--serious) 80%, var(--ink-1)); }
 
 /* Notification bell */
 .bell-btn { position: relative; }
+.bell-btn.has-unread .icon { animation: bell-ring 1.2s var(--ease) 1; transform-origin: 50% 15%; }
+@keyframes bell-ring {
+  0%, 100% { transform: rotate(0); }
+  15% { transform: rotate(14deg); }
+  30% { transform: rotate(-12deg); }
+  45% { transform: rotate(8deg); }
+  60% { transform: rotate(-5deg); }
+  75% { transform: rotate(2deg); }
+}
 .bell-count {
   position: absolute;
   inset-block-start: 2px;
@@ -343,7 +361,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   align-items: center;
   gap: var(--space-2);
   block-size: 40px;
-  padding: 0 var(--space-3) 0 var(--space-1);
+  padding-block: 0;
   padding-inline: var(--space-1) var(--space-3);
   border-radius: var(--radius-pill);
   color: var(--ink-1);
@@ -371,7 +389,11 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
    Alert banner (critical tone band under the app bar)
    -------------------------------------------------------------------------- */
 
+/* app.js: hidden=false → rAF adds .is-open; on dismiss removes .is-open, then
+   hidden after 240ms. The reveal is therefore a transition, not an animation.
+   Tone comes from .tone-* (critical by default). */
 .alert-banner {
+  --tone: var(--critical);
   position: fixed;
   inset-block-start: var(--appbar-h);
   inset-inline: 0;
@@ -380,41 +402,62 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-5);
-  min-block-size: 44px;
+  min-block-size: 46px;
   font-size: var(--fs-sm);
   color: var(--ink-1);
-  background: color-mix(in srgb, var(--critical) 22%, var(--bg-1));
-  border-block-end: 1px solid color-mix(in srgb, var(--critical) 45%, transparent);
-  box-shadow: var(--shadow-1);
+  background: color-mix(in srgb, var(--tone) 20%, var(--bg-1));
+  border-block-end: 1px solid color-mix(in srgb, var(--tone) 45%, transparent);
+  box-shadow: var(--shadow-1), inset 0 1px 0 color-mix(in srgb, var(--tone) 35%, transparent);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
-  animation: banner-in var(--dur-2) var(--ease) both;
+  transform: translateY(-100%);
+  opacity: 0;
+  transition: transform var(--dur-2) var(--ease), opacity var(--dur-2) var(--ease);
 }
+.alert-banner.is-open { transform: none; opacity: 1; }
+/* Tone stripe along the inline-start edge */
 .alert-banner::before {
   content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: 4px;
+  background: var(--tone);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--tone) 70%, transparent);
+}
+.alert-banner-icon, .alert-banner > svg {
   flex: none;
-  inline-size: 10px;
-  block-size: 10px;
-  border-radius: 2px;
-  background: var(--critical);
-  transform: rotate(45deg);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--critical) 70%, transparent);
+  display: grid;
+  place-items: center;
+  inline-size: 30px;
+  block-size: 30px;
+  border-radius: 8px;
+  color: var(--tone-ink, color-mix(in srgb, var(--tone) 80%, var(--ink-1)));
+  background: color-mix(in srgb, var(--tone) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent);
 }
-.alert-banner.tone-warning { background: color-mix(in srgb, var(--warning) 20%, var(--bg-1)); border-color: color-mix(in srgb, var(--warning) 45%, transparent); }
-.alert-banner.tone-warning::before { background: var(--warning); box-shadow: none; }
-.alert-banner.tone-serious { background: color-mix(in srgb, var(--serious) 20%, var(--bg-1)); border-color: color-mix(in srgb, var(--serious) 45%, transparent); }
-.alert-banner.tone-serious::before { background: var(--serious); box-shadow: none; }
-.alert-banner > svg { flex: none; }
+.alert-banner-icon svg { inline-size: 18px; block-size: 18px; }
+.alert-banner.tone-critical .alert-banner-icon { animation: banner-pulse 1.8s var(--ease) infinite; }
+@keyframes banner-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 45%, transparent); }
+  60%      { box-shadow: 0 0 0 7px color-mix(in srgb, var(--tone) 0%, transparent); }
+}
 .alert-banner strong { font-weight: 600; }
-.alert-banner .alert-banner-text, .alert-banner .banner-text { flex: 1; min-inline-size: 0; }
-.alert-banner .alert-banner-site, .alert-banner .banner-site { color: var(--ink-2); }
-.alert-banner .btn { flex: none; }
-.alert-banner .alert-banner-close, .alert-banner .banner-close { margin-inline-start: auto; }
-
-@keyframes banner-in {
-  from { transform: translateY(-100%); opacity: 0; }
-  to   { transform: none; opacity: 1; }
+.alert-banner-text, .alert-banner .banner-text {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  line-height: 1.4;
 }
+.alert-banner-title { color: var(--ink-1); }
+.alert-banner-detail, .alert-banner-site, .alert-banner .banner-site { color: var(--ink-2); overflow-wrap: anywhere; }
+.alert-banner-actions { flex: none; display: inline-flex; align-items: center; gap: var(--space-1); margin-inline-start: auto; }
+.alert-banner .btn { flex: none; }
+.alert-banner .btn-outline { border-color: color-mix(in srgb, var(--tone) 45%, var(--line-2)); }
+.alert-banner .alert-banner-close, .alert-banner .banner-close { margin-inline-start: auto; }
 
 /* --------------------------------------------------------------------------
    Navigation rail (inline-start column)
@@ -529,8 +572,12 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
 .rail-site:hover { color: var(--brand); }
 
 /* Collapsed rail: icons only (labels move to title tooltips, set by app.js) */
+.rail-collapsed .rail,
 .is-rail-collapsed .rail,
 .rail.is-collapsed { padding-inline: 8px; }
+.rail-collapsed .rail-item,
+.rail-collapsed .rail-list > li > button,
+.rail-collapsed .rail-list > li > a,
 .is-rail-collapsed .rail-item,
 .is-rail-collapsed .rail-list > li > button,
 .is-rail-collapsed .rail-list > li > a,
@@ -539,14 +586,22 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   justify-items: center;
   padding-inline: 0;
 }
+.rail-collapsed .rail-label,
+.rail-collapsed .rail-code,
+.rail-collapsed .rail-site,
 .is-rail-collapsed .rail-label,
 .is-rail-collapsed .rail-code,
 .is-rail-collapsed .rail-site,
 .rail.is-collapsed .rail-label,
 .rail.is-collapsed .rail-code,
 .rail.is-collapsed .rail-site { display: none; }
+.rail-collapsed .rail-foot,
 .is-rail-collapsed .rail-foot,
 .rail.is-collapsed .rail-foot { justify-content: center; }
+/* Collapsed: the diamond indicator sits at the icon's inline-start edge */
+.rail-collapsed .rail-item.is-active::before,
+.is-rail-collapsed .rail-item.is-active::before,
+.rail.is-collapsed .rail-item.is-active::before { inset-inline-start: 6px; }
 
 /* --------------------------------------------------------------------------
    Filters row (sticky under the app bar)
@@ -782,10 +837,13 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   background: var(--good);
   vertical-align: middle;
 }
+body.feed-paused .feed-status::before,
 body.is-feed-paused .feed-status::before,
 .feed.is-paused .feed-status::before { background: var(--ink-3); }
 .live-dot.is-paused { background: var(--ink-3); box-shadow: none; }
 .live-dot.is-paused::after { animation: none; opacity: 0; }
+.feed.is-paused .feed-list { opacity: .82; }
+.feed-toggle.is-paused .feed-toggle-label { color: var(--ink-2); }
 
 /* --------------------------------------------------------------------------
    Bottom tab bar (<960px)
@@ -807,6 +865,8 @@ body.is-feed-paused .feed-status::before,
   backdrop-filter: blur(14px);
   border-block-start: 1px solid var(--line);
 }
+/* app.js builds .tab-item > .tab-icon + .tab-label (and .tab-more for "المزيد") */
+.tab-item,
 .tabbar-item,
 .tabbar > button,
 .tabbar > a {
@@ -824,12 +884,16 @@ body.is-feed-paused .feed-status::before,
   text-decoration: none;
   transition: color var(--dur-1) var(--ease);
 }
-.tabbar-item:hover, .tabbar > button:hover, .tabbar > a:hover { color: var(--ink-1); text-decoration: none; }
+.tab-item:hover, .tabbar-item:hover, .tabbar > button:hover, .tabbar > a:hover { color: var(--ink-1); text-decoration: none; }
+.tab-item.is-active,
+.tab-item[aria-current],
 .tabbar-item.is-active,
 .tabbar-item[aria-current="page"],
 .tabbar > button.is-active,
 .tabbar > a.is-active,
 .tabbar > a[aria-current="page"] { color: var(--brand); }
+.tab-item.is-active::before,
+.tab-item[aria-current]::before,
 .tabbar-item.is-active::before,
 .tabbar-item[aria-current="page"]::before,
 .tabbar > button.is-active::before,
@@ -838,16 +902,19 @@ body.is-feed-paused .feed-status::before,
   content: "";
   position: absolute;
   inset-block-start: 3px;
-  inset-inline-start: 50%;
+  inset-inline-start: calc(50% - 3px);
   inline-size: 6px;
   block-size: 6px;
   border-radius: 1px;
   background: var(--accent);
-  transform: translateX(-50%) rotate(45deg);
+  transform: rotate(45deg);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 70%, transparent);
 }
-.tabbar-icon svg, .tabbar-item > svg { inline-size: 22px; block-size: 22px; }
-.tabbar-label { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tabbar-item:focus-visible, .tabbar > button:focus-visible, .tabbar > a:focus-visible { outline-offset: -2px; border-radius: 8px; }
+.tab-icon, .tabbar-icon { display: grid; place-items: center; inline-size: 24px; block-size: 24px; }
+.tab-icon svg, .tabbar-icon svg, .tabbar-item > svg, .tab-item > svg { inline-size: 22px; block-size: 22px; }
+.tab-label, .tabbar-label { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.2; }
+.tab-item:focus-visible, .tabbar-item:focus-visible, .tabbar > button:focus-visible, .tabbar > a:focus-visible { outline-offset: -2px; border-radius: 8px; }
+.tab-more[aria-expanded="true"] { color: var(--ink-1); }
 
 /* --------------------------------------------------------------------------
    Command palette
@@ -862,14 +929,17 @@ body.is-feed-paused .feed-status::before,
   align-content: start;
   padding: 12vh var(--space-4) var(--space-4);
 }
+/* app.js: hidden=false → rAF adds .cmdk.is-open; close removes it, then hidden after 180ms */
 .cmdk-backdrop {
   position: absolute;
   inset: 0;
   background: color-mix(in srgb, var(--bg-0) 60%, transparent);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
-  animation: fade-in var(--dur-1) var(--ease) both;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease);
 }
+.cmdk.is-open .cmdk-backdrop { opacity: 1; }
 .cmdk-panel {
   position: relative;
   inline-size: min(640px, 100%);
@@ -881,8 +951,11 @@ body.is-feed-paused .feed-status::before,
   border-radius: var(--radius-card);
   box-shadow: 0 30px 80px -30px rgba(0,0,0,.7), var(--shadow-1);
   overflow: hidden;
-  animation: cmdk-in var(--dur-2) var(--ease) both;
+  opacity: 0;
+  transform: translateY(-8px) scale(.985);
+  transition: opacity var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
 }
+.cmdk.is-open .cmdk-panel { opacity: 1; transform: none; }
 .cmdk-panel::before {
   content: "";
   position: absolute;
@@ -892,10 +965,6 @@ body.is-feed-paused .feed-status::before,
   background: linear-gradient(90deg, transparent, var(--accent), transparent);
   opacity: .6;
   pointer-events: none;
-}
-@keyframes cmdk-in {
-  from { opacity: 0; transform: translateY(-8px) scale(.985); }
-  to   { opacity: 1; transform: none; }
 }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
@@ -966,13 +1035,17 @@ body.is-feed-paused .feed-status::before,
   border-radius: 2px;
   background: var(--brand);
 }
-.cmdk-item-icon, .cmdk-item > svg { inline-size: 24px; block-size: 24px; display: grid; place-items: center; color: var(--ink-3); }
-.cmdk-item-icon svg { inline-size: 18px; block-size: 18px; }
+/* app.js item anatomy: .cmdk-icon | .cmdk-text (.cmdk-label + optional .badge) | .cmdk-meta */
+.cmdk-icon, .cmdk-item-icon, .cmdk-item > svg { inline-size: 24px; block-size: 24px; display: grid; place-items: center; color: var(--ink-3); }
+.cmdk-icon svg, .cmdk-item-icon svg { inline-size: 18px; block-size: 18px; }
+.cmdk-item.is-active .cmdk-icon, .cmdk-item[aria-selected="true"] .cmdk-icon,
 .cmdk-item.is-active .cmdk-item-icon, .cmdk-item[aria-selected="true"] .cmdk-item-icon { color: var(--brand); }
+.cmdk-text { min-inline-size: 0; display: flex; align-items: center; gap: 8px; line-height: 1.35; }
+.cmdk-text .badge { flex: none; }
+.cmdk-label, .cmdk-item-title { color: inherit; font-weight: 500; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmdk-item-text { min-inline-size: 0; display: flex; flex-direction: column; line-height: 1.35; }
-.cmdk-item-title { color: inherit; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmdk-item-sub { font-size: 11px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cmdk-item-kbd, .cmdk-item-code {
+.cmdk-meta, .cmdk-item-kbd, .cmdk-item-code {
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: .06em;
@@ -981,13 +1054,19 @@ body.is-feed-paused .feed-status::before,
   border: 1px solid var(--line);
   border-radius: 4px;
   background: var(--bg-1);
+  white-space: nowrap;
+  max-inline-size: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+.cmdk-item.is-active .cmdk-meta { border-color: color-mix(in srgb, var(--brand) 40%, var(--line)); color: var(--ink-2); }
 .cmdk-empty {
-  padding: var(--space-6) var(--space-4);
+  padding: 0;
   text-align: center;
   color: var(--ink-3);
   font-size: var(--fs-sm);
 }
+.cmdk-empty .empty { padding: 24px 16px; }
 .cmdk-foot {
   display: flex;
   gap: var(--space-4);
@@ -1106,12 +1185,14 @@ body.is-feed-paused .feed-status::before,
     visibility: hidden;
   }
   .feed.is-open,
+  body.feed-open .feed,
   body.is-feed-open .feed {
     transform: none;
     visibility: visible;
     box-shadow: 0 24px 64px -24px rgba(0,0,0,.7), var(--shadow-1);
   }
   body:has(#feedOpen[aria-expanded="true"]) .feed { transform: none; visibility: visible; box-shadow: 0 24px 64px -24px rgba(0,0,0,.7), var(--shadow-1); }
+  .feed { border-inline-start: 1px solid var(--line-2); background: color-mix(in srgb, var(--bg-1) 94%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
   .feed-head .feed-close, .filters .feed-open { display: inline-flex; }
   .filters-feed { gap: var(--space-2); }
 
@@ -1144,12 +1225,19 @@ body.is-feed-paused .feed-status::before,
     gap: var(--space-2);
     padding-inline: var(--space-3);
   }
-  .rail, .rail-toggle { display: none; }
-  .brand-tag, .clock-dates, .cmdk-btn-label, .cmdk-kbd, .pill-label, .user-text { display: none; }
+  /* .btn sets display:inline-flex in components.css; out-specify it here */
+  .rail, .appbar .rail-toggle.btn, .appbar .rail-toggle { display: none; }
+  .brand-tag, .clock-dates, .cmdk-btn-label, .cmdk-btn kbd.cmdk-kbd, .pill-label, .user-text { display: none; }
+  .appbar-start, .appbar-end { gap: var(--space-1); }
+  .brand { gap: var(--space-2); }
+  .brand-mark { inline-size: 32px; block-size: 32px; }
+  .brand-name { font-size: var(--fs-md); }
   .cmdk-btn { min-inline-size: 0; inline-size: 36px; padding-inline: 0; justify-content: center; }
-  .clock-time { font-size: var(--fs-sm); }
+  .clock-time { font-size: var(--fs-sm); letter-spacing: 0; }
   .appbar-center { gap: var(--space-2); }
+  .pill { block-size: 30px; padding-inline: 9px; }
   .user-chip { padding-inline: 2px; block-size: 36px; }
+  .user-avatar { inline-size: 28px; block-size: 28px; }
 
   .filters {
     position: static;
@@ -1184,6 +1272,11 @@ body.is-feed-paused .feed-status::before,
   .kpi-row { grid-template-columns: minmax(0, 1fr); }
   .main { padding-inline: var(--space-3); }
   .clock { display: none; }
+  .appbar { padding-inline: var(--space-2); }
+  .appbar-center { justify-content: flex-end; }
+}
+@media (max-width: 359.98px) {
+  .integrations-pill { display: none; }
 }
 
 /* Short viewports: let the main pane breathe */
