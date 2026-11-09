@@ -33,7 +33,7 @@ export default {
 
   render(container, ctx) {
     const { store, bus, fmt, charts, components, psel, sources, router } = ctx;
-    const { h, card, statTile, badge, dataTable, button, segmented, toast, emptyState, progress, svgIcon, glyph } = components;
+    const { h, card, statTile, badge, dataTable, button, toast, emptyState, progress, svgIcon, glyph } = components;
 
     const root = h('section', { class: 'view view-cost' });
     container.appendChild(root);
@@ -333,7 +333,7 @@ export default {
 
     function buildCommodityCard(data) {
       const items = data.commodities.slice(0, 6);
-      if (!items.length) return card({ code: 'CST-03', title: 'أثر تضخم السلع', className: 'col-span-4', body: emptyState({ title: 'لا تتوفر مؤشرات السلع' }) });
+      if (!items.length) return card({ code: 'CST-03', title: 'أثر تضخم السلع', body: emptyState({ title: 'لا تتوفر مؤشرات السلع' }) });
       const tiles = items.map((c) => statTile({
         label: c.name, value: fmt.compact(num(c.exposureSAR)), unit: 'ر.س', delta: Number(num(c.impactPct).toFixed(1)), deltaGoodWhen: 'down',
         tone: changeTone(c.impactPct, { badAbove: 4, warnAbove: 1 }), icon: 'package',
@@ -341,11 +341,11 @@ export default {
         onClick: () => router.navigate('bom', { commodity: c.id }),
       }));
       const totalImpact = items.reduce((a, c) => a + c.impactSAR, 0);
+      const totalPct = data.commodities.reduce((a, c) => a + num(c.exposureSAR), 0) ? (totalImpact / data.commodities.reduce((a, c) => a + num(c.exposureSAR), 0)) * 100 : 0;
       return card({
-        code: 'CST-03', title: 'أثر تضخم السلع', subtitle: 'التعرض الحالي وتغير السعر المتوقع خلال 6 أشهر',
-        className: 'col-span-4',
-        actions: [toneBadge(`${totalImpact < 0 ? '−' : '+'}${sar(Math.abs(totalImpact))}`, changeTone(totalImpact > 0 ? 5 : 0, { badAbove: 4, warnAbove: 1 }))],
-        body: h('div', { class: 'kpi-row', style: { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' } }, ...tiles),
+        code: 'CST-03', title: 'أثر تضخم السلع', subtitle: 'التعرض الحالي لكل سلعة والتغير المتوقع في سعرها خلال 6 أشهر — انقر للتفاصيل في مخاطر المواد',
+        actions: [toneBadge(`أثر إجمالي متوقع ${totalImpact < 0 ? '−' : '+'}${sar(Math.abs(totalImpact))}`, changeTone(totalPct, { badAbove: 4, warnAbove: 1 }))],
+        body: h('div', { class: 'kpi-row' }, ...tiles),
       });
     }
 
@@ -366,8 +366,7 @@ export default {
       });
       const totalExposure = rows.reduce((a, c) => a + num(c.exposureSAR), 0);
       return card({
-        code: 'CST-04', title: 'التعرض للعملات', subtitle: 'أسعار الصرف (ساما) والتعرض غير المُحوَّط',
-        className: 'col-span-6',
+        code: 'CST-04', title: 'التعرض للعملات', subtitle: 'أسعار الصرف (ساما) والتعرض غير المُحوَّط مع توصية التحوّط لكل عملة',
         actions: [h('span', { class: 'text-sm muted' }, 'إجمالي التعرض: ', mono(sar(totalExposure)))],
         body: table.el,
       });
@@ -395,14 +394,14 @@ export default {
       });
       return card({
         code: 'CST-05', title: 'زحف أوامر التغيير', subtitle: 'توزيع القيمة حسب الحالة وأحدث الأوامر',
-        className: 'col-span-6',
+        className: 'col-span-7',
         body: h('div', { class: 'stack gap-4' }, strip, seg ? seg.el : null, table.el),
         tableView: parts.length ? tableOf(seg, () => simpleTable(['الحالة', 'العدد', 'القيمة'], data.coByStatus.map((p) => [p.label, fmt.num(p.count), sar(p.amount)]))) : null,
       });
     }
 
     function buildLabourCard(data) {
-      if (!data.labour.length) return card({ code: 'CST-06', title: 'مؤشر أجور العمالة', className: 'col-span-4', body: emptyState({ title: 'لا تتوفر مؤشرات الأجور' }) });
+      if (!data.labour.length) return card({ code: 'CST-06', title: 'مؤشر أجور العمالة', className: 'col-span-5', body: emptyState({ title: 'لا تتوفر مؤشرات الأجور' }) });
       const rows = data.labour.map((l) => {
         const spark = makeChart('sparkline', { values: arr(l.series).map((v) => num(v)), width: 110, height: 28, color: 'var(--ink-3)', accentLast: true });
         const tone = changeTone(num(l.change12mPct), { badAbove: 6, warnAbove: 3 });
@@ -414,7 +413,7 @@ export default {
       });
       return card({
         code: 'CST-06', title: 'مؤشر أجور العمالة', subtitle: 'التغير خلال 12 شهراً حسب المنطقة والحرفة',
-        className: 'col-span-4',
+        className: 'col-span-5',
         body: h('div', { class: 'stack', style: { gap: '0' } }, ...rows),
         tableView: () => simpleTable(['الحرفة', 'المنطقة', 'التغير 12 شهراً'], data.labour.map((l) => [l.trade, l.region, `${fmt.signed(num(l.change12mPct), 1)}%`])),
         footer: h('p', { class: 'text-xs muted' }, 'المصدر: مؤشرات السلع والأجور — يُستخدم كمدخل لنموذج توقع التكلفة.'),
@@ -437,8 +436,7 @@ export default {
         rows: data.costLines, initialSort: { key: 'variancePct', dir: 'desc' },
       });
       return card({
-        code: 'CST-07', title: 'انحراف بنود التكلفة', subtitle: 'المتوقع مقابل الميزانية لكل بند WBS',
-        className: 'col-span-8',
+        code: 'CST-07', title: 'انحراف بنود التكلفة', subtitle: 'المتوقع مقابل الميزانية لكل بند WBS — الأعلى انحرافاً أولاً',
         actions: [toneBadge(`${fmt.num(over)} بنود متجاوزة`, over ? 'warning' : 'good')],
         body: table.el,
       });
@@ -459,8 +457,7 @@ export default {
       table.table.classList.add('kri-table');
       return card({
         code: 'CST-08', title: 'مصفوفة مؤشرات المخاطر (KRI) — التكلفة',
-        subtitle: data.pipeline ? `${data.pipeline.nameAr || data.pipeline.name || ''} · ${data.pipeline.version || ''}` : 'خط توقع التكلفة',
-        className: 'col-span-6',
+        subtitle: data.pipeline ? `${data.pipeline.nameAr || data.pipeline.name || ''} · ${data.pipeline.version || ''} — المؤشر، التقنية، المدخلات، وإجراء التخفيف` : 'خط توقع التكلفة',
         actions: [button('المحرك', { variant: 'ghost', size: 'sm', icon: 'sliders', onClick: () => router.navigate('engine', { pipeline: PIPELINE_ID }) })],
         body: table.el,
       });
@@ -483,8 +480,7 @@ export default {
         rows, initialSort: { key: 'score', dir: 'desc' },
       });
       return card({
-        code: 'CST-09', title: 'مخاطر التكلفة المفتوحة', subtitle: 'مكتشفة بواسطة خط توقع التكلفة — انقر للتفاصيل والتوصية',
-        className: 'col-span-6',
+        code: 'CST-09', title: 'مخاطر التكلفة المفتوحة', subtitle: 'مكتشفة بواسطة خط توقع التكلفة — انقر على أي صف للدليل والتفسير والتوصية',
         actions: [toneBadge(`${fmt.num(red)} أحمر`, red ? 'critical' : 'good'), h('span', { class: 'text-sm muted' }, `${fmt.num(rows.length)} مفتوحة`)],
         body: table.el,
       });
@@ -500,10 +496,13 @@ export default {
         buildHead(data),
         buildScopeBar(data),
         buildEvmCard(data),
-        h('div', { class: 'grid-12' }, buildTrendCard(data), buildCommodityCard(data)),
-        h('div', { class: 'grid-12' }, buildCurrencyCard(data), buildChangeOrdersCard(data)),
-        h('div', { class: 'grid-12' }, buildCostLinesCard(data), buildLabourCard(data)),
-        h('div', { class: 'grid-12' }, buildKriCard(data), buildAiRisksCard(data)),
+        buildTrendCard(data),
+        buildCommodityCard(data),
+        buildCurrencyCard(data),
+        h('div', { class: 'grid-12' }, buildChangeOrdersCard(data), buildLabourCard(data)),
+        buildCostLinesCard(data),
+        buildAiRisksCard(data),
+        buildKriCard(data),
       );
       root.replaceChildren(frag);
     }

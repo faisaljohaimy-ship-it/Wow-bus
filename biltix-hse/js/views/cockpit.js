@@ -363,7 +363,7 @@ export default {
     }
 
     function categoryTiles(d) {
-      const grid = h('div', { class: 'cat-tiles col-span-8', role: 'list', 'aria-label': 'درجات مجالات المخاطر الخمسة' });
+      const grid = h('div', { class: 'cat-tiles', role: 'list', 'aria-label': 'درجات مجالات المخاطر الخمسة' });
       const byCat = new Map((d.categories || []).map((c) => [c.category, c]));
       CATEGORY_ORDER.forEach((category) => {
         const c = byCat.get(category) || { category, score: 0, rating: 'green', open: 0, red: 0, trend: [] };
@@ -545,8 +545,11 @@ export default {
     /* ---------------------------------------------------------------- */
 
     function pipelineStrip(d) {
-      const strip = h('div', { class: 'pipe-strip', role: 'list', 'aria-label': 'صحة خطوط المعالجة الخمسة' });
-      (d.pipelines || []).slice(0, 5).forEach((item) => {
+      const list = (d.pipelines || []).slice(0, 5);
+      const strip = list.length
+        ? h('div', { class: 'pipe-strip', role: 'list', 'aria-label': 'صحة خطوط المعالجة الخمسة' })
+        : emptyState({ icon: 'sliders', title: 'لا توجد خطوط معالجة مسجلة', text: 'تظهر هنا حالة النماذج الخمسة بعد تحميل بيانات المنصة.' });
+      list.forEach((item) => {
         const p = item && item.pipeline ? item.pipeline : item;
         const status = PIPELINE_STATUS[p.status] || { label: String(p.status || '—'), tone: 'neutral' };
         const tone = item.tone || item.health || status.tone;
@@ -561,7 +564,7 @@ export default {
       });
       return card({
         code: 'PLT-01', title: 'صحة خطوط المعالجة', subtitle: 'خمسة نماذج على طبقة تقييم وتفسير مشتركة — الحالة، آخر تشغيل، تشغيلات اليوم، ونسبة قبول التوصيات (الإنسان في الحلقة)',
-        className: 'col-span-12',
+        className: 'cockpit-pipelines',
         actions: [button('محرك الذكاء الاصطناعي', { variant: 'ghost', size: 'sm', icon: 'sliders', onClick: () => navigate('engine') })],
         body: strip,
       });
@@ -666,10 +669,10 @@ export default {
         return;
       }
       const d = collect();
-      body.appendChild(h('div', { class: 'grid-12 cockpit-row-1' }, heroCard(d), categoryTiles(d)));
+      // Row 1: hero (4 cols) beside the five category tiles with the five pipeline mini cards under them (8 cols)
+      body.appendChild(h('div', { class: 'grid-12 cockpit-row-1' }, heroCard(d), h('div', { class: 'col-span-8 stack gap-4 cockpit-row-1-side', style: { justifyContent: 'space-between' } }, categoryTiles(d), pipelineStrip(d))));
       body.appendChild(flowCard(d));
       body.appendChild(h('div', { class: 'grid-12 cockpit-row-3' }, redRisksCard(d), alertQueueCard(d)));
-      body.appendChild(h('div', { class: 'grid-12 cockpit-row-3b' }, pipelineStrip(d)));
       body.appendChild(h('div', { class: 'grid-12 cockpit-row-3c' }, dataQualityCard(d), typeDistributionCard(d), ratingDistributionCard(d)));
       body.appendChild(h('div', { class: 'grid-12 cockpit-row-4' }, projectsCard(d)));
       // the packet element is recreated on paint (its CSS animation restarts) — restart the stage clock with it

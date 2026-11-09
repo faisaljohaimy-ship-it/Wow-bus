@@ -543,7 +543,7 @@ function render(container, ctx) {
 
   function sectionEl(code, title, lead, { breakBefore = false, narrative = null } = {}) {
     const id = uid('sec');
-    const header = h('header', { class: 'row between wrap gap-3 report-section-head' },
+    const header = h('header', { class: 'row between wrap gap-3 report-section-head print-keep-next' },
       h('div', { class: 'row gap-2 wrap' }, h('span', { class: 'code-tag' }, code), h('h2', { id, class: 'report-section-title' }, title)),
       lead ? h('p', { class: 'muted text-sm' }, lead) : null);
     return h('section', { class: ['report-section', 'stack', 'gap-3', 'print-avoid', breakBefore ? 'print-break' : null], 'aria-labelledby': id }, header, narrative);
@@ -560,7 +560,7 @@ function render(container, ctx) {
     const s = builtSection(d, id);
     const lines = s && Array.isArray(s.narrative) ? s.narrative.filter((x) => typeof x === 'string' && x.trim()) : [];
     if (!lines.length) return null;
-    return h('div', { class: 'note tone-accent report-narrative-note print-avoid' }, h('p', { class: 'text-sm', style: { maxInlineSize: '100ch' } }, lines.join(' ')));
+    return h('div', { class: 'note tone-accent report-narrative-note print-avoid print-keep-next' }, h('p', { class: 'text-sm', style: { maxInlineSize: '100ch' } }, lines.join(' ')));
   }
 
   function simpleTable(caption, headers, rows) {

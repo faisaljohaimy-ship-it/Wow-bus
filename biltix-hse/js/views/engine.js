@@ -30,7 +30,7 @@ const STYLE_TEXT = `@layer views {
   .engine-kri[open] > summary::before { transform: rotate(45deg); }
   .pipeline-node.is-model { cursor: pointer; font: inherit; text-align: start; transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
   .pipeline-node.is-model:hover, .pipeline-node.is-model:focus-visible { background: var(--bg-3); }
-  .explain-steps { margin: 0; padding-inline-start: 0; list-style: none; counter-reset: xs; display: grid; gap: 10px; }
+  .explain-steps { margin: 0; padding-inline-start: 0; list-style: none; counter-reset: xs; display: grid; gap: 14px 20px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
   .explain-steps > li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; counter-increment: xs; }
   .explain-steps > li::before { content: counter(xs); display: grid; place-items: center; inline-size: 26px; block-size: 26px; border-radius: 50%; background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--brand); font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
   @media (max-width: 720px) { .engine-meters { grid-template-columns: minmax(0, 1fr); } }
@@ -116,14 +116,12 @@ export default {
       return table;
     }
 
-    /** Meter with threshold tones; prefers charts.meter, falls back to the `.meter` chrome. Status is icon + value, never colour alone. */
+    /** Threshold meter on the shared `.meter` chrome (charts.css): label + tone glyph + value head, single-hue fill. Status is icon + value, never colour alone. */
     function meter({ value, max = 100, label, thresholds, format }) {
       const v = Math.max(0, Math.min(max, num(value)));
       const tone = (thresholds.find((t) => v <= t.upTo) || thresholds[thresholds.length - 1]).tone;
-      const c = makeChart('meter', { value: v, max, label, thresholds, height: 8 });
       const valueText = format ? format(v) : fmt.num(v, { maximumFractionDigits: 1 });
       const head = h('div', { class: 'meter-head' }, h('span', {}, label), h('span', { class: 'row gap-1' }, glyph(tone, 12), h('span', { class: 'meter-value' }, valueText)));
-      if (c) return h('div', { class: ['meter', `tone-${tone}`] }, head, c.el);
       const el = h('div', { class: ['meter', `tone-${tone}`], role: 'meter', 'aria-valuemin': '0', 'aria-valuemax': String(max), 'aria-valuenow': String(v), 'aria-label': label, 'aria-valuetext': valueText });
       el.append(head, h('div', { class: 'meter-track' }, h('div', { class: 'meter-fill', style: { inlineSize: `${((v / max) * 100).toFixed(1)}%`, background: 'var(--tone)' } })));
       return el;
@@ -329,7 +327,7 @@ export default {
     }
 
     function buildPipelines(data) {
-      const spans = ['col-span-4', 'col-span-4', 'col-span-4', 'col-span-6', 'col-span-6'];
+      const spans = ['col-span-6', 'col-span-6', 'col-span-6', 'col-span-6', 'col-span-12'];
       const cards = data.pipelines.map((p, i) => buildPipelineCard(data, p, spans[i] || 'col-span-6'));
       if (!cards.length) return card({ code: 'ENG-01', title: 'خطوط المعالجة', body: emptyState({ title: 'لا توجد خطوط نمذجة مسجلة', text: 'تأكد من تحميل بيانات المنصة.' }) });
       return h('div', { class: 'grid-12' }, ...cards);
@@ -350,8 +348,7 @@ export default {
         ['الإنسان في الحلقة', 'كل قبول أو تعديل أو تجاوز للتوصية يُسجَّل في سجل التدقيق مع السبب، ويُعاد تغذيته لإعادة معايرة النموذج في دورة التدريب التالية.'],
       ];
       return card({
-        code: 'ENG-06', title: 'كيف تُحسب الدرجة ويُصاغ التفسير', subtitle: 'طبقة التفسير المشتركة لجميع الخطوط',
-        className: 'col-span-5',
+        code: 'ENG-06', title: 'كيف تُحسب الدرجة ويُصاغ التفسير', subtitle: 'طبقة التفسير المشتركة لجميع الخطوط — من المدخلات المعتمدة إلى التجاوز البشري المُسجَّل',
         body: h('div', { class: 'stack gap-4' },
           h('ol', { class: 'explain-steps' }, ...steps.map(([t, d]) => h('li', {}, h('div', { class: 'stack', style: { gap: '2px' } }, h('span', { class: 'text-sm semibold' }, t), h('span', { class: 'text-xs ink-2', style: { lineHeight: '1.6' } }, d))))),
           h('div', { class: 'row wrap gap-2', 'aria-label': 'نطاقات التقييم' },
@@ -383,7 +380,6 @@ export default {
       });
       return card({
         id: 'engine-audit', code: 'ENG-07', title: 'سجل التدقيق والإصدارات', subtitle: `التجاوزات، الكتابة العكسية وتحديثات النماذج خلال آخر ${fmt.num(data.range)} يوماً`,
-        className: 'col-span-7',
         actions: [h('span', { class: 'text-sm muted' }, `${fmt.num(data.auditAll.length)} حدثاً إجمالاً`)],
         body: h('div', { class: 'stack gap-3' }, chips, table.el),
       });
@@ -399,7 +395,8 @@ export default {
         buildHead(data),
         buildMap(data),
         buildPipelines(data),
-        h('div', { class: 'grid-12' }, buildExplainability(data), buildAudit(data)),
+        buildExplainability(data),
+        buildAudit(data),
       );
       root.replaceChildren(frag);
     }

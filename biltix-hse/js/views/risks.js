@@ -304,9 +304,20 @@ export default {
         sideCol.style.alignItems = '';
       }
     };
+    // Width-only and deferred a frame so the re-span never re-enters the observer loop.
     let layoutObserver = null;
+    let lastLayoutWidth = -1;
+    let layoutRaf = 0;
     if (typeof ResizeObserver === 'function') {
-      layoutObserver = new ResizeObserver((entries) => { for (const e of entries) applyLayout(e.contentRect.width); });
+      layoutObserver = new ResizeObserver((entries) => {
+        for (const e of entries) {
+          const w = Math.round(e.contentRect.width);
+          if (w === lastLayoutWidth || w === 0) continue;
+          lastLayoutWidth = w;
+          if (layoutRaf) cancelAnimationFrame(layoutRaf);
+          layoutRaf = requestAnimationFrame(() => { layoutRaf = 0; if (!destroyed) applyLayout(w); });
+        }
+      });
       layoutObserver.observe(root);
     } else {
       applyLayout(root.getBoundingClientRect().width || 1200);
@@ -725,6 +736,7 @@ export default {
       timers.splice(0).forEach((t) => { clearTimeout(t); clearInterval(t); });
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
       if (layoutObserver) { try { layoutObserver.disconnect(); } catch { /* ignore */ } layoutObserver = null; }
+      if (layoutRaf) { cancelAnimationFrame(layoutRaf); layoutRaf = 0; }
       [drawerApi, modalApi, confirmApi].forEach((api) => { if (api) { try { api.close(); } catch { /* ignore */ } } });
       drawerApi = null; modalApi = null; confirmApi = null; drawerRiskId = null;
       try { if (charts && charts.tooltip && typeof charts.tooltip.hide === 'function') charts.tooltip.hide(); } catch { /* ignore */ }

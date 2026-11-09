@@ -40,7 +40,7 @@ export default {
 
   render(container, ctx) {
     const { store, bus, fmt, charts, components, psel, router } = ctx;
-    const { h, card, statTile, badge, dataTable, button, segmented, toast, emptyState, svgIcon, glyph } = components;
+    const { h, card, statTile, badge, dataTable, button, toast, emptyState, svgIcon, glyph } = components;
 
     const root = h('section', { class: 'view view-dataquality' });
     container.appendChild(root);
@@ -191,13 +191,13 @@ export default {
           { key: 'passed', label: 'اجتازت', align: 'end', mono: true, render: (r) => fmt.num(num(r.passed)) },
           { key: 'rejected', label: 'مرفوضة', align: 'end', render: (r) => h('span', { class: ['mono', 'num', num(r.rejected) ? 'tone-warning' : 'tone-good'], style: { color: 'var(--tone-ink)' } }, fmt.num(num(r.rejected))) },
           { key: 'deduplicated', label: 'مكررة', align: 'end', mono: true, render: (r) => fmt.num(num(r.deduplicated)) },
-          { key: 'completenessPct', label: 'الاكتمال', width: 150, render: (r) => h('div', { class: 'progress-row' }, meter(r.completenessPct, { label: `اكتمال ${r.name}` }), h('span', { class: 'progress-value' }, pct(r.completenessPct))), sortValue: (r) => num(r.completenessPct) },
-          { key: 'consistencyPct', label: 'الاتساق', width: 150, render: (r) => h('div', { class: 'progress-row' }, meter(r.consistencyPct, { label: `اتساق ${r.name}` }), h('span', { class: 'progress-value' }, pct(r.consistencyPct))), sortValue: (r) => num(r.consistencyPct) },
-          { key: 'lastBatch', label: 'آخر دفعة', render: (r) => h('span', { class: 'text-xs', title: fmt.dateTime(r.lastBatch) }, fmt.relative(r.lastBatch)), sortValue: (r) => Date.parse(r.lastBatch) || 0 },
+          { key: 'completenessPct', label: 'الاكتمال', width: 130, render: (r) => h('div', { class: 'progress-row' }, meter(r.completenessPct, { label: `اكتمال ${r.name}` }), h('span', { class: 'progress-value' }, pct(r.completenessPct))), sortValue: (r) => num(r.completenessPct) },
+          { key: 'consistencyPct', label: 'الاتساق', width: 130, render: (r) => h('div', { class: 'progress-row' }, meter(r.consistencyPct, { label: `اتساق ${r.name}` }), h('span', { class: 'progress-value' }, pct(r.consistencyPct))), sortValue: (r) => num(r.consistencyPct) },
+          { key: 'lastBatch', label: 'آخر دفعة', render: (r) => h('span', { class: 'text-xs nowrap', title: fmt.dateTime(r.lastBatch) }, fmt.relative(r.lastBatch)), sortValue: (r) => Date.parse(r.lastBatch) || 0 },
         ],
         rows, initialSort: { key: 'recordsIn', dir: 'desc' },
       });
-      return card({ code: 'DQ-01', title: 'الجودة حسب المصدر', subtitle: 'دفعات اليوم من موصلات التكامل', className: 'col-span-8', body: table.el });
+      return card({ code: 'DQ-01', title: 'الجودة حسب المصدر', subtitle: 'دفعات اليوم من موصلات التكامل — الواردة، المجتازة، المرفوضة، المكررة، ونسب الاكتمال والاتساق', body: table.el });
     }
 
     function buildPassRateCard(data) {
@@ -206,7 +206,7 @@ export default {
       const weakest = items[0];
       return card({
         code: 'DQ-02', title: 'معدل الاجتياز حسب المصدر', subtitle: weakest ? `الأدنى أولاً — «${weakest.label}» يحتاج تنظيفاً عند المنبع` : 'الأدنى أولاً — المصادر التي تحتاج تنظيفاً عند المنبع',
-        className: 'col-span-4',
+        className: 'col-span-5',
         actions: weakest ? [badge(`الأدنى ${fmt.pct(weakest.value, 1)}`, pctTone(weakest.value))] : [],
         body: items.length ? chartOr(chart) : emptyState({ title: 'لا توجد مصادر' }),
         tableView: items.length ? tableOf(chart, () => simpleTable(['المصدر', 'معدل الاجتياز'], items.map((i) => [i.label, fmt.pct(i.value, 1)]))) : null,
@@ -218,7 +218,7 @@ export default {
       const table = dataTable({
         dense: true, pageSize: 0, emptyText: 'لا توجد قواعد تحقق', caption: 'قواعد التحقق والتنظيف',
         columns: [
-          { key: 'name', label: 'القاعدة', render: (r) => { const t = RULE_TYPE[r.type] || { label: r.type || '—', icon: 'list', hint: '' }; return h('span', { class: 'stack', style: { gap: '1px' } }, h('span', { class: 'semibold', style: { opacity: r.enabled === false ? '.6' : '1' } }, r.name || '—'), h('span', { class: 'text-xs muted' }, t.hint)); } },
+          { key: 'name', label: 'القاعدة', render: (r) => { const t = RULE_TYPE[r.type] || { label: r.type || '—', icon: 'list', hint: '' }; return h('span', { class: 'semibold', title: t.hint || undefined, style: { opacity: r.enabled === false ? '.6' : '1' } }, r.name || '—'); } },
           { key: 'type', label: 'النوع', render: (r) => { const t = RULE_TYPE[r.type] || { label: r.type || '—', icon: 'list' }; return badge(t.label, 'neutral', { icon: t.icon }); } },
           { key: 'hitsToday', label: 'إصابات اليوم', align: 'end', render: (r) => mono(fmt.num(num(r.hitsToday))), sortValue: (r) => num(r.hitsToday) },
           { key: 'enabled', label: 'مفعّلة', align: 'center', sortable: false, render: (r) => h('span', { class: 'row gap-2', style: { justifyContent: 'center' } },
@@ -233,8 +233,8 @@ export default {
         rows, initialSort: { key: 'hitsToday', dir: 'desc' },
       });
       return card({
-        code: 'DQ-03', title: 'قواعد التحقق', subtitle: 'كل قاعدة تُطبَّق على كل سجل قبل البوابة',
-        className: 'col-span-5',
+        code: 'DQ-03', title: 'قواعد التحقق', subtitle: 'كل قاعدة تُطبَّق على كل سجل قبل البوابة — عطّل قاعدة لتجاوز فحصها مؤقتاً',
+        className: 'col-span-7',
         actions: [badge(`${fmt.num(data.enabledRules)} / ${fmt.num(rows.length)} مفعّلة`, data.enabledRules === rows.length ? 'good' : 'warning'), h('span', { class: 'text-sm muted' }, `${fmt.num(data.hitsToday)} إصابة اليوم`)],
         body: table.el,
       });
@@ -270,8 +270,11 @@ export default {
       const all = data.quarantine;
       const filtered = quarantineFilter === 'all' ? all : all.filter((q) => q.status === quarantineFilter);
       const counts = Object.fromEntries(Q_FILTERS.map((f) => [f.value, f.value === 'all' ? all.length : all.filter((q) => q.status === f.value).length]));
-      const seg = segmented({ options: Q_FILTERS.map((f) => ({ value: f.value, label: `${f.label} (${fmt.num(counts[f.value])})` })), value: quarantineFilter, ariaLabel: 'تصفية قائمة الحجر', onChange: (v) => { quarantineFilter = v; quarantineLimit = Q_PAGE; schedule(); } });
-      seg.el.classList.add('seg-sm');
+      const chips = h('div', { class: 'chip-group', role: 'group', 'aria-label': 'تصفية قائمة الحجر' }, ...Q_FILTERS.map((f) => {
+        const active = quarantineFilter === f.value;
+        const tone = Q_STATUS[f.value];
+        return h('button', { type: 'button', class: ['chip', 'is-sm', tone ? `tone-${tone}` : null, active ? 'is-active' : null], 'aria-pressed': active ? 'true' : 'false', onClick: () => { quarantineFilter = f.value; quarantineLimit = Q_PAGE; schedule(); } }, tone ? glyph(tone, 12) : null, h('span', {}, f.label), h('span', { class: 'chip-count' }, fmt.num(counts[f.value])));
+      }));
 
       const reasonsSeg = data.reasons.length ? makeChart('segmentedBar', { parts: data.reasons.slice(0, 6).map((r, i) => ({ id: r.id, label: r.label, value: r.value, color: safe(() => charts.paletteFor(i), `var(--s${i + 1})`) })), tall: false, valueFormat: (v) => fmt.num(v), ariaLabel: 'أسباب الحجر للسجلات المعلّقة' }) : null;
 
@@ -285,9 +288,9 @@ export default {
 
       return card({
         id: 'dq-quarantine', code: 'DQ-04', title: 'قائمة الحجر', subtitle: 'سجلات أوقفتها البوابة — صحّح عند المنبع أو ارفض نهائياً',
-        className: 'col-span-7',
-        actions: [seg.el],
+        actions: [badge(counts['معلّق'] ? `${fmt.num(counts['معلّق'])} معلّقة` : 'لا سجلات معلّقة', counts['معلّق'] ? 'warning' : 'good')],
         body: h('div', { class: 'stack gap-3' },
+          chips,
           reasonsSeg ? h('div', { class: 'stack gap-1' }, h('span', { class: 'text-xs muted' }, 'أسباب الحجر للسجلات المعلّقة'), reasonsSeg.el) : null,
           list,
           more,
@@ -307,8 +310,9 @@ export default {
         buildHead(data),
         buildPrinciple(data),
         buildTiles(data),
-        h('div', { class: 'grid-12' }, buildSourcesCard(data), buildPassRateCard(data)),
-        h('div', { class: 'grid-12' }, buildRulesCard(data), buildQuarantineCard(data)),
+        buildSourcesCard(data),
+        h('div', { class: 'grid-12' }, buildRulesCard(data), buildPassRateCard(data)),
+        buildQuarantineCard(data),
       );
       root.replaceChildren(frag);
       if (restoreFocusId) {
