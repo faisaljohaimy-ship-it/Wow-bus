@@ -418,22 +418,22 @@ export default {
 
     function buildExposureCard(data) {
       const rows = data.commodities.slice().sort((a, b) => num(b.exposureSAR) - num(a.exposureSAR));
-      const list = h('div', { class: 'stack gap-2', role: 'list', 'aria-label': 'التعرض حسب السلعة' }, ...rows.map((c) => {
+      const list = h('ul', { class: 'urgent-list', 'aria-label': 'التعرض حسب السلعة — اختر سلعة لعرض سعرها' }, ...rows.map((c) => {
         const spark = makeChart('sparkline', { values: (c.series || []).map(num), width: 88, height: 26, color: 'var(--ink-3)', accentLast: true });
         const active = c.id === selectedCommodityId;
         const vol = num(c.volatilityPct);
-        return h('button', {
-          type: 'button', role: 'listitem', class: ['urgent-item', active ? 'is-selected' : null], 'aria-pressed': active ? 'true' : 'false',
-          style: { inlineSize: '100%', textAlign: 'start', cursor: 'pointer', background: active ? 'color-mix(in srgb, var(--brand) 10%, transparent)' : undefined, borderColor: active ? 'color-mix(in srgb, var(--brand) 45%, var(--line))' : undefined, font: 'inherit', color: 'inherit' },
+        return h('li', {}, h('button', {
+          type: 'button', class: ['urgent-item', active ? 'is-selected' : null], 'aria-pressed': active ? 'true' : 'false',
+          style: { inlineSize: '100%', textAlign: 'start', cursor: 'pointer', font: 'inherit', color: 'inherit', background: active ? 'color-mix(in srgb, var(--brand) 10%, transparent)' : undefined, borderColor: active ? 'color-mix(in srgb, var(--brand) 45%, var(--line))' : undefined },
           onClick: () => { selectedCommodityId = c.id; schedule(); },
         },
         h('span', { class: 'urgent-icon' }, glyph((TREND_META[c.trend] || TREND_META['مستقر']).glyph, 15)),
-        h('div', { class: 'urgent-text' },
+        h('span', { class: 'urgent-text' },
           h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, h('span', { class: 'semibold' }, c.name), trendBadge(c.trend)),
           h('span', { class: 'urgent-sub' }, `تقلب ${fmt.pct(vol, 1)} · التعرض ${sar(c.exposureSAR)}`),
         ),
-        h('div', { class: 'urgent-due' }, spark ? spark.el : mono(fmt.num((c.series || []).slice(-1)[0], { maximumFractionDigits: 1 }))),
-        );
+        h('span', { class: 'urgent-due' }, spark ? spark.el : mono(fmt.num((c.series || []).slice(-1)[0], { maximumFractionDigits: 1 }))),
+        ));
       }));
       const fallback = () => simpleTable('التعرض حسب السلعة', ['السلعة', 'الاتجاه', 'التقلب', 'التعرض'], rows.map((c) => [c.name, c.trend || '—', fmt.pct(num(c.volatilityPct), 1), sar(c.exposureSAR)]));
       return card({

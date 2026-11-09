@@ -36,8 +36,10 @@ function appendChild(parent, child) {
 
 function applyClass(el, value) {
   if (!value) return;
-  const list = Array.isArray(value) ? value : String(value).split(/\s+/);
-  list.flat().filter(Boolean).forEach((c) => el.classList.add(String(c)));
+  const list = Array.isArray(value) ? value : [value];
+  list.flat(Infinity).filter(Boolean).forEach((entry) => {
+    String(entry).split(/\s+/).filter(Boolean).forEach((c) => el.classList.add(c));
+  });
 }
 
 export function h(tag, attrs = {}, ...children) {

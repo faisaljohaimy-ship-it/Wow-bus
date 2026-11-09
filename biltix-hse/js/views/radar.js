@@ -327,10 +327,11 @@ export default {
     root.appendChild(strip);
 
     /* ───────────── radar cards ───────────── */
-    function radarCard({ code, title, subtitle, caption, wide, large, legend, tableView, sideTitle, actions = [] }) {
+    function radarCard({ code, title, subtitle, caption, wide, large, landscape, legend, tableView, sideTitle, actions = [] }) {
       const canvas = h('canvas', { class: 'radar-canvas', role: 'img', 'aria-label': title });
       const captionEl = h('span', { class: 'radar-caption' }, caption);
-      const frame = h('div', { class: ['radar-frame', 'is-wide', large ? 'is-hero' : null] },
+      // The site plan is a 30°-sheared parallelogram → 4:3 frame (`.is-landscape`); the dials stay square.
+      const frame = h('div', { class: ['radar-frame', landscape ? 'is-landscape' : 'is-wide', large ? 'is-hero' : null] },
         canvas, h('span', { class: 'radar-status' }, C.liveDot('accent'), 'مباشر'), captionEl);
       const tip = h('div', { class: 'tooltip radar-tip', hidden: true, style: { position: 'absolute', insetBlockStart: '0', insetInlineStart: '0', pointerEvents: 'none', zIndex: '2' } });
       const wrap = h('div', { style: { position: 'relative', inlineSize: '100%', maxInlineSize: large ? '720px' : '560px', marginInline: 'auto' } }, frame, tip);
@@ -369,7 +370,7 @@ export default {
     const planSiteBadge = C.badge('', 'neutral', { icon: ico('building', 12) });
     const planCard = radarCard({
       code: 'RDR-03', title: 'رادار مخطط الموقع', subtitle: 'مناطق الموقع بمنظور أيزومتري مع حركة العمال والمعدات ونبضات مواضع الخطر',
-      caption: 'PLAN', wide: false, sideTitle: 'الحركة على الموقع', actions: [planSiteBadge],
+      caption: 'PLAN', wide: false, landscape: true, sideTitle: 'الحركة على الموقع', actions: [planSiteBadge],
       legend: [{ tone: 'neutral', label: 'عامل' }, { tone: 'accent', label: 'مركبة / رافعة' }, { tone: 'critical', label: 'خطر حرج' }, { tone: 'serious', label: 'خطر عالٍ' }, { tone: 'warning', label: 'خطر متوسط' }],
       tableView: () => {
         const site = siteById(followedSite);
@@ -392,17 +393,20 @@ export default {
 
     /* ───────────── sweep hover tooltip ───────────── */
     function placeTip(card, pt) {
-      // Radar hover info (§6): {x, y} are viewport coordinates, {localX, localY} canvas-local CSS px.
+      // Radar hover info (§6 engine): {x, y} = {localX, localY} canvas-local CSS px; {clientX, clientY} viewport.
       const rect = card.wrap.getBoundingClientRect();
+      const c = card.canvas.getBoundingClientRect();
       let x;
       let y;
       if (pt && Number.isFinite(pt.localX) && Number.isFinite(pt.localY)) {
-        const c = card.canvas.getBoundingClientRect();
         x = pt.localX + (c.left - rect.left);
         y = pt.localY + (c.top - rect.top);
+      } else if (pt && Number.isFinite(pt.clientX) && Number.isFinite(pt.clientY)) {
+        x = pt.clientX - rect.left;
+        y = pt.clientY - rect.top;
       } else if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) {
-        x = pt.x - rect.left;
-        y = pt.y - rect.top;
+        x = pt.x + (c.left - rect.left);
+        y = pt.y + (c.top - rect.top);
       } else {
         x = rect.width / 2;
         y = 16;

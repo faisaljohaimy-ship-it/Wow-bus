@@ -1393,6 +1393,19 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
    -------------------------------------------------------------------------- */
 
 .sheet-list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+/* Group heading inside the sheet (app.js groups the remaining views by nav section) */
+.sheet-group, .sheet-list > li.sheet-group {
+  padding: 12px 14px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  color: var(--ink-3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sheet-group::after { content: ""; flex: 1; block-size: 1px; background: var(--line); }
+.sheet-group:first-child { padding-block-start: 4px; }
 .sheet-item {
   position: relative;
   display: grid;

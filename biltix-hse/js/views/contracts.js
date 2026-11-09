@@ -442,10 +442,14 @@ export default {
       const spark = cs && Array.isArray(cs.trend) && cs.trend.length > 1 ? makeChart('sparkline', { values: cs.trend, width: 96, height: 28, color: 'var(--ink-3)', accentLast: true }) : null;
       const conc = data.topShare;
       const concTone = conc >= 40 ? 'critical' : conc >= 25 ? 'warning' : 'good';
-      const active = data.contractsAll.filter((c) => c.status === 'ساري').length;
+      const activeList = data.contractsAll.filter((c) => c.status === 'ساري');
+      const active = activeList.length;
+      const activeValue = activeList.reduce((n, c) => n + (Number(c.valueSAR) || 0), 0);
+      const avgScore = active ? Math.round(activeList.reduce((n, c) => n + (Number(c.riskScore) || 0), 0) / active) : 0;
       return h('div', { class: 'kpi-row' },
         statTile({ label: 'درجة مجال العقود', value: Number(cs.score) || 0, unit: '/ 100', tone: ratingTone(ratingOf(cs.score)), icon: svgIcon('file-text', 18), spark, hint: `${fmt.num(cs.open || 0)} مخاطر مفتوحة · ${fmt.num(cs.red || 0)} حمراء — ${RATING_META[ratingOf(cs.score)].hint}` }),
         statTile({ label: 'عقود مراقبة', value: data.contractsAll.length, tone: 'brand', icon: svgIcon('list', 18), hint: `${fmt.num(active)} سارية · ${fmt.num(data.contractsAll.filter((c) => c.status === 'قيد التفاوض').length)} قيد التفاوض · ${fmt.num(data.contractsAll.filter((c) => c.status === 'منتهٍ').length)} منتهية` }),
+        statTile({ label: 'قيمة العقود السارية', value: fmt.compact(activeValue), unit: 'ر.س', tone: 'accent', icon: svgIcon('chart', 18), hint: `${fmt.num(active)} عقداً سارياً — متوسط درجة المخاطر ${fmt.num(avgScore)}` }),
         statTile({ label: 'بنود مُعلَّمة', value: data.flaggedClauses.length, tone: redClauses ? 'critical' : data.flaggedClauses.length ? 'warning' : 'good', icon: glyph(redClauses ? 'critical' : 'warning', 18), hint: `${fmt.num(redClauses)} بنداً بتصنيف أحمر تتطلب تدخلاً فورياً`, onClick: () => { const t = root.querySelector('[data-section="flags"]'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }),
         statTile({ label: `التزامات خلال ${fmt.num(OBLIGATION_KPI_DAYS)} يوماً`, value: data.obligations30.length, tone: data.overdue.length ? 'critical' : data.obligations30.length ? 'warning' : 'good', icon: glyph('clock', 18), hint: data.overdue.length ? `${fmt.num(data.overdue.length)} التزاماً متأخراً بالفعل` : 'لا توجد التزامات متأخرة', onClick: () => { const t = root.querySelector('[data-section="obligations"]'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }),
         statTile({ label: 'تركّز المقاولين من الباطن', value: conc, unit: '%', tone: concTone, icon: svgIcon('truck', 18), hint: data.concentration.length ? `أعلى حصة: ${data.concentration[0].label} · مؤشر هيرفندال ${fmt.num(Math.round(data.hhi))}` : 'لا توجد عقود من الباطن ضمن النطاق' }),

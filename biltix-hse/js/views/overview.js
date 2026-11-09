@@ -232,8 +232,9 @@ export default {
     });
     const heroCard = C.card({
       code: 'KPI-00', title: 'مؤشر السلامة', subtitle: 'مؤشر مركّب من المخاطر المفتوحة والحوادث الحديثة والامتثال التدريبي',
-      hero: true, actions: [infoBtn], body: heroBody, className: 'col-span-4 is-fill',
+      hero: true, actions: [infoBtn], body: heroBody, className: 'col-span-4',
     });
+    heroCard.classList.add('is-fill');
     fillBody(heroCard);
 
     const canvas = h('canvas', { class: 'radar-canvas', role: 'img', 'aria-label': 'رادار المخاطر الحي' });
@@ -532,17 +533,20 @@ export default {
 
     /* ───────────── radar hover tooltip ───────────── */
     function placeTip(pt) {
-      // Radar hover info (§6): {x, y} are viewport coordinates, {localX, localY} canvas-local CSS px.
+      // Radar hover info (§6 engine): {x, y} = {localX, localY} canvas-local CSS px; {clientX, clientY} viewport.
       const rect = radarWrap.getBoundingClientRect();
+      const c = canvas.getBoundingClientRect();
       let x;
       let y;
       if (pt && Number.isFinite(pt.localX) && Number.isFinite(pt.localY)) {
-        const c = canvas.getBoundingClientRect();
         x = pt.localX + (c.left - rect.left);
         y = pt.localY + (c.top - rect.top);
+      } else if (pt && Number.isFinite(pt.clientX) && Number.isFinite(pt.clientY)) {
+        x = pt.clientX - rect.left;
+        y = pt.clientY - rect.top;
       } else if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) {
-        x = pt.x - rect.left;
-        y = pt.y - rect.top;
+        x = pt.x + (c.left - rect.left);
+        y = pt.y + (c.top - rect.top);
       } else {
         x = rect.width / 2;
         y = 16;

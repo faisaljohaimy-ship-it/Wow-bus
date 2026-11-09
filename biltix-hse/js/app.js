@@ -104,7 +104,13 @@ const platformList = (key) => (Array.isArray(platformState()[key]) ? platformSta
 
 const $ = (id) => document.getElementById(id);
 const toneOf = (t) => (TONES.includes(t) ? t : 'neutral');
-const reducedMotion = () => components.reducedMotion();
+/** Effective motion preference: the settings override (html[data-motion]) wins over the OS query. */
+const reducedMotion = () => {
+  const forced = document.documentElement.getAttribute('data-motion');
+  if (forced === 'reduce' || forced === 'reduced') return true;
+  if (forced === 'full') return false;
+  return components.reducedMotion();
+};
 
 function debounce(fn, ms) {
   let timer = null;
@@ -180,7 +186,9 @@ function applySettings(s = settings()) {
     rebuildClockFormatters(numerals);
   }
 
-  if (s.reducedMotion) root.setAttribute('data-motion', 'reduced'); else root.removeAttribute('data-motion');
+  // settings.motion: 'auto' (follow the OS) | 'reduce' | 'full' — legacy boolean settings.reducedMotion maps to 'reduce'.
+  const motion = s.motion === 'reduce' || s.motion === 'full' ? s.motion : (s.reducedMotion ? 'reduce' : 'auto');
+  if (motion === 'auto') root.removeAttribute('data-motion'); else root.setAttribute('data-motion', motion);
   document.body.classList.toggle('rail-collapsed', !!s.railCollapsed);
   document.body.classList.toggle('feed-paused', !!s.feedPaused);
 
@@ -967,24 +975,34 @@ function bestScore(query, fields) {
 }
 
 function staticCommands() {
-  const viewItems = views.map((v) => ({
-    id: `view:${v.id}`, group: 'الأقسام', label: v.title, meta: v.code || '', icon: v.icon, keywords: [v.title, v.code || '', v.id],
-    run: () => router.navigate(v.id),
-  }));
+  const groupLabel = (viewId) => { const g = navGroups.find((x) => x.viewIds.includes(viewId)); return g ? g.label : 'الأقسام'; };
+  const viewItems = views.map((v) => {
+    const meta = navMeta(v);
+    return {
+      id: `view:${v.id}`, group: groupLabel(v.id), label: meta.title, meta: meta.code, icon: v.icon,
+      keywords: [meta.title, v.title || '', meta.code, v.code || '', v.id],
+      run: () => router.navigate(v.id),
+    };
+  });
+  const has = (id) => Boolean(viewById(id));
   const actionItems = [
-    { id: 'act:new-risk', label: 'إضافة مخاطرة جديدة', meta: 'سجل المخاطر', icon: 'risk', keywords: ['اضافه مخاطره', 'خطر جديد', 'add risk'], run: () => router.navigate('risks', { new: 1 }) },
-    { id: 'act:new-incident', label: 'الإبلاغ عن حادث', meta: 'الحوادث', icon: 'incident', keywords: ['ابلاغ حادث', 'حادث وشيك', 'report incident'], run: () => router.navigate('incidents', { new: 1 }) },
+    has('airisks') ? { id: 'act:red-risks', label: 'عرض المخاطر الحمراء المفتوحة', meta: 'سجل المخاطر الذكي', icon: 'shield-alert', keywords: ['مخاطر حمراء', 'حرج', 'red risks'], run: () => router.navigate('airisks', { rating: 'red' }) } : null,
+    has('tasks') ? { id: 'act:new-task', label: 'إضافة مهمة معالجة يدوية', meta: 'مهام المعالجة', icon: 'file-check', keywords: ['مهمه جديده', 'مهمة يدوية', 'new task'], run: () => router.navigate('tasks', { new: 1 }) } : null,
+    has('alerts') ? { id: 'act:alerts', label: 'فتح قائمة التصعيد الفوري', meta: 'التنبيهات والتصعيد', icon: 'bell', keywords: ['تصعيد', 'تنبيهات', 'escalation'], run: () => router.navigate('alerts', { queue: 'immediate' }) } : null,
+    has('risks') ? { id: 'act:new-risk', label: 'إضافة مخاطرة سلامة جديدة', meta: 'سجل المخاطر', icon: 'risk', keywords: ['اضافه مخاطره', 'خطر جديد', 'add risk'], run: () => router.navigate('risks', { new: 1 }) } : null,
+    has('incidents') ? { id: 'act:new-incident', label: 'الإبلاغ عن حادث', meta: 'الحوادث', icon: 'incident', keywords: ['ابلاغ حادث', 'حادث وشيك', 'report incident'], run: () => router.navigate('incidents', { new: 1 }) } : null,
     { id: 'act:theme', label: 'تبديل السمة (داكن / فاتح)', meta: 'العرض', icon: 'theme', keywords: ['سمه', 'الوضع الليلي', 'theme dark light'], run: toggleTheme },
     { id: 'act:feed', label: () => (settings().feedPaused ? 'استئناف البث الحي' : 'إيقاف البث الحي'), meta: 'البث الحي', icon: 'feed', keywords: ['ايقاف البث', 'استئناف البث', 'pause feed'], run: toggleFeedPaused },
     { id: 'act:export', label: 'تصدير البيانات الكاملة JSON', meta: 'التقارير', icon: 'export', keywords: ['تصدير', 'json', 'export'], run: exportState },
-    { id: 'act:print', label: 'طباعة تقرير السلامة الشهري', meta: 'التقارير', icon: 'print', keywords: ['طباعه', 'pdf', 'print'], run: printReport },
-  ].map((a) => ({ ...a, group: 'الإجراءات' }));
+    has('reports') ? { id: 'act:print', label: 'طباعة التقرير الشهري', meta: 'التقارير', icon: 'print', keywords: ['طباعه', 'pdf', 'print'], run: printReport } : null,
+  ].filter(Boolean).map((a) => ({ ...a, group: 'الإجراءات' }));
   return [...viewItems, ...actionItems];
 }
 
 function exportState() {
+  if (!canExport()) return;
   try {
-    sources.exportJSON(store.state, `biltix-hse-${new Date().toISOString().slice(0, 10)}.json`);
+    sources.exportJSON(store.state, `biltix-risk-ai-${new Date().toISOString().slice(0, 10)}.json`);
     toast('تم تصدير الحالة الكاملة للنظام بصيغة JSON.', { tone: 'good' });
   } catch (err) { reportError(err, 'exportJSON'); }
 }
@@ -999,6 +1017,40 @@ function dynamicCommands(query) {
   if (!query || normalizeText(query).length < 2) return [];
   const state = store.state || {};
   const out = [];
+  // Part B (§B7): AI risks, contracts and mitigation tasks by code / title.
+  if (viewById('airisks')) {
+    platformList('aiRisks').forEach((r) => {
+      const site = siteById(r.projectId);
+      const score = bestScore(query, [r.code, r.title, r.driverExplanation || '', site ? site.name : '']);
+      if (score > 0) {
+        const rating = ratingOf(r.score);
+        out.push({ id: `air:${r.id}`, group: 'المخاطر الذكية', label: r.title, meta: r.code, badge: { text: `${ratingLabel(rating)} · ${fmt.num(Math.round(Number(r.score) || 0))}`, tone: ratingTone(rating) }, icon: 'shield-alert', score,
+          run: () => router.navigate('airisks', { risk: r.id }) });
+      }
+    });
+  }
+  if (viewById('contracts')) {
+    platformList('contracts').forEach((c) => {
+      const site = siteById(c.projectId);
+      const score = bestScore(query, [c.code, c.title, c.counterparty || '', site ? site.name : '']);
+      if (score > 0) {
+        const rating = ratingOf(c.riskScore);
+        out.push({ id: `ct:${c.id}`, group: 'العقود', label: `${c.title}${c.counterparty ? ` — ${c.counterparty}` : ''}`, meta: c.code, badge: { text: c.status || ratingLabel(rating), tone: ratingTone(rating) }, icon: 'file-text', score,
+          run: () => router.navigate('contracts', { id: c.id }) });
+      }
+    });
+  }
+  if (viewById('tasks')) {
+    platformList('tasks').forEach((t) => {
+      const site = siteById(t.projectId);
+      const score = bestScore(query, [t.code, t.title, t.owner || '', site ? site.name : '']);
+      if (score > 0) {
+        const tone = t.status === 'مغلقة' ? 'good' : t.status === 'متأخرة' ? 'critical' : t.status === 'قيد التنفيذ' ? 'accent' : 'neutral';
+        out.push({ id: `mt:${t.id}`, group: 'مهام المعالجة', label: t.title, meta: t.code, badge: { text: t.status || '', tone }, icon: 'file-check', score,
+          run: () => router.navigate('tasks', { id: t.id }) });
+      }
+    });
+  }
   (state.risks || []).forEach((r) => {
     const site = siteById(r.siteId);
     const score = bestScore(query, [r.code, r.hazard, r.activity || '', site ? site.name : '']);
@@ -1018,7 +1070,7 @@ function dynamicCommands(query) {
         run: () => { store.setFilter('search', p.code); router.navigate('permits', { q: p.code, id: p.id }); } });
     }
   });
-  return out.sort((a, b) => b.score - a.score).slice(0, 10);
+  return out.sort((a, b) => b.score - a.score).slice(0, 14);
 }
 
 function labelOf(item) { return typeof item.label === 'function' ? item.label() : item.label; }
@@ -1038,7 +1090,7 @@ function renderCmdk() {
   if (!list) return;
   clear(list);
   if (!cmdk.results.length) {
-    list.appendChild(h('li', { class: 'cmdk-empty', role: 'option', 'aria-selected': 'false', id: 'cmdk-empty' }, emptyState({ icon: glyph('empty', 26), title: 'لا توجد نتائج مطابقة', text: 'جرّب رمزًا مثل R-1001 أو PTW-5521، أو اسم قسم أو إجراء.' })));
+    list.appendChild(h('li', { class: 'cmdk-empty', role: 'option', 'aria-selected': 'false', id: 'cmdk-empty' }, emptyState({ icon: glyph('empty', 26), title: 'لا توجد نتائج مطابقة', text: 'جرّب رمزًا مثل AIR-1042 أو CT-2026-014 أو MT-0231 أو R-1001، أو اسم قسم أو إجراء.' })));
     cmdk.input.setAttribute('aria-activedescendant', '');
     return;
   }
@@ -1133,7 +1185,7 @@ function buildCommandPalette() {
 /* ------------------------------------------------------------------ */
 
 function buildContext() {
-  return { store, bus, sel, fmt, charts, radar, components, art, live, sources, router };
+  return { store, bus, sel, fmt, charts, radar, components, art, live, sources, router, psel, platformLive };
 }
 
 function configureRouter(main) {
@@ -1155,7 +1207,7 @@ function handleSettingsChange(payload) {
   applySettings(s);
   const numerals = s.numerals === 'arab' ? 'arab' : 'latn';
   if (lastNumerals !== null && numerals !== lastNumerals) {
-    refreshRangeLabels(); refreshFeedTimes(); updateFeedCount(); refreshIntegrationsPill(); updateBell(); tickClock();
+    refreshRangeLabels(); refreshFeedTimes(); updateFeedCount(); refreshIntegrationsPill(); refreshScorePill(); updateBell(); tickClock();
     const cur = router.current ? router.current() : null;
     if (cur && cur.id) {
       try { router.navigate(cur.id, cur.params || {}); } catch (err) { reportError(err, 'router.navigate'); }
@@ -1164,8 +1216,35 @@ function handleSettingsChange(payload) {
   lastNumerals = numerals;
 }
 
-function boot() {
+/** Home route: cockpit, else the HSE overview, else whatever loaded first (§B7). */
+function homeViewId() {
+  if (viewById(DEFAULT_VIEW)) return DEFAULT_VIEW;
+  if (viewById(FALLBACK_VIEW)) return FALLBACK_VIEW;
+  return views[0] ? views[0].id : DEFAULT_VIEW;
+}
+
+function renderShellEmpty(main) {
+  if (!main) return;
+  clear(main);
+  main.appendChild(h('section', { class: 'view shell-empty', 'aria-live': 'polite' }, emptyState({
+    icon: glyph('accent', 32),
+    title: 'جارٍ تجهيز أقسام المنصة…',
+    text: 'لم تُحمَّل أي وحدة عرض بعد. يبقى الهيكل والبث الحي والتنبيهات في الخدمة، وستظهر الأقسام فور توفر وحداتها.',
+  })));
+}
+
+function syncDocumentTitle(view) {
+  const title = view && view.title ? `${view.title} — ${APP_TITLE}` : `${APP_TITLE} — منصة إدارة المخاطر بالذكاء الاصطناعي`;
+  if (document.title !== title) document.title = title;
+}
+
+async function boot() {
   const main = $('main');
+  document.body.classList.add('is-booting');
+
+  const [, loaded] = await Promise.all([loadOptionalModules(), loadViews()]);
+  views = Array.isArray(loaded) ? loaded.filter((v) => v && typeof v.id === 'string' && typeof v.render === 'function') : [];
+
   applySettings();
   lastNumerals = settings().numerals === 'arab' ? 'arab' : 'latn';
   mountBackdrop();
@@ -1175,6 +1254,7 @@ function boot() {
   buildFeed();
   startClock();
   buildIntegrationsPill();
+  buildScorePill();
   buildNotifications();
   buildToggles();
   buildCommandPalette();
@@ -1185,6 +1265,7 @@ function boot() {
   on('route:change', (payload) => {
     const id = payload && payload.id;
     markActive(id);
+    syncDocumentTitle((payload && payload.view) || viewById(id));
     if (narrowQuery().matches) setFeedOpen(false);
     setRailOpen(false);
     if (cmdk.open) closeCmdk();
@@ -1195,14 +1276,25 @@ function boot() {
   on('settings:change', handleSettingsChange);
   on('theme:change', () => applySettings());
 
-  router.start('overview');
-  const cur = router.current ? router.current() : null;
-  if (cur && cur.id) markActive(cur.id);
+  if (views.length) {
+    router.start(homeViewId());
+    const cur = router.current ? router.current() : null;
+    if (cur && cur.id) { markActive(cur.id); syncDocumentTitle(viewById(cur.id)); }
+  } else {
+    renderShellEmpty(main);
+    syncDocumentTitle(null);
+  }
 
-  try { live.start({ store, bus }); } catch (err) { reportError(err, 'live.start'); }
+  if (live && typeof live.start === 'function') {
+    try { live.start({ store, bus }); } catch (err) { reportError(err, 'live.start'); }
+  }
+  if (platformLive && typeof platformLive.start === 'function') {
+    try { platformLive.start({ store, bus }); } catch (err) { reportError(err, 'platformLive.start'); }
+  }
 
-  window.biltix = Object.freeze({ store, bus, router, live, sel, fmt });
+  window.biltix = Object.freeze({ store, bus, router, live, sel, fmt, psel, platformLive, views: Object.freeze(views.slice()), missingModules: Object.freeze(missingModules.slice()) });
+  document.body.classList.remove('is-booting');
   document.body.classList.add('is-ready');
 }
 
-try { boot(); } catch (err) { reportError(err, 'boot'); }
+boot().catch((err) => reportError(err, 'boot'));

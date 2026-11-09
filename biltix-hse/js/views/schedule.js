@@ -117,8 +117,13 @@ export default {
       const tone = probTone(clamp01(p));
       let el = null;
       if (charts && typeof charts.meter === 'function') {
-        const m = safe(() => charts.meter({ value: pct, max: 100, label, thresholds: [{ upTo: 29, tone: 'good' }, { upTo: 49, tone: 'warning' }, { upTo: 69, tone: 'serious' }, { upTo: 100, tone: 'critical' }], height: 8 }), null);
-        if (m && m.el instanceof Node) el = m.el;
+        // Head hidden: the % value is rendered once, by this cell, so the meter stays one line tall inside tables.
+        const m = safe(() => charts.meter({ value: pct, max: 100, label: '', hideValue: true, thresholds: [{ upTo: 29, tone: 'good' }, { upTo: 49, tone: 'warning' }, { upTo: 69, tone: 'serious' }, { upTo: 100, tone: 'critical' }], height: 8 }), null);
+        if (m && m.el instanceof Node) {
+          el = m.el;
+          el.classList.add('grow');
+          const track = el.querySelector('[role="meter"]'); if (track) track.setAttribute('aria-label', label);
+        }
       }
       if (!el) el = progress({ value: pct, max: 100, tone, label });
       return h('div', { class: ['progress-row', `tone-${tone}`], style: { minInlineSize: '120px' } }, el, h('span', { class: 'progress-value' }, fmt.pct(pct)));

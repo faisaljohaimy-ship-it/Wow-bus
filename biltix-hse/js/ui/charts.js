@@ -345,15 +345,14 @@ const FALLBACK_WIDTH = 600;
  * when the width changes; the observer disconnects itself once the element has
  * left the document. Returns a disposer.
  */
-function observeWidth(el, onWidth) {
+function observeWidth(el, onWidth, current = () => -1) {
   let timer = 0;
-  let lastW = -1;
   let disposed = false;
   const fire = (w) => {
     if (disposed) return;
     if (!el.isConnected) { dispose(); return; }
     const width = Math.round(w || el.clientWidth || 0);
-    if (width > 0 && width !== lastW) { lastW = width; onWidth(width); }
+    if (width > 0 && width !== current()) onWidth(width);
   };
   let ro = null;
   let onResize = null;
@@ -409,7 +408,7 @@ function chartShell({ className = '', ariaLabel = '', role = 'group', render }) 
     if (offTheme) offTheme();
     tooltip.hideIfOwner(el);
   };
-  dispose = observeWidth(el, draw);
+  dispose = observeWidth(el, draw, () => width);
   offTheme = bus.on('theme:change', () => {
     if (!el.isConnected) { destroy(); return; }
     requestAnimationFrame(() => draw(0));
@@ -778,9 +777,9 @@ export function lineChart(opts = {}) {
       let ly = py - 10;
       if (ly < 10) ly = py + 16;
       // keep the label clear of the tick column on the inline-start side
-      const lo = rtl ? w / 2 + 2 : left + w / 2 + 4;
-      const hi = rtl ? right - w / 2 - 4 : W - w / 2 - 2;
-      let lx = px + inward * (w / 2 + 6);
+      const lo = rtl ? w / 2 + 2 : left + w / 2 + 8;
+      const hi = rtl ? right - w / 2 - 8 : W - w / 2 - 2;
+      let lx = px + inward * (w / 2 + 10);
       if (lx < lo || lx > hi) lx = clamp(px, lo, hi);
       const collides = placed.some((p) => Math.abs(p.x - lx) < (p.w + w) / 2 + 4 && Math.abs(p.y - ly) < 12);
       if (collides) return;

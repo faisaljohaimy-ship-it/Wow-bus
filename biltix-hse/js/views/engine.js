@@ -1,39 +1,24 @@
 /**
  * Biltix Risk AI — view: محرك الذكاء الاصطناعي والتفسير (js/views/engine.js) — PLT-01
  *
- * The AI Risk Engine: a DOM-built map of the five architecture layers (.pipeline-map)
- * with the five model nodes, one detailed card per pipeline (status, version, last run,
- * runs today, latency, precision / recall / calibration / drift meters, feature-importance
- * ranked bars, acceptance-vs-override segmented bar, collapsible KRI matrix, retrain /
- * pause actions via store.updatePipeline), an explainability note and the audit log.
+ * The AI Risk Engine: a DOM-built map of the five architecture layers (.pipeline-map,
+ * structure from css/platform.css) with the five model nodes, one detailed card per
+ * pipeline (status, version, last run, runs today, latency, precision / recall /
+ * calibration / drift meters, feature-importance ranked bars, acceptance-vs-override
+ * segmented bar, collapsible KRI matrix, retrain / pause via store.updatePipeline — which
+ * itself appends the 'model-update' audit entry), an explainability note and the audit log.
  *
- * Fallback styles for the structures this view introduces live in a `@layer views`
- * block, so the unlayered css/platform.css (PLATFORM-CORE) always takes precedence.
+ * Fallback styles for the structures this view introduces (meter grid, meta cells,
+ * collapsible KRI, explain steps) live in a `@layer views` block, so the unlayered
+ * css/platform.css (PLATFORM-CORE) always takes precedence.
  *
  * Contract: docs/ARCHITECTURE.md §4, §5, B1 (layers), B2 (thresholds), B3 (pipelines,
- * auditLog), B4 (psel.pipelineHealth), B5 (updatePipeline, pushAudit), B8, B9.9.
+ * auditLog), B4 (psel.pipelineHealth), B5 (updatePipeline), B8, B9.9.
  * Data reaches the DOM only through textContent / components.h. No cross-view imports.
  */
 
 const STYLE_ID = 'view-engine-style';
 const STYLE_TEXT = `@layer views {
-  .pipeline-map { display: flex; flex-direction: column; min-inline-size: 0; }
-  .pipeline-layer { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-4); padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-inline-start: 3px solid var(--layer-tone, var(--line-2)); border-radius: var(--radius-ctl); background: var(--bg-2); min-inline-size: 0; }
-  .pipeline-layer.is-engine { background: color-mix(in srgb, var(--brand) 6%, var(--bg-2)); }
-  .pipeline-layer-head { flex: 0 0 230px; min-inline-size: 0; display: flex; flex-direction: column; gap: 3px; }
-  .pipeline-layer-no { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; color: var(--ink-3); }
-  .pipeline-layer-title { margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--ink-1); }
-  .pipeline-layer-desc { margin: 0; font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.5; }
-  .pipeline-layer-nodes { flex: 1 1 320px; display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; min-inline-size: 0; }
-  .pipeline-node { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 8px; background: var(--bg-1); border: 1px solid var(--line); font-size: var(--fs-xs); color: var(--ink-2); min-inline-size: 0; }
-  .pipeline-node > svg { flex: none; color: var(--ink-3); }
-  .pipeline-node.is-model { flex: 1 1 160px; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px; cursor: pointer; text-align: start; font: inherit; color: var(--ink-2); transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
-  .pipeline-node.is-model:hover, .pipeline-node.is-model:focus-visible { border-color: var(--line-2); background: var(--bg-3); }
-  .pipeline-node-title { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-1); }
-  .pipeline-node-meta { display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--ink-3); flex-wrap: wrap; }
-  .pipeline-connector { position: relative; block-size: 30px; display: flex; justify-content: center; align-items: center; }
-  .pipeline-connector::before { content: ""; position: absolute; inset-block: 0; inline-size: 2px; background: var(--line-2); }
-  .pipeline-connector .live-dot { position: relative; }
   .engine-meters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
   .engine-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: var(--space-2); }
   .engine-meta-cell { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--line); min-inline-size: 0; }
@@ -43,10 +28,12 @@ const STYLE_TEXT = `@layer views {
   .engine-kri > summary::-webkit-details-marker { display: none; }
   .engine-kri > summary::before { content: ""; inline-size: 7px; block-size: 7px; border-inline-end: 2px solid currentColor; border-block-end: 2px solid currentColor; transform: rotate(-45deg); transition: transform var(--dur-1) var(--ease); margin-inline-end: 2px; }
   .engine-kri[open] > summary::before { transform: rotate(45deg); }
+  .pipeline-node.is-model { cursor: pointer; font: inherit; text-align: start; transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
+  .pipeline-node.is-model:hover, .pipeline-node.is-model:focus-visible { background: var(--bg-3); }
   .explain-steps { margin: 0; padding-inline-start: 0; list-style: none; counter-reset: xs; display: grid; gap: 10px; }
   .explain-steps > li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; counter-increment: xs; }
   .explain-steps > li::before { content: counter(xs); display: grid; place-items: center; inline-size: 26px; block-size: 26px; border-radius: 50%; background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--brand); font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
-  @media (max-width: 720px) { .pipeline-layer-head { flex-basis: 100%; } .engine-meters { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 720px) { .engine-meters { grid-template-columns: minmax(0, 1fr); } }
   @media (prefers-reduced-motion: reduce) { .pipeline-node.is-model, .engine-kri > summary::before { transition: none; } }
 }`;
 
@@ -62,12 +49,13 @@ const ACTION = {
   writeback: { label: 'كتابة عكسية', tone: 'brand' }, 'model-update': { label: 'تحديث النموذج', tone: 'accent' }, validation: { label: 'تحقق', tone: 'neutral' },
   login: { label: 'تسجيل دخول', tone: 'neutral' }, config: { label: 'إعدادات', tone: 'neutral' }, close: { label: 'إغلاق', tone: 'good' },
 };
+/** Five layers from §B1 — the engine layer (4) renders the live pipeline nodes instead of static ones. */
 const LAYERS = [
-  { no: '01', title: 'طبقة التكامل', desc: 'موصلات REST/SDK وWebhooks تقرأ من وحدات بلتكس والأنظمة المؤسسية والتغذيات الخارجية.', tone: 'var(--accent)', nodes: [['layers', 'Biltix — العقود، BoM/BoQ، الجدول، تقارير الموقع، التكلفة، الصور'], ['server', 'Primavera P6 EPPM'], ['server', 'Autodesk APS (BIM/CAD)'], ['server', 'Oracle ERP / CRM'], ['globe', 'السلع · أسعار الصرف · الأرصاد · GIS']] },
-  { no: '02', title: 'التحقق والتنظيف', desc: 'فحص المخطط، إزالة التكرار، الاكتمال والاتساق — لا يصل سجل إلى المحرك قبل اجتيازها.', tone: 'var(--critical)', nodes: [['list', 'مخطط البيانات'], ['copy', 'إزالة التكرار'], ['badge-check', 'الاكتمال'], ['sliders', 'الاتساق']] },
-  { no: '03', title: 'بحيرة بيانات المخاطر', desc: 'بيانات مهيكلة وغير مهيكلة، مُوحَّدة ومُصدَّرة (versioned) وقابلة للتدقيق.', tone: 'var(--s7)', nodes: [['database', 'سجلات مهيكلة'], ['file-text', 'مستندات وصور'], ['clock', 'إصدارات زمنية'], ['shield-alert', 'مسار تدقيق كامل']] },
-  { no: '04', title: 'محرك المخاطر بخمسة خطوط', desc: 'خمسة نماذج على طبقة تسجيل وتفسير مشتركة: درجة 0–100 + تفسير بلغة واضحة.', tone: 'var(--brand)', engine: true },
-  { no: '05', title: 'التصنيف والتنبيه → قمرة القيادة', desc: 'النوع (مالي/سلامة/تأخير/نزاع) والتقييم (أحمر/أصفر/أخضر)، ثم قائمة التنبيهات، الكتابة العكسية، ومهام المعالجة.', tone: 'var(--good)', nodes: [['tag', 'منطق التصنيف الخلفي'], ['bell', 'التنبيه والتصعيد'], ['refresh', 'الكتابة العكسية إلى Biltix PM'], ['file-check', 'مهام المعالجة'], ['radar', 'قمرة القيادة']] },
+  { no: '1', title: 'طبقة التكامل', desc: 'موصلات REST/SDK وWebhooks تقرأ من وحدات بلتكس والأنظمة المؤسسية والتغذيات الخارجية.', nodes: [['layers', 'Biltix — العقود، BoM/BoQ، الجدول، تقارير الموقع، التكلفة، الصور'], ['integration', 'Primavera P6 EPPM'], ['integration', 'Autodesk APS (BIM/CAD)'], ['integration', 'Oracle ERP / CRM'], ['globe', 'السلع · أسعار الصرف · الأرصاد · GIS']] },
+  { no: '2', title: 'التحقق والتنظيف', desc: 'فحص المخطط، إزالة التكرار، الاكتمال والاتساق — لا يصل سجل إلى المحرك قبل اجتيازها.', nodes: [['list', 'مخطط البيانات'], ['copy', 'إزالة التكرار'], ['badge-check', 'الاكتمال'], ['sliders', 'الاتساق']] },
+  { no: '3', title: 'بحيرة بيانات المخاطر', desc: 'بيانات مهيكلة وغير مهيكلة، مُوحَّدة ومُصدَّرة (versioned) وقابلة للتدقيق.', nodes: [['erp', 'سجلات مهيكلة'], ['file-text', 'مستندات وصور'], ['clock', 'إصدارات زمنية'], ['shield-alert', 'مسار تدقيق كامل']] },
+  { no: '4', title: 'محرك المخاطر بخمسة خطوط', desc: 'خمسة نماذج على طبقة تسجيل وتفسير مشتركة: درجة 0–100 + تفسير بلغة واضحة.', engine: true },
+  { no: '5', title: 'التصنيف والتنبيه → قمرة القيادة', desc: 'النوع (مالي/سلامة/تأخير/نزاع) والتقييم (أحمر/أصفر/أخضر)، ثم قائمة التنبيهات، الكتابة العكسية، ومهام المعالجة.', nodes: [['filter', 'منطق التصنيف الخلفي'], ['bell', 'التنبيه والتصعيد'], ['refresh', 'الكتابة العكسية إلى Biltix PM'], ['file-check', 'مهام المعالجة'], ['radar', 'قمرة القيادة']] },
 ];
 
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
@@ -128,7 +116,7 @@ export default {
       return table;
     }
 
-    /** Meter with threshold tones; prefers charts.meter, falls back to the `.meter` chrome. */
+    /** Meter with threshold tones; prefers charts.meter, falls back to the `.meter` chrome. Status is icon + value, never colour alone. */
     function meter({ value, max = 100, label, thresholds, format }) {
       const v = Math.max(0, Math.min(max, num(value)));
       const tone = (thresholds.find((t) => v <= t.upTo) || thresholds[thresholds.length - 1]).tone;
@@ -158,22 +146,17 @@ export default {
       store.update((s) => { const p = arr(s.platform && s.platform.pipelines).find((x) => x.id === id); if (p) Object.assign(p, patch); return `platform.pipelines.${id}`; });
       return null;
     }
-    function pushAudit(entry) {
-      if (typeof store.pushAudit === 'function') { try { store.pushAudit(entry); } catch { /* ignore */ } }
-    }
 
     function retrain(p) {
       if (retrainTimers.has(p.id)) return;
       updatePipeline(p.id, { status: 'training', lastRun: now().toISOString() });
-      pushAudit({ actor: 'المستخدم الحالي', action: 'model-update', target: p.name || p.id, detail: `بدء إعادة تدريب ${p.nameAr || p.name} (${p.version || ''}) بالبيانات المعتمدة من طبقة التحقق` });
-      toast(`بدأت إعادة تدريب «${p.nameAr || p.name}» — تستغرق المحاكاة نحو 10 ثوانٍ`, { tone: 'accent' });
+      toast(`بدأت إعادة تدريب «${p.nameAr || p.name}» بالبيانات المعتمدة من طبقة التحقق — تستغرق المحاكاة نحو 10 ثوانٍ`, { tone: 'accent' });
       const timer = setTimeout(() => {
         retrainTimers.delete(p.id);
         const nextVersion = bumpVersion(p.version);
         try {
           updatePipeline(p.id, { status: 'running', version: nextVersion, lastRun: now().toISOString(), driftScore: Math.max(0.02, num(p.driftScore) * 0.35), calibrationError: Math.max(0.01, num(p.calibrationError) * 0.7) });
-          pushAudit({ actor: 'النظام', action: 'model-update', target: p.name || p.id, detail: `اكتملت إعادة التدريب — الإصدار ${nextVersion}؛ انخفض الانجراف وخطأ المعايرة` });
-          toast(`اكتملت إعادة تدريب «${p.nameAr || p.name}» — الإصدار ${nextVersion}`, { tone: 'good' });
+          toast(`اكتملت إعادة تدريب «${p.nameAr || p.name}» — الإصدار ${nextVersion}؛ انخفض الانجراف وخطأ المعايرة`, { tone: 'good' });
         } catch { /* store gone */ }
       }, 10_000);
       retrainTimers.set(p.id, timer);
@@ -181,8 +164,7 @@ export default {
     function togglePause(p) {
       const pausing = p.status !== 'idle';
       updatePipeline(p.id, { status: pausing ? 'idle' : 'running', lastRun: pausing ? p.lastRun : now().toISOString() });
-      pushAudit({ actor: 'المستخدم الحالي', action: 'config', target: p.name || p.id, detail: pausing ? `إيقاف مؤقت لخط ${p.nameAr || p.name} — لن تُسجَّل مخاطر جديدة منه` : `استئناف خط ${p.nameAr || p.name}` });
-      toast(pausing ? `تم إيقاف «${p.nameAr || p.name}» مؤقتاً` : `تم استئناف «${p.nameAr || p.name}»`, { tone: pausing ? 'warning' : 'good' });
+      toast(pausing ? `تم إيقاف «${p.nameAr || p.name}» مؤقتاً — لن تُسجَّل مخاطر جديدة منه` : `تم استئناف «${p.nameAr || p.name}»`, { tone: pausing ? 'warning' : 'good' });
     }
 
     /* ───────────────────────── data ───────────────────────── */
@@ -203,9 +185,6 @@ export default {
       const actionCounts = audit.reduce((acc, e) => { acc[e.action] = (acc[e.action] || 0) + 1; return acc; }, {});
       const totals = {
         runsToday: pipelines.reduce((a, p) => a + num(p.runsToday), 0),
-        risks30: pipelines.reduce((a, p) => a + num(p.risksLast30d), 0),
-        overrides30: pipelines.reduce((a, p) => a + num(p.overridesLast30d), 0),
-        acceptance: pipelines.length ? pipelines.reduce((a, p) => a + num(p.acceptanceRatePct), 0) / pipelines.length : 0,
         running: pipelines.filter((p) => p.status === 'running').length,
         meanLatency: pipelines.length ? pipelines.reduce((a, p) => a + num(p.avgLatencyMs), 0) / pipelines.length : 0,
       };
@@ -224,41 +203,65 @@ export default {
           h('p', { class: 'view-lead' }, 'خمسة خطوط نمذجة على طبقة تسجيل وتفسير مشتركة: كل مخاطرة تحصل على درجة 0–100، نوع، تقييم لوني، وتفسير بلغة واضحة يسمي البند أو السطر أو النشاط الذي أثارها — مع الإنسان في الحلقة لكل قرار.'),
         ),
         h('div', { class: 'view-actions' },
-          badge(`${fmt.num(t.running)} / ${fmt.num(data.pipelines.length)} خطوط تعمل`, t.running === data.pipelines.length ? 'good' : 'warning'),
+          badge(`${fmt.num(t.running)} / ${fmt.num(data.pipelines.length)} خطوط تعمل`, data.pipelines.length && t.running === data.pipelines.length ? 'good' : 'warning'),
           h('span', { class: 'text-sm muted' }, `${fmt.num(t.runsToday)} تشغيلة اليوم · زمن استجابة ${fmt.num(t.meanLatency)} مللي ثانية`),
         ),
       );
     }
 
+    function scrollToPipeline(id) {
+      const el = root.querySelector(`#pipe-${CSS.escape(String(id))}`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const title = el.querySelector('.card-title');
+      if (title) { title.setAttribute('tabindex', '-1'); try { title.focus({ preventScroll: true }); } catch { /* ignore */ } }
+    }
+
+    /** .pipeline-map > .pipeline-layer[data-layer] > .pipeline-layer-head + .pipeline-layer-body > .pipeline-node* (css/platform.css) */
     function buildMap(data) {
       const map = h('div', { class: 'pipeline-map', role: 'group', 'aria-label': 'معمارية المنصة: خمس طبقات من التكامل إلى قمرة القيادة' });
       LAYERS.forEach((layer, i) => {
-        const nodes = h('div', { class: 'pipeline-layer-nodes' });
+        const body = h('div', { class: 'pipeline-layer-body' });
         if (layer.engine) {
           data.pipelines.forEach((p) => {
             const st = statusOf(p);
-            nodes.appendChild(h('button', { type: 'button', class: ['pipeline-node', 'is-model'], 'aria-label': `الانتقال إلى بطاقة ${p.nameAr || p.name}`, onClick: () => { const el = root.querySelector(`#pipe-${CSS.escape(p.id)}`); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); const title = el.querySelector('.card-title'); if (title) { title.setAttribute('tabindex', '-1'); title.focus({ preventScroll: true }); } } } },
-              h('span', { class: 'row gap-2' }, liveDot(st.tone === 'neutral' ? 'neutral' : st.tone), svgIcon(PIPELINE_ICON[p.id] || 'sliders', 14), h('span', { class: 'pipeline-node-title' }, p.nameAr || p.name || p.id)),
-              h('span', { class: 'pipeline-node-meta' }, mono(p.version || '—'), h('span', {}, st.label), h('span', {}, `${fmt.num(num(p.runsToday))} تشغيلة`)),
+            body.appendChild(h('button', { type: 'button', class: ['pipeline-node', 'is-model'], 'data-status': p.status || 'idle', 'aria-label': `${p.nameAr || p.name}: ${st.label} — الانتقال إلى البطاقة`, onClick: () => scrollToPipeline(p.id) },
+              svgIcon(PIPELINE_ICON[p.id] || 'sliders', 14),
+              h('span', {}, p.nameAr || p.name || p.id),
+              h('span', { class: 'mono' }, p.version || '—'),
+              h('span', { class: 'sr-only' }, st.label),
             ));
           });
-          if (!data.pipelines.length) nodes.appendChild(h('span', { class: 'pipeline-node' }, 'لا توجد خطوط مسجلة'));
-          nodes.appendChild(h('span', { class: 'pipeline-node', style: { flexBasis: '100%' } }, svgIcon('sliders', 14), h('span', {}, 'طبقة التسجيل والتفسير المشتركة — درجة 0–100 · معايرة · أهم المحركات')));
+          if (!data.pipelines.length) body.appendChild(h('span', { class: 'pipeline-node' }, svgIcon('sliders', 14), h('span', {}, 'لا توجد خطوط مسجلة')));
+          body.appendChild(h('span', { class: 'pipeline-gate' }, svgIcon('sparkles', 12), h('span', {}, 'طبقة التسجيل والتفسير المشتركة — درجة 0–100 · معايرة · أهم المحركات')));
         } else {
-          layer.nodes.forEach(([icon, label]) => nodes.appendChild(h('span', { class: 'pipeline-node' }, svgIcon(icon, 14), h('span', {}, label))));
-          if (i === 1 && data.validation) nodes.appendChild(badge(`معدل الاجتياز ${fmt.pct(num(data.validation.passRatePct), 1)}`, num(data.validation.passRatePct) >= 97 ? 'good' : 'warning'));
+          layer.nodes.forEach(([icon, label]) => body.appendChild(h('span', { class: 'pipeline-node' }, svgIcon(icon, 14), h('span', {}, label))));
+          if (i === 1) body.appendChild(h('span', { class: 'pipeline-gate' }, svgIcon('badge-check', 12), h('span', {}, data.validation ? `بوابة التحقق · معدل الاجتياز ${fmt.pct(num(data.validation.passRatePct), 1)}` : 'بوابة التحقق')));
         }
-        map.appendChild(h('div', { class: ['pipeline-layer', layer.engine ? 'is-engine' : null], 'data-layer': layer.no, style: { '--layer-tone': layer.tone } },
-          h('div', { class: 'pipeline-layer-head' }, h('span', { class: 'pipeline-layer-no' }, `LAYER ${layer.no}`), h('h3', { class: 'pipeline-layer-title' }, layer.title), h('p', { class: 'pipeline-layer-desc' }, layer.desc)),
-          nodes,
+        map.appendChild(h('div', { class: ['pipeline-layer', layer.engine ? 'is-active' : null], 'data-layer': layer.no },
+          h('div', { class: 'pipeline-layer-head' }, h('span', { class: 'pipeline-layer-index' }, `LAYER 0${layer.no}`), h('h3', {}, layer.title), h('p', {}, layer.desc)),
+          body,
         ));
-        if (i < LAYERS.length - 1) map.appendChild(h('div', { class: 'pipeline-connector', 'aria-hidden': 'true' }, liveDot('accent')));
+        if (i < LAYERS.length - 1) map.appendChild(h('span', { class: 'pipeline-connector', 'aria-hidden': 'true' }));
       });
       return card({
         code: 'ENG-00', title: 'خريطة خطوط المعالجة', subtitle: 'من موصلات التكامل إلى قمرة القيادة — انقر على أي خط للانتقال إلى بطاقته',
         body: map,
         footer: h('p', { class: 'text-xs muted' }, 'المنصة تقرأ من أنظمة العميل فقط؛ ما يُكتب عكسياً هو أعلام المخاطر والدرجات والتنبيهات ومهام المعالجة.'),
       });
+    }
+
+    /** Feature-importance fallback with the .feature-bars structure from css/platform.css. */
+    function featureBars(fi) {
+      const max = fi.reduce((a, f) => Math.max(a, num(f.weight)), 0) || 1;
+      return h('div', { class: 'feature-bars', role: 'list', 'aria-label': 'أهمية الميزات' }, ...fi.map((f) => {
+        const pct = asPct(f.weight);
+        return h('div', { class: 'feature-bar', role: 'listitem' },
+          h('span', { class: 'feature-bar-label', title: f.feature }, f.feature),
+          h('div', { class: 'feature-bar-track', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(Math.round(pct)), 'aria-label': f.feature }, h('div', { class: 'feature-bar-fill', style: { inlineSize: `${((num(f.weight) / max) * 100).toFixed(1)}%` } })),
+          h('span', { class: 'feature-bar-value' }, fmt.pct(pct, 0)),
+        );
+      }));
     }
 
     function buildPipelineCard(data, p, span) {
@@ -282,9 +285,7 @@ export default {
       );
 
       const fi = arr(p.featureImportance).slice().sort((a, b) => num(b.weight) - num(a.weight)).slice(0, 6);
-      const fiMax = fi.reduce((a, f) => Math.max(a, num(f.weight)), 0) || 1;
-      const fiChart = fi.length ? makeChart('barChart', { items: fi.map((f, i) => ({ id: `${p.id}-f${i}`, label: f.feature, value: Number((num(f.weight) <= 1 ? num(f.weight) * 100 : num(f.weight)).toFixed(1)) })), horizontal: true, height: fi.length * 28 + 24, valueFormat: (v) => fmt.pct(v, 0), color: 'var(--s1)', showValues: true, maxBars: 6, ariaLabel: `أهمية الميزات — ${p.nameAr || p.name}` }) : null;
-      const fiFallback = fi.length ? h('div', { class: 'bar-pair' }, ...fi.map((f) => h('div', { class: 'bar-pair-row', style: { gridTemplateColumns: 'minmax(0, 11em) minmax(0, 1fr) 3em' } }, h('span', { class: 'truncate', title: f.feature }, f.feature), h('div', { class: 'progress tone-brand', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(Math.round((num(f.weight) / fiMax) * 100)), 'aria-label': f.feature }, h('div', { class: 'progress-bar', style: { inlineSize: `${((num(f.weight) / fiMax) * 100).toFixed(1)}%` } })), h('span', { class: 'progress-value' }, fmt.pct(num(f.weight) <= 1 ? num(f.weight) * 100 : num(f.weight), 0))))) : emptyState({ title: 'لا تتوفر أهمية الميزات' });
+      const fiChart = fi.length ? makeChart('barChart', { items: fi.map((f, i) => ({ id: `${p.id}-f${i}`, label: f.feature, value: Number(asPct(f.weight).toFixed(1)) })), horizontal: true, height: fi.length * 28 + 24, valueFormat: (v) => fmt.pct(v, 0), color: 'var(--s1)', showValues: true, maxBars: 6, ariaLabel: `أهمية الميزات — ${p.nameAr || p.name}` }) : null;
 
       const acc = Math.max(0, Math.min(100, num(p.acceptanceRatePct)));
       const segParts = [{ id: 'accept', label: 'قبول التوصية', value: Number(acc.toFixed(1)), color: 'var(--s1)' }, { id: 'override', label: 'تعديل أو تجاوز', value: Number((100 - acc).toFixed(1)), color: 'var(--s2)' }];
@@ -302,7 +303,7 @@ export default {
       const details = h('details', { class: 'engine-kri', open: openKri.has(p.id), onToggle: (e) => { if (e.target.open) openKri.add(p.id); else openKri.delete(p.id); } }, h('summary', {}, h('span', {}, `مصفوفة مؤشرات المخاطر (KRI) — ${fmt.num(kris.length)} مؤشرات`)), kriTable.el);
 
       const isTraining = p.status === 'training' || retrainTimers.has(p.id);
-      const actions = h('div', { class: 'row wrap gap-2' },
+      const actions = h('div', { class: 'row wrap gap-2', style: { inlineSize: '100%' } },
         button(isTraining ? 'جارٍ التدريب…' : 'إعادة تدريب', { variant: 'outline', size: 'sm', icon: 'refresh', onClick: () => retrain(p), attrs: { disabled: isTraining, 'aria-busy': isTraining ? 'true' : undefined } }),
         button(p.status === 'idle' ? 'استئناف' : 'إيقاف مؤقت', { variant: p.status === 'idle' ? 'primary' : 'ghost', size: 'sm', icon: p.status === 'idle' ? 'play' : 'pause', onClick: () => togglePause(p), attrs: { disabled: isTraining } }),
         h('span', { class: 'toolbar-spacer' }),
@@ -316,14 +317,14 @@ export default {
         actions: [badge(st.label, st.tone), liveDot(p._tone)],
         body: h('div', { class: 'stack gap-4' },
           meta,
-          arr(p.techniques).length ? h('div', { class: 'chip-group' }, ...arr(p.techniques).map((t) => h('span', { class: 'chip is-sm', role: 'listitem' }, svgIcon('sliders', 12), h('span', {}, String(t))))) : null,
+          arr(p.techniques).length ? h('div', { class: 'chip-group', role: 'list', 'aria-label': 'التقنيات' }, ...arr(p.techniques).map((t) => h('span', { class: 'chip is-sm', role: 'listitem' }, svgIcon('sparkles', 12), h('span', {}, String(t))))) : null,
           meters,
-          h('div', { class: 'stack gap-2' }, h('span', { class: 'text-sm semibold' }, 'أهمية الميزات (محركات الدرجة)'), fiChart ? fiChart.el : fiFallback),
+          h('div', { class: 'stack gap-2' }, h('span', { class: 'text-sm semibold' }, 'أهمية الميزات (محركات الدرجة)'), fiChart ? fiChart.el : (fi.length ? featureBars(fi) : emptyState({ title: 'لا تتوفر أهمية الميزات' }))),
           h('div', { class: 'stack gap-2' }, h('div', { class: 'row between wrap' }, h('span', { class: 'text-sm semibold' }, 'الإنسان في الحلقة: القبول مقابل التجاوز'), h('span', { class: 'text-xs muted' }, `${fmt.num(num(p.overridesLast30d))} تجاوزاً من ${fmt.num(num(p.risksLast30d))} مخاطرة خلال 30 يوماً`)), seg ? seg.el : segFallback),
           details,
         ),
         footer: actions,
-        tableView: fi.length ? () => simpleTable(['الميزة', 'الوزن'], fi.map((f) => [f.feature, fmt.pct(num(f.weight) <= 1 ? num(f.weight) * 100 : num(f.weight), 1)])) : null,
+        tableView: fi.length ? () => simpleTable(['الميزة', 'الوزن'], fi.map((f) => [f.feature, fmt.pct(asPct(f.weight), 1)])) : null,
       });
     }
 
@@ -332,6 +333,12 @@ export default {
       const cards = data.pipelines.map((p, i) => buildPipelineCard(data, p, spans[i] || 'col-span-6'));
       if (!cards.length) return card({ code: 'ENG-01', title: 'خطوط المعالجة', body: emptyState({ title: 'لا توجد خطوط نمذجة مسجلة', text: 'تأكد من تحميل بيانات المنصة.' }) });
       return h('div', { class: 'grid-12' }, ...cards);
+    }
+
+    function ratingChip(label, rating, tone) {
+      const b = badge(label, tone);
+      b.classList.add('rating', `is-${rating}`);
+      return b;
     }
 
     function buildExplainability(data) {
@@ -348,9 +355,9 @@ export default {
         body: h('div', { class: 'stack gap-4' },
           h('ol', { class: 'explain-steps' }, ...steps.map(([t, d]) => h('li', {}, h('div', { class: 'stack', style: { gap: '2px' } }, h('span', { class: 'text-sm semibold' }, t), h('span', { class: 'text-xs ink-2', style: { lineHeight: '1.6' } }, d))))),
           h('div', { class: 'row wrap gap-2', 'aria-label': 'نطاقات التقييم' },
-            (() => { const b = badge('أحمر ≥ 70 — تدخل فوري', 'critical'); b.classList.add('rating', 'is-red'); return b; })(),
-            (() => { const b = badge('أصفر 40–69 — مراقبة', 'warning'); b.classList.add('rating', 'is-yellow'); return b; })(),
-            (() => { const b = badge('أخضر < 40 — ضمن حدود التحمل', 'good'); b.classList.add('rating', 'is-green'); return b; })(),
+            ratingChip('أحمر ≥ 70 — تدخل فوري', 'red', 'critical'),
+            ratingChip('أصفر 40–69 — مراقبة', 'yellow', 'warning'),
+            ratingChip('أخضر < 40 — ضمن حدود التحمل', 'green', 'good'),
           ),
           h('div', { class: 'note', style: { '--tone': 'var(--brand)' } }, h('strong', {}, 'العتبات الحالية: '), `تنبيه > ${fmt.num(data.alertThreshold)} · تصعيد فوري ≥ ${fmt.num(data.criticalThreshold)}. `, button('تعديل العتبات', { variant: 'ghost', size: 'sm', icon: 'bell', onClick: () => router.navigate('alerts') })),
         ),
@@ -413,7 +420,8 @@ export default {
 
     // Deep links: ?pipeline=ID scrolls to the card, ?section=audit to the log.
     requestAnimationFrame(() => {
-      const target = params.pipeline ? root.querySelector(`#pipe-${CSS.escape(String(params.pipeline))}`) : (params.section === 'audit' ? root.querySelector('#engine-audit') : null);
+      if (params.pipeline) { scrollToPipeline(params.pipeline); return; }
+      const target = params.section === 'audit' ? root.querySelector('#engine-audit') : null;
       if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
 

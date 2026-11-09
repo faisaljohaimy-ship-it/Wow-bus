@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>بلتكس HSE — مركز قيادة السلامة والصحة المهنية</title>
-  <meta name="description" content="مركز قيادة السلامة والصحة المهنية من بلتكس: رادارات حية للمخاطر، سجل المخاطر، الحوادث، تصاريح العمل، التفتيش، التدريب، والامتثال لمعيار ISO 45001 — مربوط بجميع أنظمة الموقع.">
-  <meta name="application-name" content="بلتكس HSE">
+  <title>بلتكس Risk AI — منصة إدارة المخاطر بالذكاء الاصطناعي</title>
+  <meta name="description" content="منصة بلتكس لإدارة المخاطر بالذكاء الاصطناعي: قمرة قيادة موحدة لخمسة مجالات — العقود، المواد والتوريد، الجدول الزمني، الموقع والسلامة، والتكلفة — مع تصنيف فوري (أحمر/أصفر/أخضر)، تفسير واضح لكل مخاطرة، تنبيهات وتصعيد، ومهام معالجة مُتتبعة تُكتب عكسياً إلى منصة بلتكس لإدارة المشاريع. يضم ركن السلامة والصحة المهنية الكامل (رادارات حية، الحوادث، تصاريح العمل، التفتيش، التدريب، ISO 45001).">
+  <meta name="application-name" content="بلتكس Risk AI">
   <meta name="color-scheme" content="dark light">
   <meta name="theme-color" content="#070D18" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#F2F5FA" media="(prefers-color-scheme: light)">
@@ -40,9 +40,10 @@
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/charts.css">
+  <link rel="stylesheet" href="css/platform.css">
   <link rel="stylesheet" href="css/print.css" media="print">
 </head>
-<body class="app" data-view="overview">
+<body class="app" data-view="cockpit">
   <a class="skip-link" href="#main">تخطي إلى المحتوى</a>
 
   <div class="backdrop" id="backdrop" aria-hidden="true"></div>
@@ -52,11 +53,11 @@
       <button type="button" class="rail-toggle btn btn-ghost btn-icon" id="railToggle" aria-label="طيّ شريط التنقل" aria-expanded="true" aria-controls="rail">
         <span class="rail-toggle-bars" aria-hidden="true"><i></i><i></i><i></i></span>
       </button>
-      <a class="brand" href="#/overview" aria-label="بلتكس HSE — الصفحة الرئيسية">
+      <a class="brand" href="#/cockpit" aria-label="بلتكس Risk AI — قمرة قيادة المخاطر (الرئيسية)">
         <span class="brand-mark" aria-hidden="true"></span>
         <span class="brand-text">
-          <span class="brand-name">بلتكس HSE</span>
-          <span class="brand-tag">مركز قيادة السلامة والصحة المهنية</span>
+          <span class="brand-name">بلتكس Risk AI</span>
+          <span class="brand-tag">قمرة قيادة المخاطر — خمسة مجالات، تصنيف فوري، معالجة مُتتبعة</span>
         </span>
       </a>
     </div>
@@ -78,7 +79,13 @@
     </div>
 
     <div class="appbar-end">
-      <button type="button" class="pill integrations-pill" id="integrationsPill" aria-label="حالة التكاملات" title="التكاملات المتصلة">
+      <button type="button" class="pill score-pill" id="scorePill" aria-label="الدرجة الموحدة للمخاطر — فتح قمرة القيادة" title="الدرجة الموحدة — فتح قمرة القيادة" hidden>
+        <span class="rating-dot" id="scoreDot" aria-hidden="true"></span>
+        <span class="pill-value mono" id="scoreValue">—</span>
+        <span class="score-pill-delta mono" id="scoreDelta" hidden></span>
+        <span class="pill-label" id="scoreLabel">الدرجة الموحدة</span>
+      </button>
+      <button type="button" class="pill integrations-pill" id="integrationsPill" aria-label="حالة التكاملات والموصلات" title="التكاملات والموصلات المتصلة">
         <span class="live-dot tone-accent" aria-hidden="true"></span>
         <span class="pill-value mono" id="integrationsCount">—</span>
         <span class="pill-label">متصل</span>
@@ -91,11 +98,11 @@
         <svg class="icon theme-icon-dark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"></path></svg>
         <svg class="icon theme-icon-light" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
       </button>
-      <button type="button" class="user-chip" id="userChip" aria-label="حساب المستخدم: م. فيصل الحربي — مدير السلامة والصحة المهنية">
+      <button type="button" class="user-chip" id="userChip" aria-label="حساب المستخدم: م. فيصل الحربي — مدير المخاطر والسلامة">
         <span class="user-avatar" aria-hidden="true">ف</span>
         <span class="user-text">
           <span class="user-name">م. فيصل الحربي</span>
-          <span class="user-role">مدير السلامة والصحة المهنية</span>
+          <span class="user-role">مدير المخاطر والسلامة</span>
         </span>
       </button>
     </div>
@@ -113,9 +120,9 @@
 
   <div class="filters" id="filters" role="region" aria-label="عوامل التصفية العامة">
     <div class="filters-group">
-      <label class="filters-label" for="siteSelect">الموقع</label>
-      <select class="field-control filters-site" id="siteSelect" name="siteId" aria-label="اختيار الموقع">
-        <option value="all">جميع المواقع</option>
+      <label class="filters-label" for="siteSelect">المشروع</label>
+      <select class="field-control filters-site" id="siteSelect" name="siteId" aria-label="اختيار المشروع">
+        <option value="all">جميع المشاريع</option>
       </select>
     </div>
     <div class="filters-group">
@@ -123,8 +130,8 @@
       <div class="filters-range" id="rangeSeg" aria-labelledby="rangeLabel"></div>
     </div>
     <div class="filters-group filters-search">
-      <label class="sr-only" for="searchInput">بحث في المخاطر والحوادث والتصاريح</label>
-      <input class="field-control" id="searchInput" name="search" type="search" placeholder="بحث بالرمز أو العنوان…" autocomplete="off" spellcheck="false" enterkeyhint="search">
+      <label class="sr-only" for="searchInput">بحث في المخاطر الذكية والعقود والمهام والحوادث والتصاريح</label>
+      <input class="field-control" id="searchInput" name="search" type="search" placeholder="بحث بالرمز أو العنوان… (AIR-1042، CT-2026-014، R-1001)" autocomplete="off" spellcheck="false" enterkeyhint="search">
     </div>
     <div class="filters-group filters-feed">
       <button type="button" class="btn btn-outline btn-sm feed-toggle" id="feedToggle" aria-pressed="false" aria-controls="feed">
@@ -167,7 +174,7 @@
       <div class="cmdk-search">
         <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
         <label class="sr-only" for="cmdkInput">ابحث عن صفحة أو إجراء أو رمز</label>
-        <input class="cmdk-input" id="cmdkInput" type="text" placeholder="انتقل إلى صفحة، نفّذ إجراءً، أو ابحث برمز مثل R-1042…" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="cmdkList" aria-autocomplete="list" aria-activedescendant="">
+        <input class="cmdk-input" id="cmdkInput" type="text" placeholder="انتقل إلى قسم، نفّذ إجراءً، أو ابحث برمز مثل AIR-1042 أو CT-2026-014…" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="cmdkList" aria-autocomplete="list" aria-activedescendant="">
         <kbd class="cmdk-kbd mono" aria-hidden="true">Esc</kbd>
       </div>
       <ul class="cmdk-list" id="cmdkList" role="listbox" aria-label="النتائج"></ul>
@@ -181,8 +188,8 @@
 
   <noscript>
     <div class="noscript" dir="rtl">
-      <h1>بلتكس HSE</h1>
-      <p>يتطلب مركز القيادة تفعيل JavaScript في المتصفح لعرض الرادارات الحية والمؤشرات. يرجى تفعيل JavaScript ثم إعادة تحميل الصفحة.</p>
+      <h1>بلتكس Risk AI</h1>
+      <p>تتطلب منصة إدارة المخاطر تفعيل JavaScript في المتصفح لعرض قمرة القيادة والرادارات الحية والمؤشرات. يرجى تفعيل JavaScript ثم إعادة تحميل الصفحة.</p>
     </div>
   </noscript>
 

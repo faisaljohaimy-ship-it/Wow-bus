@@ -798,3 +798,336 @@ const contracts = [
   },
 ];
 
+// ------------------------------------------------------------------
+// 4. الموردون — التركّز والمورد الوحيد والصحة المالية
+// ------------------------------------------------------------------
+
+const suppliers = [
+  { id: 'SUP1',  name: 'مصنع الراجحي للحديد',                        category: 'حديد التسليح',              country: 'السعودية', shareOfSpendPct: 11.4, financialHealth: 84, deliveryPerformancePct: 93, singleSource: false, leadTimeDays: 21,  creditRating: 'A', riskScore: 26 },
+  { id: 'SUP2',  name: 'شركة أسمنت اليمامة',                          category: 'الأسمنت والخرسانة',         country: 'السعودية', shareOfSpendPct: 5.2,  financialHealth: 88, deliveryPerformancePct: 97, singleSource: false, leadTimeDays: 7,   creditRating: 'A', riskScore: 14 },
+  { id: 'SUP3',  name: 'مصنع شنغهاي للألواح الكهروضوئية',              category: 'ألواح كهروضوئية',          country: 'الصين',    shareOfSpendPct: 19.6, financialHealth: 71, deliveryPerformancePct: 74, singleSource: true,  leadTimeDays: 95,  creditRating: 'B', riskScore: 78 },
+  { id: 'SUP4',  name: 'شركة الخليج للواجهات',                         category: 'واجهات زجاجية',             country: 'السعودية', shareOfSpendPct: 7.7,  financialHealth: 58, deliveryPerformancePct: 81, singleSource: true,  leadTimeDays: 110, creditRating: 'B', riskScore: 69 },
+  { id: 'SUP5',  name: 'مصانع الكابلات السعودية',                      category: 'كابلات نحاسية',             country: 'السعودية', shareOfSpendPct: 4.9,  financialHealth: 86, deliveryPerformancePct: 91, singleSource: false, leadTimeDays: 35,  creditRating: 'A', riskScore: 31 },
+  { id: 'SUP6',  name: 'شركة المصاعد الأوروبية المحدودة',               category: 'مصاعد',                     country: 'ألمانيا',  shareOfSpendPct: 2.8,  financialHealth: 90, deliveryPerformancePct: 88, singleSource: true,  leadTimeDays: 140, creditRating: 'A', riskScore: 46 },
+  { id: 'SUP7',  name: 'الشركة السعودية للخرسانة الجاهزة',              category: 'خرسانة جاهزة',              country: 'السعودية', shareOfSpendPct: 8.3,  financialHealth: 79, deliveryPerformancePct: 95, singleSource: false, leadTimeDays: 2,   creditRating: 'A', riskScore: 18 },
+  { id: 'SUP8',  name: 'مصنع الجبيل للهياكل الفولاذية',                  category: 'هياكل فولاذية',             country: 'السعودية', shareOfSpendPct: 6.1,  financialHealth: 73, deliveryPerformancePct: 86, singleSource: false, leadTimeDays: 45,  creditRating: 'B', riskScore: 42 },
+  { id: 'SUP9',  name: 'شركة المحولات الوطنية',                        category: 'محولات ومعدات جهد عالٍ',    country: 'السعودية', shareOfSpendPct: 5.6,  financialHealth: 47, deliveryPerformancePct: 69, singleSource: true,  leadTimeDays: 180, creditRating: 'C', riskScore: 81 },
+  { id: 'SUP10', name: 'الشركة التركية للألمنيوم والنوافذ',              category: 'ألمنيوم ونوافذ',           country: 'تركيا',    shareOfSpendPct: 3.4,  financialHealth: 62, deliveryPerformancePct: 83, singleSource: false, leadTimeDays: 60,  creditRating: 'B', riskScore: 48 },
+  { id: 'SUP11', name: 'مصنع الرياض للأنابيب البلاستيكية HDPE',          category: 'أنابيب ومواسير',            country: 'السعودية', shareOfSpendPct: 2.2,  financialHealth: 81, deliveryPerformancePct: 94, singleSource: false, leadTimeDays: 14,  creditRating: 'A', riskScore: 16 },
+  { id: 'SUP12', name: 'الشركة اللوجستية للمحروقات',                     category: 'ديزل ومحروقات',             country: 'السعودية', shareOfSpendPct: 3.9,  financialHealth: 77, deliveryPerformancePct: 98, singleSource: false, leadTimeDays: 1,   creditRating: 'A', riskScore: 22 },
+  { id: 'SUP13', name: 'مصنع راجستان للبلاط والسيراميك',                 category: 'بلاط وتشطيبات',             country: 'الهند',    shareOfSpendPct: 1.8,  financialHealth: 69, deliveryPerformancePct: 79, singleSource: false, leadTimeDays: 50,  creditRating: 'B', riskScore: 39 },
+  { id: 'SUP14', name: 'مصنع شنتشن لأنظمة تخزين الطاقة BESS',            category: 'بطاريات تخزين الطاقة',      country: 'الصين',    shareOfSpendPct: 9.1,  financialHealth: 66, deliveryPerformancePct: 77, singleSource: true,  leadTimeDays: 120, creditRating: 'B', riskScore: 72 },
+  { id: 'SUP15', name: 'شركة العزل والمواد الكيميائية للبناء',            category: 'مواد عزل وكيماويات',        country: 'السعودية', shareOfSpendPct: 1.6,  financialHealth: 74, deliveryPerformancePct: 90, singleSource: false, leadTimeDays: 18,  creditRating: 'B', riskScore: 24 },
+  { id: 'SUP16', name: 'الشركة الوطنية للأخشاب ومواد الشدات',            category: 'خشب وشدات',                 country: 'السعودية', shareOfSpendPct: 2.4,  financialHealth: 80, deliveryPerformancePct: 92, singleSource: false, leadTimeDays: 10,  creditRating: 'A', riskScore: 19 },
+];
+
+// ------------------------------------------------------------------
+// 5. السلع — 24 سعراً شهرياً (ديسمبر 2024 → نوفمبر 2026) + 6 نقاط توقع
+// ------------------------------------------------------------------
+
+const COMMODITY_MONTHS = months(24);
+const FORECAST_MONTHS = months(6, 6);
+
+function commodity(c) {
+  const last = c.series[c.series.length - 1];
+  const yearAgo = c.series[c.series.length - 13];
+  return { ...c, months: COMMODITY_MONTHS, forecastMonths: FORECAST_MONTHS, lastPrice: last, change12mPct: r1(((last - yearAgo) / yearAgo) * 100) };
+}
+
+const commodities = [
+  commodity({
+    id: 'CM1', name: 'حديد التسليح', unit: 'ريال/طن',
+    series: [2740, 2725, 2760, 2810, 2795, 2780, 2765, 2790, 2830, 2865, 2850, 2880, 2910, 2895, 2940, 2985, 3010, 2990, 3035, 3080, 3120, 3105, 3150, 3190],
+    forecast: [3215, 3240, 3270, 3285, 3300, 3320],
+    volatilityPct: 6.8, exposureSAR: 186_000_000, trend: 'صاعد',
+  }),
+  commodity({
+    id: 'CM2', name: 'الأسمنت', unit: 'ريال/طن',
+    series: [262, 262, 264, 265, 265, 266, 268, 268, 268, 270, 270, 271, 272, 272, 274, 274, 275, 275, 276, 278, 278, 279, 280, 280],
+    forecast: [281, 281, 282, 283, 283, 284],
+    volatilityPct: 1.4, exposureSAR: 74_000_000, trend: 'مستقر',
+  }),
+  commodity({
+    id: 'CM3', name: 'النحاس', unit: 'ريال/طن',
+    series: [33900, 34400, 35100, 36200, 35600, 35900, 36800, 37100, 36600, 37400, 38200, 38900, 39600, 40100, 39500, 40800, 41600, 42300, 41900, 42800, 43700, 44600, 45200, 46100],
+    forecast: [46700, 47200, 47600, 48300, 48800, 49400],
+    volatilityPct: 14.2, exposureSAR: 92_000_000, trend: 'صاعد',
+  }),
+  commodity({
+    id: 'CM4', name: 'الألمنيوم', unit: 'ريال/طن',
+    series: [9480, 9610, 9750, 9520, 9380, 9450, 9620, 9710, 9680, 9820, 9950, 10040, 9960, 10120, 10210, 10080, 10190, 10320, 10410, 10360, 10480, 10550, 10620, 10700],
+    forecast: [10760, 10810, 10880, 10920, 10980, 11040],
+    volatilityPct: 7.9, exposureSAR: 58_000_000, trend: 'صاعد',
+  }),
+  commodity({
+    id: 'CM5', name: 'الديزل', unit: 'ريال/لتر',
+    series: [1.15, 1.15, 1.15, 1.15, 1.15, 1.15, 1.15, 1.15, 1.15, 1.15, 1.15, 1.15, 1.15, 1.38, 1.38, 1.38, 1.38, 1.38, 1.38, 1.38, 1.38, 1.38, 1.38, 1.38],
+    forecast: [1.38, 1.38, 1.38, 1.38, 1.52, 1.52],
+    volatilityPct: 9.6, exposureSAR: 41_000_000, trend: 'مستقر',
+  }),
+  commodity({
+    id: 'CM6', name: 'الخشب', unit: 'ريال/م³',
+    series: [2260, 2240, 2210, 2190, 2170, 2150, 2160, 2140, 2120, 2110, 2090, 2080, 2070, 2050, 2040, 2060, 2030, 2010, 2000, 1990, 1985, 1970, 1960, 1950],
+    forecast: [1945, 1940, 1930, 1925, 1920, 1915],
+    volatilityPct: 4.1, exposureSAR: 23_000_000, trend: 'هابط',
+  }),
+];
+
+// ------------------------------------------------------------------
+// 6. بنود جدول الكميات — مطابقة BoQ مقابل BIM وأزمنة التوريد
+//    variancePct = (BIM − BoQ) / BoQ ؛ orderBy = requiredBy − leadTimeDays
+// ------------------------------------------------------------------
+
+function boq(item, requiredOffset) {
+  const variancePct = r1(((item.bimQty - item.boqQty) / item.boqQty) * 100);
+  return { ...item, variancePct, requiredBy: d(requiredOffset), orderBy: d(requiredOffset - item.leadTimeDays) };
+}
+
+const boqItems = [
+  boq({ id: 'BQ1',  code: 'BQ-S1-03.02.010', projectId: 'S1', description: 'حديد تسليح عالي المقاومة قطر 32 مم — الطوابق 24–30',            unit: 'طن',  boqQty: 1840,  bimQty: 1996,  unitPrice: 3190,   supplierId: 'SUP1',  leadTimeDays: 21,  specCompliance: 'مطابق',        riskScore: 58 }, 34),
+  boq({ id: 'BQ2',  code: 'BQ-S1-08.01.040', projectId: 'S1', description: 'وحدات الواجهة الزجاجية الموحدة (Unitized Curtain Wall) 1.5×4.2 م', unit: 'م²',  boqQty: 28600, bimQty: 27950, unitPrice: 2650,   supplierId: 'SUP4',  leadTimeDays: 110, specCompliance: 'قيد المراجعة', riskScore: 71 }, 96),
+  boq({ id: 'BQ3',  code: 'BQ-S1-03.01.020', projectId: 'S1', description: 'خرسانة جاهزة C60 للأعمدة والنواة',                                unit: 'م³',  boqQty: 12400, bimQty: 12610, unitPrice: 385,    supplierId: 'SUP7',  leadTimeDays: 2,   specCompliance: 'مطابق',        riskScore: 12 }, 12),
+  boq({ id: 'BQ4',  code: 'BQ-S1-14.01.010', projectId: 'S1', description: 'مصاعد ركاب عالية السرعة 6 م/ث — 18 وحدة',                           unit: 'عدد', boqQty: 18,    bimQty: 18,    unitPrice: 2_150_000, supplierId: 'SUP6', leadTimeDays: 140, specCompliance: 'مطابق',        riskScore: 44 }, 210),
+  boq({ id: 'BQ5',  code: 'BQ-S2-16.02.030', projectId: 'S2', description: 'كابلات نحاسية XLPE 4×240 مم² — التغذية الرئيسية للمباني A–C',       unit: 'م',   boqQty: 18500, bimQty: 20310, unitPrice: 412,    supplierId: 'SUP5',  leadTimeDays: 35,  specCompliance: 'مطابق',        riskScore: 63 }, 25),
+  boq({ id: 'BQ6',  code: 'BQ-S2-14.01.010', projectId: 'S2', description: 'مصاعد كهربائية بدون غرفة آلات 1000 كجم — 14 وحدة',                 unit: 'عدد', boqQty: 14,    bimQty: 14,    unitPrice: 1_680_000, supplierId: 'SUP6', leadTimeDays: 140, specCompliance: 'مطابق',        riskScore: 55 }, 17),
+  boq({ id: 'BQ7',  code: 'BQ-S2-09.03.050', projectId: 'S2', description: 'بلاط بورسلين 60×60 سم للوحدات السكنية',                            unit: 'م²',  boqQty: 96000, bimQty: 91200, unitPrice: 68,     supplierId: 'SUP13', leadTimeDays: 50,  specCompliance: 'غير مطابق',    riskScore: 52 }, 40),
+  boq({ id: 'BQ8',  code: 'BQ-S3-26.31.010', projectId: 'S3', description: 'ألواح كهروضوئية ثنائية الوجه TOPCon 580 واط',                       unit: 'عدد', boqQty: 1_810_000, bimQty: 1_803_400, unitPrice: 298, supplierId: 'SUP3', leadTimeDays: 95, specCompliance: 'قيد المراجعة', riskScore: 79 }, 60),
+  boq({ id: 'BQ9',  code: 'BQ-S3-26.12.020', projectId: 'S3', description: 'محولات رفع 33/380 ك.ف 250 م.ف.أ — المحطة الفرعية',                 unit: 'عدد', boqQty: 2,     bimQty: 2,     unitPrice: 28_500_000, supplierId: 'SUP9', leadTimeDays: 180, specCompliance: 'مطابق',      riskScore: 84 }, 72),
+  boq({ id: 'BQ10', code: 'BQ-S3-26.33.010', projectId: 'S3', description: 'حاويات بطاريات ليثيوم BESS 5 ميجاواط ساعة',                         unit: 'عدد', boqQty: 60,    bimQty: 64,    unitPrice: 6_900_000, supplierId: 'SUP14', leadTimeDays: 120, specCompliance: 'قيد المراجعة', riskScore: 73 }, 130),
+  boq({ id: 'BQ11', code: 'BQ-S3-05.12.030', projectId: 'S3', description: 'هياكل تثبيت الألواح المجلفنة (Trackers) أحادية المحور',             unit: 'طن',  boqQty: 14200, bimQty: 15090, unitPrice: 5400,   supplierId: 'SUP8',  leadTimeDays: 45,  specCompliance: 'مطابق',        riskScore: 57 }, 48),
+  boq({ id: 'BQ12', code: 'BQ-S4-05.12.010', projectId: 'S4', description: 'هياكل فولاذية إنشائية — إطارات المستودعات 1–3',                     unit: 'طن',  boqQty: 6800,  bimQty: 7030,  unitPrice: 8900,   supplierId: 'SUP8',  leadTimeDays: 45,  specCompliance: 'مطابق',        riskScore: 38 }, 30),
+  boq({ id: 'BQ13', code: 'BQ-S4-07.41.020', projectId: 'S4', description: 'ألواح أسقف ساندويتش معزولة 100 مم',                                 unit: 'م²',  boqQty: 98000, bimQty: 101400, unitPrice: 165,   supplierId: 'SUP10', leadTimeDays: 60,  specCompliance: 'مطابق',        riskScore: 35 }, 27),
+  boq({ id: 'BQ14', code: 'BQ-S4-03.30.010', projectId: 'S4', description: 'أرضيات خرسانية صناعية مسلحة بالألياف 250 مم',                        unit: 'م³',  boqQty: 24500, bimQty: 24380, unitPrice: 340,    supplierId: 'SUP7',  leadTimeDays: 2,   specCompliance: 'مطابق',        riskScore: 11 }, 45),
+  boq({ id: 'BQ15', code: 'BQ-S5-31.23.010', projectId: 'S5', description: 'حفر صخري بالتفجير المتحكم — الحزمة 2B',                             unit: 'م³',  boqQty: 1_420_000, bimQty: 1_705_000, unitPrice: 48, supplierId: 'SUP12', leadTimeDays: 1, specCompliance: 'مطابق',        riskScore: 82 }, 58),
+  boq({ id: 'BQ16', code: 'BQ-S5-33.11.020', projectId: 'S5', description: 'أنابيب HDPE قطر 630 مم PN10 — شبكة المياه الرئيسية',                 unit: 'م',   boqQty: 12800, bimQty: 13650, unitPrice: 690,    supplierId: 'SUP11', leadTimeDays: 14,  specCompliance: 'مطابق',        riskScore: 33 }, 75),
+  boq({ id: 'BQ17', code: 'BQ-S5-31.05.010', projectId: 'S5', description: 'وقود ديزل لمعدات الحفر والنقل (شهري)',                               unit: 'لتر', boqQty: 1_900_000, bimQty: 1_900_000, unitPrice: 1.38, supplierId: 'SUP12', leadTimeDays: 1, specCompliance: 'مطابق',        riskScore: 29 }, 7),
+  boq({ id: 'BQ18', code: 'BQ-S6-22.63.010', projectId: 'S6', description: 'أنابيب نحاسية طبية (Medical Grade Copper) للغازات الطبية',           unit: 'م',   boqQty: 9600,  bimQty: 10420, unitPrice: 184,    supplierId: 'SUP5',  leadTimeDays: 35,  specCompliance: 'قيد المراجعة', riskScore: 61 }, 14),
+  boq({ id: 'BQ19', code: 'BQ-S6-26.32.010', projectId: 'S6', description: 'مولدات احتياطية 2000 ك.ف.أ مع خزان يومي — 2 وحدة',                 unit: 'عدد', boqQty: 2,     bimQty: 2,     unitPrice: 2_400_000, supplierId: 'SUP9', leadTimeDays: 180, specCompliance: 'مطابق',        riskScore: 27 }, 9),
+  boq({ id: 'BQ20', code: 'BQ-S6-09.51.030', projectId: 'S6', description: 'أسقف معلقة مضادة للبكتيريا — غرف العمليات والعناية المركزة',          unit: 'م²',  boqQty: 4200,  bimQty: 4480,  unitPrice: 310,    supplierId: 'SUP15', leadTimeDays: 18,  specCompliance: 'غير مطابق',    riskScore: 49 }, 20),
+  boq({ id: 'BQ21', code: 'BQ-S1-03.11.010', projectId: 'S1', description: 'ألواح خشب رقائقي للشدات 18 مم (دورات إعادة الاستخدام 6)',              unit: 'م³',  boqQty: 2200,  bimQty: 2150,  unitPrice: 1950,   supplierId: 'SUP16', leadTimeDays: 10,  specCompliance: 'مطابق',        riskScore: 15 }, 18),
+  boq({ id: 'BQ22', code: 'BQ-S2-07.11.010', projectId: 'S2', description: 'عزل مائي للأسطح — أغشية بيتومينية مُعدَّلة 4 مم',                     unit: 'م²',  boqQty: 21000, bimQty: 22700, unitPrice: 62,     supplierId: 'SUP15', leadTimeDays: 18,  specCompliance: 'مطابق',        riskScore: 28 }, 22),
+];
+
+// ------------------------------------------------------------------
+// 7. المقاولون من الباطن — الأداء المخطط مقابل الفعلي
+// ------------------------------------------------------------------
+
+const subcontractors = [
+  { id: 'SC1',  name: 'شركة الخليج للواجهات',           projectId: 'S1', trade: 'الواجهات الزجاجية',          plannedProgressPct: 22, actualProgressPct: 14, trend: [4, 6, 8, 9, 11, 12, 13, 14],      scorecard: 58, openNotices: 3 },
+  { id: 'SC2',  name: 'مؤسسة النخبة لحديد التسليح',     projectId: 'S1', trade: 'حديد التسليح',                plannedProgressPct: 64, actualProgressPct: 61, trend: [41, 44, 47, 50, 53, 56, 59, 61], scorecard: 79, openNotices: 1 },
+  { id: 'SC3',  name: 'الخليج للكهروميكانيك',           projectId: 'S2', trade: 'الأعمال الكهروميكانيكية MEP', plannedProgressPct: 88, actualProgressPct: 76, trend: [58, 61, 64, 67, 70, 72, 74, 76], scorecard: 63, openNotices: 4 },
+  { id: 'SC4',  name: 'شركة التشطيبات الراقية',          projectId: 'S2', trade: 'التشطيبات الداخلية',          plannedProgressPct: 79, actualProgressPct: 81, trend: [52, 57, 62, 66, 70, 74, 78, 81], scorecard: 86, openNotices: 0 },
+  { id: 'SC5',  name: 'شركة الشمس لتركيب الألواح',        projectId: 'S3', trade: 'تركيب الألواح والهياكل',      plannedProgressPct: 61, actualProgressPct: 52, trend: [30, 34, 37, 41, 44, 47, 50, 52], scorecard: 66, openNotices: 2 },
+  { id: 'SC6',  name: 'شركة الجهد العالي للمقاولات',     projectId: 'S3', trade: 'المحطة الفرعية والكابلات',     plannedProgressPct: 48, actualProgressPct: 35, trend: [18, 21, 24, 27, 29, 31, 33, 35], scorecard: 54, openNotices: 5 },
+  { id: 'SC7',  name: 'مقاولو الصلب',                    projectId: 'S4', trade: 'الهياكل الفولاذية والأسقف',    plannedProgressPct: 66, actualProgressPct: 68, trend: [44, 48, 52, 55, 59, 62, 65, 68], scorecard: 84, openNotices: 1 },
+  { id: 'SC8',  name: 'الشركة العربية للحفريات',          projectId: 'S5', trade: 'الحفر الصخري والتفجير',        plannedProgressPct: 31, actualProgressPct: 17, trend: [6, 8, 10, 12, 13, 15, 16, 17],    scorecard: 49, openNotices: 6 },
+  { id: 'SC9',  name: 'شركة الطرق والبنية التحتية',       projectId: 'S5', trade: 'الطرق والشبكات',              plannedProgressPct: 12, actualProgressPct: 11, trend: [2, 3, 5, 6, 7, 9, 10, 11],        scorecard: 77, openNotices: 1 },
+  { id: 'SC10', name: 'الخليج للكهروميكانيك — فرع المدينة', projectId: 'S6', trade: 'الأنظمة الطبية والكهروميكانيكية', plannedProgressPct: 92, actualProgressPct: 86, trend: [70, 73, 76, 78, 80, 82, 84, 86], scorecard: 71, openNotices: 2 },
+  { id: 'SC11', name: 'شركة الأسقف والقواطع الطبية',       projectId: 'S6', trade: 'الأسقف والقواطع',             plannedProgressPct: 85, actualProgressPct: 83, trend: [60, 64, 68, 71, 75, 78, 81, 83], scorecard: 80, openNotices: 1 },
+];
+
+// ------------------------------------------------------------------
+// 8. أنشطة الجدول الزمني (Primavera P6) — المسار الحرج لكل مشروع
+// ------------------------------------------------------------------
+
+function task(x, startOff, finishOff, baselineOff) {
+  return { ...x, start: d(startOff), finish: d(finishOff), baselineFinish: d(baselineOff) };
+}
+
+const scheduleTasks = [
+  // S1 — برج الواجهة المالية: النواة → الهيكل → الواجهة → الكهروميكانيك
+  task({ id: 'T1',  code: 'A1020', projectId: 'S1', name: 'صب نواة البرج — الطوابق 24–27',                     wbs: '1.3.2', floatDays: 0,  critical: true,  percentComplete: 62, delayProbability: 0.58, expectedDelayDays: 12, subcontractorId: 'SC2', trade: 'خرسانة',           weatherSensitive: true },  -28, 18, 9),
+  task({ id: 'T2',  code: 'A1030', projectId: 'S1', name: 'تركيب حديد تسليح البلاطات — الطوابق 28–30',           wbs: '1.3.3', floatDays: 0,  critical: true,  percentComplete: 20, delayProbability: 0.49, expectedDelayDays: 9,  subcontractorId: 'SC2', trade: 'حديد تسليح',       weatherSensitive: false }, -6, 46, 38),
+  task({ id: 'T3',  code: 'A1100', projectId: 'S1', name: 'بدء تركيب وحدات الواجهة الزجاجية — الطوابق 8–15',        wbs: '1.5.1', floatDays: 0,  critical: true,  percentComplete: 0,  delayProbability: 0.71, expectedDelayDays: 28, subcontractorId: 'SC1', trade: 'واجهات',           weatherSensitive: true },  96, 170, 142),
+  task({ id: 'T4',  code: 'A1140', projectId: 'S1', name: 'تركيب رافعة البرج رقم 3 ورفع الارتفاع (Climbing)',       wbs: '1.2.4', floatDays: 6,  critical: false, percentComplete: 45, delayProbability: 0.33, expectedDelayDays: 4,  subcontractorId: null,  trade: 'معدات رفع',        weatherSensitive: true },  -10, 11, 9),
+  task({ id: 'T5',  code: 'A1210', projectId: 'S1', name: 'تمديدات الكهروميكانيك الرأسية — الطوابق 1–12',          wbs: '1.6.1', floatDays: 21, critical: false, percentComplete: 38, delayProbability: 0.22, expectedDelayDays: 3,  subcontractorId: null,  trade: 'كهروميكانيك',      weatherSensitive: false }, -40, 60, 60),
+  task({ id: 'T6',  code: 'A1250', projectId: 'S1', name: 'تركيب المصاعد عالية السرعة — المجموعة الأولى',           wbs: '1.6.4', floatDays: 14, critical: false, percentComplete: 0,  delayProbability: 0.41, expectedDelayDays: 10, subcontractorId: null,  trade: 'مصاعد',            weatherSensitive: false }, 210, 300, 290),
+  // S2 — مجمع البحر الأحمر: المصاعد والتشغيل التجريبي → التسلّم
+  task({ id: 'T7',  code: 'B2040', projectId: 'S2', name: 'تركيب وتشغيل المصاعد — المبنى A (6 وحدات)',              wbs: '2.6.3', floatDays: 0,  critical: true,  percentComplete: 71, delayProbability: 0.62, expectedDelayDays: 14, subcontractorId: 'SC3', trade: 'مصاعد',            weatherSensitive: false }, -35, 36, 30),
+  task({ id: 'T8',  code: 'B2050', projectId: 'S2', name: 'اختبارات التشغيل والموازنة للتكييف — المبنى A',           wbs: '2.6.5', floatDays: 0,  critical: true,  percentComplete: 44, delayProbability: 0.55, expectedDelayDays: 10, subcontractorId: 'SC3', trade: 'كهروميكانيك',      weatherSensitive: false }, -12, 34, 28),
+  task({ id: 'T9',  code: 'B2070', projectId: 'S2', name: 'توصيل التيار الكهربائي الدائم — المبنى C',               wbs: '2.7.1', floatDays: 0,  critical: true,  percentComplete: 30, delayProbability: 0.66, expectedDelayDays: 21, subcontractorId: null,  trade: 'جهات خدمية',       weatherSensitive: false }, -94, 40, 15),
+  task({ id: 'T10', code: 'B2110', projectId: 'S2', name: 'تشطيبات الوحدات — المبنى C (الطوابق 5–9)',                wbs: '2.5.3', floatDays: 12, critical: false, percentComplete: 68, delayProbability: 0.18, expectedDelayDays: 2,  subcontractorId: 'SC4', trade: 'تشطيبات',          weatherSensitive: false }, -50, 28, 28),
+  task({ id: 'T11', code: 'B2130', projectId: 'S2', name: 'العزل المائي للأسطح — المباني A وB',                     wbs: '2.4.2', floatDays: 9,  critical: false, percentComplete: 55, delayProbability: 0.37, expectedDelayDays: 5,  subcontractorId: null,  trade: 'عزل',              weatherSensitive: true },  -15, 24, 20),
+  // S3 — نيوم: المحولات → المحطة الفرعية → التنشيط → الربط بالشبكة
+  task({ id: 'T12', code: 'C3010', projectId: 'S3', name: 'توريد محولات الرفع 33/380 ك.ف (2 وحدة)',                 wbs: '3.4.1', floatDays: 0,  critical: true,  percentComplete: 55, delayProbability: 0.78, expectedDelayDays: 45, subcontractorId: 'SC6', trade: 'معدات جهد عالٍ',   weatherSensitive: false }, -150, 72, 30),
+  task({ id: 'T13', code: 'C3020', projectId: 'S3', name: 'تركيب واختبار المحطة الفرعية 380 ك.ف',                    wbs: '3.4.2', floatDays: 0,  critical: true,  percentComplete: 28, delayProbability: 0.69, expectedDelayDays: 35, subcontractorId: 'SC6', trade: 'معدات جهد عالٍ',   weatherSensitive: false }, -40, 118, 80),
+  task({ id: 'T14', code: 'C3030', projectId: 'S3', name: 'تنشيط المحطة والربط بشبكة النقل (Grid Energization)',       wbs: '3.4.4', floatDays: 0,  critical: true,  percentComplete: 0,  delayProbability: 0.72, expectedDelayDays: 40, subcontractorId: null,  trade: 'جهات خدمية',       weatherSensitive: false }, 118, 150, 100),
+  task({ id: 'T15', code: 'C3110', projectId: 'S3', name: 'تركيب الألواح — القطاع الجنوبي (الحزم 7–12)',               wbs: '3.2.2', floatDays: 18, critical: false, percentComplete: 46, delayProbability: 0.52, expectedDelayDays: 16, subcontractorId: 'SC5', trade: 'تركيب ألواح',      weatherSensitive: true },  -60, 95, 85),
+  task({ id: 'T16', code: 'C3120', projectId: 'S3', name: 'تركيب هياكل التتبع (Trackers) — القطاع الشمالي',            wbs: '3.2.1', floatDays: 25, critical: false, percentComplete: 83, delayProbability: 0.21, expectedDelayDays: 3,  subcontractorId: 'SC5', trade: 'هياكل',            weatherSensitive: true },  -120, 20, 18),
+  task({ id: 'T17', code: 'C3210', projectId: 'S3', name: 'تركيب حاويات تخزين الطاقة BESS وربطها',                    wbs: '3.5.1', floatDays: 30, critical: false, percentComplete: 0,  delayProbability: 0.47, expectedDelayDays: 20, subcontractorId: null,  trade: 'تخزين طاقة',       weatherSensitive: false }, 130, 220, 205),
+  // S4 — الدمام: الهياكل → الأسقف → الأرضيات
+  task({ id: 'T18', code: 'D4010', projectId: 'S4', name: 'تركيب الإطارات الفولاذية — المستودع 3',                   wbs: '4.3.3', floatDays: 0,  critical: true,  percentComplete: 58, delayProbability: 0.29, expectedDelayDays: 4,  subcontractorId: 'SC7', trade: 'هياكل فولاذية',    weatherSensitive: true },  -30, 25, 22),
+  task({ id: 'T19', code: 'D4020', projectId: 'S4', name: 'إغلاق سقف المستودع 2 (ألواح ساندويتش)',                    wbs: '4.4.2', floatDays: 0,  critical: true,  percentComplete: 68, delayProbability: 0.31, expectedDelayDays: 5,  subcontractorId: 'SC7', trade: 'أسقف معدنية',      weatherSensitive: true },  -20, 27, 27),
+  task({ id: 'T20', code: 'D4030', projectId: 'S4', name: 'صب الأرضيات الصناعية — المستودع 1',                       wbs: '4.5.1', floatDays: 0,  critical: true,  percentComplete: 35, delayProbability: 0.24, expectedDelayDays: 3,  subcontractorId: null,  trade: 'خرسانة',           weatherSensitive: true },  -8, 45, 45),
+  task({ id: 'T21', code: 'D4110', projectId: 'S4', name: 'أنظمة الإطفاء الآلي (Sprinklers) — المستودع 1',             wbs: '4.6.1', floatDays: 16, critical: false, percentComplete: 10, delayProbability: 0.19, expectedDelayDays: 2,  subcontractorId: null,  trade: 'إطفاء',            weatherSensitive: false }, 5, 70, 70),
+  task({ id: 'T22', code: 'D4120', projectId: 'S4', name: 'ساحات المناورة والرصف الخرساني',                          wbs: '4.7.1', floatDays: 22, critical: false, percentComplete: 20, delayProbability: 0.26, expectedDelayDays: 3,  subcontractorId: null,  trade: 'أعمال مدنية',      weatherSensitive: true },  -14, 80, 78),
+  // S5 — القدية: الحفر 2B → الردم → الطرق → الشبكات
+  task({ id: 'T23', code: 'E5010', projectId: 'S5', name: 'الحفر الصخري بالتفجير — الحزمة 2B (1.7 مليون م³)',          wbs: '5.2.2', floatDays: 0,  critical: true,  percentComplete: 17, delayProbability: 0.84, expectedDelayDays: 63, subcontractorId: 'SC8', trade: 'حفر صخري',         weatherSensitive: true },  -70, 58, 40),
+  task({ id: 'T24', code: 'E5020', projectId: 'S5', name: 'الردم والدك الهندسي — المنصة الجنوبية',                    wbs: '5.2.4', floatDays: 0,  critical: true,  percentComplete: 0,  delayProbability: 0.74, expectedDelayDays: 48, subcontractorId: 'SC8', trade: 'أعمال ترابية',     weatherSensitive: true },  58, 140, 110),
+  task({ id: 'T25', code: 'E5030', projectId: 'S5', name: 'طريق النقل الداخلي الرئيسي — الطبقة الأساس',                 wbs: '5.3.1', floatDays: 0,  critical: true,  percentComplete: 8,  delayProbability: 0.61, expectedDelayDays: 30, subcontractorId: 'SC9', trade: 'طرق',              weatherSensitive: true },  -20, 120, 95),
+  task({ id: 'T26', code: 'E5110', projectId: 'S5', name: 'شبكة المياه الرئيسية HDPE 630 مم',                          wbs: '5.4.1', floatDays: 35, critical: false, percentComplete: 0,  delayProbability: 0.38, expectedDelayDays: 12, subcontractorId: 'SC9', trade: 'شبكات',            weatherSensitive: false }, 75, 160, 150),
+  task({ id: 'T27', code: 'E5120', projectId: 'S5', name: 'تجهيز الكسارة ومحطة الخلط المركزية',                        wbs: '5.1.3', floatDays: 10, critical: false, percentComplete: 72, delayProbability: 0.27, expectedDelayDays: 4,  subcontractorId: null,  trade: 'معدات',            weatherSensitive: false }, -45, 15, 12),
+  // S6 — المدينة المنورة: الغازات الطبية → الربط الكهربائي → القبول → التسلّم
+  task({ id: 'T28', code: 'F6010', projectId: 'S6', name: 'تركيب واختبار شبكة الغازات الطبية — الطوابق 1–3',           wbs: '6.5.2', floatDays: 0,  critical: true,  percentComplete: 74, delayProbability: 0.46, expectedDelayDays: 8,  subcontractorId: 'SC10', trade: 'غازات طبية',      weatherSensitive: false }, -40, 21, 16),
+  task({ id: 'T29', code: 'F6020', projectId: 'S6', name: 'الربط الكهربائي مع المبنى القائم (انقطاع مخطط)',             wbs: '6.6.1', floatDays: 0,  critical: true,  percentComplete: 0,  delayProbability: 0.52, expectedDelayDays: 7,  subcontractorId: 'SC10', trade: 'كهرباء',           weatherSensitive: false }, 20, 24, 18),
+  task({ id: 'T30', code: 'F6030', projectId: 'S6', name: 'اختبارات القبول للأنظمة الطبية وتسليم الوثائق',               wbs: '6.7.1', floatDays: 0,  critical: true,  percentComplete: 0,  delayProbability: 0.57, expectedDelayDays: 12, subcontractorId: 'SC10', trade: 'تشغيل تجريبي',    weatherSensitive: false }, 25, 70, 60),
+  task({ id: 'T31', code: 'F6110', projectId: 'S6', name: 'الأسقف المعلقة المضادة للبكتيريا — غرف العمليات',             wbs: '6.4.3', floatDays: 11, critical: false, percentComplete: 60, delayProbability: 0.34, expectedDelayDays: 5,  subcontractorId: 'SC11', trade: 'أسقف',            weatherSensitive: false }, -25, 20, 18),
+  task({ id: 'T32', code: 'F6120', projectId: 'S6', name: 'تركيب المولدات الاحتياطية وخزانات الوقود — القبو',           wbs: '6.6.3', floatDays: 8,  critical: false, percentComplete: 85, delayProbability: 0.15, expectedDelayDays: 1,  subcontractorId: null,   trade: 'كهرباء',           weatherSensitive: false }, -30, 9, 9),
+];
+
+// ------------------------------------------------------------------
+// 9. محاكاة مونت كارلو — 5,000 تكرار لكل مشروع (أيام الانزلاق عن الموعد المخطط)
+// ------------------------------------------------------------------
+
+function mc(plannedFinish, p50Days, p80Days, p90Days, histogram) {
+  const base = new Date(`${plannedFinish}T00:00:00Z`).getTime();
+  const at = (days) => {
+    const x = new Date(base + days * DAY_MS);
+    return `${x.getUTCFullYear()}-${pad2(x.getUTCMonth() + 1)}-${pad2(x.getUTCDate())}`;
+  };
+  return { plannedFinish, p50: at(p50Days), p80: at(p80Days), p90: at(p90Days), p50Days, p80Days, p90Days, histogram, runs: 5000 };
+}
+
+const monteCarlo = {
+  S1: mc('2028-06-30', 71, 106, 131, [
+    { days: 0, prob: 0.03 }, { days: 15, prob: 0.06 }, { days: 30, prob: 0.09 }, { days: 45, prob: 0.12 }, { days: 60, prob: 0.14 }, { days: 75, prob: 0.14 },
+    { days: 90, prob: 0.12 }, { days: 105, prob: 0.10 }, { days: 120, prob: 0.08 }, { days: 135, prob: 0.05 }, { days: 150, prob: 0.04 }, { days: 165, prob: 0.02 }, { days: 180, prob: 0.01 },
+  ]),
+  S2: mc('2027-02-28', 24, 41, 52, [
+    { days: 0, prob: 0.06 }, { days: 7, prob: 0.11 }, { days: 14, prob: 0.15 }, { days: 21, prob: 0.17 }, { days: 28, prob: 0.15 }, { days: 35, prob: 0.12 },
+    { days: 42, prob: 0.09 }, { days: 49, prob: 0.06 }, { days: 56, prob: 0.04 }, { days: 63, prob: 0.025 }, { days: 70, prob: 0.015 }, { days: 77, prob: 0.01 },
+  ]),
+  S3: mc('2027-09-30', 58, 82, 97, [
+    { days: 0, prob: 0.02 }, { days: 10, prob: 0.04 }, { days: 20, prob: 0.07 }, { days: 30, prob: 0.10 }, { days: 40, prob: 0.12 }, { days: 50, prob: 0.14 },
+    { days: 60, prob: 0.14 }, { days: 70, prob: 0.12 }, { days: 80, prob: 0.10 }, { days: 90, prob: 0.07 }, { days: 100, prob: 0.045 }, { days: 110, prob: 0.025 }, { days: 120, prob: 0.01 },
+  ]),
+  S4: mc('2027-04-30', -8, 6, 14, [
+    { days: -28, prob: 0.04 }, { days: -21, prob: 0.09 }, { days: -14, prob: 0.15 }, { days: -7, prob: 0.19 }, { days: 0, prob: 0.18 }, { days: 7, prob: 0.14 },
+    { days: 14, prob: 0.09 }, { days: 21, prob: 0.06 }, { days: 28, prob: 0.03 }, { days: 35, prob: 0.015 }, { days: 42, prob: 0.01 }, { days: 49, prob: 0.005 },
+  ]),
+  S5: mc('2028-12-31', 118, 162, 194, [
+    { days: 0, prob: 0.01 }, { days: 20, prob: 0.03 }, { days: 40, prob: 0.05 }, { days: 60, prob: 0.08 }, { days: 80, prob: 0.11 }, { days: 100, prob: 0.13 },
+    { days: 120, prob: 0.14 }, { days: 140, prob: 0.13 }, { days: 160, prob: 0.11 }, { days: 180, prob: 0.09 }, { days: 200, prob: 0.06 }, { days: 220, prob: 0.04 }, { days: 240, prob: 0.02 },
+  ]),
+  S6: mc('2027-01-31', 16, 28, 36, [
+    { days: 0, prob: 0.07 }, { days: 5, prob: 0.13 }, { days: 10, prob: 0.17 }, { days: 15, prob: 0.18 }, { days: 20, prob: 0.15 }, { days: 25, prob: 0.11 },
+    { days: 30, prob: 0.08 }, { days: 35, prob: 0.05 }, { days: 40, prob: 0.03 }, { days: 45, prob: 0.015 }, { days: 50, prob: 0.01 }, { days: 55, prob: 0.005 },
+  ]),
+};
+
+// ------------------------------------------------------------------
+// 10. الموارد — التخصيص والفجوات للأسبوع القادم
+// ------------------------------------------------------------------
+
+const resources = [
+  { id: 'RS1',  projectId: 'S1', trade: 'حدادو تسليح',               planned: 180, available: 152, utilizationPct: 118, nextWeekGap: -28 },
+  { id: 'RS2',  projectId: 'S1', trade: 'مشغلو رافعات برجية',         planned: 12,  available: 12,  utilizationPct: 100, nextWeekGap: 0 },
+  { id: 'RS3',  projectId: 'S1', trade: 'نجارو شدات',                 planned: 140, available: 146, utilizationPct: 96,  nextWeekGap: 6 },
+  { id: 'RS4',  projectId: 'S2', trade: 'فنيو مصاعد',                 planned: 24,  available: 16,  utilizationPct: 150, nextWeekGap: -8 },
+  { id: 'RS5',  projectId: 'S2', trade: 'فنيو تكييف وتشغيل',           planned: 46,  available: 39,  utilizationPct: 118, nextWeekGap: -7 },
+  { id: 'RS6',  projectId: 'S2', trade: 'عمال تشطيبات',               planned: 210, available: 224, utilizationPct: 94,  nextWeekGap: 14 },
+  { id: 'RS7',  projectId: 'S3', trade: 'فنيو تركيب ألواح',           planned: 420, available: 388, utilizationPct: 108, nextWeekGap: -32 },
+  { id: 'RS8',  projectId: 'S3', trade: 'كهربائيو جهد عالٍ معتمدون',   planned: 36,  available: 22,  utilizationPct: 164, nextWeekGap: -14 },
+  { id: 'RS9',  projectId: 'S4', trade: 'مركّبو هياكل فولاذية',        planned: 96,  available: 98,  utilizationPct: 98,  nextWeekGap: 2 },
+  { id: 'RS10', projectId: 'S4', trade: 'لحامون معتمدون 6G',           planned: 28,  available: 25,  utilizationPct: 112, nextWeekGap: -3 },
+  { id: 'RS11', projectId: 'S5', trade: 'مشغلو حفارات ثقيلة',          planned: 64,  available: 51,  utilizationPct: 125, nextWeekGap: -13 },
+  { id: 'RS12', projectId: 'S5', trade: 'فنيو تفجير مرخصون',           planned: 10,  available: 6,   utilizationPct: 167, nextWeekGap: -4 },
+  { id: 'RS13', projectId: 'S5', trade: 'سائقو شاحنات قلاب',            planned: 120, available: 118, utilizationPct: 102, nextWeekGap: -2 },
+  { id: 'RS14', projectId: 'S6', trade: 'فنيو غازات طبية معتمدون',      planned: 14,  available: 9,   utilizationPct: 156, nextWeekGap: -5 },
+  { id: 'RS15', projectId: 'S6', trade: 'كهربائيون',                    planned: 40,  available: 42,  utilizationPct: 95,  nextWeekGap: 2 },
+];
+
+// ------------------------------------------------------------------
+// 11. الموافقات التنظيمية — الجهات السعودية والمدد النظامية
+// ------------------------------------------------------------------
+
+function approval(a, submittedOff) {
+  return { ...a, submittedAt: d(submittedOff), elapsedDays: Math.max(0, -submittedOff) };
+}
+
+const approvals = [
+  approval({ id: 'AP1',  projectId: 'S1', authority: 'أمانة منطقة الرياض',                                   type: 'ترخيص إغلاق جزئي لطريق الملك فهد الخدمي (رفع وحدات الواجهة)', statutoryDays: 30, status: 'قيد المعالجة',   riskScore: 61 }, -26),
+  approval({ id: 'AP2',  projectId: 'S1', authority: 'الدفاع المدني',                                        type: 'اعتماد مخططات أنظمة الإطفاء — الطوابق 1–30',               statutoryDays: 21, status: 'مطلوب استكمال',  riskScore: 55 }, -34),
+  approval({ id: 'AP3',  projectId: 'S2', authority: 'الشركة السعودية للكهرباء',                              type: 'توصيل التيار الدائم — المبنى C (محطة محولات 13.8 ك.ف)',     statutoryDays: 60, status: 'متأخر',          riskScore: 83 }, -94),
+  approval({ id: 'AP4',  projectId: 'S2', authority: 'أمانة محافظة جدة',                                     type: 'شهادة إشغال — المبنى A',                                   statutoryDays: 15, status: 'قيد المعالجة',   riskScore: 38 }, -4),
+  approval({ id: 'AP5',  projectId: 'S3', authority: 'المركز الوطني للرقابة على الالتزام البيئي',               type: 'تجديد التصريح البيئي للتشغيل — الرصد الربع سنوي',           statutoryDays: 45, status: 'قيد المعالجة',   riskScore: 47 }, -31),
+  approval({ id: 'AP6',  projectId: 'S3', authority: 'الشركة السعودية للكهرباء — شبكة النقل',                   type: 'اتفاقية الربط بالشبكة ومواصفات التنشيط 380 ك.ف',            statutoryDays: 90, status: 'متأخر',          riskScore: 86 }, -121),
+  approval({ id: 'AP7',  projectId: 'S4', authority: 'الهيئة العامة للموانئ (موانئ)',                          type: 'تصاريح دخول المركبات الثقيلة لحرم الميناء — نوفمبر',        statutoryDays: 10, status: 'معتمد',          riskScore: 12 }, -9),
+  approval({ id: 'AP8',  projectId: 'S4', authority: 'الدفاع المدني — المنطقة الشرقية',                        type: 'اعتماد نظام الإطفاء الآلي للمستودعات (ESFR)',                statutoryDays: 21, status: 'قيد المعالجة',   riskScore: 36 }, -12),
+  approval({ id: 'AP9',  projectId: 'S5', authority: 'هيئة تطوير بوابة الدرعية — التنسيق الحضري',                type: 'تصريح نقل المواد الفائضة عبر الطريق الإقليمي',               statutoryDays: 30, status: 'مطلوب استكمال',  riskScore: 58 }, -29),
+  approval({ id: 'AP10', projectId: 'S5', authority: 'الأمن العام — إدارة المتفجرات',                           type: 'تجديد تصريح تخزين واستخدام المتفجرات',                       statutoryDays: 21, status: 'قيد المعالجة',   riskScore: 74 }, -8),
+  approval({ id: 'AP11', projectId: 'S6', authority: 'وزارة الصحة — الإدارة العامة للتراخيص',                    type: 'ترخيص تشغيل التوسعة (180 سريراً)',                           statutoryDays: 45, status: 'قيد المعالجة',   riskScore: 44 }, -22),
+  approval({ id: 'AP12', projectId: 'S6', authority: 'الدفاع المدني — المدينة المنورة',                          type: 'شهادة أنظمة الإطفاء — الطوابق 1–3',                           statutoryDays: 21, status: 'معتمد',          riskScore: 10 }, -40),
+];
+
+// ------------------------------------------------------------------
+// 12. الطقس — توقعات 7 أيام لكل مشروع (المركز الوطني للأرصاد، نوفمبر)
+// ------------------------------------------------------------------
+
+function week(rows) {
+  return { next7: rows.map((r, i) => ({ date: d(i), ...r })) };
+}
+
+const weather = {
+  // الرياض — جاف، رياح شمالية ونشاط غبار منتصف الأسبوع
+  S1: week([
+    { tempMax: 28, windKmh: 18, dustRisk: 'منخفض', rainProb: 0,  delayRisk: 0.08, humidityPct: 22 },
+    { tempMax: 29, windKmh: 24, dustRisk: 'متوسط', rainProb: 0,  delayRisk: 0.22, humidityPct: 18 },
+    { tempMax: 27, windKmh: 38, dustRisk: 'عالٍ',  rainProb: 5,  delayRisk: 0.64, humidityPct: 15 },
+    { tempMax: 25, windKmh: 42, dustRisk: 'عالٍ',  rainProb: 10, delayRisk: 0.71, humidityPct: 20 },
+    { tempMax: 26, windKmh: 26, dustRisk: 'متوسط', rainProb: 0,  delayRisk: 0.28, humidityPct: 24 },
+    { tempMax: 27, windKmh: 16, dustRisk: 'منخفض', rainProb: 0,  delayRisk: 0.06, humidityPct: 26 },
+    { tempMax: 28, windKmh: 14, dustRisk: 'منخفض', rainProb: 0,  delayRisk: 0.05, humidityPct: 25 },
+  ]),
+  // جدة — رطوبة عالية واحتمال أمطار رعدية
+  S2: week([
+    { tempMax: 33, windKmh: 14, dustRisk: 'منخفض', rainProb: 10, delayRisk: 0.10, humidityPct: 68 },
+    { tempMax: 33, windKmh: 16, dustRisk: 'منخفض', rainProb: 20, delayRisk: 0.14, humidityPct: 72 },
+    { tempMax: 32, windKmh: 22, dustRisk: 'منخفض', rainProb: 45, delayRisk: 0.36, humidityPct: 78 },
+    { tempMax: 31, windKmh: 28, dustRisk: 'منخفض', rainProb: 60, delayRisk: 0.52, humidityPct: 82 },
+    { tempMax: 32, windKmh: 18, dustRisk: 'منخفض', rainProb: 25, delayRisk: 0.18, humidityPct: 74 },
+    { tempMax: 33, windKmh: 12, dustRisk: 'منخفض', rainProb: 10, delayRisk: 0.09, humidityPct: 70 },
+    { tempMax: 34, windKmh: 12, dustRisk: 'منخفض', rainProb: 5,  delayRisk: 0.07, humidityPct: 66 },
+  ]),
+  // نيوم — رياح شمالية غربية قوية على السهل الساحلي
+  S3: week([
+    { tempMax: 29, windKmh: 32, dustRisk: 'متوسط', rainProb: 0,  delayRisk: 0.30, humidityPct: 40 },
+    { tempMax: 28, windKmh: 41, dustRisk: 'عالٍ',  rainProb: 0,  delayRisk: 0.62, humidityPct: 35 },
+    { tempMax: 27, windKmh: 46, dustRisk: 'عالٍ',  rainProb: 5,  delayRisk: 0.75, humidityPct: 33 },
+    { tempMax: 27, windKmh: 36, dustRisk: 'متوسط', rainProb: 0,  delayRisk: 0.41, humidityPct: 38 },
+    { tempMax: 28, windKmh: 28, dustRisk: 'متوسط', rainProb: 0,  delayRisk: 0.25, humidityPct: 42 },
+    { tempMax: 29, windKmh: 22, dustRisk: 'منخفض', rainProb: 0,  delayRisk: 0.12, humidityPct: 45 },
+    { tempMax: 29, windKmh: 20, dustRisk: 'منخفض', rainProb: 0,  delayRisk: 0.10, humidityPct: 44 },
+  ]),
+  // الدمام — رطوبة ساحلية ورياح شمالية (شمال) نهاية الأسبوع
+  S4: week([
+    { tempMax: 29, windKmh: 20, dustRisk: 'منخفض', rainProb: 10, delayRisk: 0.12, humidityPct: 60 },
+    { tempMax: 29, windKmh: 24, dustRisk: 'منخفض', rainProb: 15, delayRisk: 0.16, humidityPct: 62 },
+    { tempMax: 28, windKmh: 34, dustRisk: 'متوسط', rainProb: 20, delayRisk: 0.42, humidityPct: 55 },
+    { tempMax: 27, windKmh: 38, dustRisk: 'متوسط', rainProb: 30, delayRisk: 0.48, humidityPct: 58 },
+    { tempMax: 28, windKmh: 26, dustRisk: 'منخفض', rainProb: 15, delayRisk: 0.20, humidityPct: 61 },
+    { tempMax: 29, windKmh: 18, dustRisk: 'منخفض', rainProb: 5,  delayRisk: 0.09, humidityPct: 63 },
+    { tempMax: 30, windKmh: 16, dustRisk: 'منخفض', rainProb: 5,  delayRisk: 0.08, humidityPct: 64 },
+  ]),
+  // القدية — رياح وغبار في الأرض المفتوحة، حساسية عالية للأعمال الترابية
+  S5: week([
+    { tempMax: 27, windKmh: 22, dustRisk: 'متوسط', rainProb: 0,  delayRisk: 0.26, humidityPct: 20 },
+    { tempMax: 28, windKmh: 30, dustRisk: 'متوسط', rainProb: 0,  delayRisk: 0.38, humidityPct: 17 },
+    { tempMax: 26, windKmh: 44, dustRisk: 'عالٍ',  rainProb: 5,  delayRisk: 0.78, humidityPct: 14 },
+    { tempMax: 24, windKmh: 47, dustRisk: 'عالٍ',  rainProb: 10, delayRisk: 0.82, humidityPct: 19 },
+    { tempMax: 25, windKmh: 31, dustRisk: 'متوسط', rainProb: 5,  delayRisk: 0.40, humidityPct: 23 },
+    { tempMax: 26, windKmh: 19, dustRisk: 'منخفض', rainProb: 0,  delayRisk: 0.12, humidityPct: 25 },
+    { tempMax: 27, windKmh: 15, dustRisk: 'منخفض', rainProb: 0,  delayRisk: 0.08, humidityPct: 24 },
+  ]),
+  // المدينة المنورة — جاف ومستقر، أعمال داخلية غالباً
+  S6: week([
+    { tempMax: 30, windKmh: 14, dustRisk: 'منخفض', rainProb: 0,  delayRisk: 0.04, humidityPct: 28 },
+    { tempMax: 30, windKmh: 18, dustRisk: 'منخفض', rainProb: 0,  delayRisk: 0.05, humidityPct: 26 },
+    { tempMax: 29, windKmh: 26, dustRisk: 'متوسط', rainProb: 0,  delayRisk: 0.14, humidityPct: 22 },
+    { tempMax: 28, windKmh: 30, dustRisk: 'متوسط', rainProb: 5,  delayRisk: 0.18, humidityPct: 24 },
+    { tempMax: 29, windKmh: 20, dustRisk: 'منخفض', rainProb: 0,  delayRisk: 0.06, humidityPct: 27 },
+    { tempMax: 30, windKmh: 14, dustRisk: 'منخفض', rainProb: 0,  delayRisk: 0.04, humidityPct: 29 },
+    { tempMax: 31, windKmh: 12, dustRisk: 'منخفض', rainProb: 0,  delayRisk: 0.03, humidityPct: 30 },
+  ]),
+};
+

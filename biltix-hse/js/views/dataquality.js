@@ -4,8 +4,11 @@
  * The Data Validation & Cleansing layer: nothing reaches the AI engine before passing
  * schema / de-duplication / completeness / consistency checks. The view shows the gate's
  * position in the end-to-end flow, today's throughput, per-source quality, the rule set
- * with enable toggles (store.updateValidation) and the quarantine queue with resolve
- * actions (store.resolveQuarantine).
+ * with enable toggles (store.updateValidationRule / updateValidation) and the quarantine
+ * queue with resolve actions (store.resolveQuarantine).
+ *
+ * DOM structures follow css/platform.css (.validation-gate, ul.quarantine-list >
+ * li.quarantine-item[data-status]); Part A chrome (.stepper, .meter, .switch) is reused.
  *
  * Contract: docs/ARCHITECTURE.md §4 (components), §5 (charts), B3 (validation), B4
  * (psel.validationSummary), B5 (store methods), B9.10. Data reaches the DOM only through
@@ -22,6 +25,7 @@ const RULE_TYPE = {
 };
 const Q_STATUS = { 'معلّق': 'warning', 'مُصحح': 'good', 'مرفوض': 'neutral' };
 const Q_FILTERS = [{ value: 'all', label: 'الكل' }, { value: 'معلّق', label: 'معلّق' }, { value: 'مُصحح', label: 'مُصحح' }, { value: 'مرفوض', label: 'مرفوض' }];
+const Q_PAGE = 8;
 
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
 const arr = (v) => (Array.isArray(v) ? v : []);
@@ -36,13 +40,15 @@ export default {
 
   render(container, ctx) {
     const { store, bus, fmt, charts, components, psel, router } = ctx;
-    const { h, card, statTile, badge, dataTable, button, segmented, toast, emptyState, progress, svgIcon, glyph } = components;
+    const { h, card, statTile, badge, dataTable, button, segmented, toast, emptyState, svgIcon, glyph } = components;
 
     const root = h('section', { class: 'view view-dataquality' });
     container.appendChild(root);
 
     let raf = 0;
     let quarantineFilter = 'all';
+    let quarantineLimit = Q_PAGE;
+    let restoreFocusId = null;
 
     /* ───────────────────────── helpers ───────────────────────── */
 
@@ -65,7 +71,7 @@ export default {
       return table;
     }
 
-    /** Inline meter: existing `.meter` chrome from charts.css, tone by thresholds. */
+    /** Inline meter: `.meter` chrome from charts.css, tone by thresholds (icon + value beside it where shown). */
     function meter(value, { max = 100, tone = null, label = '' } = {}) {
       const v = Math.max(0, Math.min(max, num(value)));
       const t = tone || pctTone(v);
@@ -74,22 +80,21 @@ export default {
       return el;
     }
 
-    function switchBtn({ on, label, onToggle }) {
-      const btn = h('button', { type: 'button', role: 'switch', class: ['switch', on ? 'is-on' : null], 'aria-checked': on ? 'true' : 'false', 'aria-label': label, title: label, onClick: () => onToggle(!on) });
-      return btn;
+    function switchBtn({ id, on, label, onToggle }) {
+      return h('button', { type: 'button', id, role: 'switch', class: ['switch', on ? 'is-on' : null], 'aria-checked': on ? 'true' : 'false', 'aria-label': label, title: label, onClick: () => onToggle(!on) });
     }
 
     /* ───────────────────────── store bridges (contract B5 with safe fallbacks) ───────────────────────── */
 
-    function saveRules(rules) {
-      if (typeof store.updateValidation === 'function') { store.updateValidation({ rules }); return true; }
-      store.update((s) => { if (!s.platform) s.platform = {}; if (!s.platform.validation) s.platform.validation = {}; s.platform.validation.rules = rules; return 'platform.validation.rules'; });
-      return true;
+    function setRuleEnabled(rule, enabled, rules) {
+      if (typeof store.updateValidationRule === 'function') { store.updateValidationRule(rule.id, { enabled }); return; }
+      const next = rules.map((x) => (x.id === rule.id ? { ...x, enabled } : x));
+      if (typeof store.updateValidation === 'function') { store.updateValidation({ rules: next }); return; }
+      store.update((s) => { if (!s.platform) s.platform = {}; if (!s.platform.validation) s.platform.validation = {}; s.platform.validation.rules = next; return 'platform.validation.rules'; });
     }
     function resolveQuarantine(id, status) {
-      if (typeof store.resolveQuarantine === 'function') { store.resolveQuarantine(id, status); return true; }
+      if (typeof store.resolveQuarantine === 'function') { store.resolveQuarantine(id, status, 'مسؤول جودة البيانات'); return; }
       store.update((s) => { const q = arr(s.platform && s.platform.validation && s.platform.validation.quarantine).find((x) => x.id === id); if (q) { q.status = status; q.resolvedAt = new Date().toISOString(); } return 'platform.validation.quarantine'; });
-      return true;
     }
 
     /* ───────────────────────── data ───────────────────────── */
@@ -140,41 +145,39 @@ export default {
       );
     }
 
+    /** .validation-gate principle banner + the 8-stage flow stepper with the gate highlighted. */
     function buildPrinciple(data) {
+      const s = data.summary;
+      const gate = h('div', { class: 'validation-gate', role: 'note' },
+        svgIcon('badge-check', 22),
+        h('div', { class: 'stack', style: { gap: '2px' } },
+          h('span', {}, h('strong', {}, 'لا يصل أي سجل إلى المحرك قبل اجتياز التحقق.'), ' البوابة تقع بين الالتقاط وبحيرة بيانات المخاطر؛ السجلات المرفوضة تُحجر مع سبب واضح ولا تُغذّي أي خط من خطوط المحرك الخمسة.'),
+          h('span', { class: 'text-xs muted' }, `اليوم: ${fmt.num(num(s.recordsIn))} سجلاً وارداً · اجتاز ${fmt.num(num(s.passed))} (${pct(s.passRatePct)}) · رُفض ${fmt.num(num(s.rejected))} · أُزيل ${fmt.num(num(s.deduplicated))} مكرراً`),
+        ),
+      );
       const stepper = h('ol', { class: ['stepper', 'is-sm', 'flow-gate'], 'aria-label': 'موقع بوابة التحقق في تدفق المخاطر' });
       FLOW_STAGES.forEach((label, i) => {
-        const cls = ['step', i < GATE_INDEX ? 'is-done' : null, i === GATE_INDEX ? 'is-current' : null];
         const dot = h('span', { class: 'step-dot', 'aria-hidden': 'true' });
         if (i < GATE_INDEX) dot.appendChild(glyph('good', 12));
         else if (i === GATE_INDEX) dot.appendChild(svgIcon('badge-check', 12));
         else dot.textContent = String(i + 1);
-        const li = h('li', { class: cls, 'aria-current': i === GATE_INDEX ? 'step' : undefined }, dot, h('span', { class: 'step-label' }, label));
-        if (i === GATE_INDEX) li.appendChild(h('span', { class: 'text-xs semibold', style: { color: 'var(--accent)' } }, 'بوابة التحقق'));
+        const li = h('li', { class: ['step', i < GATE_INDEX ? 'is-done' : null, i === GATE_INDEX ? 'is-current' : null], 'aria-current': i === GATE_INDEX ? 'step' : undefined }, dot, h('span', { class: 'step-label' }, label));
+        if (i === GATE_INDEX) li.appendChild(h('span', { class: 'pipeline-gate', style: { marginBlockStart: '4px' } }, svgIcon('badge-check', 12), h('span', {}, 'بوابة التحقق')));
         stepper.appendChild(li);
       });
-      const s = data.summary;
-      return h('div', { class: ['note', 'tone-accent', 'principle-banner'], role: 'note', style: { '--tone': 'var(--accent)', display: 'grid', gap: 'var(--space-3)' } },
-        h('div', { class: 'row gap-3', style: { alignItems: 'flex-start' } },
-          h('span', { style: { color: 'var(--accent)', flex: 'none', marginBlockStart: '2px' }, 'aria-hidden': 'true' }, svgIcon('badge-check', 22)),
-          h('div', { class: 'stack gap-1' },
-            h('strong', {}, 'لا يصل أي سجل إلى المحرك قبل اجتياز التحقق.'),
-            h('span', { class: 'text-sm' }, `اليوم: ${fmt.num(num(s.recordsIn))} سجلاً وارداً، اجتاز منها ${fmt.num(num(s.passed))} (${pct(s.passRatePct)})، رُفض ${fmt.num(num(s.rejected))} وأُزيل ${fmt.num(num(s.deduplicated))} مكرراً. السجلات المرفوضة تُحجر مع سبب واضح ولا تُغذّي أي خط من خطوط المحرك الخمسة.`),
-          ),
-        ),
-        stepper,
-      );
+      return h('div', { class: 'stack gap-3' }, gate, stepper);
     }
 
     function buildTiles(data) {
       const s = data.summary;
       const quarantineOpen = num(s.quarantineOpen);
       return h('div', { class: 'kpi-row' },
-        statTile({ label: 'السجلات الواردة اليوم', value: num(s.recordsIn), icon: 'database', hint: `${fmt.num(data.sourcesList.length)} مصادر متصلة` }),
+        statTile({ label: 'السجلات الواردة اليوم', value: num(s.recordsIn), icon: 'erp', hint: `${fmt.num(data.sourcesList.length)} مصادر متصلة` }),
         statTile({ label: 'اجتازت التحقق', value: num(s.passed), icon: 'badge-check', tone: pctTone(num(s.passRatePct)), hint: `معدل الاجتياز ${pct(s.passRatePct)}` }),
         statTile({ label: 'مكررة أُزيلت', value: num(s.deduplicated), icon: 'copy', hint: 'قاعدة إزالة التكرار عبر المصادر' }),
         statTile({ label: 'الاكتمال', value: `${fmt.num(num(s.completenessPct), { maximumFractionDigits: 1 })}%`, icon: 'list', tone: pctTone(num(s.completenessPct), 97, 93), hint: 'متوسط الحقول المعبأة لكل سجل' }),
         statTile({ label: 'الاتساق', value: `${fmt.num(num(s.consistencyPct), { maximumFractionDigits: 1 })}%`, icon: 'sliders', tone: pctTone(num(s.consistencyPct), 97, 93), hint: 'توافق القيم بين الأنظمة المصدرية' }),
-        statTile({ label: 'محجورة معلّقة', value: quarantineOpen, icon: 'alert', tone: quarantineOpen ? 'warning' : 'good', hint: quarantineOpen ? 'بانتظار التصحيح أو الرفض' : 'لا توجد سجلات معلّقة', onClick: () => { quarantineFilter = 'معلّق'; schedule(); const el = root.querySelector('#dq-quarantine'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }),
+        statTile({ label: 'محجورة معلّقة', value: quarantineOpen, icon: 'alert', tone: quarantineOpen ? 'warning' : 'good', hint: quarantineOpen ? 'بانتظار التصحيح أو الرفض' : 'لا توجد سجلات معلّقة', onClick: () => { quarantineFilter = 'معلّق'; schedule(); requestAnimationFrame(() => { const el = root.querySelector('#dq-quarantine'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); } }),
       );
     }
 
@@ -183,7 +186,7 @@ export default {
       const table = dataTable({
         dense: true, pageSize: 0, emptyText: 'لا توجد مصادر بيانات مسجلة', caption: 'جودة البيانات حسب المصدر',
         columns: [
-          { key: 'name', label: 'المصدر', render: (r) => h('span', { class: 'row gap-2' }, svgIcon('database', 14), h('span', { class: 'truncate', title: r.name || '' }, r.name || '—')) },
+          { key: 'name', label: 'المصدر', render: (r) => h('span', { class: 'row gap-2' }, svgIcon('erp', 14), h('span', { class: 'truncate', title: r.name || '' }, r.name || '—')) },
           { key: 'recordsIn', label: 'واردة', align: 'end', mono: true, render: (r) => fmt.num(num(r.recordsIn)) },
           { key: 'passed', label: 'اجتازت', align: 'end', mono: true, render: (r) => fmt.num(num(r.passed)) },
           { key: 'rejected', label: 'مرفوضة', align: 'end', render: (r) => h('span', { class: ['mono', 'num', num(r.rejected) ? 'tone-warning' : 'tone-good'], style: { color: 'var(--tone-ink)' } }, fmt.num(num(r.rejected))) },
@@ -199,7 +202,7 @@ export default {
 
     function buildPassRateCard(data) {
       const items = data.bySource.slice().sort((a, b) => a.passRatePct - b.passRatePct).map((s) => ({ id: s.id || s.name, label: s.name, value: Number(num(s.passRatePct).toFixed(1)) }));
-      const chart = items.length ? makeChart('barChart', { items, horizontal: true, height: Math.max(160, items.length * 30 + 40), valueFormat: (v) => fmt.pct(v, 1), color: 'var(--s1)', showValues: true, maxBars: 12, ariaLabel: 'معدل الاجتياز حسب المصدر' }) : null;
+      const chart = items.length ? makeChart('barChart', { items, horizontal: true, height: Math.max(160, items.length * 30 + 40), valueFormat: (v) => fmt.pct(v, 1), color: 'var(--s1)', showValues: true, maxBars: 12, sorted: false, ariaLabel: 'معدل الاجتياز حسب المصدر' }) : null;
       const weakest = items[0];
       return card({
         code: 'DQ-02', title: 'معدل الاجتياز حسب المصدر', subtitle: 'الأدنى أولاً — المصادر التي تحتاج تنظيفاً عند المنبع',
@@ -219,9 +222,9 @@ export default {
           { key: 'type', label: 'النوع', render: (r) => { const t = RULE_TYPE[r.type] || { label: r.type || '—', icon: 'list' }; return badge(t.label, 'neutral', { icon: t.icon }); } },
           { key: 'hitsToday', label: 'إصابات اليوم', align: 'end', render: (r) => mono(fmt.num(num(r.hitsToday))), sortValue: (r) => num(r.hitsToday) },
           { key: 'enabled', label: 'مفعّلة', align: 'center', sortable: false, render: (r) => h('span', { class: 'row gap-2', style: { justifyContent: 'center' } },
-            switchBtn({ on: r.enabled !== false, label: `${r.enabled !== false ? 'تعطيل' : 'تفعيل'} قاعدة ${r.name || ''}`, onToggle: (next) => {
-              const rules = data.rules.map((x) => (x.id === r.id ? { ...x, enabled: next } : x));
-              saveRules(rules);
+            switchBtn({ id: `rule-${r.id}`, on: r.enabled !== false, label: `${r.enabled !== false ? 'تعطيل' : 'تفعيل'} قاعدة ${r.name || ''}`, onToggle: (next) => {
+              restoreFocusId = `rule-${r.id}`;
+              setRuleEnabled(r, next, data.rules);
               toast(next ? `تم تفعيل قاعدة «${r.name}»` : `تم تعطيل قاعدة «${r.name}» — ستمر السجلات دون هذا الفحص`, { tone: next ? 'good' : 'warning' });
             } }),
             h('span', { class: 'text-xs muted' }, r.enabled !== false ? 'نعم' : 'لا'),
@@ -237,34 +240,48 @@ export default {
       });
     }
 
+    /** li.quarantine-item[data-status] > .quarantine-main + .quarantine-meta + .quarantine-actions (css/platform.css) */
+    function quarantineItem(data, q) {
+      const tone = Q_STATUS[q.status] || 'neutral';
+      const actions = h('div', { class: 'quarantine-actions' });
+      if (q.status === 'معلّق') {
+        actions.append(
+          button('مُصحح', { variant: 'outline', size: 'sm', icon: glyph('good', 14), onClick: () => { resolveQuarantine(q.id, 'مُصحح'); toast(`تم تصحيح السجل ${q.recordRef || ''} وإعادته إلى مسار التحقق`, { tone: 'good' }); } }),
+          button('مرفوض', { variant: 'ghost', size: 'sm', icon: glyph('close', 14), onClick: () => { resolveQuarantine(q.id, 'مرفوض'); toast(`تم رفض السجل ${q.recordRef || ''} نهائياً`, { tone: 'neutral' }); } }),
+        );
+      } else {
+        actions.appendChild(badge(q.status || '—', tone));
+      }
+      return h('li', { class: 'quarantine-item', 'data-status': q.status || 'معلّق' },
+        h('div', { class: 'quarantine-main' },
+          h('span', { class: 'row gap-2 wrap' }, h('span', { class: 'quarantine-ref mono' }, q.recordRef || q.id), q.status === 'معلّق' ? badge('معلّق', 'warning') : null),
+          h('span', { class: 'quarantine-reason' }, q.reason || '—'),
+        ),
+        actions,
+        h('div', { class: 'quarantine-meta' },
+          h('span', {}, svgIcon('erp', 11), ' ', data.sourceName(q.sourceId)),
+          h('span', { title: fmt.dateTime(q.at) }, `حُجر ${fmt.relative(q.at)}`),
+          q.resolvedAt ? h('span', { title: fmt.dateTime(q.resolvedAt) }, `عُولج ${fmt.relative(q.resolvedAt)}${q.resolvedBy ? ` — ${q.resolvedBy}` : ''}`) : null,
+        ),
+      );
+    }
+
     function buildQuarantineCard(data) {
       const all = data.quarantine;
       const filtered = quarantineFilter === 'all' ? all : all.filter((q) => q.status === quarantineFilter);
       const counts = Object.fromEntries(Q_FILTERS.map((f) => [f.value, f.value === 'all' ? all.length : all.filter((q) => q.status === f.value).length]));
-      const seg = segmented({ options: Q_FILTERS.map((f) => ({ value: f.value, label: `${f.label} (${fmt.num(counts[f.value])})` })), value: quarantineFilter, ariaLabel: 'تصفية قائمة الحجر', onChange: (v) => { quarantineFilter = v; schedule(); } });
+      const seg = segmented({ options: Q_FILTERS.map((f) => ({ value: f.value, label: `${f.label} (${fmt.num(counts[f.value])})` })), value: quarantineFilter, ariaLabel: 'تصفية قائمة الحجر', onChange: (v) => { quarantineFilter = v; quarantineLimit = Q_PAGE; schedule(); } });
       seg.el.classList.add('seg-sm');
 
       const reasonsSeg = data.reasons.length ? makeChart('segmentedBar', { parts: data.reasons.slice(0, 6).map((r, i) => ({ id: r.id, label: r.label, value: r.value, color: safe(() => charts.paletteFor(i), `var(--s${i + 1})`) })), tall: false, valueFormat: (v) => fmt.num(v), ariaLabel: 'أسباب الحجر للسجلات المعلّقة' }) : null;
 
-      const resolveBtns = (q) => (q.status === 'معلّق'
-        ? h('div', { class: 'row gap-1', style: { justifyContent: 'flex-end' } },
-          button('مُصحح', { variant: 'outline', size: 'sm', icon: glyph('good', 14), onClick: () => { resolveQuarantine(q.id, 'مُصحح'); toast(`تم تصحيح السجل ${q.recordRef || ''} وإعادته إلى مسار التحقق`, { tone: 'good' }); } }),
-          button('مرفوض', { variant: 'ghost', size: 'sm', icon: glyph('close', 14), onClick: () => { resolveQuarantine(q.id, 'مرفوض'); toast(`تم رفض السجل ${q.recordRef || ''} نهائياً`, { tone: 'neutral' }); } }),
-        )
-        : h('span', { class: 'text-xs muted' }, q.resolvedAt ? `تمت المعالجة ${fmt.relative(q.resolvedAt)}` : 'تمت المعالجة'));
-
-      const table = dataTable({
-        dense: true, pageSize: 8, emptyText: quarantineFilter === 'all' ? 'قائمة الحجر فارغة — كل السجلات اجتازت التحقق' : 'لا توجد سجلات بهذه الحالة', caption: 'قائمة الحجر',
-        columns: [
-          { key: 'recordRef', label: 'السجل', mono: true, render: (q) => mono(q.recordRef || q.id) },
-          { key: 'sourceId', label: 'المصدر', render: (q) => h('span', { class: 'truncate', title: data.sourceName(q.sourceId) }, data.sourceName(q.sourceId)), sortValue: (q) => data.sourceName(q.sourceId) },
-          { key: 'reason', label: 'سبب الحجر', render: (q) => h('span', { class: 'text-sm' }, q.reason || '—') },
-          { key: 'at', label: 'الوقت', render: (q) => h('span', { class: 'text-xs', title: fmt.dateTime(q.at) }, fmt.relative(q.at)), sortValue: (q) => Date.parse(q.at) || 0 },
-          { key: 'status', label: 'الحالة', render: (q) => badge(q.status || '—', Q_STATUS[q.status] || 'neutral') },
-          { key: 'actions', label: 'الإجراء', align: 'end', sortable: false, render: resolveBtns },
-        ],
-        rows: filtered, initialSort: { key: 'at', dir: 'desc' },
-      });
+      const shown = filtered.slice(0, quarantineLimit);
+      const list = shown.length
+        ? h('ul', { class: 'quarantine-list', 'aria-label': 'قائمة الحجر' }, ...shown.map((q) => quarantineItem(data, q)))
+        : emptyState({ icon: glyph('good', 32), title: quarantineFilter === 'all' ? 'قائمة الحجر فارغة — كل السجلات اجتازت التحقق' : 'لا توجد سجلات بهذه الحالة' });
+      const more = filtered.length > shown.length
+        ? h('div', { class: 'row', style: { justifyContent: 'center' } }, button(`عرض المزيد (${fmt.num(filtered.length - shown.length)})`, { variant: 'ghost', size: 'sm', icon: glyph('chevronDown', 14), onClick: () => { quarantineLimit += Q_PAGE; schedule(); } }))
+        : null;
 
       return card({
         id: 'dq-quarantine', code: 'DQ-04', title: 'قائمة الحجر', subtitle: 'سجلات أوقفتها البوابة — صحّح عند المنبع أو ارفض نهائياً',
@@ -272,8 +289,10 @@ export default {
         actions: [seg.el],
         body: h('div', { class: 'stack gap-3' },
           reasonsSeg ? h('div', { class: 'stack gap-1' }, h('span', { class: 'text-xs muted' }, 'أسباب الحجر للسجلات المعلّقة'), reasonsSeg.el) : null,
-          table.el,
+          list,
+          more,
         ),
+        tableView: reasonsSeg ? tableOf(reasonsSeg, () => simpleTable(['السبب', 'العدد'], data.reasons.map((r) => [r.label, fmt.num(r.value)]))) : null,
         footer: h('p', { class: 'text-xs muted' }, 'كل قرار تصحيح أو رفض يُسجَّل في سجل التدقيق (إجراء «تحقق») ويُغذّي إعادة معايرة قواعد التنظيف.'),
       });
     }
@@ -292,6 +311,11 @@ export default {
         h('div', { class: 'grid-12' }, buildRulesCard(data), buildQuarantineCard(data)),
       );
       root.replaceChildren(frag);
+      if (restoreFocusId) {
+        const el = root.querySelector(`#${CSS.escape(restoreFocusId)}`);
+        restoreFocusId = null;
+        if (el) { try { el.focus({ preventScroll: true }); } catch { /* ignore */ } }
+      }
     }
 
     function schedule() {
