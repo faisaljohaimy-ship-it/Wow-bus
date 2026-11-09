@@ -8,6 +8,9 @@
  * sources.postWebhook when settings.alertWebhook is set, and the write-back log derived
  * from platform.auditLog (action 'writeback').
  *
+ * DOM structures follow css/platform.css (ul.alert-queue > li.alert-queue-item, .channel-chip,
+ * .range-field, .threshold-preview); Part A chrome (.switch, .note, .kpi-row) is reused.
+ *
  * Contract: docs/ARCHITECTURE.md §4, §7 (sources.postWebhook), B2 (thresholds), B3
  * (alerts, auditLog, tasks), B4 (psel.alertQueue, openAiRisks), B5 (ackAlert, settings
  * defaults), B9.4. Data reaches the DOM only through textContent / components.h.
@@ -15,27 +18,17 @@
 
 const STYLE_ID = 'view-alerts-style';
 const STYLE_TEXT = `@layer views {
-  .alert-queue { display: flex; flex-direction: column; gap: 10px; min-inline-size: 0; }
-  .alert-queue .alert-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding: 12px 14px; border: 1px solid var(--line); border-inline-start: 3px solid var(--tone, var(--line-2)); border-radius: var(--radius-ctl); background: var(--bg-2); min-inline-size: 0; }
-  .alert-queue .alert-item.is-acked { opacity: .72; }
-  .alert-queue .alert-item-body { display: flex; flex-direction: column; gap: 6px; min-inline-size: 0; }
-  .alert-queue .alert-item-title { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-1); line-height: 1.45; overflow-wrap: anywhere; }
-  .alert-queue .alert-item-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: var(--fs-xs); color: var(--ink-3); }
-  .alert-queue .alert-item-actions { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 6px; }
-  .channel-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: var(--radius-pill); background: var(--bg-1); border: 1px solid var(--line); font-size: 11px; color: var(--ink-2); }
-  .channel-chip > svg { inline-size: 12px; block-size: 12px; }
-  .threshold-row { display: grid; grid-template-columns: minmax(0, 1fr) 4.5em; gap: 6px 12px; align-items: center; }
-  .threshold-row label { font-size: var(--fs-sm); color: var(--ink-1); font-weight: 500; }
-  .threshold-row input[type="range"] { inline-size: 100%; accent-color: var(--tone, var(--brand)); block-size: 22px; margin: 0; }
-  .threshold-row output { font-family: var(--font-mono); font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--tone-ink, var(--ink-1)); text-align: end; }
+  .threshold-block { display: grid; gap: 6px; }
+  .threshold-block > label { font-size: var(--fs-sm); font-weight: 500; color: var(--ink-1); display: flex; align-items: center; gap: 8px; }
   .threshold-scale { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); }
-  .preview-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius-ctl); overflow: hidden; }
-  .preview-cell { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--bg-1); min-inline-size: 0; }
-  .preview-cell .summary-value { font-size: var(--fs-xl); }
+  .threshold-previews { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .threshold-preview .preview-label { display: inline-flex; align-items: center; gap: 6px; min-inline-size: 0; }
+  .threshold-preview .preview-hint { font-size: 10.5px; color: var(--ink-3); display: block; }
   .channel-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 10px; border-block-end: 1px solid var(--line); }
   .channel-row:last-child { border-block-end: 0; }
   .channel-row-text { display: flex; flex-direction: column; gap: 1px; min-inline-size: 0; }
-  @media (max-width: 720px) { .preview-strip { grid-template-columns: minmax(0, 1fr); } .alert-queue .alert-item { grid-template-columns: minmax(0, 1fr); } .alert-queue .alert-item-actions { flex-direction: row; align-items: center; } }
+  .alert-queue-actions { flex-wrap: wrap; justify-content: flex-end; }
+  @media (max-width: 720px) { .threshold-previews { grid-template-columns: minmax(0, 1fr); } }
 }`;
 
 const DEFAULT_ALERT = 60;
@@ -52,6 +45,7 @@ const RATING_LABEL = { red: 'أحمر', yellow: 'أصفر', green: 'أخضر' };
 const RATING_TONE = { red: 'critical', yellow: 'warning', green: 'good' };
 const CLOSED_STATUSES = new Set(['مغلق', 'مُتجاوز']);
 const WB_STATUS = { synced: { label: 'متزامن', tone: 'good' }, pending: { label: 'قيد المزامنة', tone: 'warning' }, failed: { label: 'فشل', tone: 'critical' } };
+const QUEUE_LIMIT = 12;
 
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
 const arr = (v) => (Array.isArray(v) ? v : []);
@@ -101,12 +95,12 @@ export default {
     function ratingBadge(score) {
       const r = ratingOf(num(score));
       const el = badge(safe(() => psel.ratingLabel(r), RATING_LABEL[r]) || RATING_LABEL[r], safe(() => psel.ratingTone(r), RATING_TONE[r]) || RATING_TONE[r]);
-      el.classList.add('rating', `is-${r}`);
+      el.classList.add('rating', 'is-sm', `is-${r}`);
       return el;
     }
     function channelChip(key) {
       const c = CHANNEL_BY_KEY[key] || { label: String(key), icon: 'bell' };
-      return h('span', { class: 'channel-chip', title: c.label }, svgIcon(c.icon, 12), h('span', {}, c.label));
+      return h('span', { class: 'channel-chip', title: c.label }, svgIcon(c.icon, 11), h('span', {}, c.label));
     }
     function switchBtn({ id, on, label, onToggle }) {
       return h('button', { type: 'button', id, role: 'switch', class: ['switch', on ? 'is-on' : null], 'aria-checked': on ? 'true' : 'false', 'aria-label': label, title: label, onClick: () => onToggle(!on) });
@@ -116,7 +110,7 @@ export default {
     /* ───────────────────────── store bridges ───────────────────────── */
 
     function ack(alert) {
-      const by = 'المستخدم الحالي';
+      const by = 'مدير المشروع';
       if (typeof store.ackAlert === 'function') store.ackAlert(alert.id, by);
       else store.update((s) => { const a = arr(s.platform && s.platform.alerts).find((x) => x.id === alert.id); if (a) { a.acknowledged = true; a.ackBy = by; a.ackAt = now().toISOString(); } return `platform.alerts.${alert.id}`; });
     }
@@ -152,8 +146,7 @@ export default {
       const decorate = (a) => ({ ...a, risk: risksById.get(a.riskId) || null });
       const immediate = arr(queue.immediate).filter(visible).map(decorate);
       const standard = arr(queue.standard).filter(visible).map(decorate);
-      const allVisible = immediate.concat(standard);
-      const pending = allVisible.filter((a) => !a.acknowledged);
+      const pending = immediate.concat(standard).filter((a) => !a.acknowledged);
       const last24 = arr(plat.alerts).filter((a) => (siteId === 'all' || a.projectId === siteId) && (Date.parse(a.sentAt) || 0) >= now().getTime() - 86_400_000).length;
       const ackDurations = arr(plat.alerts).filter((a) => a.acknowledged && a.ackAt && a.sentAt).map((a) => (Date.parse(a.ackAt) || 0) - (Date.parse(a.sentAt) || 0)).filter((d) => d > 0);
       const meanAckMs = ackDurations.length ? ackDurations.reduce((a, b) => a + b, 0) / ackDurations.length : null;
@@ -204,47 +197,41 @@ export default {
       );
     }
 
+    /** li.alert-queue-item[data-severity][data-acked] > .alert-queue-main + .alert-queue-channels + .alert-queue-actions (css/platform.css) */
     function alertItem(data, a, severityTone) {
       const risk = a.risk;
       const title = a.title || (risk && risk.title) || 'تنبيه';
-      const item = h('article', { class: ['alert-item', `tone-${severityTone}`, a.acknowledged ? 'is-acked' : null], 'data-id': String(a.id) });
-      const body = h('div', { class: 'alert-item-body' });
-      body.appendChild(h('div', { class: 'row wrap gap-2' },
-        badge(a.severity === 'critical' ? 'حرج' : 'قياسي', severityTone),
-        risk ? ratingBadge(risk.score) : null,
-        risk ? mono(risk.code, ['text-xs']) : null,
-        risk ? h('span', { class: 'text-xs muted' }, `الدرجة ${fmt.num(num(risk.score))}`) : null,
-      ));
-      body.appendChild(h('div', { class: 'alert-item-title' }, title));
-      body.appendChild(h('div', { class: 'alert-item-meta' },
-        h('span', {}, projectName(data.state, a.projectId)),
-        h('span', { 'aria-hidden': 'true' }, '·'),
-        h('span', { title: fmt.dateTime(a.sentAt) }, `أُرسل ${fmt.relative(a.sentAt)}`),
-        h('span', { 'aria-hidden': 'true' }, '·'),
-        h('span', { class: 'row gap-1 wrap' }, ...arr(a.channels).map(channelChip)),
-      ));
-      item.appendChild(body);
-      const actions = h('div', { class: 'alert-item-actions' });
-      if (a.acknowledged) {
-        actions.appendChild(h('span', { class: 'row gap-1 text-xs muted' }, glyph('good', 13), h('span', {}, `أكده ${a.ackBy || '—'} ${a.ackAt ? fmt.relative(a.ackAt) : ''}`)));
-      } else {
-        actions.appendChild(button('تأكيد الاستلام', { variant: severityTone === 'critical' ? 'primary' : 'outline', size: 'sm', icon: glyph('good', 14), onClick: () => { ack(a); toast(`تم تأكيد استلام التنبيه${risk ? ` ${risk.code}` : ''}`, { tone: 'good' }); } }));
-      }
+      const main = h('div', { class: 'alert-queue-main' },
+        h('div', { class: 'row wrap gap-2' },
+          badge(a.severity === 'critical' ? 'حرج' : 'قياسي', severityTone),
+          risk ? ratingBadge(risk.score) : null,
+          risk ? mono(risk.code, ['text-xs']) : null,
+          risk ? h('span', { class: 'text-xs muted' }, `الدرجة ${fmt.num(num(risk.score))}`) : null,
+        ),
+        h('div', { class: 'alert-queue-title' }, title),
+        h('div', { class: 'alert-queue-meta' },
+          h('span', {}, projectName(data.state, a.projectId)),
+          h('span', { title: fmt.dateTime(a.sentAt) }, `أُرسل ${fmt.relative(a.sentAt)}`),
+          a.acknowledged ? h('span', { class: 'row gap-1' }, glyph('good', 12), h('span', {}, `أكده ${a.ackBy || '—'}${a.ackAt ? ` ${fmt.relative(a.ackAt)}` : ''}`)) : null,
+        ),
+      );
+      const actions = h('div', { class: 'alert-queue-actions' });
+      if (!a.acknowledged) actions.appendChild(button('تأكيد الاستلام', { variant: severityTone === 'critical' ? 'primary' : 'outline', size: 'sm', icon: glyph('good', 14), onClick: () => { ack(a); toast(`تم تأكيد استلام التنبيه${risk ? ` ${risk.code}` : ''}`, { tone: 'good' }); } }));
       if (risk) actions.appendChild(button('التفاصيل', { variant: 'ghost', size: 'sm', icon: 'file-text', onClick: () => router.navigate('airisks', { risk: risk.id }) }));
-      item.appendChild(actions);
-      return item;
+      const channels = h('div', { class: 'alert-queue-channels', 'aria-label': 'القنوات' }, ...arr(a.channels).map(channelChip));
+      return h('li', { class: 'alert-queue-item', 'data-severity': a.severity === 'critical' ? 'critical' : 'routine', 'data-acked': a.acknowledged ? 'true' : 'false', 'data-id': String(a.id) }, main, actions, channels);
     }
 
     function buildQueueCard(data, { id, code, title, subtitle, items, tone, emptyTitle }) {
       const pending = items.filter((a) => !a.acknowledged).length;
       const list = items.length
-        ? h('div', { class: 'alert-queue', role: 'list', 'aria-label': title }, ...items.slice(0, 12).map((a) => alertItem(data, a, tone)))
+        ? h('ul', { class: 'alert-queue', 'aria-label': title }, ...items.slice(0, QUEUE_LIMIT).map((a) => alertItem(data, a, tone)))
         : emptyState({ icon: glyph('good', 32), title: emptyTitle, text: 'لا توجد تنبيهات بحاجة إلى إجراء في هذا النطاق.' });
       return card({
         id, code, title, subtitle, className: 'col-span-6',
         actions: [badge(pending ? `${fmt.num(pending)} بانتظار التأكيد` : 'لا شيء معلّق', pending ? tone : 'good'), pending ? liveDot(tone) : null],
         body: list,
-        footer: items.length > 12 ? h('p', { class: 'text-xs muted' }, `يُعرض أحدث 12 من ${fmt.num(items.length)} تنبيهاً`) : null,
+        footer: items.length > QUEUE_LIMIT ? h('p', { class: 'text-xs muted' }, `يُعرض أحدث ${fmt.num(QUEUE_LIMIT)} من ${fmt.num(items.length)} تنبيهاً`) : null,
       });
     }
 
@@ -253,15 +240,15 @@ export default {
       let criticalT = data.criticalThreshold;
       const counts = () => previewCounts(data.scores, alertT, criticalT);
 
-      const previewValues = { immediate: h('span', { class: 'summary-value mono num' }), standard: h('span', { class: 'summary-value mono num' }), register: h('span', { class: 'summary-value mono num' }) };
-      const previewHints = { immediate: h('span', { class: 'text-xs muted' }), standard: h('span', { class: 'text-xs muted' }), register: h('span', { class: 'text-xs muted' }) };
+      const previewValues = { immediate: h('span', { class: 'mono num' }), standard: h('span', { class: 'mono num' }), register: h('span', { class: 'mono num' }) };
+      const previewHints = { immediate: h('span', { class: 'preview-hint' }), standard: h('span', { class: 'preview-hint' }), register: h('span', { class: 'preview-hint' }) };
       const segHost = h('div', { class: 'stack gap-1' });
       let segChart = null;
 
       const alertOut = h('output', { for: 'thr-alert', id: 'thr-alert-out' });
       const criticalOut = h('output', { for: 'thr-critical', id: 'thr-critical-out' });
-      const alertInput = h('input', { type: 'range', id: 'thr-alert', min: '10', max: '95', step: '1', 'aria-label': 'عتبة التنبيه', 'aria-describedby': 'thr-alert-hint' });
-      const criticalInput = h('input', { type: 'range', id: 'thr-critical', min: '15', max: '100', step: '1', 'aria-label': 'عتبة التصعيد الفوري', 'aria-describedby': 'thr-critical-hint' });
+      const alertInput = h('input', { type: 'range', id: 'thr-alert', min: '10', max: '95', step: '1', 'aria-describedby': 'thr-alert-hint', style: { accentColor: 'var(--warning)' } });
+      const criticalInput = h('input', { type: 'range', id: 'thr-critical', min: '15', max: '100', step: '1', 'aria-describedby': 'thr-critical-hint', style: { accentColor: 'var(--critical)' } });
       alertInput.value = String(alertT); criticalInput.value = String(criticalT);
 
       function paint() {
@@ -283,15 +270,27 @@ export default {
       paint();
 
       const scale = () => h('div', { class: 'threshold-scale', 'aria-hidden': 'true' }, h('span', {}, '0'), h('span', {}, '40'), h('span', {}, '70'), h('span', {}, '100'));
+      const previewRow = (tone, label, valueEl, hintEl) => h('div', { class: ['threshold-preview', `tone-${tone}`] }, h('span', { class: 'preview-label' }, glyph(tone, 13), h('span', {}, h('span', {}, label), hintEl)), valueEl);
+
       const body = h('div', { class: 'stack gap-4' },
-        h('div', { class: 'threshold-row tone-warning' }, h('label', { for: 'thr-alert' }, 'عتبة التنبيه'), alertOut, alertInput, h('span', {}), h('div', { class: 'stack', style: { gap: '2px' } }, scale(), h('span', { class: 'text-xs muted', id: 'thr-alert-hint' }, 'الدرجة التي تتجاوزها تنشئ تنبيهاً قياسياً وتُسند مهمة معالجة'))),
-        h('div', { class: 'threshold-row tone-critical' }, h('label', { for: 'thr-critical' }, 'عتبة التصعيد الفوري'), criticalOut, criticalInput, h('span', {}), h('div', { class: 'stack', style: { gap: '2px' } }, scale(), h('span', { class: 'text-xs muted', id: 'thr-critical-hint' }, `الدرجة التي تبلغها تُصعَّد فوراً عبر القنوات المفعّلة (أعلى من عتبة التنبيه بـ ${fmt.num(MIN_GAP)} على الأقل)`))),
+        h('div', { class: 'threshold-block' },
+          h('label', { for: 'thr-alert' }, glyph('warning', 14), h('span', {}, 'عتبة التنبيه')),
+          h('div', { class: 'range-field' }, alertInput, alertOut),
+          scale(),
+          h('span', { class: 'text-xs muted', id: 'thr-alert-hint' }, 'الدرجة التي تتجاوزها تنشئ تنبيهاً قياسياً وتُسند مهمة معالجة'),
+        ),
+        h('div', { class: 'threshold-block' },
+          h('label', { for: 'thr-critical' }, glyph('critical', 14), h('span', {}, 'عتبة التصعيد الفوري')),
+          h('div', { class: 'range-field' }, criticalInput, criticalOut),
+          scale(),
+          h('span', { class: 'text-xs muted', id: 'thr-critical-hint' }, `الدرجة التي تبلغها تُصعَّد فوراً عبر القنوات المفعّلة (أعلى من عتبة التنبيه بـ ${fmt.num(MIN_GAP)} على الأقل)`),
+        ),
         h('div', { class: 'stack gap-2' },
           h('span', { class: 'text-sm semibold' }, `معاينة حية على ${fmt.num(data.openRisks.length)} مخاطرة مفتوحة`),
-          h('div', { class: 'preview-strip', role: 'group', 'aria-label': 'معاينة أثر العتبات' },
-            h('div', { class: 'preview-cell tone-critical' }, h('span', { class: 'summary-label' }, glyph('critical', 12), h('span', {}, 'تصعيد فوري')), previewValues.immediate, previewHints.immediate),
-            h('div', { class: 'preview-cell tone-warning' }, h('span', { class: 'summary-label' }, glyph('warning', 12), h('span', {}, 'تنبيه قياسي')), previewValues.standard, previewHints.standard),
-            h('div', { class: 'preview-cell tone-good' }, h('span', { class: 'summary-label' }, glyph('good', 12), h('span', {}, 'سجل فقط')), previewValues.register, previewHints.register),
+          h('div', { class: 'threshold-previews', role: 'group', 'aria-label': 'معاينة أثر العتبات' },
+            previewRow('critical', 'تصعيد فوري', previewValues.immediate, previewHints.immediate),
+            previewRow('warning', 'تنبيه قياسي', previewValues.standard, previewHints.standard),
+            previewRow('good', 'سجل فقط', previewValues.register, previewHints.register),
           ),
           segHost,
         ),
@@ -328,8 +327,8 @@ export default {
           const payload = { type: 'test', source: 'Biltix Risk AI', title: 'تنبيه تجريبي من منصة بلتكس لإدارة المخاطر', severity: 'routine', queue: 'standard', channels: enabled.map((c) => c.key), thresholds: { alert: data.alertThreshold, critical: data.criticalThreshold }, sentAt: now().toISOString() };
           try {
             const res = await sources.postWebhook(data.webhook, payload);
-            if (res && res.ok) toast(`وصل التنبيه التجريبي إلى Webhook (HTTP ${fmt.num(num(res.status, 200))})`, { tone: 'good' });
-            else toast(res && res.message ? String(res.message) : `تعذر إرسال التنبيه التجريبي${res && res.status ? ` (HTTP ${fmt.num(num(res.status))})` : ''}`, { tone: 'warning' });
+            if (res && res.ok) toast(res.message || `وصل التنبيه التجريبي إلى Webhook (HTTP ${fmt.num(num(res.status, 200))})`, { tone: 'good' });
+            else toast(res && res.message ? String(res.message) : 'تعذر إرسال التنبيه التجريبي', { tone: 'warning' });
           } catch (err) { toast('تعذر الوصول إلى عنوان Webhook — تحقق من العنوان والشبكة', { tone: 'critical' }); console.warn('[alerts] test webhook failed', err); }
           finally { testing = false; schedule(); }
         } });
@@ -351,6 +350,11 @@ export default {
       });
     }
 
+    function writebackChip(status) {
+      const s = WB_STATUS[status] || { label: 'مُسجَّل', tone: 'brand' };
+      return h('span', { class: 'writeback-chip', 'data-status': WB_STATUS[status] ? status : undefined }, glyph(s.tone, 11), h('span', {}, s.label));
+    }
+
     function buildWritebackCard(data) {
       const chips = Object.entries(WB_STATUS).map(([k, s]) => badge(`${s.label}: ${fmt.num(num(data.wbCounts[k]))}`, data.wbCounts[k] ? s.tone : 'neutral'));
       const table = dataTable({
@@ -360,7 +364,7 @@ export default {
           { key: 'actor', label: 'المنفّذ', render: (e) => e.actor || 'النظام' },
           { key: 'target', label: 'الهدف', mono: true, render: (e) => mono(e.target || '—') },
           { key: 'detail', label: 'التفاصيل', sortable: false, render: (e) => h('span', { class: 'text-sm' }, e.detail || '—') },
-          { key: 'status', label: 'الحالة', sortable: false, render: (e) => { const t = data.tasks.find((x) => x.code === e.target || x.id === e.target); const s = t && t.writeback ? WB_STATUS[t.writeback.status] : null; return s ? badge(s.label, s.tone) : badge('مُسجَّل', 'brand'); } },
+          { key: 'status', label: 'الحالة', sortable: false, render: (e) => { const t = data.tasks.find((x) => x.code === e.target || x.id === e.target); return writebackChip(t && t.writeback ? t.writeback.status : null); } },
         ],
         rows: data.writebackLog.map((e, i) => ({ id: e.id || `wb-${i}`, ...e })), initialSort: { key: 'at', dir: 'desc' },
       });
