@@ -1,0 +1,17 @@
+{
+  "name": "بلتكس HSE — مركز قيادة السلامة",
+  "short_name": "Biltix HSE",
+  "description": "مركز قيادة السلامة والصحة المهنية لمواقع بلتكس: رادارات حية، سجل المخاطر، الحوادث، تصاريح العمل، التفتيش، التدريب والامتثال ISO 45001.",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#070D18",
+  "background_color": "#070D18",
+  "categories": ["business", "productivity", "utilities"],
+  "icons": [
+    { "src": "/assets/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

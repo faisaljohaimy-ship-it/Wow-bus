@@ -1,0 +1,156 @@
+/* ==========================================================================
+   Biltix HSE — print report layout (css/print.css, linked with media="print")
+   Hides the app chrome, forces the light token set, keeps cards and charts
+   intact across page breaks, and reveals .report-only blocks.
+   ========================================================================== */
+
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm;
+  }
+
+  /* Light token values regardless of the on-screen theme */
+  :root, :root[data-theme="dark"], :root[data-theme="light"] {
+    color-scheme: light;
+    --bg-0: #FFFFFF; --bg-1: #FFFFFF; --bg-2: #F6F8FC; --bg-3: #EAF0F9;
+    --line: #E3E8F0; --line-2: #C9D3E3;
+    --ink-1: #0E1726; --ink-2: #4A5568; --ink-3: #6B7890;
+    --brand: #2F6FED; --brand-ink: #FFFFFF; --accent: #0E93AC; --gold: #B8860B;
+    --good: #0CA30C; --warning: #FAB219; --serious: #EC835A; --critical: #D03B3B;
+    --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
+    --div-mid: #f0efec;
+    --shadow-1: none;
+    --glow-accent: none;
+    --rail-current: 0px;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    text-shadow: none !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    animation: none !important;
+    transition: none !important;
+  }
+
+  html, body { block-size: auto !important; min-block-size: 0 !important; overflow: visible !important; }
+
+  body.app {
+    display: block;
+    background: #FFFFFF !important;
+    background-image: none !important;
+    color: var(--ink-1);
+    font-size: 11pt;
+    line-height: 1.5;
+  }
+
+  /* App chrome never prints */
+  .appbar, .rail, .filters, .feed, .tabbar, .toast-stack, .cmdk, .backdrop,
+  .alert-banner, .skip-link, .menu, .modal-backdrop, .drawer-backdrop, #tooltip, .tooltip,
+  .card-actions, .card-view-toggle, .view-actions, .toolbar, .chip-group, .pager, .form-actions,
+  .btn, .noscript, .print-hide, .feed-open, .feed-close, .rail-toggle { display: none !important; }
+
+  /* Report-only blocks (cover header, signatures, footers) appear in print */
+  .report-only { display: block !important; }
+  .report-only.row, .report-only.is-row { display: flex !important; }
+  .report-only.is-grid { display: grid !important; }
+
+  /* Main becomes a plain document flow */
+  .main {
+    position: static !important;
+    display: block !important;
+    overflow: visible !important;
+    block-size: auto !important;
+    min-block-size: 0 !important;
+    max-inline-size: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .main > * { max-inline-size: none !important; }
+  .view { display: block; animation: none; }
+  .view > * + * { margin-block-start: 8mm; }
+
+  .view-head { padding-block-end: 4mm; border-block-end: 1px solid var(--line-2); margin-block-end: 6mm; break-after: avoid; }
+  .view-head h1 { font-size: 20pt; }
+  .view-lead, .view-head p { font-size: 10.5pt; color: var(--ink-2); }
+  .code-tag { border-color: var(--line-2); color: var(--ink-2); background: none; }
+
+  /* Grids become print-friendly: hero/kpi rows wrap, nothing spans off-page */
+  .grid-12 { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 5mm; }
+  .grid-12 .col-span-3, .grid-12 .col-span-4 { grid-column: span 6; }
+  .grid-12 .col-span-5, .grid-12 .col-span-7, .grid-12 .col-span-8, .grid-12 .col-span-9 { grid-column: span 12; }
+  .kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4mm; }
+  .cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5mm; }
+
+  /* Cards: flat, bordered, never split across pages */
+  .card, .tile, .int-card, .kanban-col, .radar-frame, .fact, .live-chip, .summary-strip {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border: 1px solid var(--line-2) !important;
+    background: #FFFFFF !important;
+    background-image: none !important;
+  }
+  .card.is-hero::before, .card.is-hero::after { display: none; }
+  .card-head { padding: 4mm 4mm 0; }
+  .card-body { padding: 3mm 4mm 4mm; }
+  .card-foot { padding: 2mm 4mm; }
+  .card-title { font-size: 12pt; }
+  .card-code { color: var(--ink-3); }
+  .card-view[hidden] { display: none !important; }
+
+  /* Tables: repeat headers, avoid splitting rows */
+  .table-wrap, .matrix-scroll, .card-view-table { max-block-size: none !important; overflow: visible !important; }
+  table { break-inside: auto; }
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
+  tr, .kv-row, .urgent-item, .feed-item, .timeline-item, .step { break-inside: avoid; page-break-inside: avoid; }
+  .table thead th, .chart-table thead th { position: static; box-shadow: none; border-block-end: 1px solid var(--line-2); }
+  .table th, .table td { padding: 1.6mm 2.2mm; font-size: 9.5pt; }
+  .table tbody tr:hover { background: none; }
+  .table tbody tr.is-clickable { cursor: default; }
+
+  /* Charts & radars: keep whole; show the table twin if present alongside */
+  .chart, .chart svg, .spark, .gauge, .ring { break-inside: avoid; page-break-inside: avoid; }
+  .chart svg { max-inline-size: 100%; }
+  .legend { color: var(--ink-2); }
+  .radar-frame { box-shadow: none !important; background-image: none !important; }
+  .radar-canvas { image-rendering: auto; }
+
+  /* Status is colour + icon + label; keep tones printable and borders visible */
+  .badge { border: 1px solid var(--tone-line); background: var(--tone-soft); color: var(--tone-ink); }
+  .progress { background: var(--bg-3) !important; }
+  .live-dot { background: var(--accent) !important; }
+  .live-dot::after { display: none; }
+  .countdown { border-color: var(--line-2); }
+
+  /* Links: show destinations for external references only */
+  a { color: inherit; text-decoration: none; }
+  a[href^="http"]:not(.brand)::after {
+    content: " (" attr(href) ")";
+    font-family: var(--font-mono);
+    font-size: 8.5pt;
+    color: var(--ink-3);
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+
+  /* Page-break helpers for the report view */
+  .print-break, .page-break { break-before: page; page-break-before: always; }
+  .print-avoid { break-inside: avoid; }
+  .print-keep-next, h2, h3 { break-after: avoid; page-break-after: avoid; }
+
+  /* Report cover / footer blocks */
+  .report-cover { display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm; padding-block-end: 4mm; border-block-end: 2px solid var(--line-2); }
+  .report-cover-title { font-size: 22pt; font-weight: 700; }
+  .report-cover-meta { font-family: var(--font-mono); font-size: 9pt; color: var(--ink-3); text-align: end; }
+  .report-footer { margin-block-start: 8mm; padding-block-start: 3mm; border-block-start: 1px solid var(--line); font-size: 8.5pt; color: var(--ink-3); display: flex; justify-content: space-between; gap: 6mm; }
+  .report-sign { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8mm; margin-block-start: 12mm; }
+  .report-sign > div { padding-block-start: 3mm; border-block-start: 1px solid var(--ink-3); font-size: 9pt; color: var(--ink-2); }
+
+  /* Forms and inputs render as plain values */
+  .field-control { border: 0; border-block-end: 1px solid var(--line-2); border-radius: 0; background: none; padding-inline: 0; }
+  select.field-control { background-image: none; }
+}
