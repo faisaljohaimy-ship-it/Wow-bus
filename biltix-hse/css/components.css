@@ -1386,7 +1386,7 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
 .alert-item-title { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-1); line-height: 1.4; overflow-wrap: anywhere; }
 .alert-item-detail { font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.45; overflow-wrap: anywhere; }
 .alert-item-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-block-start: 4px; font-size: 11px; color: var(--ink-3); }
-.alert-item-meta time { font-variant-numeric: tabular-nums; margin-inline-start: auto; }
+.alert-item-meta time { font-variant-numeric: tabular-nums; margin-inline-start: auto; font-family: var(--font-mono-mixed, var(--font-mono)); }
 
 /* --------------------------------------------------------------------------
    "المزيد" sheet list (app.js: ul.sheet-list > li > button.sheet-item)
@@ -1750,4 +1750,11 @@ a.urgent-item:hover, button.urgent-item:hover, .urgent-item.is-clickable:hover {
   .table td .stack, .table td .progress-row { min-inline-size: 140px; }
   .tile-value { font-size: 24px; }
   .int-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 8px 10px; }
+}
+
+
+/* Narrow screens: let long card actions wrap under the title instead of squeezing it */
+@media (max-width: 520px) {
+  .card-head { flex-wrap: wrap; row-gap: 8px; }
+  .card-head .card-actions { flex: 1 1 100%; justify-content: flex-start; }
 }

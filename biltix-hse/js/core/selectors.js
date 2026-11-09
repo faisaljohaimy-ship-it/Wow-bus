@@ -623,7 +623,12 @@ function siteScores(state, now) {
       const point = w === 0 ? current : metricsAt(state, f, addDays(at, -7 * w), false);
       trend.push(point.safetyIndex);
     }
-    const score = Number.isFinite(current.safetyIndex) ? current.safetyIndex : (Number(site.safetyScore) || 0);
+    // Blend the computed per-site index with the site's audited safety score: the per-site
+    // formula saturates near 100 for small sites, the blend keeps sites comparable.
+    const audited = Number(site.safetyScore);
+    const blend = (v) => (Number.isFinite(v) && Number.isFinite(audited)) ? Math.round(0.5 * v + 0.5 * audited) : (Number.isFinite(v) ? v : (audited || 0));
+    const score = blend(current.safetyIndex);
+    for (let i = 0; i < trend.length; i += 1) trend[i] = blend(trend[i]);
     return {
       site,
       score,

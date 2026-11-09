@@ -481,7 +481,7 @@ export default {
         rows,
       });
       return card({
-        code: 'CT-01', title: 'العقود المراقبة', className: 'col-span-8',
+        code: 'CT-01', title: 'العقود المراقبة', className: 'col-span-12',
         subtitle: `${fmt.num(rows.length)} عقداً — ${scopeLabel(data)} · انقر على أي صف لعرض البنود والتفسير والصياغة المقترحة`,
         body: table.el,
       });
@@ -529,7 +529,7 @@ export default {
         rows,
       });
       const el = card({
-        code: 'CT-03', title: 'البنود المُعلَّمة الأعلى خطورة', className: 'col-span-7',
+        code: 'CT-03', title: 'البنود المُعلَّمة الأعلى خطورة', className: 'col-span-8',
         subtitle: `${fmt.num(data.flaggedClauses.length)} بنداً مفتوحاً أو قيد المراجعة — مرتبة تنازلياً حسب درجة الخطورة`,
         body: table.el,
       });
@@ -540,7 +540,7 @@ export default {
     function buildObligationsCard(data) {
       const shown = data.obligations.slice(0, 14);
       const list = shown.length
-        ? h('ul', { class: 'urgent-list', 'aria-label': 'تقويم الالتزامات التعاقدية' }, ...shown.map((o) => h('li', { class: ['urgent-item', o.overdue ? 'is-overdue' : null, `tone-${o.overdue ? 'critical' : o.days <= 7 ? 'serious' : o.days <= 30 ? 'warning' : 'neutral'}`] },
+        ? h('ul', { class: 'urgent-list', 'aria-label': 'تقويم الالتزامات التعاقدية', style: shown.length > 4 ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '8px' } : undefined }, ...shown.map((o) => h('li', { class: ['urgent-item', o.overdue ? 'is-overdue' : null, `tone-${o.overdue ? 'critical' : o.days <= 7 ? 'serious' : o.days <= 30 ? 'warning' : 'neutral'}`] },
           h('span', { class: 'urgent-icon' }, glyph(o.overdue ? 'critical' : o.days <= 7 ? 'serious' : 'clock', 15)),
           h('div', { class: 'urgent-text' },
             h('button', { type: 'button', class: 'btn btn-ghost btn-sm', style: { blockSize: 'auto', padding: 0, justifyContent: 'flex-start', textAlign: 'start', whiteSpace: 'normal', fontSize: 'var(--fs-sm)' }, onClick: () => openContract(data, o.contract) }, o.text),
@@ -550,7 +550,7 @@ export default {
         )))
         : emptyState({ title: `لا توجد التزامات خلال ${fmt.num(OBLIGATION_WINDOW_DAYS)} يوماً`, text: 'جميع الالتزامات التعاقدية ضمن النطاق منجزة أو أبعد من نافذة المتابعة.' });
       const el = card({
-        code: 'CT-04', title: `تقويم الالتزامات — ${fmt.num(OBLIGATION_WINDOW_DAYS)} يوماً`, className: 'col-span-5',
+        code: 'CT-04', title: `تقويم الالتزامات — ${fmt.num(OBLIGATION_WINDOW_DAYS)} يوماً`, className: 'col-span-12',
         subtitle: `${fmt.num(data.obligations.length)} التزاماً قادماً أو متأخراً · ${fmt.num(data.overdue.length)} متأخر`,
         body: list,
         footer: data.obligations.length > shown.length ? h('p', { class: 'text-xs muted' }, `يُعرض أقرب ${fmt.num(shown.length)} التزاماً من أصل ${fmt.num(data.obligations.length)}؛ افتح العقد لعرض القائمة كاملة.`) : h('div', { class: 'tone-legend' },
@@ -644,8 +644,9 @@ export default {
       frag.append(
         buildHead(data),
         buildKpis(data),
-        h('div', { class: 'grid-12' }, buildContractsCard(data), buildConcentrationCard(data)),
-        h('div', { class: 'grid-12' }, buildFlagsCard(data), buildObligationsCard(data)),
+        h('div', { class: 'grid-12' }, buildContractsCard(data)),
+        h('div', { class: 'grid-12' }, buildFlagsCard(data), buildConcentrationCard(data)),
+        h('div', { class: 'grid-12' }, buildObligationsCard(data)),
         h('div', { class: 'grid-12' }, buildRisksCard(data)),
         h('div', { class: 'grid-12' }, buildKriCard(data)),
       );

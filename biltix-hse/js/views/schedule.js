@@ -420,7 +420,7 @@ export default {
         rows,
       });
       const el = card({
-        code: 'SCH-01', title: 'انزلاق المسار الحرج', className: 'col-span-7',
+        code: 'SCH-01', title: 'انزلاق المسار الحرج', className: 'col-span-12',
         subtitle: `${fmt.num(rows.length)} نشاطاً حرجاً — مرتبة حسب (احتمال التأخير × الأيام المتوقعة) · السطر الثاني: WBS · الحرفة · المشروع · مقاول الباطن`,
         body: table.el,
       });
@@ -430,7 +430,7 @@ export default {
 
     function buildMonteCarloCard(data) {
       const mc = data.mc;
-      if (!mc) return card({ code: 'SCH-02', title: 'محاكاة مونت كارلو لتاريخ الإنجاز', className: 'col-span-5', subtitle: projectSubtitle(data, 'لا توجد نتائج محاكاة'), body: emptyState({ title: 'لا تتوفر نتائج محاكاة لهذا المشروع' }) });
+      if (!mc) return card({ code: 'SCH-02', title: 'محاكاة مونت كارلو لتاريخ الإنجاز', className: 'col-span-6', subtitle: projectSubtitle(data, 'لا توجد نتائج محاكاة'), body: emptyState({ title: 'لا تتوفر نتائج محاكاة لهذا المشروع' }) });
       const items = data.histogram.map((b) => ({ id: String(b.days), label: fmt.signed(b.days), value: b.prob }));
       const chart = items.length ? makeChart('barChart', {
         items, horizontal: false, sorted: false, height: 200, valueFormat: (v) => fmt.pct(v * 100, 1), color: 'var(--s1)', showValues: false, maxBars: Math.max(12, items.length),
@@ -456,7 +456,7 @@ export default {
         ),
       );
       return card({
-        code: 'SCH-02', title: 'محاكاة مونت كارلو لتاريخ الإنجاز', className: 'col-span-5',
+        code: 'SCH-02', title: 'محاكاة مونت كارلو لتاريخ الإنجاز', className: 'col-span-6',
         subtitle: projectSubtitle(data, `${fmt.num(num(mc.runs) || 5000)} محاكاة`),
         body, tableView: tableOf(chart, fallback),
       });
@@ -476,14 +476,14 @@ export default {
           h('span', { class: 'tone-legend-item tone-critical' }, glyph('critical', 12), h('span', {}, 'فوق التخصيص (> 100%)')),
         ),
         chart ? chart.el : fallback(),
-        gaps.length ? h('ul', { class: 'urgent-list' }, ...gaps.map((r) => h('li', { class: 'urgent-item tone-warning' },
+        gaps.length ? h('ul', { class: 'urgent-list', style: gaps.length > 2 ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '8px' } : undefined }, ...gaps.map((r) => h('li', { class: 'urgent-item tone-warning' },
           h('span', { class: 'urgent-icon' }, glyph('warning', 15)),
           h('div', { class: 'urgent-text' }, h('span', {}, `${r.trade} — نقص ${fmt.num(Math.abs(r._gap))} ${Math.abs(r._gap) === 1 ? 'عامل' : Math.abs(r._gap) === 2 ? 'عاملين' : Math.abs(r._gap) <= 10 ? 'عمال' : 'عاملاً'} الأسبوع القادم`), h('span', { class: 'urgent-sub' }, `${siteName(data.state, r.projectId)} · مخطط ${fmt.num(num(r.planned))} / متاح ${fmt.num(num(r.available))}`)),
           h('div', { class: 'urgent-due' }, mono(fmt.pct(r._util))),
         ))) : h('p', { class: 'text-xs muted' }, 'لا توجد فجوات موارد متوقعة الأسبوع القادم.'),
       );
       return card({
-        code: 'SCH-03', title: 'استغلال الموارد حسب الحرفة', className: 'col-span-4',
+        code: 'SCH-03', title: 'استغلال الموارد حسب الحرفة', className: 'col-span-6',
         subtitle: `${fmt.num(data.resources.length)} حرفة — ${fmt.num(data.overAllocated.length)} فوق التخصيص`,
         body: items.length ? body : emptyState({ title: 'لا توجد بيانات موارد ضمن النطاق' }), tableView: tableOf(chart, fallback),
       });
@@ -517,7 +517,7 @@ export default {
         )
         : emptyState({ title: 'لا تتوفر توقعات طقس لهذا المشروع' });
       return card({
-        code: 'SCH-04', title: 'خطر التأخير بسبب الطقس — 7 أيام', className: 'col-span-8',
+        code: 'SCH-04', title: 'خطر التأخير بسبب الطقس — 7 أيام', className: 'col-span-12',
         subtitle: projectSubtitle(data, 'الحرارة القصوى، الرياح، الغبار، احتمال الأمطار وخطر التأخير اليومي'),
         body, tableView: fallback,
       });
@@ -662,8 +662,9 @@ export default {
       frag.append(
         buildHead(data),
         buildKpis(data),
-        h('div', { class: 'grid-12' }, buildCriticalCard(data), buildMonteCarloCard(data)),
-        h('div', { class: 'grid-12' }, buildResourcesCard(data), buildWeatherCard(data)),
+        h('div', { class: 'grid-12' }, buildCriticalCard(data)),
+        h('div', { class: 'grid-12' }, buildMonteCarloCard(data), buildResourcesCard(data)),
+        h('div', { class: 'grid-12' }, buildWeatherCard(data)),
         h('div', { class: 'grid-12' }, buildApprovalsCard(data), buildSubcontractorsCard(data)),
         h('div', { class: 'grid-12' }, buildRisksCard(data)),
         h('div', { class: 'grid-12' }, buildKriCard(data)),

@@ -611,3 +611,9 @@ button.legend-item:hover { color: var(--ink-1); }
   .legend { gap: 4px 10px; }
   #tooltip, .tooltip { max-inline-size: 240px; }
 }
+
+
+/* Legends: never overflow the card — long labels ellipsize, items wrap */
+.legend, .chart-legend-host { max-inline-size: 100%; }
+.legend-item { min-inline-size: 0; max-inline-size: 100%; }
+.legend-item > :not(.legend-key) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 0; }

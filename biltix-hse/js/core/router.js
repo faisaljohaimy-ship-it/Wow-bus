@@ -21,7 +21,7 @@
 
 import { bus } from './bus.js';
 
-const APP_NAME = 'بلتكس HSE';
+const APP_NAME = 'بلتكس Risk AI';
 
 /** @type {Map<string, object>} */
 const registry = new Map();
@@ -129,7 +129,7 @@ function renderFailure(root, view, error) {
   h1.textContent = view.title || 'القسم';
   const lead = doc.createElement('p');
   lead.className = 'view-lead';
-  lead.textContent = 'تعذر عرض هذا القسم بسبب خطأ غير متوقع. يمكنك إعادة المحاولة أو العودة إلى النظرة العامة.';
+  lead.textContent = 'تعذر عرض هذا القسم بسبب خطأ غير متوقع. يمكنك إعادة المحاولة أو العودة إلى قمرة القيادة.';
   head.append(code, h1, lead);
 
   const detail = doc.createElement('pre');
@@ -146,7 +146,7 @@ function renderFailure(root, view, error) {
   const home = doc.createElement('a');
   home.className = 'btn btn--ghost';
   home.href = buildHash(defaultId);
-  home.textContent = 'العودة إلى النظرة العامة';
+  home.textContent = 'العودة إلى قمرة القيادة';
   actions.append(retry, home);
 
   section.append(head, detail, actions);

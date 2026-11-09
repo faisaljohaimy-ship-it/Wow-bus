@@ -15,7 +15,7 @@
 
 import * as storeModule from '../core/store.js';
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '2.0.0';
 const BUILD_DATE = '2026-11-09';
 const SITE_URL = 'https://biltix.sa';
 const SITE_LABEL = 'biltix.sa';

@@ -627,6 +627,7 @@ function normalizeActions(list, nowDate) {
       owner: text(a.owner),
       due: typeof a.due === 'string' && a.due ? a.due : todayISO(addMs(nowDate, 14 * DAY_MS)),
       done: Boolean(a.done),
+      doneAt: a.done ? (typeof a.doneAt === 'string' && a.doneAt ? a.doneAt : new Date(nowDate).toISOString()) : null,
     } : null))
     .filter((a) => a && a.text);
 }
