@@ -1,9 +1,15 @@
 /**
- * Biltix HSE — application bootstrap (app shell wiring).
+ * Biltix Risk AI — application bootstrap (app shell wiring).
  *
- * Order of work (docs/ARCHITECTURE.md §9, §12):
- *   settings → art mount → rail / tab bar → filters → feed → clock → integrations pill →
- *   notifications (bell, banner) → theme & rail toggles → command palette → views → live engine.
+ * Order of work (docs/ARCHITECTURE.md §9, §12, §B7):
+ *   optional modules + views (parallel) → settings → art mount → grouped rail / tab bar →
+ *   filters → feed → clock → integrations pill → consolidated score pill → notifications
+ *   (bell, banner) → theme & rail toggles → command palette → router → live engines.
+ *
+ * Resilience: the core (store, bus, fmt, sel, router, components, views registry) is imported
+ * statically; charts / radar / art / live / sources / psel / platformLive are loaded through
+ * guarded dynamic imports so a module that is missing or broken degrades to a stub and the
+ * HSE pillar still boots (one console.warn lists what was skipped, never console.error).
  *
  * Everything that comes from data or user input reaches the DOM through textContent /
  * setAttribute. No innerHTML anywhere in this file.
@@ -14,23 +20,83 @@ import { fmt } from './core/fmt.js';
 import { sel } from './core/selectors.js';
 import { router } from './core/router.js';
 import * as components from './ui/components.js';
-import { charts } from './ui/charts.js';
-import * as radar from './ui/radar.js';
-import { art } from './ui/art.js';
-import { live } from './data/live.js';
-import { sources } from './data/sources.js';
-import { views } from './views/index.js';
+import { navGroups, loadViews, navMeta, TAB_IDS, DEFAULT_VIEW, FALLBACK_VIEW } from './views/index.js';
 
 const { h, clear, glyph, badge, button, toast, drawer, segmented, liveDot, emptyState } = components;
 
+/* Optional modules — assigned by loadOptionalModules() before boot() touches them. */
+let charts = {};
+let radar = {};
+let art = {};
+let live = null;
+let sources = null;
+let psel = null;
+let platformLive = null;
+/** Ordered, loaded view modules (filled by loadViews()). */
+let views = [];
+const missingModules = [];
+
 const STORAGE_KEY = 'biltix-hse:v1';
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '2.0.0';
+const APP_TITLE = 'بلتكس Risk AI';
 const RIYADH_TZ = 'Asia/Riyadh';
 const FEED_CAP = 200;
 const ALERT_CAP = 30;
 const BANNER_MS = 12000;
 const TONES = ['neutral', 'good', 'warning', 'serious', 'critical', 'brand', 'accent'];
 const HEX_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+const RATINGS = ['red', 'yellow', 'green'];
+const RATING_LABELS = { red: 'أحمر', yellow: 'أصفر', green: 'أخضر' };
+const RATING_TONES = { red: 'critical', yellow: 'warning', green: 'good' };
+
+/* ------------------------------------------------------------------ */
+/* Optional module loading                                             */
+/* ------------------------------------------------------------------ */
+
+async function optionalModule(path, pickExport) {
+  try {
+    const mod = await import(path);
+    const value = typeof pickExport === 'function' ? pickExport(mod) : mod;
+    if (value === null || value === undefined) throw new Error('التصدير المتوقع غير موجود');
+    return value;
+  } catch (err) {
+    missingModules.push(`${path} — ${err && err.message ? err.message : err}`);
+    return null;
+  }
+}
+
+async function loadOptionalModules() {
+  const [c, r, a, l, s, p, pl] = await Promise.all([
+    optionalModule('./ui/charts.js', (m) => m.charts || m.default),
+    optionalModule('./ui/radar.js', (m) => m),
+    optionalModule('./ui/art.js', (m) => m.art || m.default),
+    optionalModule('./data/live.js', (m) => m.live || m.default),
+    optionalModule('./data/sources.js', (m) => m.sources || m.default),
+    optionalModule('./core/platform-selectors.js', (m) => m.psel || m.default),
+    optionalModule('./data/platform-live.js', (m) => m.platformLive || m.default),
+  ]);
+  charts = c || {}; radar = r || {}; art = a || {}; live = l; sources = s; psel = p; platformLive = pl;
+  if (missingModules.length) {
+    console.warn(`[${APP_TITLE}] ${missingModules.length} وحدات اختيارية غير متاحة بعد — يعمل الهيكل ببدائل مؤقتة:\n  • ${missingModules.join('\n  • ')}`);
+  }
+}
+
+/* Rating helpers that prefer psel (single definition) and fall back to §B2 locally. */
+function ratingOf(score) {
+  try { if (psel && typeof psel.rating === 'function') return psel.rating(score); } catch { /* fall through */ }
+  const n = Number(score) || 0;
+  return n >= 70 ? 'red' : n >= 40 ? 'yellow' : 'green';
+}
+function ratingLabel(rating) {
+  try { if (psel && typeof psel.ratingLabel === 'function') { const l = psel.ratingLabel(rating); if (l) return l; } } catch { /* fall through */ }
+  return RATING_LABELS[rating] || '';
+}
+function ratingTone(rating) {
+  try { if (psel && typeof psel.ratingTone === 'function') { const t = psel.ratingTone(rating); if (TONES.includes(t)) return t; } } catch { /* fall through */ }
+  return RATING_TONES[rating] || 'neutral';
+}
+const platformState = () => (store.state && store.state.platform && typeof store.state.platform === 'object' ? store.state.platform : {});
+const platformList = (key) => (Array.isArray(platformState()[key]) ? platformState()[key] : []);
 
 /* ------------------------------------------------------------------ */
 /* Small helpers                                                       */
@@ -80,7 +146,7 @@ function reportError(err, context = '') {
   const key = `${context}|${message}`;
   if (reportedErrors.has(key)) return;
   reportedErrors.add(key);
-  console.error(context ? `[بلتكس HSE] ${context}:` : '[بلتكس HSE]', err);
+  console.error(context ? `[${APP_TITLE}] ${context}:` : `[${APP_TITLE}]`, err);
   try {
     toast('حدث خطأ غير متوقع في الواجهة. تم تسجيل التفاصيل في وحدة التحكم، وتستمر بقية الأنظمة في العمل.', { tone: 'serious', timeout: 7000, title: 'تنبيه تقني' });
   } catch { /* toast host not ready */ }
@@ -145,7 +211,7 @@ function syncThemeColorMeta() {
 function applyBrandText(brand) {
   const name = document.querySelector('.brand-name');
   const company = (brand.companyName || DEFAULT_BRAND.companyName).trim();
-  if (name) name.textContent = `${company} HSE`;
+  if (name) name.textContent = `${company} Risk AI`;
   const mark = document.querySelector('.brand-mark');
   if (!mark) return;
   const wantsImage = typeof brand.logoUrl === 'string' && /^https?:\/\//i.test(brand.logoUrl.trim());
@@ -168,7 +234,7 @@ function applyBrandText(brand) {
 
 function mountLogo(target) {
   let node = null;
-  try { node = typeof art.logoMark === 'function' ? art.logoMark(36) : null; } catch (err) { reportError(err, 'art.logoMark'); }
+  try { node = art && typeof art.logoMark === 'function' ? art.logoMark(36) : null; } catch (err) { reportError(err, 'art.logoMark'); }
   if (node instanceof Node) target.appendChild(node);
   else target.appendChild(glyph('brand', 36));
 }
@@ -177,26 +243,41 @@ function mountBackdrop() {
   const host = $('backdrop');
   if (!host) return;
   let node = null;
-  try { node = typeof art.backdrop === 'function' ? art.backdrop() : null; } catch (err) { reportError(err, 'art.backdrop'); }
+  try { node = art && typeof art.backdrop === 'function' ? art.backdrop() : null; } catch (err) { reportError(err, 'art.backdrop'); }
   if (node instanceof Node) { clear(host); host.appendChild(node); }
 }
 
 /* ------------------------------------------------------------------ */
-/* Navigation rail & bottom tab bar                                    */
+/* Navigation rail (grouped, §B7) & bottom tab bar                     */
 /* ------------------------------------------------------------------ */
 
 const railButtons = new Map();
 const tabButtons = new Map();
 let moreDrawer = null;
 
+const viewById = (id) => views.find((v) => v.id === id) || null;
+
+/** navGroups resolved against the views that actually loaded (empty groups dropped). */
+function resolvedGroups(pool = views) {
+  const poolIds = new Set(pool.map((v) => v.id));
+  const groups = navGroups
+    .map((g) => ({ ...g, members: g.viewIds.map((id) => pool.find((v) => v.id === id)).filter(Boolean) }))
+    .filter((g) => g.members.length);
+  const grouped = new Set(navGroups.flatMap((g) => g.viewIds));
+  const rest = pool.filter((v) => !grouped.has(v.id) && poolIds.has(v.id));
+  if (rest.length) groups.push({ id: 'other', label: 'أقسام أخرى', viewIds: rest.map((v) => v.id), members: rest });
+  return groups;
+}
+
 function navItem(view, { compact = false } = {}) {
+  const meta = navMeta(view);
   const btn = h('button', {
     type: 'button', class: compact ? 'tab-item' : 'rail-item', 'data-view': view.id,
-    title: compact ? undefined : view.title, onClick: () => router.navigate(view.id),
+    title: compact ? undefined : `${meta.title}${meta.code ? ` · ${meta.code}` : ''}`, onClick: () => router.navigate(view.id),
   });
   btn.appendChild(h('span', { class: compact ? 'tab-icon' : 'rail-icon', 'aria-hidden': 'true' }, iconFor(view.icon, compact ? 22 : 20)));
-  btn.appendChild(h('span', { class: compact ? 'tab-label' : 'rail-label' }, view.title));
-  if (!compact) btn.appendChild(h('span', { class: 'rail-code mono', 'aria-hidden': 'true' }, view.code || ''));
+  btn.appendChild(h('span', { class: compact ? 'tab-label' : 'rail-label' }, meta.title));
+  if (!compact) btn.appendChild(h('span', { class: 'rail-code mono', 'aria-hidden': 'true' }, meta.code));
   return btn;
 }
 
@@ -204,24 +285,36 @@ function buildRail() {
   const list = $('railList');
   if (!list) return;
   clear(list);
-  views.forEach((view) => {
-    const li = h('li', { class: 'rail-li' });
-    const btn = navItem(view);
-    railButtons.set(view.id, btn);
-    li.appendChild(btn);
+  railButtons.clear();
+  resolvedGroups().forEach((group) => {
+    const labelId = `railGroup-${group.id}`;
+    const li = h('li', { class: 'rail-group', 'data-group': group.id });
+    li.appendChild(h('div', { class: 'rail-group-label', id: labelId }, group.label));
+    const ul = h('ul', { class: 'rail-group-list', role: 'list', 'aria-labelledby': labelId });
+    group.members.forEach((view) => {
+      const btn = navItem(view);
+      railButtons.set(view.id, btn);
+      ul.appendChild(h('li', { class: 'rail-li' }, btn));
+    });
+    li.appendChild(ul);
     list.appendChild(li);
   });
   const version = $('railVersion');
   if (version) version.textContent = `v${APP_VERSION}`;
 }
 
+/** Bottom tab bar: cockpit, airisks, overview, radar (+ next available when one is missing) and "المزيد". */
 function buildTabbar() {
   const bar = $('tabbar');
   if (!bar) return;
   clear(bar);
   tabButtons.clear();
-  const primary = views.slice(0, 5);
-  const rest = views.slice(5);
+  const primary = TAB_IDS.map(viewById).filter(Boolean);
+  for (const view of views) {
+    if (primary.length >= TAB_IDS.length) break;
+    if (!primary.includes(view)) primary.push(view);
+  }
+  const rest = views.filter((v) => !primary.includes(v));
   primary.forEach((view) => { const b = navItem(view, { compact: true }); tabButtons.set(view.id, b); bar.appendChild(b); });
   if (rest.length) {
     const more = h('button', { type: 'button', class: 'tab-item tab-more', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', onClick: () => openMoreSheet(rest, more) });
@@ -236,18 +329,22 @@ function openMoreSheet(rest, anchor) {
   if (moreDrawer && moreDrawer.isOpen()) { moreDrawer.close(); return; }
   const current = router.current ? router.current() : { id: null };
   const list = h('ul', { class: 'sheet-list', role: 'list' });
-  rest.forEach((view) => {
-    const b = h('button', {
-      type: 'button', class: ['sheet-item', current.id === view.id ? 'is-active' : null], 'aria-current': current.id === view.id ? 'page' : undefined,
-      onClick: () => { moreDrawer.close(); router.navigate(view.id); },
+  resolvedGroups(rest).forEach((group) => {
+    list.appendChild(h('li', { class: 'sheet-group', role: 'presentation' }, h('div', { class: 'sheet-group-label' }, group.label)));
+    group.members.forEach((view) => {
+      const meta = navMeta(view);
+      const b = h('button', {
+        type: 'button', class: ['sheet-item', current.id === view.id ? 'is-active' : null], 'aria-current': current.id === view.id ? 'page' : undefined,
+        onClick: () => { moreDrawer.close(); router.navigate(view.id); },
+      });
+      b.appendChild(h('span', { class: 'sheet-icon', 'aria-hidden': 'true' }, iconFor(view.icon, 20)));
+      b.appendChild(h('span', { class: 'sheet-label' }, meta.title));
+      b.appendChild(h('span', { class: 'sheet-code mono', 'aria-hidden': 'true' }, meta.code));
+      list.appendChild(h('li', {}, b));
     });
-    b.appendChild(h('span', { class: 'sheet-icon', 'aria-hidden': 'true' }, iconFor(view.icon, 20)));
-    b.appendChild(h('span', { class: 'sheet-label' }, view.title));
-    b.appendChild(h('span', { class: 'sheet-code mono', 'aria-hidden': 'true' }, view.code || ''));
-    list.appendChild(h('li', {}, b));
   });
   anchor.setAttribute('aria-expanded', 'true');
-  moreDrawer = drawer({ title: 'المزيد من الأقسام', subtitle: 'جميع أقسام مركز القيادة', body: list, onClose: () => anchor.setAttribute('aria-expanded', 'false') });
+  moreDrawer = drawer({ title: 'المزيد من الأقسام', subtitle: 'جميع أقسام منصة إدارة المخاطر', body: list, onClose: () => anchor.setAttribute('aria-expanded', 'false') });
   moreDrawer.el.classList.add('is-sheet');
   moreDrawer.open();
 }
@@ -284,7 +381,7 @@ function buildFilters() {
   const site = $('siteSelect');
   if (site) {
     clear(site);
-    site.appendChild(h('option', { value: 'all' }, 'جميع المواقع'));
+    site.appendChild(h('option', { value: 'all' }, 'جميع المشاريع'));
     ((store.state && store.state.sites) || []).forEach((s) => {
       site.appendChild(h('option', { value: s.id }, `${s.code} — ${s.name}`));
     });

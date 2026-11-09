@@ -80,7 +80,7 @@ export default {
     function typeChip(type) {
       const label = safe(() => psel.typeLabel(type), null) || TYPE_LABEL[type] || String(type ?? '—');
       const key = String(type || '').toLowerCase();
-      return h('span', { class: ['type-chip', key ? `is-${key}` : null], 'data-type': key || undefined }, svgIcon(TYPE_ICON[type] || 'chart', 14), h('span', {}, label));
+      return h('span', { class: ['type-chip', key ? `is-${key}` : null], 'data-type': type ? String(type) : undefined }, svgIcon(TYPE_ICON[type] || 'chart', 12), h('span', {}, label));
     }
     function toneBadge(label, tone) { return badge(label, tone); }
 

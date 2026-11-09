@@ -320,6 +320,16 @@ const ICONS = {
   'percent': ['M19 5L5 19', C(7, 7, 2.3), C(17, 17, 2.3)],
   'shield': [SHIELD],
   'shield-check': [SHIELD, 'M8.8 12.2l2.2 2.2 4.2-4.6'],
+  'csv': [DOC, DOC_FOLD, 'M8.5 13h7M8.5 16.5h7M11.5 13v3.5'],
+  'json': [DOC, DOC_FOLD, 'M10 12c-1.2 0-1.2 1-1.2 2s0 1-1 1 1 0 1 1 0 2 1.2 2M14 12c1.2 0 1.2 1 1.2 2s0 1 1 1-1 0-1 1 0 2-1.2 2'],
+  'layers': ['M12 3.5l9 4.5-9 4.5-9-4.5 9-4.5z', 'M3 12.5l9 4.5 9-4.5', 'M3 17l9 4.5 9-4.5'],
+  'package': ['M12 3.5l8.5 4.5v8L12 20.5 3.5 16V8L12 3.5z', 'M3.5 8L12 12.5 20.5 8', 'M12 12.5v8', 'M7.5 5.9l8.6 4.6'],
+  'send': ['M21 12L3 3.5 7.5 20.5l4.6-5.6L21 12z', 'M12.1 14.9L3 3.5'],
+  'trend': ['M21 17l-6-6-4 4-8-8', D(3, 7, 1.3)],
+  'dot': [D(12, 12, 3.2)],
+  'rect': [R(5, 8.5, 14, 7, 2)],
+  'hazard': [D(12, 12, 2.2), C(12, 12, 5.5), C(12, 12, 9, { opacity: 0.45 })],
+  'sparkles': ['M11 3.5l1.9 5.1 5.1 1.9-5.1 1.9L11 17.5l-1.9-5.1L4 10.5l5.1-1.9L11 3.5z', 'M18.5 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z', 'M5.5 16.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6.6-1.4z'],
   'circle': [C(12, 12, 8.5), D(12, 12, 1.6)],
 };
 
@@ -341,6 +351,8 @@ const ALIASES = {
   'pencil': 'edit', 'view': 'eye', 'hide': 'eye', 'sync': 'refresh', 'reload': 'refresh', 'save': 'download', 'printer': 'print', 'cctv-ai': 'cctv',
   'biltix-pm': 'biltix', 'biltix-dms': 'dms', 'iot-gateway': 'iot', 'wearables': 'wearable', 'access-control': 'gate', 'weather-ncm': 'weather',
   'hrms': 'hr', 'erp-sap': 'erp', 'email-smtp': 'mail', 'sms-twilio': 'sms', 'webhooks': 'webhook', 'google-sheets': 'sheets', 'power-bi': 'powerbi',
+  'sheet': 'sheets', 'thermo': 'temperature', 'worker': 'dot', 'vehicle': 'rect', 'hazards': 'hazard', 'box': 'package', 'paper-plane': 'send', 'braces': 'json',
+  'sparkle': 'sparkles', 'ai': 'sparkles', 'magic': 'sparkles', 'roadmap': 'map-pin', 'milestone': 'badge-check',
 };
 
 const FALLBACK = ICONS.circle;

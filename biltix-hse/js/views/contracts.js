@@ -74,7 +74,7 @@ export default {
 
     /* ───────────────────────── primitives ───────────────────────── */
 
-    const mono = (text, extra = null) => h('span', { class: ['mono', extra], style: { fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' } }, String(text ?? '—'));
+    const mono = (text, extra = null) => h('span', { class: ['mono', ...String(extra || '').split(/\s+/).filter(Boolean)], style: { fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' } }, String(text ?? '—'));
     const sar = (n) => (Number.isFinite(Number(n)) ? `${fmt.compact(Number(n))} ر.س` : '—');
     const startOfToday = () => { const d = store.now ? store.now() : new Date(); d.setHours(0, 0, 0, 0); return d; };
     const daysUntil = (iso) => { const d = fmt.toDate(iso); if (!d) return null; d.setHours(0, 0, 0, 0); return Math.round((d.getTime() - startOfToday().getTime()) / DAY_MS); };
@@ -326,7 +326,7 @@ export default {
           ),
           h('div', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, flagBadge(clause), status),
         ),
-        clause.excerpt ? h('blockquote', { class: 'evidence-excerpt text-sm', style: { margin: 0, padding: '8px 12px', borderInlineStart: '2px solid var(--line-2)', color: 'var(--ink-2)', fontStyle: 'normal' } }, `«${clause.excerpt}»`) : null,
+        clause.excerpt ? h('blockquote', { class: 'evidence-excerpt text-sm', style: { margin: 0, paddingInline: '12px 0', borderInlineStart: '2px solid var(--line-2)', color: 'var(--ink-2)', fontStyle: 'normal' } }, clause.excerpt) : null,
         clause.flag ? h('div', { class: 'row gap-3', style: { alignItems: 'center' } },
           h('span', { class: 'text-xs muted nowrap' }, 'درجة الخطورة'),
           h('div', { class: 'progress-row grow' }, progress({ value: sev, max: 100, tone, label: `درجة خطورة البند ${clause.ref}` }), h('span', { class: 'progress-value' }, fmt.num(sev))),
@@ -597,10 +597,10 @@ export default {
         h('caption', { class: 'sr-only' }, 'مصفوفة مؤشرات المخاطر الرئيسية لمحرك العقود: المؤشر، التقنية، المدخلات، إجراء المعالجة'),
         h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'المؤشر'), h('th', { scope: 'col' }, 'تقنية الذكاء الاصطناعي'), h('th', { scope: 'col' }, 'مدخلات البيانات'), h('th', { scope: 'col' }, 'إجراء المعالجة'))),
         h('tbody', {}, ...kris.map((k) => h('tr', {},
-          h('th', { scope: 'row', class: 'semibold', style: { fontWeight: 600 } }, asText(k.indicator)),
-          h('td', {}, asText(k.technique)),
-          h('td', {}, asText(k.inputs)),
-          h('td', {}, asText(k.mitigation)),
+          h('td', { 'data-label': 'المؤشر', style: { fontWeight: 600 } }, asText(k.indicator)),
+          h('td', { 'data-label': 'تقنية الذكاء الاصطناعي' }, asText(k.technique)),
+          h('td', { 'data-label': 'مدخلات البيانات' }, asText(k.inputs)),
+          h('td', { 'data-label': 'إجراء المعالجة' }, asText(k.mitigation)),
         ))),
       );
       const bodyWrap = h('div', { class: 'table-wrap' }, kris.length ? table : emptyState({ title: 'مصفوفة المؤشرات غير متاحة', text: 'لم تُحمَّل بيانات خط أنابيب محرك العقود بعد.' }));

@@ -295,7 +295,7 @@ function render(container, ctx) {
     ariaLabel: 'نظام الأرقام',
     onChange: (v) => save({ numerals: v }, 'تم تحديث نظام الأرقام في كامل الواجهة.'),
   });
-  const numeralsExample = h('p', { class: 'field-hint mono', 'aria-live': 'polite' });
+  const numeralsExample = h('p', { class: 'field-hint tabular', 'aria-live': 'polite' });
   function paintExample() {
     const now = store.now ? store.now() : new Date();
     numeralsExample.textContent = `مثال: ${fmt.num(1234567)} · ${fmt.pct(87.5, 1)} · ${fmt.date(now)} · ${fmt.time(now)}`;

@@ -162,7 +162,7 @@ function fontFamilies() {
   try {
     const cs = getComputedStyle(document.documentElement);
     sans = cs.getPropertyValue('--font-sans').trim();
-    mono = cs.getPropertyValue('--font-mono').trim();
+    mono = (cs.getPropertyValue('--font-mono-mixed') || cs.getPropertyValue('--font-mono')).trim();
   } catch { /* fall through */ }
   fontCache = {
     sans: sans || '"IBM Plex Sans Arabic", system-ui, sans-serif',
@@ -1422,3 +1422,427 @@ export function segmentedBar(opts = {}) {
     destroy: shell.destroy,
   };
 }
+
+/* ------------------------------------------------------------------------- */
+/* Sparkline                                                                  */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Decorative 12-point style sparkline (1.5px line, accent dot on the last point).
+ * Returns { el, update(values), destroy }.
+ */
+export function sparkline(opts = {}) {
+  const o = { values: [], width: 96, height: 28, color: 'var(--ink-3)', accentLast: true, ...opts };
+  const el = htmlEl('span', { class: 'spark', attrs: { 'aria-hidden': 'true' } });
+  const svg = svgEl('svg', { xmlns: SVG_NS, focusable: 'false' }, el);
+
+  function render() {
+    clear(svg);
+    const W = num(o.width, 96);
+    const H = num(o.height, 28);
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.setAttribute('width', String(W));
+    svg.setAttribute('height', String(H));
+    el.style.color = str(o.color) || 'var(--ink-3)';
+    const vals = arr(o.values).map((v) => (isNum(v) ? v : null));
+    const finite = vals.filter(isNum);
+    if (finite.length < 1) return;
+    const n = vals.length;
+    const min = Math.min(...finite);
+    const max = Math.max(...finite);
+    const pad = 3;
+    const y = (v) => (max === min ? H / 2 : pad + (H - 2 * pad) * (1 - (v - min) / (max - min)));
+    const x = (i) => (n === 1 ? W / 2 : pad + (i / (n - 1)) * (W - 2 * pad));
+    let d = '';
+    let open = false;
+    vals.forEach((v, i) => {
+      if (v === null) { open = false; return; }
+      d += `${open ? ' L' : ' M'}${r2(x(i))},${r2(y(v))}`;
+      open = true;
+    });
+    svgEl('path', { d: d.trim(), class: 'spark-line' }, svg);
+    if (o.accentLast) {
+      let last = n - 1;
+      while (last >= 0 && vals[last] === null) last -= 1;
+      if (last >= 0) svgEl('circle', { cx: x(last), cy: y(vals[last]), r: 2.5, class: 'spark-dot' }, svg);
+    }
+  }
+  render();
+  return {
+    el,
+    update(data) { if (Array.isArray(data)) o.values = data; else Object.assign(o, data || {}); render(); },
+    destroy() { clear(svg); },
+  };
+}
+
+/* ------------------------------------------------------------------------- */
+/* Status tone helpers (gauge / meter)                                        */
+/* ------------------------------------------------------------------------- */
+
+const TONES = ['good', 'warning', 'serious', 'critical'];
+const toneVar = (tone) => `var(--${TONES.includes(tone) ? tone : 'brand'})`;
+
+/** Safety-index tone: ≥85 good, ≥70 warning, ≥50 serious, else critical (as % of max). */
+function indexTone(value, max = 100) {
+  const pct = max > 0 ? (value / max) * 100 : 0;
+  if (pct >= 85) return 'good';
+  if (pct >= 70) return 'warning';
+  if (pct >= 50) return 'serious';
+  return 'critical';
+}
+
+/** Tone from a thresholds list [{upTo, tone}] (first threshold the value does not exceed). */
+function thresholdTone(value, thresholds) {
+  const list = arr(thresholds).filter((t) => t && isNum(num(t.upTo, NaN))).slice().sort((a, b) => num(a.upTo) - num(b.upTo));
+  if (!list.length) return null;
+  for (const t of list) if (value <= num(t.upTo)) return str(t.tone) || null;
+  return str(list[list.length - 1].tone) || null;
+}
+
+/** Static tone glyph (24-grid, stroke currentColor) — status is never colour-alone. */
+function toneGlyph(tone, size = 12) {
+  const g = svgEl('g', { class: 'tone-glyph', transform: `scale(${size / 24})`, fill: 'none', stroke: 'currentColor', 'stroke-width': 2.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
+  const add = (tag, attrs) => svgEl(tag, attrs, g);
+  switch (tone) {
+    case 'good': add('circle', { cx: 12, cy: 12, r: 9 }); add('path', { d: 'M8 12.5l2.6 2.6L16 9.6' }); break;
+    case 'warning': add('path', { d: 'M12 3.5l9 16H3l9-16z' }); add('path', { d: 'M12 10v4' }); add('path', { d: 'M12 17.2h.01' }); break;
+    case 'serious': add('circle', { cx: 12, cy: 12, r: 9 }); add('path', { d: 'M12 7.5v5.5' }); add('path', { d: 'M12 16.4h.01' }); break;
+    case 'critical': add('path', { d: 'M8.2 3h7.6L21 8.2v7.6L15.8 21H8.2L3 15.8V8.2L8.2 3z' }); add('path', { d: 'M9.5 9.5l5 5M14.5 9.5l-5 5' }); break;
+    default: add('circle', { cx: 12, cy: 12, r: 8.5 }); add('path', { d: 'M8 12h8' });
+  }
+  return g;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Meter                                                                      */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Linear meter with a same-ramp track (lighter step of the fill's own hue).
+ * thresholds: [{upTo, tone}] pick the fill tone; markers show each boundary.
+ * Returns { el, update(valueOr{value,max,…}), destroy }.
+ */
+export function meter(opts = {}) {
+  const o = { value: 0, max: 100, label: '', thresholds: [], height: 10, format: null, ...opts };
+  const el = htmlEl('div', { class: 'meter' });
+  const head = htmlEl('div', { class: 'meter-head' }, el);
+  const labelEl = htmlEl('span', { class: 'meter-label' }, head);
+  const valueEl = htmlEl('span', { class: 'meter-value' }, head);
+  const track = htmlEl('div', { class: 'meter-track', attrs: { role: 'meter', 'aria-valuemin': '0' } }, el);
+  const fill = htmlEl('div', { class: 'meter-fill' }, track);
+  const marks = [];
+
+  function text(v, max) {
+    if (typeof o.format === 'function') return str(o.format(v, max));
+    return max === 100 ? fmt.pct(v) : `${fmt.num(v, { maximumFractionDigits: 1 })} ${T.of} ${fmt.num(max)}`;
+  }
+  function render() {
+    const max = Math.max(num(o.max, 100), 0.000001);
+    const v = clamp(num(o.value), 0, max);
+    const tone = thresholdTone(v, o.thresholds);
+    const color = tone ? toneVar(tone) : 'var(--brand)';
+    labelEl.textContent = str(o.label);
+    head.hidden = !o.label && o.hideValue === true;
+    valueEl.textContent = text(v, max);
+    track.style.blockSize = `${num(o.height, 10)}px`;
+    track.style.background = `color-mix(in srgb, ${color} 22%, var(--bg-2))`;
+    track.setAttribute('aria-valuemax', String(max));
+    track.setAttribute('aria-valuenow', String(v));
+    track.setAttribute('aria-valuetext', `${text(v, max)}${tone ? ` — ${T.tones[tone] || tone}` : ''}`);
+    if (o.label) track.setAttribute('aria-label', str(o.label)); else track.removeAttribute('aria-label');
+    fill.style.setProperty('--tone', color);
+    fill.style.inlineSize = `${(v / max) * 100}%`;
+    marks.forEach((m) => m.remove());
+    marks.length = 0;
+    arr(o.thresholds).forEach((t) => {
+      const up = num(t && t.upTo, NaN);
+      if (!isNum(up) || up <= 0 || up >= max) return;
+      const m = htmlEl('span', { class: 'meter-threshold', attrs: { 'aria-hidden': 'true' }, style: { insetInlineStart: `${(up / max) * 100}%` } }, track);
+      marks.push(m);
+    });
+  }
+  render();
+  return {
+    el,
+    update(data) { if (isNum(data)) o.value = data; else Object.assign(o, data || {}); render(); },
+    destroy() {},
+  };
+}
+
+/* ------------------------------------------------------------------------- */
+/* Gauge (hero, 270° arc)                                                     */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Hero gauge for the Safety Index: 270° arc with a same-ramp track, tone by thresholds
+ * (≥85 good, ≥70 warning, ≥50 serious, else critical), hero number (.gauge-value) with an
+ * icon+label chip beneath it, 600ms value tween (skipped under reduced motion).
+ * Returns { el, update(valueOr{value,max,label,sublabel}), destroy }.
+ */
+export function gauge(opts = {}) {
+  const o = { value: 0, max: 100, size: 180, label: '', sublabel: '', ...opts };
+  const el = htmlEl('div', { class: ['chart', 'gauge', 'chart-gauge'] });
+  const svg = svgEl('svg', { xmlns: SVG_NS, class: 'gauge-svg', role: 'img' }, el);
+  const labelEl = htmlEl('div', { class: 'gauge-label' }, el);
+  const subEl = htmlEl('div', { class: 'gauge-sublabel' }, el);
+  let shown = null;        // value currently displayed (tween source)
+  let cancelTween = () => {};
+  let nodes = null;
+
+  function build() {
+    clear(svg);
+    const size = Math.max(96, num(o.size, 180));
+    const stroke = Math.max(10, Math.round(size * 0.075));
+    const cx = size / 2;
+    const cy = size / 2;
+    const r = size / 2 - stroke / 2 - 8;
+    const H = Math.round(cy + r * Math.SQRT1_2 + stroke / 2 + 6);
+    svg.setAttribute('viewBox', `0 0 ${size} ${H}`);
+    svg.setAttribute('width', String(size));
+    svg.setAttribute('height', String(H));
+    svg.style.maxInlineSize = `${size}px`;
+    svg.style.blockSize = 'auto';
+    const polar = (deg, rad = r) => [cx + rad * Math.sin((deg * Math.PI) / 180), cy - rad * Math.cos((deg * Math.PI) / 180)];
+    const [sx, sy] = polar(-135);
+    const [ex, ey] = polar(135);
+    const d = `M${r2(sx)},${r2(sy)} A${r2(r)},${r2(r)} 0 1 1 ${r2(ex)},${r2(ey)}`;
+    const track = svgEl('path', { d, class: 'gauge-track', 'stroke-width': stroke, pathLength: 1 }, svg);
+    const arc = svgEl('path', { d, class: 'gauge-arc', 'stroke-width': stroke, pathLength: 1, 'stroke-dasharray': '0 1' }, svg);
+    arc.style.transition = 'none';
+    // threshold ticks on the outer rim (50 / 70 / 85 %)
+    const ticks = svgEl('g', { class: 'gauge-ticks', 'aria-hidden': 'true' }, svg);
+    [50, 70, 85].forEach((p) => {
+      const a = -135 + (p / 100) * 270;
+      const [x1, y1] = polar(a, r + stroke / 2 + 2);
+      const [x2, y2] = polar(a, r + stroke / 2 + 6);
+      svgEl('line', { x1: r2(x1), y1: r2(y1), x2: r2(x2), y2: r2(y2), class: 'gauge-tick', 'stroke-width': 1.5 }, ticks);
+    });
+    const hero = svgEl('text', { x: cx, y: cy + 8, 'text-anchor': 'middle', class: 'gauge-value' }, svg);
+    if (size < 170) hero.style.fontSize = `${Math.round(clamp(size * 0.27, 22, 48))}px`;
+    const chip = svgEl('g', { class: 'gauge-chip' }, svg);
+    const chipBg = svgEl('rect', { height: 22, rx: 11, y: cy + 22, 'stroke-width': 1 }, chip);
+    const chipIcon = svgEl('g', {}, chip);
+    const chipText = svgEl('text', { y: cy + 37, class: 'label is-strong', style: { fontSize: '12px' } }, chip);
+    nodes = { track, arc, hero, chip, chipBg, chipIcon, chipText, cx, cy, size };
+  }
+
+  function paintTone(tone, max, value) {
+    const color = toneVar(tone);
+    nodes.track.style.stroke = `color-mix(in srgb, ${color} 22%, var(--bg-2))`;
+    nodes.arc.style.stroke = color;
+    const label = T.tones[tone] || tone;
+    nodes.chipText.textContent = label;
+    const rtl = isRTL(el);
+    const tw = measure(label, 12, { weight: 600 });
+    const w = Math.round(tw + 34);
+    const x0 = nodes.cx - w / 2;
+    nodes.chipBg.setAttribute('x', String(x0));
+    nodes.chipBg.setAttribute('width', String(w));
+    nodes.chipBg.style.fill = `color-mix(in srgb, ${color} 16%, transparent)`;
+    nodes.chipBg.style.stroke = `color-mix(in srgb, ${color} 45%, transparent)`;
+    clear(nodes.chipIcon);
+    nodes.chipIcon.appendChild(toneGlyph(tone, 12));
+    const iconX = rtl ? x0 + w - 10 - 12 : x0 + 10;
+    nodes.chipIcon.setAttribute('transform', `translate(${iconX} ${nodes.cy + 27})`);
+    nodes.chipIcon.style.color = color;
+    nodes.chipText.setAttribute('x', String(rtl ? x0 + w - 28 : x0 + 28));
+    nodes.chipText.setAttribute('text-anchor', rtl ? 'start' : 'start');
+    nodes.chipText.style.direction = rtl ? 'rtl' : 'ltr';
+    svg.setAttribute('aria-label', `${o.label ? `${o.label}: ` : ''}${fmt.num(value)} ${T.of} ${fmt.num(max)} — ${label}`);
+  }
+
+  function paintValue(v, max) {
+    nodes.hero.textContent = fmt.num(Math.round(v));
+    nodes.arc.setAttribute('stroke-dasharray', `${clamp(v / max, 0, 1).toFixed(4)} 1`);
+  }
+
+  function render(animate) {
+    const max = Math.max(num(o.max, 100), 0.000001);
+    const target = clamp(num(o.value), 0, max);
+    labelEl.textContent = str(o.label);
+    labelEl.hidden = !o.label;
+    subEl.textContent = str(o.sublabel);
+    subEl.hidden = !o.sublabel;
+    paintTone(indexTone(target, max), max, target);
+    cancelTween();
+    const from = isNum(shown) ? shown : 0;
+    if (!animate) { shown = target; paintValue(target, max); return; }
+    cancelTween = tween(from, target, 600, (v) => { shown = v; paintValue(v, max); });
+  }
+
+  build();
+  render(true);
+  const offTheme = bus.on('theme:change', () => { if (!el.isConnected) { offTheme(); return; } requestAnimationFrame(() => render(false)); });
+  return {
+    el,
+    update(data) {
+      if (isNum(data)) o.value = data; else Object.assign(o, data || {});
+      if (data && typeof data === 'object' && 'size' in data) build();
+      render(true);
+    },
+    destroy() { cancelTween(); offTheme(); },
+  };
+}
+
+/* ------------------------------------------------------------------------- */
+/* Ring                                                                       */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Small ring meter (ISO clause scores). Same-ramp track, value in the centre.
+ * Returns { el, update(valueOr{value,max,color,label}), destroy }.
+ */
+export function ring(opts = {}) {
+  const o = { value: 0, max: 100, size: 72, color: 'var(--s1)', label: '', format: null, ...opts };
+  const el = htmlEl('div', { class: 'ring' });
+  const svg = svgEl('svg', { xmlns: SVG_NS, role: 'img' }, el);
+  const labelEl = htmlEl('span', { class: 'ring-label' }, el);
+  let arc = null;
+  let valueText = null;
+  let cancelTween = () => {};
+  let shown = null;
+
+  function build() {
+    clear(svg);
+    const size = Math.max(32, num(o.size, 72));
+    const stroke = Math.max(4, Math.round(size * 0.085));
+    const r = (size - stroke) / 2 - 1;
+    const c = size / 2;
+    svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
+    svg.setAttribute('width', String(size));
+    svg.setAttribute('height', String(size));
+    el.style.inlineSize = `${size}px`;
+    svgEl('circle', { cx: c, cy: c, r, class: 'ring-track', 'stroke-width': stroke }, svg);
+    arc = svgEl('circle', { cx: c, cy: c, r, class: 'ring-arc', 'stroke-width': stroke, pathLength: 1, 'stroke-dasharray': '0 1', transform: `rotate(-90 ${c} ${c})` }, svg);
+    arc.style.transition = 'none';
+    valueText = svgEl('text', { x: c, y: c + size * 0.085, 'text-anchor': 'middle', class: 'ring-value', style: { fontSize: `${Math.round(clamp(size * 0.24, 10, 28))}px` } }, svg);
+  }
+  function text(v, max) {
+    if (typeof o.format === 'function') return str(o.format(v, max));
+    return max === 100 ? fmt.pct(v) : fmt.num(v, { maximumFractionDigits: 1 });
+  }
+  function render(animate) {
+    const max = Math.max(num(o.max, 100), 0.000001);
+    const target = clamp(num(o.value), 0, max);
+    const color = str(o.color).trim() || 'var(--s1)';
+    svg.querySelector('.ring-track').style.stroke = `color-mix(in srgb, ${color} 22%, var(--bg-2))`;
+    arc.style.stroke = color;
+    labelEl.textContent = str(o.label);
+    labelEl.hidden = !o.label;
+    svg.setAttribute('aria-label', `${o.label ? `${o.label}: ` : ''}${text(target, max)}`);
+    cancelTween();
+    const paint = (v) => { shown = v; arc.setAttribute('stroke-dasharray', `${clamp(v / max, 0, 1).toFixed(4)} 1`); valueText.textContent = text(Math.round(v), max); };
+    if (!animate) { paint(target); return; }
+    cancelTween = tween(isNum(shown) ? shown : 0, target, 600, paint);
+  }
+  build();
+  render(true);
+  return {
+    el,
+    update(data) {
+      if (isNum(data)) o.value = data; else Object.assign(o, data || {});
+      if (data && typeof data === 'object' && 'size' in data) build();
+      render(true);
+    },
+    destroy() { cancelTween(); },
+  };
+}
+
+/* ------------------------------------------------------------------------- */
+/* Spider (static radar)                                                      */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Static spider chart: filled polygons, hairline rings, axis labels. Optional `target`
+ * draws a solid hairline reference polygon. Legend for ≥ 2 series.
+ * @param {{axes:Array<{id?:string,label:string}>, series:Array<{id?:string,label:string,color?:string,values:number[]}>, max?:number, size?:number, ariaLabel?:string, target?:number, rings?:number}} opts
+ */
+export function spider(opts = {}) {
+  const o = { axes: [], series: [], max: 100, size: 260, ariaLabel: '', target: null, rings: 4, ...opts };
+  const shell = chartShell({ className: 'chart-spider', ariaLabel: o.ariaLabel, role: 'img', render });
+  const { svg, el } = shell;
+  svg.setAttribute('aria-roledescription', 'رسم عنكبوتي');
+
+  const axesOf = () => arr(o.axes).map((a) => (typeof a === 'string' ? { id: a, label: a } : { id: str(a && a.id), label: str(a && a.label) }));
+  const seriesOf = (n) => arr(o.series).map((s, i) => ({ ...s, label: str(s.label), color: seriesColor(s, i), values: Array.from({ length: n }, (_, k) => clamp(num(arr(s.values)[k], 0), 0, Math.max(num(o.max, 100), 0.000001))) }));
+
+  function render(W) {
+    clear(svg);
+    const axes = axesOf();
+    const n = axes.length;
+    const size = Math.max(120, num(o.size, 260));
+    const max = Math.max(num(o.max, 100), 0.000001);
+    svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
+    svg.setAttribute('width', '100%');
+    svg.style.maxInlineSize = `${size}px`;
+    svg.style.marginInline = 'auto';
+    svg.style.blockSize = 'auto';
+    if (n < 3) {
+      svgEl('text', { x: size / 2, y: size / 2, 'text-anchor': 'middle', class: 'label is-muted', text: T.noData }, svg);
+      buildLegend(shell.legendHost, []);
+      return;
+    }
+    const rtl = isRTL(el);
+    const A = anchors(rtl);
+    const labelPx = 11;
+    const longest = Math.max(...axes.map((a) => measure(a.label, labelPx)), 0);
+    const margin = clamp(longest * 0.55 + 14, 28, size * 0.22);
+    const cx = size / 2;
+    const cy = size / 2;
+    const R = size / 2 - margin;
+    const angle = (k) => (k / n) * TAU - Math.PI / 2;
+    const pt = (k, rad) => [cx + rad * Math.cos(angle(k)), cy + rad * Math.sin(angle(k))];
+    const poly = (rad) => Array.from({ length: n }, (_, k) => pt(k, rad).map(r2).join(',')).join(' ');
+    const grid = svgEl('g', { class: 'spider-grid-layer', 'aria-hidden': 'true' }, svg);
+    const rings = Math.max(1, Math.round(num(o.rings, 4)));
+    for (let k = 1; k <= rings; k += 1) svgEl('polygon', { points: poly((R * k) / rings), class: 'spider-grid' }, grid);
+    axes.forEach((_, k) => { const [x, y] = pt(k, R); svgEl('line', { x1: cx, y1: cy, x2: r2(x), y2: r2(y), class: 'spider-axis' }, grid); });
+    if (isNum(o.target)) svgEl('polygon', { points: poly((clamp(o.target, 0, max) / max) * R), class: 'spider-target' }, grid);
+    const series = seriesOf(n);
+    const sg = svgEl('g', { class: 'spider-series' }, svg);
+    series.forEach((s) => {
+      const points = s.values.map((v, k) => pt(k, (v / max) * R).map(r2).join(',')).join(' ');
+      svgEl('polygon', { points, class: 'spider-area', style: { fill: s.color, stroke: s.color } }, sg);
+    });
+    if (series.length <= 2) {
+      series.forEach((s) => s.values.forEach((v, k) => { const [x, y] = pt(k, (v / max) * R); svgEl('circle', { cx: r2(x), cy: r2(y), r: 3.5, class: 'marker', style: { fill: s.color } }, sg); }));
+    }
+    const labels = svgEl('g', { class: 'spider-labels', 'aria-hidden': 'true' }, svg);
+    axes.forEach((a, k) => {
+      const [x, y] = pt(k, R + 12);
+      const c = Math.cos(angle(k));
+      const anchor = Math.abs(c) < 0.2 ? 'middle' : (c > 0 ? A.left : A.right);
+      const dy = Math.sin(angle(k)) > 0.2 ? 10 : Math.sin(angle(k)) < -0.2 ? -2 : 4;
+      svgEl('text', { x: r2(x), y: r2(y + dy), 'text-anchor': anchor, class: 'spider-label', text: fitText(a.label, margin * 1.9, labelPx) }, labels);
+    });
+    buildLegend(shell.legendHost, series.map((s) => ({ label: s.label, color: s.color })), { kind: 'dot' });
+    svg.setAttribute('aria-label', o.ariaLabel || series.map((s) => `${s.label}: ${s.values.map((v, k) => `${fmt.num(v)} ${axes[k].label}`).join('، ')}`).join(' — '));
+  }
+
+  shell.redraw();
+  return {
+    el,
+    update(data = {}) { Object.assign(o, data || {}); shell.redraw(); },
+    table() {
+      const axes = axesOf();
+      const series = seriesOf(axes.length);
+      return buildTable({
+        caption: o.ariaLabel,
+        columns: [{ label: T.axis }, ...series.map((s) => ({ label: s.label, numeric: true }))],
+        rows: axes.map((a, k) => [a.label, ...series.map((s) => fmt.num(s.values[k], { maximumFractionDigits: 1 }))]),
+      });
+    },
+    destroy: shell.destroy,
+  };
+}
+
+/* ------------------------------------------------------------------------- */
+/* Public surface                                                             */
+/* ------------------------------------------------------------------------- */
+
+export const charts = {
+  lineChart, barChart, groupedBars, heatmap, segmentedBar, sparkline, meter, gauge, ring, spider,
+  tooltip, paletteFor, prefersReducedMotion,
+};
+
+export default charts;

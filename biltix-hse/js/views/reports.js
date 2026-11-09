@@ -987,10 +987,9 @@ function render(container, ctx) {
   function build() {
     const period = resolvePeriod(currentPeriod, store.now ? store.now() : new Date(), fmt);
     const d = collect(ctx, period);
-    if (d.built) {
-      if (typeof d.built.title === 'string' && d.built.title.trim()) d.period.title = d.built.title.trim();
-      if (typeof d.built.period === 'string' && d.built.period.trim()) d.period.label = d.built.period.trim();
-      if (d.built.kpis && typeof d.built.kpis === 'object' && Number.isFinite(d.built.kpis.safetyIndex)) d.kpis = { ...d.kpis, ...d.built.kpis, deltas: { ...(d.kpis.deltas || {}), ...(d.built.kpis.deltas || {}) }, previous: d.kpis.previous || {} };
+    // The engine's KPI bundle backs ours when a selector failed locally; titles stay period-aware here.
+    if (d.built && d.built.kpis && typeof d.built.kpis === 'object' && !Number.isFinite(d.kpis.safetyIndex) && Number.isFinite(d.built.kpis.safetyIndex)) {
+      d.kpis = { ...d.built.kpis, deltas: d.built.kpis.deltas || {}, previous: d.built.kpis.previous || {} };
     }
     latest = d;
     const summary = summarySection(d);

@@ -296,7 +296,7 @@ export default {
     const root = h('section', { class: 'view view-radar' });
     const fpsText = h('span', {}, 'FPS —');
     const fpsChip = h('span', { class: 'chip is-sm mono', title: 'الإطارات في الثانية لحلقة الرسم المشتركة', 'aria-label': 'معدل الإطارات' }, ico('gauge', 14), fpsText);
-    const siteBadge = C.badge('', 'brand', { icon: ico('site', 14) });
+    const siteBadge = C.badge('', 'brand', { icon: ico('building', 14) });
     const pauseBtn = C.button('إيقاف الحركة مؤقتًا', {
       variant: 'outline', size: 'sm', icon: ico('pause', 14),
       attrs: { 'aria-pressed': 'false', title: 'إيقاف حركة الرادارات مؤقتًا (تبقى البيانات حية)' },
@@ -354,7 +354,7 @@ export default {
         currentBlips().map((b) => [String(b.code || ''), String(b.label || ''), siteName(b.siteId) || '—', categoryName(b.categoryId), fmt.num(Number(b.score) || 0), String(b.tier || '')]),
         [true, false, false, false, true, false]),
     });
-    const sensorSiteBadge = C.badge('', 'neutral', { icon: ico('site', 12) });
+    const sensorSiteBadge = C.badge('', 'neutral', { icon: ico('building', 12) });
     const sensorCard = radarCard({
       code: 'RDR-02', title: 'رادار الحساسات', subtitle: 'قراءات لحظية من بوابة الحساسات (غازات، ضوضاء، حرارة، غبار، رياح) مقابل حدود الإنذار',
       caption: 'SENSOR', wide: false, sideTitle: 'القراءات الحية', actions: [sensorSiteBadge],
@@ -366,7 +366,7 @@ export default {
           axes.map((a, i) => [`${a.label}${a.unit ? ` (${a.unit})` : ''}`, fmtValue(num(vals[i])), fmtValue(num(a.threshold)), fmtValue(num(a.max))]), [false, true, true, true]);
       },
     });
-    const planSiteBadge = C.badge('', 'neutral', { icon: ico('site', 12) });
+    const planSiteBadge = C.badge('', 'neutral', { icon: ico('building', 12) });
     const planCard = radarCard({
       code: 'RDR-03', title: 'رادار مخطط الموقع', subtitle: 'مناطق الموقع بمنظور أيزومتري مع حركة العمال والمعدات ونبضات مواضع الخطر',
       caption: 'PLAN', wide: false, sideTitle: 'الحركة على الموقع', actions: [planSiteBadge],
@@ -392,11 +392,21 @@ export default {
 
     /* ───────────── sweep hover tooltip ───────────── */
     function placeTip(card, pt) {
+      // Radar hover info (§6): {x, y} are viewport coordinates, {localX, localY} canvas-local CSS px.
       const rect = card.wrap.getBoundingClientRect();
-      let x = Number(pt && (pt.x ?? pt.clientX));
-      let y = Number(pt && (pt.y ?? pt.clientY));
-      if (!Number.isFinite(x) || !Number.isFinite(y)) { x = rect.width / 2; y = 16; }
-      if (x > rect.width + 2 || y > rect.height + 2) { x -= rect.left; y -= rect.top; }
+      let x;
+      let y;
+      if (pt && Number.isFinite(pt.localX) && Number.isFinite(pt.localY)) {
+        const c = card.canvas.getBoundingClientRect();
+        x = pt.localX + (c.left - rect.left);
+        y = pt.localY + (c.top - rect.top);
+      } else if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) {
+        x = pt.x - rect.left;
+        y = pt.y - rect.top;
+      } else {
+        x = rect.width / 2;
+        y = 16;
+      }
       const tw = card.tip.offsetWidth || 200;
       const th = card.tip.offsetHeight || 80;
       const rtl = getComputedStyle(document.documentElement).direction !== 'ltr';
@@ -476,15 +486,6 @@ export default {
         target: ISO_TARGET,
       }, 'ComplianceRadar');
     }
-    function ensureRunning() {
-      if (destroyed || !loop || document.hidden || paused) return;
-      try {
-        if (typeof loop.fps === 'function' && loop.fps() === 0 && typeof loop.add === 'function') {
-          Object.values(radars).filter(Boolean).forEach((r) => loop.add(r));
-        }
-      } catch (err) { warn('radarLoop.add', err); }
-    }
-
     function setPaused(next) {
       paused = Boolean(next);
       try {
@@ -609,7 +610,6 @@ export default {
     buildCompliance();
     tick();
     timers.push(setInterval(tick, 1000));
-    timers.push(setTimeout(ensureRunning, 1500));
 
     subs.push(bus.on('store:change', (p) => {
       const path = String((p && p.path) || '*');

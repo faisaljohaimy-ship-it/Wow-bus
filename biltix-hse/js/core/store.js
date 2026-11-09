@@ -123,9 +123,9 @@ const MUTABLE_COLLECTIONS = ['risks', 'incidents', 'permits', 'inspections', 'in
 const DATE_FIELDS = {
   risks: { own: ['dueDate', 'createdAt', 'updatedAt', 'closedAt'], children: { history: ['at'] } },
   incidents: { own: ['date', 'createdAt', 'updatedAt', 'closedAt'], children: { actions: ['due', 'doneAt'] } },
-  permits: { own: ['startsAt', 'expiresAt', 'createdAt', 'updatedAt', 'approvedAt'] },
+  permits: { own: ['startsAt', 'expiresAt', 'createdAt', 'updatedAt', 'approvedAt', 'closedAt'] },
   inspections: { own: ['date', 'createdAt', 'updatedAt'] },
-  workers: { children: { certs: ['completedAt', 'expiresAt'] } },
+  workers: { own: ['joinedAt'], children: { certs: ['completedAt', 'expiresAt'] } },
   integrations: { own: ['lastSync'] },
   legalRegister: { own: ['lastReview', 'nextReview'] },
   feed: { own: ['ts'] },

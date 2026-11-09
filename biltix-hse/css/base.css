@@ -712,7 +712,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
 .view-error { align-items: center; text-align: center; padding-block: var(--space-6); }
 .view-error .view-head { flex-direction: column; align-items: center; }
 .view-error__detail {
-  max-inline-size: 60ch;
+  max-inline-size: min(60ch, 100%);
   padding: var(--space-3) var(--space-4);
   font-family: var(--font-mono-mixed);
   font-size: var(--fs-xs);

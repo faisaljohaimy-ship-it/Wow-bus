@@ -349,7 +349,7 @@ export default {
       const el = card({
         code: 'TRN-03', title: `شهادات تنتهي خلال ${fmt.num(EXPIRING_WINDOW_DAYS)} يوماً`,
         subtitle: rows.length ? `${fmt.num(rows.length)} شهادة تتطلب جدولة تجديد — الأقرب أولاً` : 'لا توجد شهادات تقترب من الانتهاء',
-        className: 'col-span-7',
+        className: 'col-span-8',
         body: table.el,
         footer: h('div', { class: 'matrix-legend' },
           h('span', { class: 'matrix-legend-item tone-critical' }, glyph('critical', 12), h('span', {}, 'أسبوع أو أقل')),
@@ -395,7 +395,7 @@ export default {
         t.appendChild(tb);
         return t;
       };
-      return card({ code: 'TRN-04', title: 'توزيع حالات الشهادات', subtitle: `${fmt.num(total)} شهادة مطلوبة ضمن النطاق`, className: 'col-span-5', body, tableView: tableFn });
+      return card({ code: 'TRN-04', title: 'توزيع حالات الشهادات', subtitle: `${fmt.num(total)} شهادة مطلوبة ضمن النطاق`, className: 'col-span-4', body, tableView: tableFn });
     }
 
     function buildCatalogue(data) {

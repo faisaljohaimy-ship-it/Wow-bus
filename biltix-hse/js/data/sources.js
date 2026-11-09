@@ -579,7 +579,6 @@ export function mapRiskRows(records, { sites = arr(seed && seed.sites), categori
       status: resolveStatus(row.status),
       source: text(row.source) || sourceLabel,
       legalRef: text(row.legalRef),
-      rowNumber: rowNo,
     };
     if (text(row.zoneId)) risk.zoneId = text(row.zoneId);
     risks.push(risk);
@@ -806,19 +805,34 @@ function tierCounts(state, filters, at) {
   return counts;
 }
 
+const QUARTER_NAMES = ['الأول', 'الثاني', 'الثالث', 'الرابع'];
+
+function parseLocalDate(value) {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const raw = text(value);
+  if (!raw) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  const dt = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(raw);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
 /**
  * Build the monthly HSE report as a plain object (reports view + print).
+ * `period` is the human label (string) the reports view prints; `periodInfo` carries the
+ * structured window. Accepts the reports view's call shape as well:
+ *   buildReport(state, { period:'month'|'quarter'|'30d', from, to, range, siteId, now })
  * @param {object} state  store.state
- * @param {{range?:number, siteId?:string, now?:Date|string}} [opts]
+ * @param {{range?:number, siteId?:string, now?:Date|string, from?:string|Date, to?:string|Date, period?:string}} [opts]
  */
 function buildReport(state, opts = {}) {
   const s = isObj(state) ? state : {};
-  const filters = {
-    siteId: text(opts.siteId) || (s.filters && s.filters.siteId) || 'all',
-    range: Number(opts.range) > 0 ? Math.round(Number(opts.range)) : (Number(s.filters && s.filters.range) > 0 ? Number(s.filters.range) : 30),
-    search: '',
-  };
-  const at = opts.now ? new Date(opts.now) : new Date();
+  const at = parseLocalDate(opts.now) || parseLocalDate(opts.to) || new Date();
+  const fromOpt = parseLocalDate(opts.from);
+  const toOpt = parseLocalDate(opts.to) || at;
+  let range = Number(opts.range) > 0 ? Math.round(Number(opts.range)) : 0;
+  if (!range && fromOpt) range = Math.max(1, Math.round((toOpt.getTime() - fromOpt.getTime()) / DAY_MS) + 1);
+  if (!range) range = Number(s.filters && s.filters.range) > 0 ? Number(s.filters.range) : 30;
+  const filters = { siteId: text(opts.siteId) || (s.filters && s.filters.siteId) || 'all', range, search: '' };
   const company = isObj(s.company) ? s.company : { name: 'بلتكس', product: 'Biltix HSE' };
   const site = filters.siteId !== 'all' ? arr(s.sites).find((x) => x.id === filters.siteId) : null;
   const scopeLabel = site ? site.name : 'جميع المواقع';
@@ -828,12 +842,20 @@ function buildReport(state, opts = {}) {
   const d = k.deltas || {};
   const prev = k.previous || {};
   const toMs = at.getTime();
-  const fromMs = toMs - (filters.range - 1) * DAY_MS;
+  const fromDate = fromOpt || new Date(toMs - (filters.range - 1) * DAY_MS);
+  const kind = text(opts.period);
+  const rangeLabel = `${safeDate(fromDate)} – ${safeDate(at)}`;
+  let windowLabel;
+  if (kind === 'month') windowLabel = monthYear(fromDate);
+  else if (kind === 'quarter') windowLabel = `الربع ${QUARTER_NAMES[Math.floor(fromDate.getMonth() / 3)]} ${fromDate.getFullYear()}`;
+  else windowLabel = `آخر ${safeNum(filters.range)} يومًا`;
   const period = {
-    from: toISODate(new Date(fromMs)),
+    key: kind || (filters.range === 30 ? '30d' : 'custom'),
+    from: toISODate(fromDate),
     to: toISODate(at),
     days: filters.range,
-    label: `${safeDate(new Date(fromMs))} – ${safeDate(at)}`,
+    label: `${windowLabel} (${rangeLabel})`,
+    rangeLabel,
     month: monthYear(at),
     scope: scopeLabel,
     siteId: filters.siteId,
@@ -963,12 +985,14 @@ function buildReport(state, opts = {}) {
     { id: 'recommendations', code: 'RPT-08', title: 'التوصيات', narrative: recommendations.map((r) => r.text), items: recommendations, urgent: urgent.map((u) => ({ kind: u.kind, code: u.code, text: u.text, due: u.due, tone: u.tone, href: u.href })) },
   ];
 
+  const cadence = kind === 'quarter' ? 'الربعي' : 'الشهري';
   return {
-    title: `تقرير السلامة والصحة المهنية الشهري — ${company.name || 'بلتكس'} — ${period.month}`,
-    subtitle: `${company.product || 'Biltix HSE'} · ${scopeLabel} · ${period.label}`,
+    title: `تقرير السلامة والصحة المهنية ${cadence} — ${company.name || 'بلتكس'} — ${kind === 'quarter' ? windowLabel : period.month}`,
+    subtitle: `${company.product || 'Biltix HSE'} · ${scopeLabel} · ${rangeLabel}`,
     company: { name: company.name, product: company.product, tagline: company.tagline },
     generatedAt: new Date().toISOString(),
-    period,
+    period: period.label,
+    periodInfo: period,
     kpis: k,
     sections,
   };

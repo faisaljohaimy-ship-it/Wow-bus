@@ -210,7 +210,7 @@ export default {
 
     /* ───────────── view head ───────────── */
     const root = h('section', { class: 'view view-overview' });
-    const scopeBadge = h('span', { class: 'badge tone-neutral', 'data-tone': 'neutral' }, ico('site', 14), h('span', { class: 'badge-text' }, ''));
+    const scopeBadge = h('span', { class: 'badge tone-neutral', 'data-tone': 'neutral' }, ico('building', 14), h('span', { class: 'badge-text' }, ''));
     root.appendChild(h('div', { class: 'view-head' },
       h('div', { class: 'view-head-text' },
         h('span', { class: 'code-tag' }, 'SEC-01'),
@@ -532,11 +532,21 @@ export default {
 
     /* ───────────── radar hover tooltip ───────────── */
     function placeTip(pt) {
+      // Radar hover info (§6): {x, y} are viewport coordinates, {localX, localY} canvas-local CSS px.
       const rect = radarWrap.getBoundingClientRect();
-      let x = Number(pt && (pt.x ?? pt.clientX));
-      let y = Number(pt && (pt.y ?? pt.clientY));
-      if (!Number.isFinite(x) || !Number.isFinite(y)) { x = rect.width / 2; y = 16; }
-      if (x > rect.width + 2 || y > rect.height + 2) { x -= rect.left; y -= rect.top; }
+      let x;
+      let y;
+      if (pt && Number.isFinite(pt.localX) && Number.isFinite(pt.localY)) {
+        const c = canvas.getBoundingClientRect();
+        x = pt.localX + (c.left - rect.left);
+        y = pt.localY + (c.top - rect.top);
+      } else if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) {
+        x = pt.x - rect.left;
+        y = pt.y - rect.top;
+      } else {
+        x = rect.width / 2;
+        y = 16;
+      }
       const tw = tip.offsetWidth || 200;
       const th = tip.offsetHeight || 80;
       const rtl = getComputedStyle(document.documentElement).direction !== 'ltr';
@@ -579,16 +589,8 @@ export default {
           showLabels: true,
         });
         if (typeof sweep.setHoverHandler === 'function') sweep.setHoverHandler(showTip);
-        if (typeof sweep.start === 'function') sweep.start();
+        if (typeof sweep.start === 'function') sweep.start(); // start() registers with the shared radarLoop
       } catch (err) { warn('radar.start', err); sweep = null; }
-      // Self-heal: if nothing is drawing after 1.5 s (loop never registered the radar), add it explicitly.
-      timers.push(setTimeout(() => {
-        const loop = R.radarLoop;
-        if (destroyed || !sweep || !loop || document.hidden) return;
-        try {
-          if (typeof loop.fps === 'function' && loop.fps() === 0 && typeof loop.add === 'function') loop.add(sweep);
-        } catch (err) { warn('radarLoop.add', err); }
-      }, 1500));
     }
 
     /* ───────────── formula modal ───────────── */

@@ -67,7 +67,7 @@ export default {
 
     /* ───────────────────────── primitives ───────────────────────── */
 
-    const mono = (text, extra = null) => h('span', { class: ['mono', extra], style: { fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' } }, String(text ?? '—'));
+    const mono = (text, extra = null) => h('span', { class: ['mono', ...String(extra || '').split(/\s+/).filter(Boolean)], style: { fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' } }, String(text ?? '—'));
     const sar = (n) => (Number.isFinite(Number(n)) ? `${fmt.compact(Number(n))} ر.س` : '—');
     const startOfToday = () => { const d = store.now ? store.now() : new Date(); d.setHours(0, 0, 0, 0); return d; };
     const daysUntil = (iso) => { const d = fmt.toDate(iso); if (!d) return null; d.setHours(0, 0, 0, 0); return Math.round((d.getTime() - startOfToday().getTime()) / DAY_MS); };
@@ -128,7 +128,7 @@ export default {
       if (days === null) return h('span', { class: 'muted' }, '—');
       const tone = days < 0 ? 'critical' : days <= 14 ? 'warning' : 'neutral';
       const label = days < 0 ? `متأخر ${fmt.num(Math.abs(days))} يوم` : days === 0 ? 'اليوم' : `خلال ${fmt.num(days)} يوماً`;
-      return h('div', { class: ['stack gap-1', days < 0 ? 'is-overdue' : null] }, h('span', { class: 'nowrap' }, fmt.date(iso, { style: 'short' })), badge(label, tone));
+      return h('div', { class: ['stack', 'gap-1', days < 0 ? 'is-overdue' : null] }, h('span', { class: 'nowrap' }, fmt.date(iso, { style: 'short' })), badge(label, tone));
     }
 
     function makeChart(name, opts) {
@@ -289,7 +289,7 @@ export default {
             ['الوحدة', item.unit || '—'],
             ['كمية جدول الكميات (BoQ)', mono(fmt.num(num(item.boqQty), { maximumFractionDigits: 1 }))],
             ['كمية نموذج BIM', mono(fmt.num(num(item.bimQty), { maximumFractionDigits: 1 }))],
-            ['الفرق', h('span', { class: ['row gap-2', `tone-${vTone}`], style: { alignItems: 'center' } }, mono(`${fmt.signed(qtyDiff, 1)} ${item.unit || ''}`), varianceBadge(item.variancePct))],
+            ['الفرق', h('span', { class: ['row', 'gap-2', `tone-${vTone}`], style: { alignItems: 'center' } }, mono(`${fmt.signed(qtyDiff, 1)} ${item.unit || ''}`), varianceBadge(item.variancePct))],
             ['سعر الوحدة', `${fmt.num(num(item.unitPrice), { maximumFractionDigits: 2 })} ر.س`],
             ['الأثر المالي التقديري للفرق', h('span', { class: `tone-${vTone}` }, `${fmt.num(Math.round(costImpact))} ر.س`)],
             ['مدة التوريد', `${fmt.num(num(item.leadTimeDays))} يوماً${num(item.leadTimeDays) >= LONG_LEAD_DAYS ? ' — بند طويل التوريد' : ''}`],
@@ -479,7 +479,7 @@ export default {
       const list = rows.length ? h('ul', { class: 'urgent-list', 'aria-label': 'البنود طويلة التوريد' }, ...rows.map((b) => {
         const overdue = b.days !== null && b.days < 0;
         const soon = b.days !== null && b.days >= 0 && b.days <= 14;
-        return h('li', { class: ['urgent-item', overdue ? 'is-overdue tone-critical' : soon ? 'tone-warning' : 'tone-neutral'] },
+        return h('li', { class: ['urgent-item', overdue ? 'is-overdue' : null, overdue ? 'tone-critical' : soon ? 'tone-warning' : 'tone-neutral'] },
           h('span', { class: 'urgent-icon' }, glyph(overdue ? 'critical' : soon ? 'warning' : 'clock', 15)),
           h('div', { class: 'urgent-text' },
             h('button', { type: 'button', class: 'btn btn-ghost btn-sm', style: { blockSize: 'auto', padding: 0, justifyContent: 'flex-start', textAlign: 'start', whiteSpace: 'normal', fontSize: 'var(--fs-sm)' }, onClick: () => openItem(data, b) }, h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, mono(b.code), h('span', {}, b.description))),
@@ -566,10 +566,10 @@ export default {
         h('caption', { class: 'sr-only' }, 'مصفوفة مؤشرات المخاطر الرئيسية لمحرك المواد والتوريد: المؤشر، التقنية، المدخلات، إجراء المعالجة'),
         h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'المؤشر'), h('th', { scope: 'col' }, 'تقنية الذكاء الاصطناعي'), h('th', { scope: 'col' }, 'مدخلات البيانات'), h('th', { scope: 'col' }, 'إجراء المعالجة'))),
         h('tbody', {}, ...kris.map((k) => h('tr', {},
-          h('th', { scope: 'row', style: { fontWeight: 600 } }, asText(k.indicator)),
-          h('td', {}, asText(k.technique)),
-          h('td', {}, asText(k.inputs)),
-          h('td', {}, asText(k.mitigation)),
+          h('td', { 'data-label': 'المؤشر', style: { fontWeight: 600 } }, asText(k.indicator)),
+          h('td', { 'data-label': 'تقنية الذكاء الاصطناعي' }, asText(k.technique)),
+          h('td', { 'data-label': 'مدخلات البيانات' }, asText(k.inputs)),
+          h('td', { 'data-label': 'إجراء المعالجة' }, asText(k.mitigation)),
         ))),
       );
       const bodyWrap = h('div', { class: 'table-wrap' }, kris.length ? table : emptyState({ title: 'مصفوفة المؤشرات غير متاحة', text: 'لم تُحمَّل بيانات خط أنابيب محرك BoM بعد.' }));

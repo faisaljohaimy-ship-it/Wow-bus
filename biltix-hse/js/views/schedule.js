@@ -66,7 +66,7 @@ export default {
 
     /* ───────────────────────── primitives ───────────────────────── */
 
-    const mono = (text, extra = null) => h('span', { class: ['mono', extra], style: { fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' } }, String(text ?? '—'));
+    const mono = (text, extra = null) => h('span', { class: ['mono', ...String(extra || '').split(/\s+/).filter(Boolean)], style: { fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' } }, String(text ?? '—'));
     const startOfToday = () => { const d = store.now ? store.now() : new Date(); d.setHours(0, 0, 0, 0); return d; };
     const daysUntil = (iso) => { const d = fmt.toDate(iso); if (!d) return null; d.setHours(0, 0, 0, 0); return Math.round((d.getTime() - startOfToday().getTime()) / DAY_MS); };
     const daysBetween = (a, b) => { const da = fmt.toDate(a); const db = fmt.toDate(b); if (!da || !db) return null; da.setHours(0, 0, 0, 0); db.setHours(0, 0, 0, 0); return Math.round((db.getTime() - da.getTime()) / DAY_MS); };
@@ -608,10 +608,10 @@ export default {
         h('caption', { class: 'sr-only' }, 'مصفوفة مؤشرات المخاطر الرئيسية لنموذج الجدول الزمني: المؤشر، التقنية، المدخلات، إجراء المعالجة'),
         h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'المؤشر'), h('th', { scope: 'col' }, 'تقنية الذكاء الاصطناعي'), h('th', { scope: 'col' }, 'مدخلات البيانات'), h('th', { scope: 'col' }, 'إجراء المعالجة'))),
         h('tbody', {}, ...kris.map((k) => h('tr', {},
-          h('th', { scope: 'row', style: { fontWeight: 600 } }, asText(k.indicator)),
-          h('td', {}, asText(k.technique)),
-          h('td', {}, asText(k.inputs)),
-          h('td', {}, asText(k.mitigation)),
+          h('td', { 'data-label': 'المؤشر', style: { fontWeight: 600 } }, asText(k.indicator)),
+          h('td', { 'data-label': 'تقنية الذكاء الاصطناعي' }, asText(k.technique)),
+          h('td', { 'data-label': 'مدخلات البيانات' }, asText(k.inputs)),
+          h('td', { 'data-label': 'إجراء المعالجة' }, asText(k.mitigation)),
         ))),
       );
       const bodyWrap = h('div', { class: 'table-wrap' }, kris.length ? table : emptyState({ title: 'مصفوفة المؤشرات غير متاحة', text: 'لم تُحمَّل بيانات خط أنابيب نموذج الجدول الزمني بعد.' }));

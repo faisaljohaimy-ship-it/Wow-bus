@@ -179,6 +179,7 @@ const E = {
   // permits
   permitWarned: new Map(), // permit id → expiresAt it was warned for
   pendingReplacements: [],
+  nextExpiryAt: 0,         // catch-up closures are spaced 8–15 s apart so the feed stays readable
   // integrations
   integrations: new Map(), // id → { baseLatency, baseEvents, history, degradedSince, recoverAfter }
   nextDegradeAt: 0,
@@ -463,7 +464,7 @@ function fill(text, ctx) {
       return v == null ? '' : String(v);
     })
     .replace(/\s{2,}/g, ' ')
-    .replace(/\s+([،·])/g, '$1')
+    .replace(/\s+(،)/g, '$1')
     .replace(/(^|\s)[—·]\s*$/g, '')
     .trim();
 }
@@ -1049,11 +1050,13 @@ function permitStep(now = Date.now()) {
   }
   for (const id of Array.from(E.permitWarned.keys())) if (!activeIds.has(id)) E.permitWarned.delete(id);
 
-  // One closure per tick keeps the feed readable when several permits lapse at once.
-  if (expired.length) {
+  // Several permits may have lapsed at once (e.g. hours before the dashboard was opened):
+  // close the oldest first and space the closures out so the feed stays readable.
+  if (expired.length && now >= E.nextExpiryAt) {
     expired.sort((a, b) => a.exp - b.exp);
     const { p } = expired[0];
     closeExpiredPermit(p, now);
+    E.nextExpiryAt = now + (expired.length > 1 ? randBetween(8 * SECOND, 15 * SECOND) : 0);
   }
   if (!feedPaused() && E.pendingReplacements.length) issueReplacement(E.pendingReplacements.shift(), Date.now());
 }
@@ -1485,6 +1488,7 @@ function start({ store, bus } = {}) {
   E.transients = [];
   E.permitWarned.clear();
   E.pendingReplacements = [];
+  E.nextExpiryAt = 0;
   E.integrations.clear();
   E.sensors.clear();
   E.pings.clear();
@@ -1553,6 +1557,8 @@ export const live = {
   // extras (not in the contract; harmless for consumers that want them)
   isPaused: () => E.paused,
   getSensors: () => Array.from(E.sensors.values()).map(sensorSnapshot),
+  /** Add one simulated near-miss right now (QA / demo button). Returns the incident or null. */
+  triggerNearMiss: () => nearMissStep(Date.now()),
   triggerExcursion: (sensorId) => {
     syncSensorModels();
     const m = sensorId ? E.sensors.get(sensorId) : null;

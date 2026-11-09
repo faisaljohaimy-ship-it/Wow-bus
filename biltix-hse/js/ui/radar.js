@@ -25,11 +25,13 @@
  * import: global listeners are attached only while at least one radar is running.
  *
  * Hover info object passed to onHover(item, info):
- *   { x, y }            viewport (client) coordinates of the hovered item — ready for a
- *                       position:fixed tooltip such as charts.tooltip.show(x, y, …)
- *   { localX, localY }  the same point in canvas CSS pixels
+ *   { x, y }               the hovered item's centre in canvas CSS pixels (== localX/localY),
+ *                          i.e. relative to the canvas/.radar-frame — for a tooltip positioned
+ *                          inside the frame
+ *   { clientX, clientY }   the same point in viewport coordinates — for a position:fixed
+ *                          tooltip such as charts.tooltip.show(clientX, clientY, …)
  *   { pointerX, pointerY } the pointer's own client coordinates
- *   { canvas }          the canvas element
+ *   { canvas }             the canvas element
  * When the pointer leaves every target the handler receives (null, info|null).
  */
 
@@ -945,10 +947,12 @@ export class RadarBase {
     const lx = target ? target.x : pt ? pt.x : 0;
     const ly = target ? target.y : pt ? pt.y : 0;
     return {
-      x: rect.left + lx,
-      y: rect.top + ly,
+      x: lx,
+      y: ly,
       localX: lx,
       localY: ly,
+      clientX: rect.left + lx,
+      clientY: rect.top + ly,
       pointerX: pt ? pt.clientX : rect.left + lx,
       pointerY: pt ? pt.clientY : rect.top + ly,
       canvas: this.canvas,
