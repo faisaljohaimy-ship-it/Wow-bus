@@ -618,11 +618,9 @@ function buildTable({ caption = '', columns = [], rows = [], footer = null }) {
     cells.forEach((cell, ci) => {
       const col = columns[ci] || {};
       const node = ci === 0
-        ? htmlEl('th', { text: str(cell), attrs: { scope: 'row' } }, tr)
+        ? htmlEl('th', { attrs: { scope: 'row' } }, tr)
         : htmlEl('td', { class: col.numeric ? 'num' : null }, tr);
-      if (ci !== 0) {
-        if (cell instanceof Node) node.appendChild(cell); else node.textContent = str(cell);
-      }
+      if (cell instanceof Node) node.appendChild(cell); else node.textContent = str(cell);
     });
   });
   if (footer && footer.length) {
@@ -774,11 +772,16 @@ export function lineChart(opts = {}) {
     // Selective direct labels: endpoint per series (≤ 4 series), + max for one series
     const labelsLayer = svgEl('g', { class: 'direct-labels', 'aria-hidden': 'true' }, svg);
     const placed = [];
+    const inward = rtl ? -1 : 1;                 // away from the y-axis, into the plot
     const tryLabel = (px, py, text, strong) => {
       const w = measure(text, 11, { mono: true, weight: 500 });
       let ly = py - 10;
       if (ly < 10) ly = py + 16;
-      const lx = clamp(px, w / 2 + 2, W - w / 2 - 2);
+      // keep the label clear of the tick column on the inline-start side
+      const lo = rtl ? w / 2 + 2 : left + w / 2 + 4;
+      const hi = rtl ? right - w / 2 - 4 : W - w / 2 - 2;
+      let lx = px + inward * (w / 2 + 6);
+      if (lx < lo || lx > hi) lx = clamp(px, lo, hi);
       const collides = placed.some((p) => Math.abs(p.x - lx) < (p.w + w) / 2 + 4 && Math.abs(p.y - ly) < 12);
       if (collides) return;
       placed.push({ x: lx, y: ly, w });

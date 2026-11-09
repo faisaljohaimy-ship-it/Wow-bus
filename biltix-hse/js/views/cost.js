@@ -252,12 +252,13 @@ export default {
       );
     }
 
+    /** .evm-cell[data-tone] > .evm-label(.mono abbr + name) + .evm-value(.mono) + .evm-status + .evm-hint — structure from css/platform.css */
     function evmCell({ code, label, value, tone, statusLabel, formula, hint }) {
-      const cell = h('div', { class: ['summary-cell', 'evm-cell', `tone-${tone}`], 'data-metric': code });
-      cell.appendChild(h('span', { class: 'summary-label' }, mono(code), h('span', {}, label)));
-      cell.appendChild(h('span', { class: 'summary-value mono num' }, value));
-      cell.appendChild(h('div', { class: 'row wrap gap-2' }, toneBadge(statusLabel, tone), formulaHint(formula)));
-      if (hint) cell.appendChild(h('span', { class: 'text-xs muted' }, hint));
+      const cell = h('div', { class: ['evm-cell', `tone-${tone}`], 'data-tone': tone, 'data-metric': code });
+      cell.appendChild(h('span', { class: 'evm-label' }, h('abbr', { class: 'mono evm-abbr', title: label }, code), h('span', {}, label)));
+      cell.appendChild(h('span', { class: 'evm-value mono num' }, value));
+      cell.appendChild(h('span', { class: 'evm-status' }, toneBadge(statusLabel, tone), formulaHint(formula)));
+      if (hint) cell.appendChild(h('span', { class: 'evm-hint' }, hint));
       return cell;
     }
 
@@ -266,7 +267,7 @@ export default {
       if (!e) {
         return card({ code: 'CST-01', title: 'إدارة القيمة المكتسبة (EVM)', body: emptyState({ title: 'لا تتوفر بيانات القيمة المكتسبة', text: 'تأكد من اتصال موصل «Biltix — التكلفة والميزانية».' }) });
       }
-      const strip = h('div', { class: ['summary-strip', 'evm-strip'], role: 'group', 'aria-label': 'مؤشرات القيمة المكتسبة' },
+      const strip = h('div', { class: 'evm-strip', role: 'group', 'aria-label': 'مؤشرات القيمة المكتسبة' },
         evmCell({ code: 'CPI', label: 'مؤشر أداء التكلفة', value: ratio(e.CPI), tone: indexTone(e.CPI), statusLabel: cpiLabel(e.CPI), formula: 'CPI = EV / AC', hint: 'أعلى من 1 يعني إنفاقاً أقل من القيمة المُنجزة' }),
         evmCell({ code: 'SPI', label: 'مؤشر أداء الجدول', value: ratio(e.SPI), tone: indexTone(e.SPI), statusLabel: spiLabel(e.SPI), formula: 'SPI = EV / PV', hint: 'أقل من 1 يعني إنجازاً أبطأ من المخطط' }),
         evmCell({ code: 'EAC', label: 'التقدير عند الإنجاز', value: sar(e.EAC), tone: eacTone(e.EAC, e.BAC), statusLabel: eacLabel(e.EAC, e.BAC), formula: 'EAC = BAC / CPI', hint: `الميزانية عند الإنجاز (BAC): ${sar(e.BAC)}` }),

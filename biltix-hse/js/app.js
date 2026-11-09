@@ -469,18 +469,47 @@ function setFeedOpen(open) {
 
 const FEED_ICONS = {
   sensor: 'sensor', permit: 'permit', incident: 'incident', nearmiss: 'nearmiss', inspection: 'inspection',
-  training: 'training', integration: 'integration', ppe: 'ppe', weather: 'weather', alert: 'alert',
+  training: 'training', integration: 'integration', ppe: 'ppe', weather: 'weather', alert: 'alert', risk: 'risk',
+  // Part B (§B6) event types
+  ai: 'ai', validation: 'badge-check', connector: 'integration', writeback: 'sync', task: 'file-check',
 };
 const FEED_TYPE_LABELS = {
   sensor: 'حسّاس', permit: 'تصريح عمل', incident: 'حادث', nearmiss: 'حادث وشيك', inspection: 'تفتيش',
-  training: 'تدريب', integration: 'تكامل', ppe: 'معدات الوقاية', weather: 'طقس', alert: 'تنبيه',
+  training: 'تدريب', integration: 'تكامل', ppe: 'معدات الوقاية', weather: 'طقس', alert: 'تنبيه', risk: 'مخاطرة',
+  ai: 'محرك الذكاء الاصطناعي', validation: 'طبقة التحقق', connector: 'موصل مؤسسي', writeback: 'كتابة عكسية', task: 'مهمة معالجة',
+};
+/** Where a click on a feed item of this type should go (platform events carry refId). */
+const FEED_ROUTES = {
+  ai: (ev) => ['airisks', { risk: ev.refId }],
+  task: (ev) => ['tasks', { id: ev.refId }],
+  writeback: (ev) => ['tasks', { id: ev.refId }],
+  connector: () => ['integrations', {}],
+  validation: () => ['dataquality', {}],
 };
 const feedTimes = new Set();
+
+/** Resolve a feed sourceId to a display name: Part A integrations, platform connectors or pipelines. */
+function feedSourceName(sourceId) {
+  if (!sourceId) return '';
+  const integ = ((store.state && store.state.integrations) || []).find((i) => i && i.id === sourceId);
+  if (integ) return integ.name || '';
+  const conn = platformList('connectors').find((c) => c && c.id === sourceId);
+  if (conn) return conn.name || '';
+  const pipe = platformList('pipelines').find((p) => p && p.id === sourceId);
+  if (pipe) return pipe.nameAr || pipe.name || '';
+  return '';
+}
 
 function feedItem(ev, { fresh = false } = {}) {
   const tone = toneOf(ev.tone || 'neutral');
   const type = FEED_ICONS[ev.type] ? ev.type : 'alert';
-  const li = h('li', { class: ['feed-item', `tone-${tone}`, `type-${type}`, fresh ? 'is-new' : null], 'data-id': ev.id || undefined, 'data-type': type });
+  const route = FEED_ROUTES[type] && viewById(FEED_ROUTES[type](ev)[0]) && (type === 'connector' || type === 'validation' || ev.refId) ? FEED_ROUTES[type](ev) : null;
+  const li = h('li', {
+    class: ['feed-item', `tone-${tone}`, `type-${type}`, fresh ? 'is-new' : null, route ? 'is-clickable' : null],
+    'data-id': ev.id || undefined, 'data-type': type, tabindex: route ? '0' : undefined, role: route ? 'link' : undefined,
+    onClick: route ? () => router.navigate(route[0], route[1]) : undefined,
+    onKeydown: route ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); router.navigate(route[0], route[1]); } } : undefined,
+  });
   li.appendChild(h('span', { class: ['feed-tone', `tone-${tone}`], 'aria-hidden': 'true' }));
   li.appendChild(h('span', { class: 'feed-icon', 'aria-hidden': 'true' }, iconFor(FEED_ICONS[type], 16, tone)));
   const body = h('div', { class: 'feed-body' });
@@ -496,10 +525,8 @@ function feedItem(ev, { fresh = false } = {}) {
   meta.appendChild(h('span', { class: 'feed-type' }, FEED_TYPE_LABELS[type]));
   const site = siteById(ev.siteId);
   if (site) meta.appendChild(h('span', { class: 'feed-site' }, site.name));
-  if (ev.sourceId) {
-    const integ = ((store.state && store.state.integrations) || []).find((i) => i.id === ev.sourceId);
-    if (integ) meta.appendChild(h('span', { class: 'feed-source' }, integ.name));
-  }
+  const sourceName = feedSourceName(ev.sourceId);
+  if (sourceName) meta.appendChild(h('span', { class: 'feed-source' }, sourceName));
   body.appendChild(meta);
   li.appendChild(body);
   li.setAttribute('aria-label', `${FEED_TYPE_LABELS[type]}: ${ev.title || ''}`);
@@ -574,8 +601,15 @@ function openFeedArchive() {
   d.open();
 }
 
+function canExport() {
+  if (sources && typeof sources.exportJSON === 'function') return true;
+  toast('وحدة التصدير غير متاحة حاليًا.', { tone: 'warning', timeout: 3500 });
+  return false;
+}
+
 function exportFeed(items) {
-  try { sources.exportJSON({ exportedAt: new Date().toISOString(), count: items.length, feed: items }, 'biltix-hse-feed.json'); toast('تم تصدير سجل البث بصيغة JSON.', { tone: 'good' }); }
+  if (!canExport()) return;
+  try { sources.exportJSON({ exportedAt: new Date().toISOString(), count: items.length, feed: items }, 'biltix-risk-ai-feed.json'); toast('تم تصدير سجل البث بصيغة JSON.', { tone: 'good' }); }
   catch (err) { reportError(err, 'exportFeed'); }
 }
 
@@ -625,11 +659,12 @@ function startClock() {
 /* Integrations pill                                                   */
 /* ------------------------------------------------------------------ */
 
+/** Counts Part A integrations AND platform connectors (§B7). */
 function refreshIntegrationsPill() {
   const pill = $('integrationsPill');
   const count = $('integrationsCount');
   if (!pill || !count) return;
-  const list = (store.state && store.state.integrations) || [];
+  const list = [...((store.state && store.state.integrations) || []), ...platformList('connectors')].filter(Boolean);
   const connected = list.filter((i) => i.status === 'connected').length;
   const degraded = list.filter((i) => i.status === 'degraded').length;
   const down = list.filter((i) => i.status === 'disconnected').length;
@@ -638,10 +673,10 @@ function refreshIntegrationsPill() {
   pill.dataset.tone = tone;
   const dot = pill.querySelector('.live-dot');
   if (dot) { TONES.forEach((t) => dot.classList.remove(`tone-${t}`)); dot.classList.add(`tone-${tone === 'good' ? 'accent' : tone}`); }
-  const parts = [`${fmt.num(connected)} من ${fmt.num(list.length)} تكاملًا متصلًا`];
+  const parts = [`${fmt.num(connected)} من ${fmt.num(list.length)} تكاملًا وموصلًا متصلًا`];
   if (degraded) parts.push(`${fmt.num(degraded)} متدهور`);
   if (down) parts.push(`${fmt.num(down)} منقطع`);
-  pill.setAttribute('aria-label', `حالة التكاملات: ${parts.join('، ')}`);
+  pill.setAttribute('aria-label', `حالة التكاملات والموصلات: ${parts.join('، ')}`);
   pill.title = parts.join(' · ');
 }
 
@@ -650,7 +685,65 @@ function buildIntegrationsPill() {
   if (pill) pill.addEventListener('click', () => router.navigate('integrations'));
   refreshIntegrationsPill();
   on('integrations:tick', refreshIntegrationsPill);
-  on('store:change', (p) => { if (!p || !p.path || String(p.path).startsWith('integrations')) refreshIntegrationsPill(); });
+  on('store:change', (p) => {
+    const path = p && p.path ? String(p.path) : '*';
+    if (path === '*' || path.startsWith('integrations') || path.startsWith('platform.connectors')) refreshIntegrationsPill();
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Consolidated score pill (§B7) — #scorePill → cockpit                 */
+/* ------------------------------------------------------------------ */
+
+let scorePillFrame = 0;
+
+function refreshScorePill() {
+  const pill = $('scorePill');
+  if (!pill) return;
+  const hasData = typeof store.hasPlatformData === 'function' ? store.hasPlatformData() : platformList('aiRisks').length > 0;
+  if (!psel || typeof psel.consolidatedScore !== 'function' || !hasData) { pill.hidden = true; return; }
+  let data = null;
+  try { data = psel.consolidatedScore(store.state, filters()); } catch (err) { reportError(err, 'psel.consolidatedScore'); pill.hidden = true; return; }
+  const score = data && Number.isFinite(Number(data.score)) ? Math.round(Number(data.score)) : null;
+  if (score === null) { pill.hidden = true; return; }
+  const rating = RATINGS.includes(data.rating) ? data.rating : ratingOf(score);
+  const label = ratingLabel(rating);
+  pill.hidden = false;
+  pill.dataset.rating = rating;
+  const value = $('scoreValue');
+  if (value) value.textContent = fmt.num(score);
+  const labelEl = $('scoreLabel');
+  if (labelEl) labelEl.textContent = `الدرجة الموحدة · ${label}`;
+  const deltaEl = $('scoreDelta');
+  const delta = data && Number.isFinite(Number(data.delta)) ? Number(data.delta) : 0;
+  if (deltaEl) {
+    const show = delta !== 0;
+    deltaEl.hidden = !show;
+    deltaEl.textContent = show ? fmt.signed(delta) : '';
+    deltaEl.classList.toggle('is-up', delta > 0);
+    deltaEl.classList.toggle('is-down', delta < 0);
+  }
+  const deltaText = delta !== 0 ? `، التغير مقارنة بالفترة السابقة ${fmt.signed(delta)}` : '';
+  pill.setAttribute('aria-label', `الدرجة الموحدة للمخاطر ${fmt.num(score)} من 100 — تصنيف ${label}${deltaText}. فتح قمرة القيادة`);
+  pill.title = `الدرجة الموحدة ${fmt.num(score)}/100 · ${label}${deltaText} — فتح قمرة القيادة`;
+}
+
+function scheduleScorePill() {
+  if (scorePillFrame) return;
+  scorePillFrame = requestAnimationFrame(() => { scorePillFrame = 0; refreshScorePill(); });
+}
+
+function buildScorePill() {
+  const pill = $('scorePill');
+  if (!pill) return;
+  pill.addEventListener('click', () => router.navigate(viewById('cockpit') ? 'cockpit' : FALLBACK_VIEW));
+  refreshScorePill();
+  on('store:change', (p) => {
+    const path = p && p.path ? String(p.path) : '*';
+    if (path === '*' || path.startsWith('platform') || path === 'settings') scheduleScorePill();
+  });
+  on('filters:change', scheduleScorePill);
+  on('settings:change', scheduleScorePill);
 }
 
 /* ------------------------------------------------------------------ */
@@ -732,7 +825,11 @@ function showBanner(a) {
   if (detailParts.length) text.appendChild(h('span', { class: 'alert-banner-detail' }, detailParts.join(' — ')));
   banner.appendChild(text);
   const actions = h('div', { class: 'alert-banner-actions' });
-  actions.appendChild(button('فتح الرادار', { variant: 'outline', size: 'sm', onClick: () => { hideBanner(); router.navigate('radar', a.siteId ? { site: a.siteId } : {}); } }));
+  if (a.riskId && viewById('airisks')) {
+    actions.appendChild(button('فتح المخاطرة', { variant: 'outline', size: 'sm', onClick: () => { hideBanner(); router.navigate('airisks', { risk: a.riskId }); } }));
+  } else {
+    actions.appendChild(button('فتح الرادار', { variant: 'outline', size: 'sm', onClick: () => { hideBanner(); router.navigate('radar', a.siteId ? { site: a.siteId } : {}); } }));
+  }
   actions.appendChild(button('', { variant: 'ghost', size: 'sm', icon: glyph('close', 16), onClick: hideBanner, attrs: { 'aria-label': 'إغلاق التنبيه' } }));
   banner.appendChild(actions);
   banner.hidden = false;

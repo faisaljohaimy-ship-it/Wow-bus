@@ -606,10 +606,11 @@ export default {
       const bodyWrap = h('div', { class: 'table-wrap' }, kris.length ? table : emptyState({ title: 'مصفوفة المؤشرات غير متاحة', text: 'لم تُحمَّل بيانات خط أنابيب محرك العقود بعد.' }));
       const toggle = button(kriOpen ? 'طيّ' : 'عرض', { variant: 'ghost', size: 'sm', icon: glyph('chevronDown', 14), attrs: { 'aria-expanded': kriOpen ? 'true' : 'false', 'aria-controls': 'ct-kri-body' } });
       const el = card({
-        code: 'CT-06', title: 'مصفوفة مؤشرات المخاطر والمعالجة', className: 'col-span-12 kri-card',
+        code: 'CT-06', title: 'مصفوفة مؤشرات المخاطر والمعالجة', className: 'col-span-12',
         subtitle: pipeline ? `${pipeline.nameAr || pipeline.name} · ${pipeline.version || ''} · ${fmt.num(kris.length)} مؤشرات رئيسية (KRIs) من المقترح` : 'محرك العقود NLP',
         actions: [toggle], body: bodyWrap,
       });
+      el.classList.add('kri-card');
       const bodyEl = el.querySelector('.card-body');
       if (bodyEl) { bodyEl.id = 'ct-kri-body'; bodyEl.hidden = !kriOpen; }
       toggle.addEventListener('click', () => {
