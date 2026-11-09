@@ -206,8 +206,7 @@ export default {
       const weakest = items[0];
       return card({
         code: 'DQ-02', title: 'معدل الاجتياز حسب المصدر', subtitle: weakest ? `الأدنى أولاً — «${weakest.label}» يحتاج تنظيفاً عند المنبع` : 'الأدنى أولاً — المصادر التي تحتاج تنظيفاً عند المنبع',
-        className: 'col-span-5',
-        actions: weakest ? [badge(`الأدنى ${fmt.pct(weakest.value, 1)}`, pctTone(weakest.value))] : [],
+        className: 'col-span-6',
         body: items.length ? chartOr(chart) : emptyState({ title: 'لا توجد مصادر' }),
         tableView: items.length ? tableOf(chart, () => simpleTable(['المصدر', 'معدل الاجتياز'], items.map((i) => [i.label, fmt.pct(i.value, 1)]))) : null,
       });
@@ -234,7 +233,7 @@ export default {
       });
       return card({
         code: 'DQ-03', title: 'قواعد التحقق', subtitle: 'كل قاعدة تُطبَّق على كل سجل قبل البوابة — عطّل قاعدة لتجاوز فحصها مؤقتاً',
-        className: 'col-span-7',
+        className: 'col-span-6',
         actions: [badge(`${fmt.num(data.enabledRules)} / ${fmt.num(rows.length)} مفعّلة`, data.enabledRules === rows.length ? 'good' : 'warning'), h('span', { class: 'text-sm muted' }, `${fmt.num(data.hitsToday)} إصابة اليوم`)],
         body: table.el,
       });

@@ -374,7 +374,8 @@ export default {
 
     function buildChangeOrdersCard(data) {
       const parts = data.coByStatus.filter((p) => p.amount > 0).map((p) => ({ id: p.id, label: p.label, value: p.amount, color: p.color }));
-      const seg = parts.length ? makeChart('segmentedBar', { parts, tall: true, valueFormat: (v) => fmt.compact(v), ariaLabel: 'قيمة أوامر التغيير حسب الحالة' }) : null;
+      const millions = (v) => fmt.num(v / 1e6, { maximumFractionDigits: 1 });
+      const seg = parts.length ? makeChart('segmentedBar', { parts, tall: true, valueFormat: millions, ariaLabel: 'قيمة أوامر التغيير حسب الحالة (بملايين الريالات)' }) : null;
       const strip = h('div', { class: 'summary-strip' },
         h('div', { class: 'summary-cell' }, h('span', { class: 'summary-label' }, 'زحف التكلفة (معتمد ÷ قيمة العقد)'), h('span', { class: ['summary-value', 'mono', 'num'] }, fmt.pct(data.creepPct, 1)), toneBadge(data.creepPct > 5 ? 'تجاوز حد التحمل' : (data.creepPct > 2.5 ? 'يقترب من الحد' : 'ضمن حد التحمل'), data.creepPct > 5 ? 'critical' : (data.creepPct > 2.5 ? 'warning' : 'good'))),
         h('div', { class: 'summary-cell' }, h('span', { class: 'summary-label' }, 'قيد الاعتماد'), h('span', { class: ['summary-value', 'mono', 'num'] }, sar(data.pendingCO ? data.pendingCO.amount : 0)), h('span', { class: 'text-xs muted' }, `${fmt.num(data.pendingCO ? data.pendingCO.count : 0)} أوامر`)),
@@ -395,7 +396,7 @@ export default {
       return card({
         code: 'CST-05', title: 'زحف أوامر التغيير', subtitle: 'توزيع القيمة حسب الحالة وأحدث الأوامر',
         className: 'col-span-7',
-        body: h('div', { class: 'stack gap-4' }, strip, seg ? seg.el : null, table.el),
+        body: h('div', { class: 'stack gap-4' }, strip, seg ? h('div', { class: 'stack gap-1' }, h('span', { class: 'text-xs muted' }, 'توزيع القيمة حسب الحالة — بملايين الريالات'), seg.el) : null, table.el),
         tableView: parts.length ? tableOf(seg, () => simpleTable(['الحالة', 'العدد', 'القيمة'], data.coByStatus.map((p) => [p.label, fmt.num(p.count), sar(p.amount)]))) : null,
       });
     }
