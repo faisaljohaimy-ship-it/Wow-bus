@@ -379,7 +379,10 @@ export default {
 
       const series = Array.isArray(c.series) ? c.series.map(num) : [];
       const forecast = Array.isArray(c.forecast) ? c.forecast.map(num) : [];
-      const labels = monthLabels(series.length, forecast.length);
+      const fromSeed = Array.isArray(c.months) && c.months.length === series.length && Array.isArray(c.forecastMonths) && c.forecastMonths.length === forecast.length
+        ? c.months.concat(c.forecastMonths).map((ym) => { const m = /^(\d{4})-(\d{2})$/.exec(String(ym)); return m ? `${MONTHS_SHORT[Number(m[2]) - 1] || m[2]} ${m[1].slice(2)}` : String(ym); })
+        : null;
+      const labels = fromSeed || monthLabels(series.length, forecast.length);
       const actualValues = series.concat(new Array(forecast.length).fill(null));
       const forecastValues = new Array(Math.max(0, series.length - 1)).fill(null).concat(series.length ? [series[series.length - 1]] : []).concat(forecast);
       const chart = series.length ? makeChart('lineChart', {
@@ -405,15 +408,21 @@ export default {
         fact('التوقع لـ 6 أشهر', h('span', { class: 'row gap-2', style: { alignItems: 'center' } }, mono(`${fmt.signed(change6, 1)}%`), trendBadge(c.trend)), `إلى ${fmt.num(end, { maximumFractionDigits: 1 })} ر.س / ${c.unit || 'وحدة'}`),
       );
       const body = h('div', { class: 'stack gap-3' },
+        h('div', { class: 'row between wrap gap-2', style: { alignItems: 'center' } },
+          h('span', { class: 'text-xs muted' }, 'السلعة'),
+          h('div', { class: 'row wrap gap-2', style: { minInlineSize: 0, maxInlineSize: '100%', overflowX: 'auto' } }, seg.el),
+        ),
         chart ? chart.el : fallback(),
         facts,
         h('p', { class: 'text-xs muted' }, 'السلسلة الزرقاء هي الأسعار التاريخية الشهرية؛ السلسلة البرتقالية «توقع» ناتجة من نموذج السلاسل الزمنية لمحرك BoM وتبدأ من آخر سعر فعلي. مؤشرات السلع على مستوى المحفظة ولا تتأثر بفلتر المشروع.'),
       );
-      return card({
+      const el = card({
         code: 'BOM-01', title: 'أسعار السلع والتوقعات', className: 'col-span-8',
         subtitle: `${c.name} — ${fmt.num(series.length)} شهراً فعلياً + ${fmt.num(forecast.length)} أشهر توقع`,
-        actions: [seg.el], body, tableView: tableOf(chart, fallback),
+        body, tableView: tableOf(chart, fallback),
       });
+      el.dataset.section = 'commodity';
+      return el;
     }
 
     function buildExposureCard(data) {
@@ -422,18 +431,23 @@ export default {
         const spark = makeChart('sparkline', { values: (c.series || []).map(num), width: 88, height: 26, color: 'var(--ink-3)', accentLast: true });
         const active = c.id === selectedCommodityId;
         const vol = num(c.volatilityPct);
-        return h('li', {}, h('button', {
-          type: 'button', class: ['urgent-item', active ? 'is-selected' : null], 'aria-pressed': active ? 'true' : 'false',
-          style: { inlineSize: '100%', textAlign: 'start', cursor: 'pointer', font: 'inherit', color: 'inherit', background: active ? 'color-mix(in srgb, var(--brand) 10%, transparent)' : undefined, borderColor: active ? 'color-mix(in srgb, var(--brand) 45%, var(--line))' : undefined },
-          onClick: () => { selectedCommodityId = c.id; schedule(); },
+        const pick = h('button', {
+          type: 'button', class: 'btn btn-ghost btn-sm', 'aria-pressed': active ? 'true' : 'false',
+          style: { blockSize: 'auto', padding: 0, justifyContent: 'flex-start', textAlign: 'start', whiteSpace: 'normal', fontSize: 'var(--fs-sm)', fontWeight: 600, color: active ? 'var(--brand)' : 'var(--ink-1)' },
+          onClick: () => { selectedCommodityId = c.id; schedule(); const t = root.querySelector('[data-section="commodity"]'); if (t && window.innerWidth < 960) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+        }, c.name);
+        return h('li', {
+          class: ['urgent-item', `tone-${(TREND_META[c.trend] || TREND_META['مستقر']).tone}`, active ? 'is-selected' : null],
+          'aria-current': active ? 'true' : undefined,
+          style: active ? { background: 'color-mix(in srgb, var(--brand) 10%, transparent)', borderColor: 'color-mix(in srgb, var(--brand) 45%, var(--line))' } : undefined,
         },
         h('span', { class: 'urgent-icon' }, glyph((TREND_META[c.trend] || TREND_META['مستقر']).glyph, 15)),
-        h('span', { class: 'urgent-text' },
-          h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, h('span', { class: 'semibold' }, c.name), trendBadge(c.trend)),
+        h('div', { class: 'urgent-text' },
+          h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, pick, trendBadge(c.trend)),
           h('span', { class: 'urgent-sub' }, `تقلب ${fmt.pct(vol, 1)} · التعرض ${sar(c.exposureSAR)}`),
         ),
-        h('span', { class: 'urgent-due' }, spark ? spark.el : mono(fmt.num((c.series || []).slice(-1)[0], { maximumFractionDigits: 1 }))),
-        ));
+        h('div', { class: 'urgent-due' }, spark ? spark.el : mono(fmt.num((c.series || []).slice(-1)[0], { maximumFractionDigits: 1 }))),
+        );
       }));
       const fallback = () => simpleTable('التعرض حسب السلعة', ['السلعة', 'الاتجاه', 'التقلب', 'التعرض'], rows.map((c) => [c.name, c.trend || '—', fmt.pct(num(c.volatilityPct), 1), sar(c.exposureSAR)]));
       return card({

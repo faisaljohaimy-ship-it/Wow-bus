@@ -119,7 +119,8 @@ export default {
       const bySource = (Array.isArray(summary.bySource) && summary.bySource.length ? summary.bySource : sourcesList).map((s) => ({ ...s, passRatePct: num(s.passRatePct, num(s.recordsIn) ? (num(s.passed) / num(s.recordsIn)) * 100 : 0) }));
       const sourceName = (id) => { const s = sourcesList.find((x) => x.id === id); return s ? s.name : (id || '—'); };
 
-      const reasons = Object.values(quarantine.filter((q) => q.status === 'معلّق').reduce((acc, q) => { const k = q.reason || 'غير محدد'; acc[k] = acc[k] || { id: k, label: k, value: 0 }; acc[k].value += 1; return acc; }, {})).sort((a, b) => b.value - a.value);
+      // Pending quarantine records grouped by source (reasons are free text, one per record — too long for a legend).
+      const reasons = Object.values(quarantine.filter((q) => q.status === 'معلّق').reduce((acc, q) => { const k = q.sourceId || 'unknown'; acc[k] = acc[k] || { id: k, label: sourceName(q.sourceId), value: 0 }; acc[k].value += 1; return acc; }, {})).sort((a, b) => b.value - a.value);
       const enabledRules = rules.filter((r) => r.enabled !== false).length;
       const hitsToday = rules.reduce((a, r) => a + num(r.hitsToday), 0);
       const lastBatch = sourcesList.map((s) => Date.parse(s.lastBatch) || 0).reduce((a, b) => Math.max(a, b), 0);
@@ -206,7 +207,7 @@ export default {
       const weakest = items[0];
       return card({
         code: 'DQ-02', title: 'معدل الاجتياز حسب المصدر', subtitle: weakest ? `الأدنى أولاً — «${weakest.label}» يحتاج تنظيفاً عند المنبع` : 'الأدنى أولاً — المصادر التي تحتاج تنظيفاً عند المنبع',
-        className: 'col-span-6',
+        className: 'col-span-5',
         body: items.length ? chartOr(chart) : emptyState({ title: 'لا توجد مصادر' }),
         tableView: items.length ? tableOf(chart, () => simpleTable(['المصدر', 'معدل الاجتياز'], items.map((i) => [i.label, fmt.pct(i.value, 1)]))) : null,
       });
@@ -232,9 +233,9 @@ export default {
         rows, initialSort: { key: 'hitsToday', dir: 'desc' },
       });
       return card({
-        code: 'DQ-03', title: 'قواعد التحقق', subtitle: 'كل قاعدة تُطبَّق على كل سجل قبل البوابة — عطّل قاعدة لتجاوز فحصها مؤقتاً',
-        className: 'col-span-6',
-        actions: [badge(`${fmt.num(data.enabledRules)} / ${fmt.num(rows.length)} مفعّلة`, data.enabledRules === rows.length ? 'good' : 'warning'), h('span', { class: 'text-sm muted' }, `${fmt.num(data.hitsToday)} إصابة اليوم`)],
+        code: 'DQ-03', title: 'قواعد التحقق', subtitle: `${fmt.num(data.hitsToday)} إصابة اليوم — كل قاعدة تُطبَّق على كل سجل قبل البوابة؛ عطّل قاعدة لتجاوز فحصها مؤقتاً`,
+        className: 'col-span-7',
+        actions: [badge(`${fmt.num(data.enabledRules)} / ${fmt.num(rows.length)} مفعّلة`, data.enabledRules === rows.length ? 'good' : 'warning')],
         body: table.el,
       });
     }
@@ -275,7 +276,7 @@ export default {
         return h('button', { type: 'button', class: ['chip', 'is-sm', tone ? `tone-${tone}` : null, active ? 'is-active' : null], 'aria-pressed': active ? 'true' : 'false', onClick: () => { quarantineFilter = f.value; quarantineLimit = Q_PAGE; schedule(); } }, tone ? glyph(tone, 12) : null, h('span', {}, f.label), h('span', { class: 'chip-count' }, fmt.num(counts[f.value])));
       }));
 
-      const reasonsSeg = data.reasons.length ? makeChart('segmentedBar', { parts: data.reasons.slice(0, 6).map((r, i) => ({ id: r.id, label: r.label, value: r.value, color: safe(() => charts.paletteFor(i), `var(--s${i + 1})`) })), tall: false, valueFormat: (v) => fmt.num(v), ariaLabel: 'أسباب الحجر للسجلات المعلّقة' }) : null;
+      const reasonsSeg = data.reasons.length ? makeChart('segmentedBar', { parts: data.reasons.slice(0, 8).map((r, i) => ({ id: r.id, label: r.label, value: r.value, color: safe(() => charts.paletteFor(i), `var(--s${i + 1})`) })), tall: false, valueFormat: (v) => fmt.num(v), ariaLabel: 'السجلات المعلّقة حسب المصدر' }) : null;
 
       const shown = filtered.slice(0, quarantineLimit);
       const list = shown.length
@@ -290,11 +291,11 @@ export default {
         actions: [badge(counts['معلّق'] ? `${fmt.num(counts['معلّق'])} معلّقة` : 'لا سجلات معلّقة', counts['معلّق'] ? 'warning' : 'good')],
         body: h('div', { class: 'stack gap-3' },
           chips,
-          reasonsSeg ? h('div', { class: 'stack gap-1' }, h('span', { class: 'text-xs muted' }, 'أسباب الحجر للسجلات المعلّقة'), reasonsSeg.el) : null,
+          reasonsSeg ? h('div', { class: 'stack gap-1' }, h('span', { class: 'text-xs muted' }, 'السجلات المعلّقة حسب المصدر'), reasonsSeg.el) : null,
           list,
           more,
         ),
-        tableView: reasonsSeg ? tableOf(reasonsSeg, () => simpleTable(['السبب', 'العدد'], data.reasons.map((r) => [r.label, fmt.num(r.value)]))) : null,
+        tableView: reasonsSeg ? tableOf(reasonsSeg, () => simpleTable(['المصدر', 'المعلّقة'], data.reasons.map((r) => [r.label, fmt.num(r.value)]))) : null,
         footer: h('p', { class: 'text-xs muted' }, 'كل قرار تصحيح أو رفض يُسجَّل في سجل التدقيق (إجراء «تحقق») ويُغذّي إعادة معايرة قواعد التنظيف.'),
       });
     }

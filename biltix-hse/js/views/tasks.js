@@ -154,6 +154,14 @@ export default {
     const addTimer = (fn, ms) => { const id = setTimeout(() => { timers.delete(id); if (alive) fn(); }, ms); timers.add(id); return id; };
     const canStore = (name) => typeof store[name] === 'function';
     const requireStore = (name) => { if (canStore(name)) return true; toast(`الإجراء غير متاح: وظيفة المتجر ${name} غير محمّلة`, { tone: 'critical' }); return false; };
+    const overlays = new Set(); // open modals, closed on cleanup
+    function openModal(opts) {
+      let api = null;
+      api = modal({ ...opts, onClose: () => overlays.delete(api) });
+      overlays.add(api);
+      api.open();
+      return api;
+    }
 
     if (!psel) loadPsel().then((p) => { if (p && alive && !psel) { psel = p; schedule(); } });
 
@@ -293,9 +301,8 @@ export default {
         } catch (err) { warnOnce('store.updateTask', err); toast('تعذر إغلاق المهمة', { tone: 'critical' }); return false; }
         return undefined;
       };
-      const api = modal({ title: 'إغلاق المهمة', subtitle: `${task.code || ''} — ${task.title || ''}`, body: form, actions: [{ label: 'إلغاء', variant: 'ghost' }, { label: 'إغلاق المهمة', variant: 'primary', onClick: submit }] });
+      const api = openModal({ title: 'إغلاق المهمة', subtitle: `${task.code || ''} — ${task.title || ''}`, body: form, actions: [{ label: 'إلغاء', variant: 'ghost' }, { label: 'إغلاق المهمة', variant: 'primary', onClick: submit }] });
       form.addEventListener('submit', (e) => { e.preventDefault(); if (submit() !== false) api.close('action'); });
-      api.open();
     }
 
     function resync(task) {
@@ -340,9 +347,8 @@ export default {
         } catch (err) { warnOnce('store.addTask', err); toast('تعذر إضافة المهمة', { tone: 'critical' }); return false; }
         return undefined;
       };
-      const api = modal({ title: 'مهمة معالجة يدوية', subtitle: 'تُضاف بمصدر «يدوية» وتظهر في عمود «جديدة»', body: form, actions: [{ label: 'إلغاء', variant: 'ghost' }, { label: 'إضافة المهمة', variant: 'primary', onClick: submit }] });
+      const api = openModal({ title: 'مهمة معالجة يدوية', subtitle: 'تُضاف بمصدر «يدوية» وتظهر في عمود «جديدة»', body: form, actions: [{ label: 'إلغاء', variant: 'ghost' }, { label: 'إضافة المهمة', variant: 'primary', onClick: submit }] });
       form.addEventListener('submit', (e) => { e.preventDefault(); if (submit() !== false) api.close('action'); });
-      api.open();
     }
 
     /* ---------------- drawer ---------------- */
@@ -469,8 +475,9 @@ export default {
 
     subs.push(bus.on('store:change', (payload) => {
       const path = payload && typeof payload.path === 'string' ? payload.path : '*';
-      if (path.startsWith('feed')) return;
-      if (/validation|pipelines|connectors|quarantine|auditLog/.test(path) && !/tasks|aiRisks/.test(path)) return;
+      // only platform entities, settings and site names feed this view; Part A live ticks are ignored
+      if (path !== '*' && !/^(platform|settings|sites)/.test(path)) return;
+      if (/^platform\.(validation|pipelines|connectors|auditLog|alerts)/.test(path)) return;
       schedule();
     }));
     subs.push(bus.on('filters:change', schedule));
@@ -484,6 +491,8 @@ export default {
       timers.forEach((id) => clearTimeout(id));
       timers.clear();
       subs.splice(0).forEach((unsub) => { try { unsub(); } catch { /* ignore */ } });
+      Array.from(overlays).forEach((o) => { try { o.close('navigate'); } catch { /* ignore */ } });
+      overlays.clear();
       if (drawerState && drawerState.api) {
         const api = drawerState.api;
         drawerState = null;

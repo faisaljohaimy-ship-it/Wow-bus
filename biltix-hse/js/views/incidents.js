@@ -85,6 +85,27 @@ function touches(path, prefix) {
   return p === prefix || p.startsWith(`${prefix}.`);
 }
 
+/** Id of the focused element inside `root` (so a repaint can hand focus back to its twin). */
+function focusedIdWithin(root) {
+  const a = document.activeElement;
+  return a && root && root.contains(a) && a.id ? a.id : null;
+}
+
+/**
+ * After a drawer repaint, keep keyboard focus inside the dialog so Esc / Tab keep working:
+ * the same control by id, else the first visible footer action, else the dialog itself.
+ */
+function restoreFocus(api, id) {
+  if (!api || typeof api.isOpen !== 'function' || !api.isOpen()) return;
+  const root = api.el;
+  const a = document.activeElement;
+  if (a && a !== document.body && root.contains(a) && !a.hidden && a.getClientRects().length) return;
+  let target = null;
+  if (id) { try { target = root.querySelector(`#${CSS.escape(id)}`); } catch { target = null; } }
+  if (!target) target = root.querySelector('.drawer-foot button:not([hidden])') || root;
+  try { target.focus({ preventScroll: true }); } catch { /* ignore */ }
+}
+
 function parseDate(value) {
   if (!value) return NaN;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value));
@@ -485,6 +506,7 @@ export const incidentsView = {
 
       const paint = () => {
         const inc = findIncident(id);
+        const focusId = focusedIdWithin(api.el);
         clear(body);
         if (!inc) { body.appendChild(emptyState({ title: 'تم حذف هذا الحادث' })); nextBtn.disabled = true; return; }
         const st = state();
@@ -547,6 +569,7 @@ export const incidentsView = {
         prog.appendChild(progress({ value: done, max: Math.max(actions.length, 1), tone: actions.length && done === actions.length ? 'good' : null, label: 'إنجاز الإجراءات التصحيحية' }));
         prog.appendChild(h('span', { class: 'progress-value' }, actions.length ? `${fmt.num(done)}/${fmt.num(actions.length)}` : '—'));
         body.appendChild(section(`الإجراءات التصحيحية (${fmt.num(done)} من ${fmt.num(actions.length)})`, prog, checklist));
+        restoreFocus(api, focusId);
       };
 
       paint();

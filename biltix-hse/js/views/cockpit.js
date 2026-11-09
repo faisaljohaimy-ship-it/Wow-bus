@@ -58,7 +58,7 @@ const OPEN_RISK_STATUSES = new Set(['مكتشف', 'تنبيه', 'مهمة مُس
 const PIPELINE_STATUS = {
   running: { label: 'يعمل', tone: 'good' },
   idle: { label: 'خامل', tone: 'neutral' },
-  training: { label: 'قيد التدريب', tone: 'accent' },
+  training: { label: 'تدريب', tone: 'accent' },
   degraded: { label: 'متدهور', tone: 'warning' },
 };
 const EVM_TONE = { 'ضمن الميزانية': 'good', 'تحذير': 'warning', 'تجاوز': 'critical' };
@@ -489,14 +489,11 @@ export default {
         rows: d.red, rowKey: 'id', pageSize: 8, dense: true, emptyText: 'لا توجد مخاطر حمراء مفتوحة ضمن عوامل التصفية الحالية',
         onRowClick: (row) => navigate('airisks', { risk: row.id }),
         columns: [
-          { key: 'code', label: 'الرمز', width: 96, mono: true },
-          { key: 'title', label: 'المخاطرة', render: (r) => h('span', { class: 'semibold' }, r.title) },
+          { key: 'title', label: 'المخاطرة', width: 220, render: (r) => h('span', { class: 'stack gap-1', style: { minInlineSize: '200px' } }, h('span', { class: 'semibold' }, r.title), h('span', { class: 'mono text-xs muted', style: { whiteSpace: 'nowrap' } }, r.code)), sortValue: (r) => r.title },
           { key: 'projectId', label: 'المشروع', render: (r) => d.projectName(r.projectId), sortValue: (r) => d.projectName(r.projectId) },
-          { key: 'category', label: 'المجال', render: (r) => categoryChip(psel, r.category), sortValue: (r) => categoryLabel(psel, r.category) },
-          { key: 'type', label: 'النوع', render: (r) => typeChip(psel, r.type), sortValue: (r) => typeLabel(psel, r.type) },
-          { key: 'score', label: 'الدرجة', align: 'center', render: (r) => scoreNum(r.score, r.rating), sortValue: (r) => num(r.score) },
-          { key: 'rating', label: 'التصنيف', render: (r) => ratingBadge(psel, r.rating), sortValue: (r) => RATING_ORDER.indexOf(r.rating) },
-          { key: 'owner', label: 'المالك' },
+          { key: 'category', label: 'المجال / النوع', render: (r) => h('span', { class: 'stack gap-1', style: { alignItems: 'flex-start' } }, categoryChip(psel, r.category), typeChip(psel, r.type)), sortValue: (r) => `${categoryLabel(psel, r.category)} ${typeLabel(psel, r.type)}` },
+          { key: 'score', label: 'الدرجة والتصنيف', render: (r) => h('span', { class: 'row gap-2 score-cell' }, scoreNum(r.score, r.rating), ratingBadge(psel, r.rating)), sortValue: (r) => num(r.score) },
+          { key: 'owner', label: 'المالك', render: (r) => r.owner || '—' },
           { key: 'dueDate', label: 'الاستحقاق', render: (r) => dueCell(r.dueDate, d.now), sortValue: (r) => Date.parse(r.dueDate) || 0 },
         ],
       });
@@ -558,9 +555,11 @@ export default {
           type: 'button', class: ['pipe-mini', `tone-${tone}`], role: 'listitem', 'data-status': p.status || '', onClick: () => navigate('engine'),
           'aria-label': `${name}: ${status.label} — نسبة القبول ${fmt.pct(num(p.acceptanceRatePct))} — ${fmt.num(num(p.runsToday))} تشغيلاً اليوم — آخر تشغيل ${fmt.relative(p.lastRun)}. فتح محرك الذكاء الاصطناعي`,
         },
-        h('div', { class: 'pipe-mini-head' }, liveDot(tone), h('span', { class: 'grow truncate' }, name), badge(status.label, tone)),
-        h('div', { class: 'pipe-mini-meta' }, 'نسبة القبول ', h('span', { class: 'mono num' }, fmt.pct(num(p.acceptanceRatePct))), ' · تشغيلات اليوم ', h('span', { class: 'mono num' }, fmt.num(num(p.runsToday)))),
-        h('div', { class: 'pipe-mini-meta' }, 'آخر تشغيل ', h('span', { class: 'mono' }, fmt.relative(p.lastRun)), isNum(p.avgLatencyMs) ? h('span', {}, ' · ', h('span', { class: 'mono num' }, `${fmt.num(p.avgLatencyMs)} ms`)) : null, p.version ? h('span', {}, ' · ', h('span', { class: 'mono' }, p.version)) : null)));
+        h('div', { class: 'pipe-mini-head', style: { alignItems: 'flex-start' } }, liveDot(tone), h('span', { class: 'grow', style: { lineHeight: '1.3' } }, name)),
+        h('div', { class: 'row gap-2 wrap' }, badge(status.label, tone)),
+        h('div', { class: 'pipe-mini-meta' }, 'نسبة القبول ', h('span', { class: 'mono num' }, fmt.pct(num(p.acceptanceRatePct)))),
+        h('div', { class: 'pipe-mini-meta' }, h('span', { class: 'mono num' }, fmt.num(num(p.runsToday))), ' تشغيلاً اليوم · آخر تشغيل ', h('span', { class: 'mono' }, fmt.relative(p.lastRun))),
+        h('div', { class: 'pipe-mini-meta' }, p.version ? h('span', { class: 'mono' }, p.version) : null, isNum(p.avgLatencyMs) ? h('span', {}, p.version ? ' · ' : '', h('span', { class: 'mono num' }, `${fmt.num(p.avgLatencyMs)} ms`)) : null)));
       });
       return card({
         code: 'PLT-01', title: 'صحة خطوط المعالجة', subtitle: 'خمسة نماذج على طبقة تقييم وتفسير مشتركة — الحالة، آخر تشغيل، تشغيلات اليوم، ونسبة قبول التوصيات (الإنسان في الحلقة)',
@@ -689,7 +688,9 @@ export default {
 
     subs.push(bus.on('store:change', (payload) => {
       const path = payload && typeof payload.path === 'string' ? payload.path : '*';
-      if (path.startsWith('feed')) return; // the live feed changes nothing the cockpit shows
+      // only platform entities, settings (weights / numerals) and site names feed the cockpit;
+      // Part A live ticks (feed, permits, sensors, …) change every few seconds and are ignored
+      if (path !== '*' && !/^(platform|settings|sites)/.test(path)) return;
       schedule();
     }));
     subs.push(bus.on('filters:change', schedule));

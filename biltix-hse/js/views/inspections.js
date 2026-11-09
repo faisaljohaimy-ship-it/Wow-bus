@@ -72,6 +72,27 @@ function touches(path, prefix) {
   return p === prefix || p.startsWith(`${prefix}.`);
 }
 
+/** Id of the focused element inside `root` (so a repaint can hand focus back to its twin). */
+function focusedIdWithin(root) {
+  const a = document.activeElement;
+  return a && root && root.contains(a) && a.id ? a.id : null;
+}
+
+/**
+ * After a drawer repaint, keep keyboard focus inside the dialog so Esc / Tab keep working:
+ * the same control by id, else the first visible footer action, else the dialog itself.
+ */
+function restoreFocus(api, id) {
+  if (!api || typeof api.isOpen !== 'function' || !api.isOpen()) return;
+  const root = api.el;
+  const a = document.activeElement;
+  if (a && a !== document.body && root.contains(a) && !a.hidden && a.getClientRects().length) return;
+  let target = null;
+  if (id) { try { target = root.querySelector(`#${CSS.escape(id)}`); } catch { target = null; } }
+  if (!target) target = root.querySelector('.drawer-foot button:not([hidden])') || root;
+  try { target.focus({ preventScroll: true }); } catch { /* ignore */ }
+}
+
 function parseDate(value) {
   if (!value) return NaN;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value));
@@ -146,6 +167,36 @@ export const inspectionsView = {
     const globalFilters = () => ({ ...(store.filters || state().filters || {}) });
     const tableFilters = () => ({ ...globalFilters(), status: statusFilter === 'all' ? undefined : statusFilter, type: typeFilter === 'all' ? undefined : typeFilter });
     const findInspection = (id) => (state().inspections || []).find((i) => i && i.id === id) || null;
+
+    /** Completion % per site — core selector when present, else a local twin over the filtered rows. */
+    function completionBySite(st, f) {
+      if (typeof sel.inspectionCompletionBySite === 'function') {
+        try { return sel.inspectionCompletionBySite(st, f); } catch { /* fall through */ }
+      }
+      const rows = sel.filteredInspections(st, f);
+      return (st.sites || []).map((site) => {
+        const mine = rows.filter((r) => r.siteId === site.id);
+        const done = mine.filter((r) => r.status === DONE).length;
+        return { id: site.id, label: site.name, value: mine.length ? Math.round((done / mine.length) * 100) : 0, done, total: mine.length };
+      });
+    }
+
+    /** Open vs closed findings (+ by severity) — core selector when present, else a local twin. */
+    function findingsSummary(st, f) {
+      if (typeof sel.findingsSummary === 'function') {
+        try { return sel.findingsSummary(st, f); } catch { /* fall through */ }
+      }
+      let open = 0; let closed = 0; const bySeverity = {};
+      for (const ins of sel.filteredInspections(st, f)) {
+        for (const fd of (Array.isArray(ins.findings) ? ins.findings : [])) {
+          if (!fd) continue;
+          if (fd.status === FINDING_OPEN) open += 1; else closed += 1;
+          const s = fd.severity || 'غير محدد';
+          bySeverity[s] = (bySeverity[s] || 0) + 1;
+        }
+      }
+      return { open, closed, total: open + closed, bySeverity };
+    }
 
     /* ── skeleton ── */
     const root = h('section', { class: 'view view-inspections', 'aria-labelledby': 'inspections-title' });
@@ -255,7 +306,7 @@ export const inspectionsView = {
       const scheduled = rows.filter((r) => r.status === SCHEDULED).length;
       const done = rows.filter((r) => r.status === DONE);
       const overdue = rows.filter((r) => r.status === OVERDUE).length;
-      const findings = sel.findingsSummary(st, gf);
+      const findings = findingsSummary(st, gf);
       const scores = done.map((r) => Number(r.score)).filter(Number.isFinite);
       const mean = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
 
@@ -291,7 +342,7 @@ export const inspectionsView = {
       const st = state();
       const gf = { ...globalFilters(), type: typeFilter === 'all' ? undefined : typeFilter };
 
-      const completion = sel.inspectionCompletionBySite(st, gf).slice().sort((a, b) => b.value - a.value || b.total - a.total);
+      const completion = completionBySite(st, gf).slice().sort((a, b) => b.value - a.value || b.total - a.total);
       const withData = completion.filter((c) => c.total > 0);
       const completionTable = () => simpleTable('نسبة إنجاز التفتيش حسب الموقع', ['الموقع', 'المنجز', 'الإجمالي', 'النسبة'], completion.map((c) => [c.label, fmt.num(c.done), fmt.num(c.total), fmt.pct(c.value)]));
       const completionChart = withData.length
@@ -306,7 +357,7 @@ export const inspectionsView = {
         body: completionChart.el, tableView: completionChart.table,
       }));
 
-      const f = sel.findingsSummary(st, gf);
+      const f = findingsSummary(st, gf);
       const findingsTable = () => simpleTable('ملاحظات التفتيش', ['الحالة', 'العدد'], [['مفتوحة', fmt.num(f.open)], ['مغلقة', fmt.num(f.closed)]]);
       const findingsChart = f.total > 0
         ? safeChart(charts, 'segmentedBar', {
@@ -376,6 +427,7 @@ export const inspectionsView = {
 
       const paint = () => {
         const ins = findInspection(id);
+        const focusId = focusedIdWithin(api.el);
         clear(body);
         if (!ins) { body.appendChild(emptyState({ title: 'تم حذف هذا السجل' })); completeBtn.hidden = true; return; }
         const st = state();
@@ -414,13 +466,14 @@ export const inspectionsView = {
               h('span', { class: ['text-sm', isOpen ? null : 'muted'] }, f.text || '—'),
               h('div', { class: 'row wrap gap-2' },
                 badge(isOpen ? 'مفتوحة' : 'مغلقة', isOpen ? 'serious' : 'good'),
-                button(isOpen ? 'إغلاق الملاحظة' : 'إعادة فتح', { variant: 'ghost', size: 'sm', onClick: () => toggleFinding(id, f.id) })))));
+                button(isOpen ? 'إغلاق الملاحظة' : 'إعادة فتح', { variant: 'ghost', size: 'sm', attrs: { id: `fnd-${ins.id}-${f.id}` }, onClick: () => toggleFinding(id, f.id) })))));
         });
         body.appendChild(section(`الملاحظات (${fmt.num(open)} مفتوحة من ${fmt.num(findings.length)})`, ul));
 
         if (ins.status !== DONE) {
           body.appendChild(section('الإنجاز', h('p', { class: 'note tone-brand' }, 'عند تسجيل التفتيش كمنجز يُطلب إدخال الدرجة النهائية وعدد بنود قائمة التحقق المنجزة، وتتحدث مؤشرات الإنجاز فوراً.')));
         }
+        restoreFocus(api, focusId);
       };
 
       paint();

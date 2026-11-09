@@ -350,6 +350,18 @@ export default {
       });
     }
 
+    /** Status of a write-back audit entry: the linked task's writeback state (target like "MT-0224 → Biltix PM"), else inferred from the wording. */
+    function writebackStatusOf(data, e) {
+      const target = String(e.target || '');
+      const task = data.tasks.find((x) => (x.code && target.includes(x.code)) || (x.id && target === x.id));
+      if (task && task.writeback && WB_STATUS[task.writeback.status]) return task.writeback.status;
+      const text = `${target} ${e.detail || ''}`;
+      if (/فشل|تعذر|خطأ|انتهاء مهلة/.test(text)) return 'failed';
+      if (/قيد|سيعاد|بانتظار/.test(text)) return 'pending';
+      if (/تمت|نجاح|مزامن|محدَّث|تحديث/.test(text)) return 'synced';
+      return null;
+    }
+
     function writebackChip(status) {
       const s = WB_STATUS[status] || { label: 'مُسجَّل', tone: 'brand' };
       return h('span', { class: 'writeback-chip', 'data-status': WB_STATUS[status] ? status : undefined }, glyph(s.tone, 11), h('span', {}, s.label));
@@ -364,14 +376,13 @@ export default {
           { key: 'actor', label: 'المنفّذ', render: (e) => e.actor || 'النظام' },
           { key: 'target', label: 'الهدف', mono: true, render: (e) => mono(e.target || '—') },
           { key: 'detail', label: 'التفاصيل', sortable: false, render: (e) => h('span', { class: 'text-sm' }, e.detail || '—') },
-          { key: 'status', label: 'الحالة', sortable: false, render: (e) => { const t = data.tasks.find((x) => x.code === e.target || x.id === e.target); return writebackChip(t && t.writeback ? t.writeback.status : null); } },
+          { key: 'status', label: 'الحالة', sortable: false, render: (e) => writebackChip(writebackStatusOf(data, e)) },
         ],
         rows: data.writebackLog.map((e, i) => ({ id: e.id || `wb-${i}`, ...e })), initialSort: { key: 'at', dir: 'desc' },
       });
       return card({
         code: 'ALR-05', title: 'سجل الكتابة العكسية', subtitle: 'أعلام المخاطر والدرجات ومهام المعالجة المكتوبة إلى تطبيق إدارة المشاريع',
-        actions: chips,
-        body: table.el,
+        body: h('div', { class: 'stack gap-3' }, h('div', { class: 'row wrap gap-2', 'aria-label': 'حالة مزامنة المهام' }, h('span', { class: 'text-xs muted' }, 'مهام المعالجة:'), ...chips), table.el),
         footer: h('div', { class: 'row between wrap' }, h('span', { class: 'text-xs muted' }, 'المنصة لا تكتب في أنظمة العميل سوى أعلام المخاطر والدرجات والتنبيهات ومهام المعالجة.'), button('مهام المعالجة', { variant: 'ghost', size: 'sm', icon: 'file-check', onClick: () => router.navigate('tasks') })),
       });
     }

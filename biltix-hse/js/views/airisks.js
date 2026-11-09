@@ -89,8 +89,8 @@ const PARAM_LABEL = {
   trend: 'الاتجاه', kpi: 'المؤشر', portfolioRank: 'الترتيب في المحفظة',
 };
 const FLOW_STAGES = ['مُلتقط', 'مُتحقق', 'في بحيرة البيانات', 'مُقيَّم', 'مُصنَّف', 'تنبيه', 'مهمة', 'مغلق'];
-const TIMELINE_TONE = { override: 'warning', alert: 'critical', escalate: 'critical', writeback: 'accent', task: 'brand', close: 'good', closed: 'good', accept: 'good', dismiss: 'neutral', history: 'brand', detected: 'accent' };
-const TIMELINE_KIND_LABEL = { override: 'تجاوز', alert: 'تنبيه', escalate: 'تصعيد', writeback: 'كتابة عكسية', task: 'مهمة', close: 'إغلاق', closed: 'إغلاق', accept: 'قبول', dismiss: 'تجاهل', history: 'سجل', detected: 'اكتشاف' };
+const TIMELINE_TONE = { override: 'warning', alert: 'critical', escalate: 'critical', writeback: 'accent', task: 'brand', 'task-closed': 'good', close: 'good', closed: 'good', accept: 'good', dismiss: 'neutral', history: 'brand', detected: 'accent', ack: 'good' };
+const TIMELINE_KIND_LABEL = { override: 'تجاوز', alert: 'تنبيه', escalate: 'تصعيد', writeback: 'كتابة عكسية', task: 'مهمة', 'task-closed': 'إغلاق مهمة', close: 'إغلاق', closed: 'إغلاق', accept: 'قبول', dismiss: 'تجاهل', history: 'سجل', detected: 'اكتشاف', ack: 'إقرار' };
 const CHANNELS = [['email', 'البريد الإلكتروني'], ['slack', 'Slack'], ['teams', 'Microsoft Teams'], ['whatsapp', 'واتساب للأعمال']];
 const SORTS = [
   { value: 'score-desc', label: 'الدرجة: الأعلى أولاً' },
@@ -226,6 +226,9 @@ export default {
     };
     const addTimer = (fn, ms) => { const id = setTimeout(() => { timers.delete(id); if (alive) fn(); }, ms); timers.add(id); return id; };
     const canStore = (name) => typeof store[name] === 'function';
+    const overlays = new Set(); // open modals, closed on cleanup
+    /** A sensible default due date: the risk's own when still ahead, else two weeks from today. */
+    const defaultDue = (risk, now) => (risk.dueDate && (Date.parse(risk.dueDate) || 0) >= startOfDay(now) ? risk.dueDate : plusDays(now, 14));
     const scoreNum = (score, rating, { big = false } = {}) => h('span', { class: ['score-num', 'num', `is-${rating}`, big ? 'is-big' : null], 'data-rating': rating }, fmt.num(Math.round(num(score))));
 
     if (!psel) loadPsel().then((p) => { if (p && alive && !psel) { psel = p; schedule(); } });
@@ -389,16 +392,13 @@ export default {
         rows, rowKey: 'id', pageSize: 12, dense: true, emptyText: 'لا توجد مخاطر مطابقة لعوامل التصفية الحالية',
         onRowClick: (row) => openRisk(row.id),
         columns: [
-          { key: 'code', label: 'الرمز', width: 96, mono: true },
-          { key: 'title', label: 'المخاطرة', render: (r) => h('span', { class: 'semibold', title: text(r.driverExplanation) || undefined }, r.title) },
+          { key: 'title', label: 'المخاطرة', width: 240, render: (r) => h('span', { class: 'stack gap-1', title: text(r.driverExplanation) || undefined, style: { minInlineSize: '220px' } }, h('span', { class: 'semibold' }, r.title), h('span', { class: 'mono text-xs muted', style: { whiteSpace: 'nowrap' } }, r.code)), sortValue: (r) => r.title },
           { key: 'projectId', label: 'المشروع', render: (r) => projectName(r.projectId), sortValue: (r) => projectName(r.projectId) },
-          { key: 'category', label: 'المجال', render: (r) => categoryChip(psel, r.category), sortValue: (r) => categoryLabel(psel, r.category) },
-          { key: 'type', label: 'النوع', render: (r) => typeChip(psel, r.type), sortValue: (r) => typeLabel(psel, r.type) },
-          { key: 'score', label: 'الدرجة', render: (r) => h('span', { class: 'row gap-2 score-cell' }, scoreNum(r.score, r.rating), ratingBadge(psel, r.rating)), sortValue: (r) => num(r.score) },
-          { key: 'pipeline', label: 'خط المعالجة', render: (r) => h('span', { class: 'text-xs' }, pipelineLabel(psel, r.pipeline)), sortValue: (r) => pipelineLabel(psel, r.pipeline) },
-          { key: 'confidence', label: 'الثقة', align: 'center', render: (r) => h('span', { class: 'mono num' }, fmt.pct(num(r.confidence) * 100)), sortValue: (r) => num(r.confidence) },
-          { key: 'detectedAt', label: 'اكتُشف', render: (r) => h('span', { title: fmt.dateTime(r.detectedAt) }, fmt.relative(r.detectedAt)), sortValue: (r) => Date.parse(r.detectedAt) || 0 },
-          { key: 'owner', label: 'المالك' },
+          { key: 'category', label: 'المجال / النوع', render: (r) => h('span', { class: 'stack gap-1', style: { alignItems: 'flex-start' } }, categoryChip(psel, r.category), typeChip(psel, r.type)), sortValue: (r) => `${categoryLabel(psel, r.category)} ${typeLabel(psel, r.type)}` },
+          { key: 'score', label: 'الدرجة والتصنيف', render: (r) => h('span', { class: 'row gap-2 score-cell' }, scoreNum(r.score, r.rating), ratingBadge(psel, r.rating)), sortValue: (r) => num(r.score) },
+          { key: 'pipeline', label: 'خط المعالجة / الثقة', render: (r) => h('span', { class: 'stack gap-1' }, h('span', { class: 'text-xs' }, pipelineLabel(psel, r.pipeline)), h('span', { class: 'mono num text-xs muted' }, `ثقة ${fmt.pct(num(r.confidence) * 100)}`)), sortValue: (r) => num(r.confidence) },
+          { key: 'detectedAt', label: 'اكتُشف', render: (r) => h('span', { title: fmt.dateTime(r.detectedAt), style: { whiteSpace: 'nowrap' } }, fmt.relative(r.detectedAt)), sortValue: (r) => Date.parse(r.detectedAt) || 0 },
+          { key: 'owner', label: 'المالك', render: (r) => r.owner || '—' },
           { key: 'status', label: 'الحالة', render: (r) => statusBadge(r.status), sortValue: (r) => RISK_STATUSES.indexOf(r.status) },
         ],
       });
@@ -450,7 +450,7 @@ export default {
       const score = Math.round(num(risk.score));
       const rating = ratingOf(psel, score);
       const tone = ratingTone(psel, rating);
-      const ring = chartOr('ring', () => charts.ring({ value: score, max: 100, size: 72, color: `var(--${tone})`, label: '' }), () => scoreNum(score, rating, { big: true }));
+      const ring = chartOr('ring', () => charts.ring({ value: score, max: 100, size: 72, color: `var(--${tone})`, label: '', format: (v) => fmt.num(Math.round(v)) }), () => scoreNum(score, rating, { big: true }));
       const head = h('div', { class: 'risk-drawer-head' },
         h('div', { class: 'risk-drawer-titles' },
           h('span', { class: 'mono' }, `${risk.code || risk.id} · ${pipelineLabel(psel, risk.pipeline)}${risk.modelVersion ? ` ${risk.modelVersion}` : ''}`),
@@ -526,8 +526,8 @@ export default {
         h('div', { class: 'recommendation-head' },
           h('h4', {}, svgIcon('sparkle', 14), 'توصية المحرك'),
           h('div', { class: 'recommendation-chips' },
-            rec.effort ? h('span', { class: ['recommendation-chip', `tone-${EFFORT_TONE[rec.effort] || 'neutral'}`] }, glyph(EFFORT_TONE[rec.effort] || 'neutral', 11), 'الجهد: ', h('span', { class: 'mono' }, rec.effort)) : null,
-            rec.impact ? h('span', { class: 'recommendation-chip' }, svgIcon('trend-down', 11), 'الأثر المتوقع: ', h('span', { class: 'mono' }, rec.impact)) : null)),
+            rec.effort ? h('span', { class: ['recommendation-chip', `tone-${EFFORT_TONE[rec.effort] || 'neutral'}`] }, glyph(EFFORT_TONE[rec.effort] || 'neutral', 11), `الجهد: ${rec.effort}`) : null,
+            rec.impact ? h('span', { class: 'recommendation-chip' }, svgIcon('trend-down', 11), `الأثر المتوقع: ${rec.impact}`) : null)),
         h('p', { class: 'recommendation-action' }, rec.action || 'لا توجد توصية مولّدة لهذه المخاطرة.'),
         rec.rationale ? h('p', { class: 'recommendation-rationale' }, rec.rationale) : null,
         alts.length ? h('span', { class: 'recommendation-alts-title' }, 'بدائل مقترحة') : null,
@@ -656,7 +656,7 @@ export default {
       if (!risk) { toast('لم يتم العثور على المخاطرة المطلوبة', { tone: 'warning' }); dropParam(); return; }
       if (drawerState && drawerState.api && drawerState.api.isOpen()) {
         drawerState.id = id;
-        refreshDrawer();
+        refreshDrawer({ force: true });
         return;
       }
       const api = drawer({
@@ -665,15 +665,26 @@ export default {
         onClose: () => { if (drawerState && drawerState.api === api) { drawerState = null; dropParam(); highlightRow(); } },
       });
       api.el.classList.add('risk-drawer');
-      drawerState = { api, id };
+      drawerState = { api, id, signature: drawerSignature(risk) };
       api.open();
       highlightRow();
     }
-    function refreshDrawer() {
+    /** Cheap change signature so live ticks that do not touch this risk leave the drawer alone. */
+    function drawerSignature(risk) {
+      const task = taskOf(risk);
+      const alerts = (platformOf().alerts || []).filter((a) => a.riskId === risk.id);
+      return [risk.updatedAt, risk.status, risk.escalated, risk.owner, risk.dueDate, risk.taskId, (risk.overrides || []).length, (risk.history || []).length,
+        task && task.status, task && task.updatedAt, task && task.writeback && task.writeback.status, task && task.writeback && task.writeback.at,
+        alerts.length, alerts.filter((a) => a.acknowledged).length, fmt.getNumerals ? fmt.getNumerals() : ''].join('|');
+    }
+    function refreshDrawer({ force = false } = {}) {
       if (!drawerState || !drawerState.api || !drawerState.api.isOpen()) return;
       const { api, id } = drawerState;
       const risk = findRisk(id);
       if (!risk) { api.close('gone'); return; }
+      const signature = drawerSignature(risk);
+      if (!force && drawerState.signature === signature) return;
+      drawerState.signature = signature;
       const scroll = api.body.scrollTop;
       clear(api.body);
       api.body.appendChild(buildDrawerBody(risk));
@@ -699,7 +710,9 @@ export default {
         }
         return ok === false ? false : undefined;
       };
-      const api = modal({ title, subtitle, body: form, size: 'md', actions: [{ label: 'إلغاء', variant: 'ghost' }, { label: submitLabel, variant, onClick: submit }] });
+      let api = null;
+      api = modal({ title, subtitle, body: form, size: 'md', onClose: () => overlays.delete(api), actions: [{ label: 'إلغاء', variant: 'ghost' }, { label: submitLabel, variant, onClick: submit }] });
+      overlays.add(api);
       form.addEventListener('submit', (e) => { e.preventDefault(); if (submit() !== false) api.close('action'); });
       api.open();
       return api;
@@ -716,7 +729,7 @@ export default {
         note: 'بنقرة واحدة: تُنشأ مهمة معالجة وتُسند إلى المالك، ثم يُكتب علم المخاطرة ودرجتها والمهمة عكسياً إلى Biltix PM.',
         fields: [
           formField({ label: 'المالك المسؤول', name: 'owner', type: 'text', value: defaultOwner(risk), required: true, placeholder: 'اسم المسؤول أو الدور' }),
-          formField({ label: 'تاريخ الاستحقاق', name: 'dueDate', type: 'date', value: risk.dueDate || plusDays(now, 14), required: true, min: isoDay(now) }),
+          formField({ label: 'تاريخ الاستحقاق', name: 'dueDate', type: 'date', value: defaultDue(risk, now), required: true, min: isoDay(now) }),
           formField({ label: 'تصعيد فوري عبر القنوات المفعّلة', name: 'escalate', type: 'checkbox', value: ratingOf(psel, num(risk.score)) === 'red' && !risk.escalated }),
         ],
         submitLabel: 'قبول وإنشاء المهمة',
@@ -739,7 +752,7 @@ export default {
           formField({ label: 'الإجراء المعدّل', name: 'action', type: 'textarea', value: text(rec.action), required: true, rows: 3 }),
           formField({ label: 'سبب التجاوز', name: 'reason', type: 'textarea', required: true, rows: 2, placeholder: 'لماذا تختلف عن توصية المحرك؟', hint: 'مطلوب — يُستخدم في إعادة معايرة النموذج.' }),
           formField({ label: 'المالك المسؤول', name: 'owner', type: 'text', value: defaultOwner(risk), required: true }),
-          formField({ label: 'تاريخ الاستحقاق', name: 'dueDate', type: 'date', value: risk.dueDate || plusDays(now, 14), required: true, min: isoDay(now) }),
+          formField({ label: 'تاريخ الاستحقاق', name: 'dueDate', type: 'date', value: defaultDue(risk, now), required: true, min: isoDay(now) }),
           formField({ label: 'تصعيد فوري عبر القنوات المفعّلة', name: 'escalate', type: 'checkbox', value: false }),
         ],
         submitLabel: 'حفظ التجاوز وإنشاء المهمة',
@@ -821,8 +834,8 @@ export default {
       }
       const { base, rows } = computeRows();
       table = buildTable(rows);
-      ui.tableCard = card({ code: 'AIR-01', title: 'المخاطر المكتشفة', subtitle: summaryText(rows), className: 'col-span-9 airisks-table-card', body: table.el });
-      ui.side = h('div', { class: 'col-span-3 stack gap-4 airisks-side' }, sideCards(rows));
+      ui.tableCard = card({ code: 'AIR-01', title: 'المخاطر المكتشفة', subtitle: summaryText(rows), className: 'col-span-8 airisks-table-card', body: table.el });
+      ui.side = h('div', { class: 'col-span-4 stack gap-4 airisks-side' }, sideCards(rows));
       body.appendChild(h('div', { class: 'grid-12 airisks-main' }, ui.tableCard, ui.side));
       summary.textContent = summaryText(rows);
       updateCounts(base);
@@ -851,8 +864,10 @@ export default {
 
     subs.push(bus.on('store:change', (payload) => {
       const path = payload && typeof payload.path === 'string' ? payload.path : '*';
-      if (path.startsWith('feed')) return;
-      if (/validation|pipelines|connectors|quarantine|auditLog/.test(path) && !/aiRisks|tasks|alerts/.test(path)) return;
+      // only platform entities, settings (numerals / thresholds) and site names feed this view;
+      // Part A collections (feed, permits, sensors, …) change every few seconds and are ignored
+      if (path !== '*' && !/^(platform|settings|sites)/.test(path)) return;
+      if (/^platform\.(validation|pipelines|connectors|auditLog)/.test(path)) return;
       schedule();
     }));
     subs.push(bus.on('filters:change', schedule));
@@ -868,6 +883,8 @@ export default {
       timers.forEach((id) => clearTimeout(id));
       timers.clear();
       subs.splice(0).forEach((unsub) => { try { unsub(); } catch { /* ignore */ } });
+      Array.from(overlays).forEach((o) => { try { o.close('navigate'); } catch { /* ignore */ } });
+      overlays.clear();
       if (drawerState && drawerState.api) {
         const api = drawerState.api;
         drawerState = null;

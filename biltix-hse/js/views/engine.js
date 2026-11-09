@@ -24,6 +24,9 @@ const STYLE_TEXT = `@layer views {
   .engine-meta-cell { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--line); min-inline-size: 0; }
   .engine-meta-label { font-size: 11px; color: var(--ink-3); }
   .engine-meta-value { font-family: var(--font-mono); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; color: var(--ink-1); }
+  .engine-techniques { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+  .engine-techniques > li { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; align-items: start; font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.55; }
+  .engine-techniques > li > svg { color: var(--accent); margin-block-start: 3px; }
   .engine-kri > summary { cursor: pointer; font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); padding-block: 6px; list-style: none; display: flex; align-items: center; gap: 8px; }
   .engine-kri > summary::-webkit-details-marker { display: none; }
   .engine-kri > summary::before { content: ""; inline-size: 7px; block-size: 7px; border-inline-end: 2px solid currentColor; border-block-end: 2px solid currentColor; transform: rotate(-45deg); transition: transform var(--dur-1) var(--ease); margin-inline-end: 2px; }
@@ -315,7 +318,7 @@ export default {
         actions: [badge(st.label, st.tone), liveDot(p._tone)],
         body: h('div', { class: 'stack gap-4' },
           meta,
-          arr(p.techniques).length ? h('div', { class: 'chip-group', role: 'list', 'aria-label': 'التقنيات' }, ...arr(p.techniques).map((t) => h('span', { class: 'chip is-sm', role: 'listitem' }, svgIcon('sparkles', 12), h('span', {}, String(t))))) : null,
+          arr(p.techniques).length ? h('div', { class: 'stack gap-1' }, h('span', { class: 'text-sm semibold' }, 'التقنيات'), h('ul', { class: 'engine-techniques', 'aria-label': 'التقنيات' }, ...arr(p.techniques).map((t) => h('li', {}, svgIcon('sparkles', 12), h('span', {}, String(t)))))) : null,
           meters,
           h('div', { class: 'stack gap-2' }, h('span', { class: 'text-sm semibold' }, 'أهمية الميزات (محركات الدرجة)'), fiChart ? fiChart.el : (fi.length ? featureBars(fi) : emptyState({ title: 'لا تتوفر أهمية الميزات' }))),
           h('div', { class: 'stack gap-2' }, h('div', { class: 'row between wrap' }, h('span', { class: 'text-sm semibold' }, 'الإنسان في الحلقة: القبول مقابل التجاوز'), h('span', { class: 'text-xs muted' }, `${fmt.num(num(p.overridesLast30d))} تجاوزاً من ${fmt.num(num(p.risksLast30d))} مخاطرة خلال 30 يوماً`)), seg ? seg.el : segFallback),

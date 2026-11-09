@@ -99,6 +99,27 @@ function touches(path, prefix) {
   return p === prefix || p.startsWith(`${prefix}.`);
 }
 
+/** Id of the focused element inside `root` (so a repaint can hand focus back to its twin). */
+function focusedIdWithin(root) {
+  const a = document.activeElement;
+  return a && root && root.contains(a) && a.id ? a.id : null;
+}
+
+/**
+ * After a drawer repaint, keep keyboard focus inside the dialog so Esc / Tab keep working:
+ * the same control by id, else the first visible footer action, else the dialog itself.
+ */
+function restoreFocus(api, id) {
+  if (!api || typeof api.isOpen !== 'function' || !api.isOpen()) return;
+  const root = api.el;
+  const a = document.activeElement;
+  if (a && a !== document.body && root.contains(a) && !a.hidden && a.getClientRects().length) return;
+  let target = null;
+  if (id) { try { target = root.querySelector(`#${CSS.escape(id)}`); } catch { target = null; } }
+  if (!target) target = root.querySelector('.drawer-foot button:not([hidden])') || root;
+  try { target.focus({ preventScroll: true }); } catch { /* ignore */ }
+}
+
 const ms = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) ? t : NaN; };
 
 function sameDay(a, b) {
@@ -174,6 +195,17 @@ export const permitsView = {
     const boardFilters = () => ({ ...globalFilters(), type: typeFilter === 'all' ? undefined : typeFilter });
     const findPermit = (id) => (state().permits || []).find((p) => p && p.id === id) || null;
 
+    /** Active permits expiring within the hour — uses the core selector when present, else a local twin. */
+    function expiringSoon(st, gf, now) {
+      if (typeof sel.permitsExpiringSoon === 'function') {
+        try { return sel.permitsExpiringSoon(st, EXPIRING_MINUTES, gf); } catch { /* fall through to the local twin */ }
+      }
+      const horizon = now + EXPIRING_MINUTES * 60_000;
+      return (st.permits || [])
+        .filter((p) => p && p.status === ACTIVE && (gf.siteId === 'all' || !gf.siteId || p.siteId === gf.siteId) && ms(p.expiresAt) > now && ms(p.expiresAt) <= horizon)
+        .sort((a, b) => ms(a.expiresAt) - ms(b.expiresAt));
+    }
+
     /* ── skeleton ── */
     const root = h('section', { class: 'view view-permits', 'aria-labelledby': 'permits-title' });
     root.appendChild(h('header', { class: 'view-head' },
@@ -209,9 +241,9 @@ export const permitsView = {
       clear(stripHost); clear(expiringHost);
       const st = state();
       const gf = globalFilters();
-      const byStatus = sel.permitsByStatus(st, gf);
-      const expiring = sel.permitsExpiringSoon(st, EXPIRING_MINUTES, gf);
       const now = Date.now();
+      const byStatus = sel.permitsByStatus(st, gf);
+      const expiring = expiringSoon(st, gf, now);
       const overdue = (st.permits || []).filter((p) => p && p.status === ACTIVE && (gf.siteId === 'all' || !gf.siteId || p.siteId === gf.siteId) && ms(p.expiresAt) <= now);
 
       byStatus.forEach((s) => {
@@ -228,7 +260,7 @@ export const permitsView = {
       const soonIc = glyph(expiring.length || overdue.length ? 'warning' : 'neutral', 14); soonIc.style.color = 'var(--tone-ink)';
       soonLabel.append(soonIc, h('span', {}, 'تنتهي خلال ساعة'));
       const soonValue = h('span', { class: 'summary-value' }, fmt.num(expiring.length));
-      if (overdue.length) soonValue.appendChild(h('small', {}, `+${fmt.num(overdue.length)} منتهية`));
+      if (overdue.length) soonValue.appendChild(h('small', {}, `و${fmt.num(overdue.length)} منتهية لم تُغلق`));
       soonCell.append(soonLabel, soonValue);
       stripHost.appendChild(soonCell);
 
@@ -372,6 +404,7 @@ export const permitsView = {
       const paint = () => {
         stopRegion('drawer');
         const p = findPermit(id);
+        const focusId = focusedIdWithin(api.el);
         clear(body);
         if (!p) { body.appendChild(emptyState({ title: 'تم حذف هذا التصريح' })); [approveBtn, submitBtn, suspendBtn, closeBtn].forEach((b) => { b.hidden = true; }); return; }
         const st = state();
@@ -416,6 +449,7 @@ export const permitsView = {
         body.appendChild(section(`الضوابط والاحتياطات (${fmt.num(controls.length)})`, controls.length
           ? h('ol', { class: 'controls-list' }, controls.map((t, i) => h('li', { class: 'controls-item tone-good' }, h('span', { class: 'controls-type mono' }, fmt.num(i + 1)), h('span', {}, typeof t === 'string' ? t : (t && t.text) || '—'))))
           : h('p', { class: 'note' }, 'لم تُسجل ضوابط لهذا التصريح.')));
+        restoreFocus(api, focusId);
       };
 
       paint();

@@ -238,8 +238,8 @@ export default {
       const code = lower(contract.code);
       const ref = clause ? lower(clause.ref) : '';
       const hay = (r) => lower(`${r.evidence && r.evidence.ref} ${r.evidence && r.evidence.excerpt} ${r.title} ${r.driverExplanation}`);
-      if (clause) {
-        const exact = risks.find((r) => hay(r).includes(code) && ref && hay(r).includes(ref));
+      if (clause && ref) {
+        const exact = risks.find((r) => hay(r).includes(code) && (hay(r).includes(`§${ref}`) || hay(r).includes(` ${ref} `) || hay(r).endsWith(` ${ref}`)));
         if (exact) return exact;
       }
       return risks.find((r) => hay(r).includes(code)) || null;
@@ -261,7 +261,7 @@ export default {
       const dup = existingTask(data.platform, clause ? risk : null, title);
       if (dup) {
         toast(`توجد مهمة مفتوحة بالفعل (${dup.code || dup.id}) لهذه الإحالة.`, { tone: 'neutral', action: { label: 'فتح المهام', onClick: () => router.navigate('tasks') } });
-        return dup;
+        return { task: dup, created: false };
       }
       let task = null;
       try {
@@ -297,7 +297,7 @@ export default {
         `أُحيلت ${clause ? `المادة §${clause.ref}` : 'العقد'} إلى ${LEGAL_OWNER}${code ? ` — المهمة ${code}` : ''}${risk ? ` · مرتبطة بالمخاطرة ${risk.code}` : ''}.`,
         { tone: 'good', action: { label: 'فتح المهام', onClick: () => router.navigate('tasks') } },
       );
-      return task;
+      return { task, created: true };
     }
 
     /* ───────────────────────── drawer ───────────────────────── */
@@ -310,8 +310,8 @@ export default {
         variant: clause.status === 'مُعالج' ? 'ghost' : 'outline', size: 'sm', icon: svgIcon('file-text', 14),
         attrs: { disabled: clause.status === 'مُعالج', title: clause.status === 'مُعالج' ? 'البند مُعالج بالفعل' : 'إنشاء مهمة معالجة وإسنادها للإدارة القانونية' },
         onClick: () => {
-          const task = referToLegal(data, contract, clause);
-          if (task && clause.status !== 'مُعالج') {
+          const result = referToLegal(data, contract, clause);
+          if (result && result.created && clause.status !== 'مُعالج') {
             status.replaceChildren(statusBadge('قيد المراجعة القانونية', CLAUSE_STATUS_TONE));
             refer.disabled = true; refer.title = 'تمت الإحالة';
           }

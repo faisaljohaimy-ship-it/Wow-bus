@@ -2358,3 +2358,302 @@ const alerts = [
   alert(26, { riskId: 'AR46', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-1, '08:05'), acknowledged: true, ackBy: OWNERS.hse.S5, ackAt: t(-1, '08:30'), title: 'تنبيه: اختراق السياج قرب منطقة استبعاد التفجير — الدرجة 68' }),
 ];
 
+// ------------------------------------------------------------------
+// 20. خطوط محرك الذكاء الاصطناعي — خمسة نماذج على طبقة تقييم وتفسير مشتركة
+//     مصفوفة مؤشرات المخاطر الرئيسية (KRI) لكل خط من المقترح، بالعربية.
+// ------------------------------------------------------------------
+
+const pipelines = [
+  {
+    id: 'contract-nlp', name: 'Contract NLP', nameAr: 'محرك العقود NLP',
+    description: 'يقرأ العقود وأوامر الشراء والعطاءات من وحدة العقود في بلتكس، ويستخرج البنود ويصنّفها ويقارنها بمكتبة معايير سوقية، ويُنتج درجة مخاطرة لكل بند مع صياغة بديلة وتفسير بلغة واضحة.',
+    techniques: ['تصنيف البنود بنماذج لغوية مُدرَّبة على عقود الإنشاء (FIDIC، نظام المنافسات)', 'التعرف على الكيانات (المبالغ، المدد، الأطراف، الإحالات)', 'مقارنة دلالية مع مكتبة الصياغات القياسية', 'استخراج الالتزامات والمواعيد وربطها بالتقويم', 'تحليل شبكة الأطراف لقياس التركّز'],
+    inputs: ['Biltix — العقود (PDF/DOCX + بيانات وصفية)', 'مكتبة المعايير المرجعية', 'أوامر الشراء من Oracle ERP', 'سجل المقاولين من الباطن والموردين'],
+    status: 'running', lastRun: t(0, '09:14'), runsToday: 6, avgLatencyMs: 4200, precision: 0.91, recall: 0.86, calibrationError: 0.045, driftScore: 0.12, version: 'v2.3.1',
+    featureImportance: [
+      { feature: 'وجود/غياب سقف الغرامات', weight: 0.24 }, { feature: 'أجل السداد مقارنة بالمعيار', weight: 0.19 }, { feature: 'عبارات غامضة ("معقول"، "بما يرضي")', weight: 0.17 },
+      { feature: 'اكتمال بنود التأمين والتعويض', weight: 0.15 }, { feature: 'قيمة العقد والمدة المتبقية', weight: 0.13 }, { feature: 'تركّز المقاولين من الباطن', weight: 0.12 },
+    ],
+    acceptanceRatePct: 78, overridesLast30d: 4, risksLast30d: 9,
+    kris: [
+      { indicator: 'بنود غامضة/غير قياسية', technique: 'تصنيف البنود بالمعالجة اللغوية والمقارنة الدلالية مع مكتبة الصياغات القياسية', inputs: 'نصوص العقود، مكتبة المعايير (FIDIC، نظام المنافسات)، سوابق النزاعات', mitigation: 'صياغة بديلة مقترحة وإحالة للمراجعة القانونية قبل التوقيع' },
+      { indicator: 'شروط دفع/غرامات تأخير غير مواتية', technique: 'استخراج الكيانات المالية والزمنية ومقارنتها بالمعيار السوقي ومحاكاة التعرض مع نموذج الجدول', inputs: 'بنود الدفع والغرامات، توقعات الجدول (P50/P80)، التدفق النقدي', mitigation: 'التفاوض على سقف وآجال سداد، تسهيلات تمويل، تأمين تأخير الإنجاز' },
+      { indicator: 'بنود تأمين/تعويض/ضمان مفقودة', technique: 'كشف غياب البنود بقائمة تحقق دلالية ومطابقة حدود التغطية مع قيمة العقد', inputs: 'بنود التأمين والضمان، وثائق التأمين، قيم المواد في الموقع', mitigation: 'إدراج البنود المفقودة أو التظهير على وثائق المشروع قبل بدء الأعمال' },
+      { indicator: 'مخاطر عدم الالتزام بالمواعيد والالتزامات', technique: 'استخراج الالتزامات والمهل التعاقدية وربطها بتقويم المشروع والتنبيه قبل الاستحقاق', inputs: 'بنود الإشعارات والتسليمات، تقويم المشروع، حالة المستندات', mitigation: 'تقويم التزامات مع تنبيهات مبكرة وإسناد مالك لكل التزام' },
+      { indicator: 'تركّز المقاولين من الباطن والموردين', technique: 'تحليل شبكة الأطراف وحساب حصة كل طرف من قيمة العقد ومن الإنفاق', inputs: 'عقود الباطن، أوامر الشراء، بيانات الموردين المالية', mitigation: 'تنويع الأطراف، تأهيل بدائل، ضمانات أداء للأطراف المركّزة' },
+    ],
+  },
+  {
+    id: 'bom-forecast', name: 'BoM Forecasting', nameAr: 'محرك توقع المواد BoM',
+    description: 'يطابق كميات جدول الكميات مع نموذج BIM عبر Autodesk APS، ويتوقع أسعار السلع وأزمنة التوريد، ويقيس تركّز الموردين وصحتهم المالية ومطابقة المواصفات.',
+    techniques: ['مطابقة الكميات BoQ↔BIM بالتصنيف الموحد (Uniclass/OmniClass)', 'توقع الأسعار بنماذج السلاسل الزمنية (Prophet/ARIMA) مع مؤشرات السلع', 'نموذج تسجيل الموردين (صحة مالية، أداء تسليم، تركّز)', 'حساب تواريخ الطلب من زمن التوريد وتاريخ الاحتياج', 'مطابقة المواصفات بالمعالجة اللغوية'],
+    inputs: ['Biltix — BoQ/BoM', 'Autodesk APS (كميات النموذج)', 'Oracle ERP (أوامر الشراء، الموردون)', 'مؤشرات السلع', 'أسعار الصرف'],
+    status: 'running', lastRun: t(0, '10:20'), runsToday: 4, avgLatencyMs: 6800, precision: 0.87, recall: 0.83, calibrationError: 0.061, driftScore: 0.21, version: 'v1.8.0',
+    featureImportance: [
+      { feature: 'تباين الكمية BoQ↔BIM', weight: 0.22 }, { feature: 'تقلب سعر السلعة (12 شهراً)', weight: 0.2 }, { feature: 'مورد وحيد / حصة الإنفاق', weight: 0.18 },
+      { feature: 'الأيام المتبقية حتى تاريخ الطلب', weight: 0.16 }, { feature: 'الصحة المالية للمورد', weight: 0.13 }, { feature: 'حالة مطابقة المواصفة', weight: 0.11 },
+    ],
+    acceptanceRatePct: 71, overridesLast30d: 6, risksLast30d: 11,
+    kris: [
+      { indicator: 'تقلب أسعار المواد', technique: 'توقع السلاسل الزمنية لأسعار السلع مع نطاقات ثقة وحساب التعرض لكل بند', inputs: 'مؤشرات السلع (24 شهراً)، كميات البنود، جدول الشراء', mitigation: 'تثبيت الأسعار، الشراء المبكر، بنود تعديل الأسعار، التحوط' },
+      { indicator: 'مورد وحيد/تركّز الموردين', technique: 'تحليل حصة الإنفاق والتسجيل المالي للموردين وكشف البنود ذات المصدر الوحيد', inputs: 'أوامر الشراء، بيانات الموردين، التصنيف الائتماني، أداء التسليم', mitigation: 'تأهيل موردين بدلاء، تقسيم الكميات، ضمانات أداء وفحص مقيم' },
+      { indicator: 'عدم تطابق الكميات BoM-BIM', technique: 'مطابقة آلية للكميات بين جدول الكميات ونموذج BIM وكشف الفروق فوق التفاوت', inputs: 'جدول الكميات، نموذج BIM (APS)، أوامر التغيير', mitigation: 'تحديث جدول الكميات، أوامر تغيير مبكرة، مسح مشترك للكميات' },
+      { indicator: 'مخاطر زمن التوريد الطويل', technique: 'حساب تاريخ الطلب الأخير من زمن التوريد وتاريخ الاحتياج وربطه بالمسار الحرج', inputs: 'أزمنة التوريد، تواريخ الاحتياج من الجدول، حالة أوامر الشراء والشحن', mitigation: 'طلب مبكر، تتبع الشحنات، بدائل محلية، تخليص مسبق' },
+      { indicator: 'عدم تطابق المواصفات', technique: 'مطابقة مواصفات المورد مع مواصفات المشروع بالمعالجة اللغوية وتحليل تقارير الفحص', inputs: 'المواصفات، شهادات المطابقة، تقارير المختبر', mitigation: 'فحص قبل الشحن، رفض الدفعات غير المطابقة، موردون معتمدون' },
+    ],
+  },
+  {
+    id: 'schedule-model', name: 'Schedule Model', nameAr: 'نموذج الجدول الزمني',
+    description: 'يقرأ الجداول من Primavera P6 ويحسب احتمال التأخير لكل نشاط حرج ويشغّل محاكاة مونت كارلو (5,000 تكرار) لتوقع P50/P80/P90، مع دمج الموارد والطقس والموافقات وأداء المقاولين من الباطن.',
+    techniques: ['تصنيف احتمال التأخير (Gradient Boosting) على خصائص النشاط', 'محاكاة مونت كارلو لمدد الأنشطة وتوزيعات الطفو', 'تحليل الموارد وفرط التخصيص', 'ربط توقعات الأرصاد بالأنشطة الحساسة للطقس', 'تتبع الموافقات التنظيمية مقابل المدد النظامية'],
+    inputs: ['Primavera P6 EPPM (الأنشطة، العلاقات، خط الأساس)', 'Biltix — الجدول الزمني', 'المركز الوطني للأرصاد', 'سجل الموافقات', 'بطاقات أداء المقاولين من الباطن'],
+    status: 'running', lastRun: t(0, '07:30'), runsToday: 3, avgLatencyMs: 18400, precision: 0.84, recall: 0.88, calibrationError: 0.052, driftScore: 0.09, version: 'v3.1.2',
+    featureImportance: [
+      { feature: 'الطفو الكلي والحرجية', weight: 0.21 }, { feature: 'فجوة التقدم الفعلي/المخطط', weight: 0.2 }, { feature: 'بطاقة أداء المقاول من الباطن', weight: 0.17 },
+      { feature: 'فرط تخصيص الموارد', weight: 0.15 }, { feature: 'حساسية الطقس × توقع الأرصاد', weight: 0.14 }, { feature: 'نسبة المدة المنقضية للموافقات', weight: 0.13 },
+    ],
+    acceptanceRatePct: 82, overridesLast30d: 3, risksLast30d: 12,
+    kris: [
+      { indicator: 'انزلاق مهام المسار الحرج', technique: 'تصنيف احتمال التأخير ومحاكاة مونت كارلو للأنشطة الحرجة وتحديث P50/P80/P90', inputs: 'جدول P6 (الأنشطة، الطفو، خط الأساس)، نسب الإنجاز، سجل التأخيرات', mitigation: 'تسريع (Crashing)، توازي الأنشطة (Fast-tracking)، إعادة التسلسل، احتياطي زمني' },
+      { indicator: 'عدم توفر الموارد/فرط التخصيص', technique: 'تحليل منحنيات الموارد وكشف التخصيص فوق 100% وفجوات الأسبوع القادم', inputs: 'خطة الموارد، الحضور الفعلي، مهارات العمالة المعتمدة', mitigation: 'إعادة توزيع الموارد بين المشاريع، ورديات إضافية، تعاقد مؤقت' },
+      { indicator: 'التأخير بسبب الطقس', technique: 'ربط توقعات 7 أيام (رياح، غبار، أمطار، حرارة) بالأنشطة الحساسة وحساب خطر الإيقاف', inputs: 'المركز الوطني للأرصاد، علامات الحساسية للطقس، سجل الإيقافات', mitigation: 'جدولة الأعمال الحساسة في النوافذ الهادئة، أعمال بديلة داخلية، توثيق المطالبات' },
+      { indicator: 'تأخر الموافقات التنظيمية', technique: 'تتبع المدة المنقضية مقابل المدة النظامية لكل جهة وتصنيف الموافقات المعرضة للخطر', inputs: 'سجل الموافقات (الأمانات، الدفاع المدني، الكهرباء، البيئة)، المدد النظامية', mitigation: 'تصعيد مؤسسي، تقديم مبكر، إشعارات تمديد الوقت، بدائل تشغيلية مؤقتة' },
+      { indicator: 'ضعف أداء المقاولين من الباطن', technique: 'بطاقة أداء مركبة (تقدم فعلي/مخطط، إشعارات، جودة) مع اتجاه 8 أسابيع', inputs: 'تقارير التقدم، الإشعارات المفتوحة، نتائج التفتيش، بيانات الدفع', mitigation: 'خطط تعافٍ، جبهات عمل بديلة، تفعيل بنود الاستبدال، حوافز الأداء' },
+    ],
+  },
+  {
+    id: 'site-ai', name: 'Site Image & Report AI', nameAr: 'ذكاء الموقع (الصور والتقارير)',
+    description: 'يحلل صور الموقع والتقارير اليومية وقراءات الحساسات والكاميرات لكشف مخالفات السلامة والمخاطر الجيوتقنية والانحراف عن التصميم والدخول غير المصرح والمخالفات البيئية، ويربطها بسجل السلامة.',
+    techniques: ['رؤية حاسوبية لكشف معدات الوقاية والممارسات غير الآمنة', 'مقارنة المسح الليزري بنموذج BIM (Scan-to-BIM)', 'تحليل سلاسل الحساسات الجيوتقنية والبيئية', 'تحليل التقارير اليومية بالمعالجة اللغوية', 'تحليل تكرار الملاحظات لتحديد الأسباب الجذرية'],
+    inputs: ['Biltix — تقارير الموقع (صور + نصوص)', 'Biltix — الصور', 'بوابة الحساسات (ميل، ضوضاء، غبار)', 'كاميرات الموقع', 'Autodesk APS (النموذج المرجعي)', 'المركز الوطني للأرصاد'],
+    status: 'running', lastRun: t(0, '06:45'), runsToday: 9, avgLatencyMs: 2900, precision: 0.88, recall: 0.81, calibrationError: 0.073, driftScore: 0.27, version: 'v2.0.4',
+    featureImportance: [
+      { feature: 'تكرار الملاحظة (أيام متتالية)', weight: 0.23 }, { feature: 'شدة الخطر (ارتفاع، أحمال، انهيار)', weight: 0.21 }, { feature: 'عدد العمال المعرضين', weight: 0.17 },
+      { feature: 'قراءات الحساسات مقابل الحدود', weight: 0.16 }, { feature: 'الانحراف عن النموذج مقابل التفاوت', weight: 0.12 }, { feature: 'الظروف الجوية المتوقعة', weight: 0.11 },
+    ],
+    acceptanceRatePct: 86, overridesLast30d: 2, risksLast30d: 14,
+    kris: [
+      { indicator: 'عدم الامتثال للسلامة (معدات الوقاية، ممارسات غير آمنة، مخاطر متكررة)', technique: 'رؤية حاسوبية على صور التقارير والكاميرات مع تحليل التكرار والربط بسجل المخاطر', inputs: 'صور الموقع، التقارير اليومية، سجل الحوادث والتفتيش، بيانات الحضور', mitigation: 'إيقاف الأعمال غير الآمنة، ضوابط هندسية، نقاط تفتيش معدات الوقاية، إعادة تدريب' },
+      { indicator: 'المخاطر الجيوتقنية', technique: 'تحليل اتجاه قراءات مقاييس الميل والهبوط وكشف التسارع مع صور الشقوق', inputs: 'حساسات الميل والهبوط، تقارير التربة، سجل التفجير، صور الوجوه', mitigation: 'إخلاء وتثبيت المنحدرات، تعديل خطة التفجير، رصد آلي مستمر' },
+      { indicator: 'انحراف المنفذ عن المصمم', technique: 'مقارنة المسح الليزري/المساحي بنموذج BIM وكشف الفروق فوق التفاوت', inputs: 'المسوحات الليزرية، نموذج BIM (APS)، التفاوتات المسموحة', mitigation: 'مراجعة إنشائية، إصلاح معتمد، زيادة وتيرة المسح' },
+      { indicator: 'التعدي/الدخول غير المصرح به', technique: 'تحليل كاميرات المحيط والبوابات ومطابقة البطاقات واللوحات', inputs: 'كاميرات الموقع، نظام التحكم في الدخول، مناطق الاستبعاد', mitigation: 'حواجز مادية، بوابات ذكية، دوريات، توعية مجتمعية' },
+      { indicator: 'عدم الامتثال البيئي', technique: 'تحليل قراءات الغبار والضوضاء مقابل الحدود النظامية وربطها بالأنشطة والطقس', inputs: 'حساسات PM10/الضوضاء، التصاريح البيئية، تقارير الرصد، الأرصاد', mitigation: 'قمع الغبار، تعديل جدول الأنشطة، تقارير التزام استباقية' },
+    ],
+  },
+  {
+    id: 'cost-forecast', name: 'Cost Forecast', nameAr: 'محرك توقع التكلفة',
+    description: 'يحسب مؤشرات القيمة المكتسبة (CPI/SPI/EAC/VAC) من Oracle ERP والجدول، ويتوقع التكلفة بنماذج السلاسل الزمنية مع تضخم المدخلات وتقلب العملات وزحف أوامر التغيير ومؤشر العمالة.',
+    techniques: ['تحليل القيمة المكتسبة (EVM) الشهري', 'توقع التكلفة بالسلاسل الزمنية مع متغيرات خارجية (السلع، العملات، العمالة)', 'نمذجة التعرض للعملات والتحوط', 'تحليل زحف أوامر التغيير حسب المحرك والحالة', 'كشف الانحرافات على مستوى WBS'],
+    inputs: ['Oracle ERP (الميزانية، الفعلي، الالتزامات)', 'Biltix — التكلفة والميزانية', 'Primavera P6 (القيمة المخططة)', 'أسعار الصرف', 'مؤشرات السلع ومؤشر العمالة'],
+    status: 'training', lastRun: t(0, '05:00'), runsToday: 2, avgLatencyMs: 9600, precision: 0.85, recall: 0.8, calibrationError: 0.058, driftScore: 0.33, version: 'v1.6.3',
+    featureImportance: [
+      { feature: 'CPI واتجاهه (8 أسابيع)', weight: 0.24 }, { feature: 'تباين WBS (التوقع/الميزانية)', weight: 0.2 }, { feature: 'أوامر التغيير غير المعتمدة', weight: 0.17 },
+      { feature: 'تضخم السلع المرتبطة بالبنود', weight: 0.15 }, { feature: 'التعرض غير المحوط للعملات', weight: 0.13 }, { feature: 'مؤشر تكلفة العمالة', weight: 0.11 },
+    ],
+    acceptanceRatePct: 74, overridesLast30d: 5, risksLast30d: 8,
+    kris: [
+      { indicator: 'تضخم تكلفة السلع والمدخلات', technique: 'ربط بنود التكلفة بمؤشرات السلع وتوقع الأثر بالسلاسل الزمنية', inputs: 'مؤشرات السلع، كميات البنود المتبقية، جدول الشراء', mitigation: 'الشراء المبكر، تثبيت الأسعار، بنود التعويض، احتياطي التضخم' },
+      { indicator: 'تجاوز الميزانية (CPI/SPI)', technique: 'تحليل القيمة المكتسبة الشهري وتوقع EAC بثلاث طرق مع كشف الاتجاه', inputs: 'الميزانية والفعلي والالتزامات (ERP)، القيمة المخططة (P6)، نسب الإنجاز', mitigation: 'إعادة تخطيط المصاريف، تجميد التغييرات، مطالبات التعويض، تحسين الإنتاجية' },
+      { indicator: 'تعرض تقلب العملات', technique: 'حساب التعرض الصافي لكل عملة وتوقع 30 يوماً وسيناريوهات الحساسية', inputs: 'أوامر الشراء بالعملات الأجنبية، أسعار الصرف، عقود التحوط', mitigation: 'عقود آجلة، إعادة التسعير بالريال/الدولار، تقاسم فروق الصرف' },
+      { indicator: 'زحف تكلفة أوامر التغيير', technique: 'تحليل أوامر التغيير حسب الحالة والمحرك ومدة الاعتماد وأثرها التراكمي', inputs: 'سجل أوامر التغيير، المحركات، مدد الاعتماد، الالتزامات', mitigation: 'تعليمات خطية قبل التنفيذ، تسريع الاعتماد، احتياطي إداري، تحليل الأسباب' },
+      { indicator: 'تصاعد تكلفة العمالة', technique: 'مؤشر تكلفة العمالة حسب المنطقة والحرفة وربطه بالموارد المتبقية', inputs: 'مؤشر العمالة (12 شهراً)، خطة الموارد، عقود العمالة', mitigation: 'عقود عمالة طويلة الأجل، تحسين الإنتاجية، تنويع مصادر العمالة' },
+    ],
+  },
+];
+
+// ------------------------------------------------------------------
+// 21. طبقة التحقق والتنظيف — لا يصل أي سجل إلى المحرك قبل اجتياز التحقق
+// ------------------------------------------------------------------
+
+function source(s) {
+  const passed = s.recordsIn - s.rejected - s.deduplicated;
+  return { ...s, passed };
+}
+
+const validation = {
+  sources: [
+    source({ id: 'VS1',  name: 'Biltix — العقود',            recordsIn: 1_240,   rejected: 6,   deduplicated: 14,  completenessPct: 97.8, consistencyPct: 98.9, lastBatch: t(0, '09:05') }),
+    source({ id: 'VS2',  name: 'Biltix — BoQ/BoM',           recordsIn: 18_620,  rejected: 142, deduplicated: 388, completenessPct: 96.1, consistencyPct: 97.4, lastBatch: t(0, '10:10') }),
+    source({ id: 'VS3',  name: 'Biltix — الجدول الزمني',     recordsIn: 6_410,   rejected: 38,  deduplicated: 92,  completenessPct: 98.2, consistencyPct: 99.1, lastBatch: t(0, '07:20') }),
+    source({ id: 'VS4',  name: 'Biltix — تقارير الموقع',     recordsIn: 2_980,   rejected: 61,  deduplicated: 47,  completenessPct: 94.6, consistencyPct: 96.2, lastBatch: t(0, '06:35') }),
+    source({ id: 'VS5',  name: 'Biltix — التكلفة والميزانية', recordsIn: 9_870,   rejected: 54,  deduplicated: 210, completenessPct: 97.1, consistencyPct: 98.3, lastBatch: t(0, '04:50') }),
+    source({ id: 'VS6',  name: 'Biltix — الصور',             recordsIn: 4_120,   rejected: 188, deduplicated: 356, completenessPct: 91.4, consistencyPct: 95.0, lastBatch: t(0, '06:40') }),
+    source({ id: 'VS7',  name: 'Primavera P6 EPPM',          recordsIn: 12_480,  rejected: 71,  deduplicated: 124, completenessPct: 98.6, consistencyPct: 98.8, lastBatch: t(0, '07:15') }),
+    source({ id: 'VS8',  name: 'Autodesk APS (BIM)',         recordsIn: 41_200,  rejected: 512, deduplicated: 1_840, completenessPct: 95.3, consistencyPct: 96.9, lastBatch: t(0, '03:30') }),
+    source({ id: 'VS9',  name: 'Oracle ERP',                 recordsIn: 27_640,  rejected: 203, deduplicated: 1_112, completenessPct: 98.4, consistencyPct: 97.7, lastBatch: t(0, '05:00') }),
+    source({ id: 'VS10', name: 'مؤشرات السلع',               recordsIn: 144,     rejected: 0,   deduplicated: 0,   completenessPct: 100,  consistencyPct: 100,  lastBatch: t(0, '08:00') }),
+    source({ id: 'VS11', name: 'أسعار الصرف (ساما)',         recordsIn: 36,      rejected: 0,   deduplicated: 0,   completenessPct: 100,  consistencyPct: 100,  lastBatch: t(0, '11:00') }),
+    source({ id: 'VS12', name: 'المركز الوطني للأرصاد',       recordsIn: 1_008,   rejected: 12,  deduplicated: 24,  completenessPct: 98.8, consistencyPct: 99.4, lastBatch: t(0, '06:00') }),
+  ],
+  rules: [
+    { id: 'VR1',  name: 'مطابقة مخطط السجل (الحقول الإلزامية والأنواع)',                type: 'schema',       hitsToday: 94,  enabled: true },
+    { id: 'VR2',  name: 'صلاحية التواريخ (ISO 8601) وترتيب البداية/النهاية',               type: 'schema',       hitsToday: 31,  enabled: true },
+    { id: 'VR3',  name: 'إزالة التكرار بالمعرّف الخارجي (P6 ObjectId / ERP DocNum)',       type: 'dedupe',       hitsToday: 1_246, enabled: true },
+    { id: 'VR4',  name: 'إزالة تكرار الصور بالبصمة (pHash) خلال 24 ساعة',                 type: 'dedupe',       hitsToday: 356, enabled: true },
+    { id: 'VR5',  name: 'اكتمال الحقول الحرجة (المالك، المشروع، WBS، العملة)',             type: 'completeness', hitsToday: 118, enabled: true },
+    { id: 'VR6',  name: 'اكتمال البيانات الوصفية للصور (الموقع، الوقت، المنطقة)',          type: 'completeness', hitsToday: 188, enabled: true },
+    { id: 'VR7',  name: 'اتساق الكميات: BoQ ضمن ±30% من BIM وإلا يُحجر للمراجعة',          type: 'consistency',  hitsToday: 27,  enabled: true },
+    { id: 'VR8',  name: 'اتساق العملات: المبلغ بالعملة الأصلية × سعر ساما = المبلغ بالريال', type: 'consistency',  hitsToday: 9,   enabled: true },
+    { id: 'VR9',  name: 'اتساق الجدول: النشاط الحرج طفوه ≤ 0 والتواريخ ضمن نافذة المشروع', type: 'consistency',  hitsToday: 14,  enabled: true },
+    { id: 'VR10', name: 'نطاق قراءات الحساسات (قيم فيزيائية معقولة، لا قفزات > 5σ)',        type: 'consistency',  hitsToday: 42,  enabled: true },
+    { id: 'VR11', name: 'مرجعية المعرّفات (المشروع، المورد، العقد موجودة في السجل الرئيسي)', type: 'consistency',  hitsToday: 23,  enabled: true },
+    { id: 'VR12', name: 'حجم ودقة الصور (≥ 1280 بكسل، غير معتمة، غير مشوشة)',             type: 'schema',       hitsToday: 67,  enabled: true },
+  ],
+  quarantine: [
+    { id: 'VQ1',  sourceId: 'VS8',  recordRef: 'BIM-S5-31.23.010',        reason: 'تباين الكمية +20.1% يتجاوز حد الاتساق ±30%؟ لا — يتجاوز حد المراجعة 15%: يحتاج اعتماد المهندس', at: t(0, '03:35'), status: 'معلّق' },
+    { id: 'VQ2',  sourceId: 'VS9',  recordRef: 'ERP-PO-2026-0512-L3',     reason: 'مبلغ الريال لا يطابق المبلغ باليورو × سعر ساما (فرق 3.1%)', at: t(0, '05:02'), status: 'معلّق' },
+    { id: 'VQ3',  sourceId: 'VS7',  recordRef: 'P6-A1100',                reason: 'تاريخ البداية بعد تاريخ النهاية في النسخة المستوردة', at: t(0, '07:16'), status: 'مُصحح' },
+    { id: 'VQ4',  sourceId: 'VS6',  recordRef: 'IMG-S3-20261108-031',     reason: 'صورة بلا بيانات موقع (GPS) ولا منطقة', at: t(0, '06:41'), status: 'معلّق' },
+    { id: 'VQ5',  sourceId: 'VS4',  recordRef: 'DR-S1-20261108',          reason: 'تقرير يومي مكرر (بصمة مطابقة لتقرير 2026-11-07)', at: t(0, '06:36'), status: 'مرفوض' },
+    { id: 'VQ6',  sourceId: 'VS2',  recordRef: 'BQ-S2-09.03.050',         reason: 'حقل المورد فارغ', at: t(-1, '10:12'), status: 'مُصحح' },
+    { id: 'VQ7',  sourceId: 'VS9',  recordRef: 'ERP-CL-S3-3.4-OCT',        reason: 'قيمة الفعلي سالبة (−1,204,000) — قيد عكسي غير موسوم', at: t(-1, '05:03'), status: 'معلّق' },
+    { id: 'VQ8',  sourceId: 'VS12', recordRef: 'NCM-NEOM-20261112',        reason: 'سرعة رياح 312 كم/س — خارج النطاق الفيزيائي', at: t(0, '06:01'), status: 'مرفوض' },
+    { id: 'VQ9',  sourceId: 'VS1',  recordRef: 'CT-2026-052 §18.2',        reason: 'نص البند ناقص (ينتهي بـ "وفق المتبع" دون جدول حدود)', at: t(-2, '09:08'), status: 'معلّق' },
+    { id: 'VQ10', sourceId: 'VS7',  recordRef: 'P6-E5010 (SC)',            reason: 'معرّف المقاول من الباطن SC12 غير موجود في السجل الرئيسي', at: t(-2, '07:18'), status: 'مُصحح' },
+    { id: 'VQ11', sourceId: 'VS6',  recordRef: 'IMG-S5-20261108-004..019', reason: '16 صورة بدقة أقل من 1280 بكسل (ضغط واتساب)', at: t(-1, '06:42'), status: 'مرفوض' },
+    { id: 'VQ12', sourceId: 'VS8',  recordRef: 'BIM-S1-08.01.040 v39',     reason: 'إصدار نموذج أحدث من الإصدار المعتمد (v38) — بانتظار الاعتماد', at: t(0, '03:36'), status: 'معلّق' },
+    { id: 'VQ13', sourceId: 'VS5',  recordRef: 'COST-S2-2.7-NOV',          reason: 'ميزانية البند تغيرت دون أمر تغيير مرتبط', at: t(0, '04:52'), status: 'معلّق' },
+    { id: 'VQ14', sourceId: 'VS3',  recordRef: 'SCH-S6-F6020',             reason: 'نشاط حرج بطفو موجب (3 أيام) — تعارض مع P6', at: t(0, '07:21'), status: 'مُصحح' },
+  ],
+};
+
+// ------------------------------------------------------------------
+// 22. الموصلات المؤسسية — المنصة تقرأ من أنظمة العميل وتكتب عكسياً فقط
+//     العلامات والدرجات والتنبيهات ومهام المعالجة
+// ------------------------------------------------------------------
+
+const CF = {
+  url: (key, label, placeholder) => ({ key, label, type: 'url', placeholder }),
+  secret: (key, label) => ({ key, label, type: 'password' }),
+  text: (key, label, placeholder) => ({ key, label, type: 'text', placeholder }),
+};
+
+const connectors = [
+  { id: 'primavera-p6', name: 'Oracle Primavera P6 EPPM', vendor: 'Oracle', layer: 'enterprise', api: 'P6 EPPM Web Services (SOAP/REST)', mode: 'read+writeback', entities: ['المشاريع', 'الأنشطة', 'العلاقات', 'الموارد', 'خطوط الأساس'], status: 'connected', lastSync: t(0, '07:15'), recordsPerDay: 12_480, latencyMs: 640, writeback: ['أكواد مخاطر النشاط (Activity Codes)', 'ملاحظات المخاطر على الأنشطة الحرجة'], description: 'قراءة الجداول وخطوط الأساس والموارد، والكتابة العكسية لأكواد المخاطر على الأنشطة.', configFields: [CF.url('baseUrl', 'عنوان خدمات P6', 'https://p6.example.sa/p6ws'), CF.text('database', 'قاعدة البيانات', 'PMDB'), CF.text('username', 'اسم المستخدم', ''), CF.secret('password', 'كلمة المرور')] },
+  { id: 'autodesk-aps', name: 'Autodesk Platform Services', vendor: 'Autodesk', layer: 'enterprise', api: 'Model Derivative + Data Management + BIM 360 (REST)', mode: 'read', entities: ['نماذج BIM', 'الكميات', 'إصدارات النماذج', 'المسوحات'], status: 'connected', lastSync: t(0, '03:30'), recordsPerDay: 41_200, latencyMs: 1_120, writeback: [], description: 'استخراج الكميات والعناصر من نماذج BIM ومقارنتها بجدول الكميات والمسوحات.', configFields: [CF.text('clientId', 'Client ID', ''), CF.secret('clientSecret', 'Client Secret'), CF.text('hubId', 'معرّف Hub', 'b.xxxx')] },
+  { id: 'oracle-erp', name: 'Oracle Fusion Cloud ERP', vendor: 'Oracle', layer: 'enterprise', api: 'REST (Projects, Procurement, Payables)', mode: 'read+writeback', entities: ['الميزانيات', 'الفعلي والالتزامات', 'أوامر الشراء', 'الموردون', 'الفواتير'], status: 'connected', lastSync: t(0, '05:00'), recordsPerDay: 27_640, latencyMs: 820, writeback: ['علامات مخاطر الموردين', 'ملاحظات المخاطر على أوامر الشراء'], description: 'قراءة بيانات التكلفة والمشتريات والموردين، وكتابة علامات المخاطر على الموردين وأوامر الشراء.', configFields: [CF.url('baseUrl', 'عنوان Oracle Fusion', 'https://erp.example.sa'), CF.text('username', 'اسم المستخدم', ''), CF.secret('password', 'كلمة المرور')] },
+  { id: 'oracle-crm', name: 'Oracle CX Sales (CRM)', vendor: 'Oracle', layer: 'enterprise', api: 'REST (Sales Cloud)', mode: 'read', entities: ['العملاء', 'الفرص', 'العطاءات'], status: 'degraded', lastSync: t(0, '01:10'), recordsPerDay: 860, latencyMs: 3_400, writeback: [], description: 'قراءة بيانات العملاء والعطاءات لتقييم مخاطر العقود الجديدة.', configFields: [CF.url('baseUrl', 'عنوان CX', 'https://crm.example.sa'), CF.text('username', 'اسم المستخدم', ''), CF.secret('password', 'كلمة المرور')] },
+  { id: 'sap-s4', name: 'SAP S/4HANA', vendor: 'SAP', layer: 'enterprise', api: 'OData v4', mode: 'read+writeback', entities: ['PS (المشاريع)', 'MM (المواد)', 'FI/CO'], status: 'configurable', lastSync: null, recordsPerDay: 0, latencyMs: 0, writeback: ['علامات المخاطر على عناصر WBS'], description: 'بديل قابل للإعداد لعملاء SAP.', configFields: [CF.url('baseUrl', 'عنوان OData', 'https://s4.example.sa/sap/opu/odata4'), CF.text('client', 'Client', '100'), CF.text('username', 'اسم المستخدم', ''), CF.secret('password', 'كلمة المرور')] },
+  { id: 'zoho-crm', name: 'Zoho CRM', vendor: 'Zoho', layer: 'enterprise', api: 'REST v6 (OAuth 2.0)', mode: 'read', entities: ['العملاء', 'الصفقات'], status: 'configurable', lastSync: null, recordsPerDay: 0, latencyMs: 0, writeback: [], description: 'بديل قابل للإعداد للعملاء الذين يستخدمون Zoho.', configFields: [CF.text('clientId', 'Client ID', ''), CF.secret('clientSecret', 'Client Secret'), CF.secret('refreshToken', 'Refresh Token')] },
+  { id: 'hubspot', name: 'HubSpot CRM', vendor: 'HubSpot', layer: 'enterprise', api: 'REST v3 (Private App)', mode: 'read', entities: ['الشركات', 'الصفقات'], status: 'configurable', lastSync: null, recordsPerDay: 0, latencyMs: 0, writeback: [], description: 'بديل قابل للإعداد للعملاء الذين يستخدمون HubSpot.', configFields: [CF.secret('accessToken', 'Private App Token')] },
+  { id: 'biltix-contracts', name: 'بلتكس — وحدة العقود', vendor: 'Biltix', layer: 'biltix', api: 'Biltix REST v1 + Webhooks', mode: 'read+writeback', entities: ['العقود', 'البنود', 'الالتزامات', 'المراسلات'], status: 'connected', lastSync: t(0, '09:05'), recordsPerDay: 1_240, latencyMs: 180, writeback: ['علامات البنود ودرجاتها', 'الصياغات البديلة', 'مهام المراجعة القانونية'], description: 'المصدر الأساسي للعقود؛ تُكتب علامات البنود والصياغات البديلة إلى سجل العقد.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.biltix.sa/v1'), CF.secret('apiKey', 'مفتاح API')] },
+  { id: 'biltix-boq', name: 'بلتكس — جدول الكميات BoQ/BoM', vendor: 'Biltix', layer: 'biltix', api: 'Biltix REST v1', mode: 'read+writeback', entities: ['بنود الكميات', 'المواصفات', 'الموردون'], status: 'connected', lastSync: t(0, '10:10'), recordsPerDay: 18_620, latencyMs: 210, writeback: ['درجات مخاطر البنود', 'تنبيهات تاريخ الطلب'], description: 'قراءة بنود الكميات والمواصفات وكتابة درجات المخاطر وتنبيهات الطلب.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.biltix.sa/v1'), CF.secret('apiKey', 'مفتاح API')] },
+  { id: 'biltix-schedule', name: 'بلتكس — الجدول الزمني', vendor: 'Biltix', layer: 'biltix', api: 'Biltix REST v1', mode: 'read+writeback', entities: ['المهام', 'المعالم', 'التبعيات'], status: 'connected', lastSync: t(0, '07:20'), recordsPerDay: 6_410, latencyMs: 160, writeback: ['علامات انزلاق المسار الحرج', 'مهام المعالجة'], description: 'جدول المشروع داخل بلتكس (مزامن مع P6) مع كتابة علامات الانزلاق.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.biltix.sa/v1'), CF.secret('apiKey', 'مفتاح API')] },
+  { id: 'biltix-site-reports', name: 'بلتكس — تقارير الموقع', vendor: 'Biltix', layer: 'biltix', api: 'Biltix REST v1 + Webhooks', mode: 'read+writeback', entities: ['التقارير اليومية', 'الملاحظات', 'التفتيشات', 'الحضور'], status: 'connected', lastSync: t(0, '06:35'), recordsPerDay: 2_980, latencyMs: 190, writeback: ['علامات السلامة على التقارير', 'مهام المعالجة للموقع'], description: 'التقارير اليومية والتفتيشات؛ تُكتب علامات السلامة ومهام الموقع.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.biltix.sa/v1'), CF.secret('apiKey', 'مفتاح API')] },
+  { id: 'biltix-cost', name: 'بلتكس — التكلفة والميزانية', vendor: 'Biltix', layer: 'biltix', api: 'Biltix REST v1', mode: 'read+writeback', entities: ['بنود التكلفة', 'أوامر التغيير', 'المستخلصات'], status: 'connected', lastSync: t(0, '04:50'), recordsPerDay: 9_870, latencyMs: 230, writeback: ['علامات تجاوز الميزانية', 'تنبيهات أوامر التغيير'], description: 'بيانات التكلفة داخل بلتكس (مزامنة مع ERP) مع كتابة علامات التجاوز.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.biltix.sa/v1'), CF.secret('apiKey', 'مفتاح API')] },
+  { id: 'biltix-images', name: 'بلتكس — الصور والوسائط', vendor: 'Biltix', layer: 'biltix', api: 'Biltix Media API (S3-compatible)', mode: 'read', entities: ['صور الموقع', 'الفيديو', 'المسوحات'], status: 'degraded', lastSync: t(0, '06:40'), recordsPerDay: 4_120, latencyMs: 2_800, writeback: [], description: 'مخزن الصور والوسائط؛ تدهور الأداء بسبب حجم الصور غير المضغوطة.', configFields: [CF.url('endpoint', 'عنوان المخزن', 'https://media.biltix.sa'), CF.text('bucket', 'Bucket', 'site-images'), CF.secret('accessKey', 'Access Key'), CF.secret('secretKey', 'Secret Key')] },
+  { id: 'feed-commodities', name: 'مؤشرات أسعار السلع', vendor: 'مزود بيانات السلع', layer: 'external', api: 'REST (JSON) — يومي', mode: 'read', entities: ['حديد التسليح', 'الأسمنت', 'النحاس', 'الألمنيوم', 'الديزل', 'الخشب'], status: 'connected', lastSync: t(0, '08:00'), recordsPerDay: 6, latencyMs: 420, writeback: [], description: 'أسعار السلع المحلية والعالمية (LME، الهيئة العامة للإحصاء).', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.commodities.example/v1'), CF.secret('apiKey', 'مفتاح API')] },
+  { id: 'feed-fx-sama', name: 'أسعار الصرف — البنك المركزي السعودي (ساما)', vendor: 'ساما', layer: 'external', api: 'REST (JSON) — يومي', mode: 'read', entities: ['USD', 'EUR', 'CNY', 'INR', 'TRY', 'GBP'], status: 'connected', lastSync: t(0, '11:00'), recordsPerDay: 6, latencyMs: 310, writeback: [], description: 'أسعار الصرف الرسمية اليومية.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.sama.gov.sa/rates')] },
+  { id: 'feed-weather-ncm', name: 'المركز الوطني للأرصاد', vendor: 'المركز الوطني للأرصاد', layer: 'external', api: 'REST (JSON) — كل 6 ساعات', mode: 'read', entities: ['توقعات 7 أيام', 'إنذارات الغبار', 'الرياح'], status: 'connected', lastSync: t(0, '06:00'), recordsPerDay: 168, latencyMs: 560, writeback: [], description: 'توقعات وإنذارات لمواقع المشاريع الستة.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.ncm.gov.sa/v1'), CF.secret('apiKey', 'مفتاح API')] },
+  { id: 'feed-gis', name: 'طبقات GIS (الهيئة العامة للمساحة والمعلومات الجيومكانية)', vendor: 'الهيئة العامة للمساحة', layer: 'external', api: 'OGC WMS/WFS', mode: 'read', entities: ['حدود المواقع', 'الطبقات الجيولوجية', 'المواقع الأثرية', 'المرافق'], status: 'disconnected', lastSync: t(-3, '14:00'), recordsPerDay: 0, latencyMs: 0, writeback: [], description: 'طبقات جغرافية للمخاطر الجيوتقنية والتراثية؛ انقطاع بسبب انتهاء شهادة TLS.', configFields: [CF.url('wmsUrl', 'عنوان WMS', 'https://gis.example.gov.sa/wms'), CF.text('layers', 'الطبقات', 'geology,heritage,utilities')] },
+];
+
+// ------------------------------------------------------------------
+// 23. سجل التدقيق — كل تجاوز وقبول وتصعيد وكتابة عكسية وتحديث نموذج
+// ------------------------------------------------------------------
+
+let auditSeq = 0;
+function audit(x) {
+  auditSeq += 1;
+  return { id: `AU${auditSeq}`, ...x };
+}
+
+const auditLog = [
+  audit({ at: t(0, '10:01'), actor: 'النظام', action: 'writeback', target: 'MT-0224 → Biltix PM', detail: 'فشل الكتابة العكسية: انتهاء مهلة الاستجابة (30 ث) — سيعاد الإرسال تلقائياً' }),
+  audit({ at: t(0, '10:00'), actor: OWNERS.hse.S5, action: 'accept', target: 'AIR-1046', detail: 'قبول التوصية وإنشاء المهمة MT-0224 (إصلاح السياج الجنوبي)' }),
+  audit({ at: t(0, '09:31'), actor: 'النظام', action: 'writeback', target: 'MT-0211 → Biltix PM', detail: 'إرسال المهمة إلى Biltix PM — بانتظار التأكيد' }),
+  audit({ at: t(0, '09:30'), actor: OWNERS.hse.S4, action: 'accept', target: 'AIR-1016', detail: 'قبول التوصية وإنشاء المهمة MT-0211 (إغلاق البوابة G2)' }),
+  audit({ at: t(0, '08:15'), actor: OWNERS.pm.S5, action: 'escalate', target: 'AIR-1020', detail: 'تأكيد التصعيد الفوري؛ المهندس الجيوتقني في الموقع' }),
+  audit({ at: t(0, '07:30'), actor: 'النظام', action: 'model-update', target: 'schedule-model v3.1.2', detail: 'تشغيل مجدول: 32 نشاطاً حرجاً مُقيَّماً، مونت كارلو 6 مشاريع × 5,000 تكرار' }),
+  audit({ at: t(0, '06:36'), actor: 'النظام', action: 'validation', target: 'Biltix — تقارير الموقع', detail: 'رفض تقرير مكرر DR-S1-20261108 (بصمة مطابقة)' }),
+  audit({ at: t(0, '06:01'), actor: 'النظام', action: 'validation', target: 'المركز الوطني للأرصاد', detail: 'رفض قراءة رياح 312 كم/س — خارج النطاق الفيزيائي (القاعدة VR10)' }),
+  audit({ at: t(0, '05:00'), actor: 'النظام', action: 'model-update', target: 'cost-forecast v1.6.3', detail: 'بدء إعادة التدريب: درجة الانحراف 0.33 تجاوزت العتبة 0.30' }),
+  audit({ at: t(0, '05:02'), actor: 'النظام', action: 'validation', target: 'Oracle ERP', detail: 'حجر السجل ERP-PO-2026-0512-L3: عدم اتساق العملة (القاعدة VR8)' }),
+  audit({ at: t(-1, '13:10'), actor: OWNERS.hse.S1, action: 'accept', target: 'AIR-1004', detail: 'قبول التوصية وإنشاء المهمة MT-0203 (حواجز الحافة — الطابق 23)' }),
+  audit({ at: t(-1, '13:11'), actor: 'النظام', action: 'writeback', target: 'MT-0203 → Biltix PM', detail: 'تمت الكتابة العكسية بنجاح (المعرّف الخارجي PM-TSK-88412)' }),
+  audit({ at: t(-1, '08:40'), actor: OWNERS.legal, action: 'login', target: 'قمرة القيادة', detail: 'تسجيل دخول — الدور: القانونية' }),
+  audit({ at: t(-1, '06:10'), actor: OWNERS.hse.S5, action: 'accept', target: 'AIR-1020', detail: 'قبول التوصية وإنشاء المهمة MT-0214 (إخلاء المنحدر الشمالي) مع تصعيد' }),
+  audit({ at: t(-1, '05:35'), actor: 'النظام', action: 'escalate', target: 'AIR-1020', detail: 'تصعيد فوري تلقائي — الدرجة 85 ≥ عتبة الحرج (البريد، Slack، WhatsApp)' }),
+  audit({ at: t(-3, '14:00'), actor: OWNERS.hse.S4, action: 'accept', target: 'MT-0223', detail: 'إغلاق المهمة مع النتيجة؛ إغلاق المخاطرة AIR-1041 — النتيجة مُغذّاة لإعادة المعايرة' }),
+  audit({ at: t(-4, '15:20'), actor: OWNERS.pm.S2, action: 'escalate', target: 'AIR-1007', detail: 'تصعيد يدوي عبر البريد وSlack وTeams — الفحص لم يُجدول بعد 25 يوماً' }),
+  audit({ at: t(-7, '11:30'), actor: OWNERS.finance, action: 'override', target: 'AIR-1060', detail: 'تجاهل المخاطرة: سقف التحوط 70% وفق سياسة الخزينة' }),
+  audit({ at: t(-8, '12:00'), actor: OWNERS.finance, action: 'accept', target: 'AIR-1006', detail: 'قبول التوصية وإنشاء المهمة MT-0204' }),
+  audit({ at: t(-9, '10:30'), actor: 'النظام', action: 'config', target: 'الإعدادات — القنوات', detail: 'تفعيل قناة WhatsApp للتنبيهات الحرجة لمشروعي القدية ونيوم' }),
+  audit({ at: t(-13, '09:40'), actor: OWNERS.finance, action: 'override', target: 'AIR-1033', detail: 'تجاهل المخاطرة: التعرض محوط مسبقاً (FX-2026-118) — تأخر مزامنة ERP' }),
+  audit({ at: t(-31, '10:00'), actor: OWNERS.pm.S2, action: 'override', target: 'AIR-1029', detail: 'تجاهل المخاطرة: صاحب العمل غير مشمول بتعميم التعويض؛ الفرق ممتص من الاحتياطي' }),
+  audit({ at: t(-40, '12:00'), actor: OWNERS.pm.S3, action: 'override', target: 'AIR-1010', detail: 'تعديل التوصية: إضافة تعاقد احتياطي على محول بديل — السبب: خطة B لغرامة 1.2 مليون ريال/يوم' }),
+  audit({ at: t(-44, '09:00'), actor: 'النظام', action: 'model-update', target: 'contract-nlp v2.3.1', detail: 'نشر الإصدار v2.3.1: تحسين كشف السقوف المفقودة (الدقة 0.88 → 0.91)' }),
+  audit({ at: t(-55, '09:20'), actor: OWNERS.pm.S1, action: 'override', target: 'AIR-1002', detail: 'تعديل التوصية: إضافة تسهيل تمويل المستخلصات — السبب: غطاء نقدي فوري لدفعات الباطن' }),
+  audit({ at: t(-58, '10:02'), actor: OWNERS.pmo, action: 'accept', target: 'AIR-1001', detail: 'قبول التوصية وإنشاء المهمة MT-0201 (سقف غرامة التأخير)' }),
+  audit({ at: t(-61, '14:30'), actor: 'النظام', action: 'escalate', target: 'AIR-1001', detail: 'تصعيد فوري تلقائي — الدرجة 88 ≥ عتبة الحرج' }),
+  audit({ at: t(-62, '08:00'), actor: 'النظام', action: 'config', target: 'الإعدادات — الأوزان', detail: 'اعتماد أوزان المجالات: العقود 0.20، المواد 0.20، الجدول 0.25، الموقع 0.20، التكلفة 0.15' }),
+];
+
+// ------------------------------------------------------------------
+// 24. خارطة الطريق والمقترح — نطاق العمل والافتراضات والمعالم M0–M4
+//     نسب الدفع تُترك فارغة (null) وتُستكمل مع العميل من شاشة خارطة الطريق.
+// ------------------------------------------------------------------
+
+const roadmap = {
+  scopeItems: [
+    { id: 'SC1', text: 'طبقة التكامل: موصلات REST/SDK وWebhooks لوحدات بلتكس (العقود، BoM/BoQ، الجدول، تقارير الموقع، التكلفة، الصور) والأنظمة المؤسسية (Primavera P6، Autodesk APS، Oracle ERP/CRM) والمصادر الخارجية (السلع، العملات، الأرصاد، GIS).', done: false },
+    { id: 'SC2', text: 'طبقة التحقق والتنظيف: فحص المخطط، إزالة التكرار، الاكتمال، الاتساق، قائمة الحجر — لا يصل سجل إلى المحرك قبل اجتيازها.', done: false },
+    { id: 'SC3', text: 'بحيرة بيانات المخاطر: تخزين منظم وغير منظم، موحّد، مُصدَّر ومُدقَّق مع تتبع الأصل.', done: false },
+    { id: 'SC4', text: 'محرك مخاطر الذكاء الاصطناعي: خمسة خطوط (عقود NLP، توقع BoM، نموذج الجدول ومونت كارلو، ذكاء الموقع، توقع التكلفة) على طبقة تقييم وتفسير مشتركة (درجة 0–100 + تفسير بلغة واضحة).', done: false },
+    { id: 'SC5', text: 'منطق التصنيف الخلفي: النوع (مالي/سلامة/تأخير/نزاع) والتقييم (أحمر/أصفر/أخضر) مع عتبات قابلة للضبط.', done: false },
+    { id: 'SC6', text: 'التنبيه وسير العمل: قوائم التنبيه والتصعيد الفوري (البريد/Slack/Teams/WhatsApp)، الكتابة العكسية إلى تطبيق بلتكس، إنشاء مهام المعالجة وإسنادها وتتبعها.', done: false },
+    { id: 'SC7', text: 'قمرة قيادة المخاطر: الدرجة الموحدة، المجالات الخمسة، سجل المخاطر الذكي بتدفق المستخدم الكامل (قبول/تعديل/تصعيد)، معاملات الاستجابة لأصحاب المصلحة، التقارير والتدقيق.', done: false },
+  ],
+  assumptions: [
+    { id: 'AS1', text: 'يوفر العميل بيئات اختبار وحسابات وصول للقراءة إلى Primavera P6 وAutodesk APS وOracle ERP/CRM خلال المرحلة M1.' },
+    { id: 'AS2', text: 'واجهات برمجة وحدات بلتكس (REST v1) موثقة ومستقرة طوال مدة المشروع، وأي تغيير فيها يُبلَّغ قبل 30 يوماً.' },
+    { id: 'AS3', text: 'يوفر العميل بيانات تاريخية لا تقل عن 24 شهراً (عقود، جداول، تكاليف، تقارير موقع) لتدريب النماذج ومعايرتها.' },
+    { id: 'AS4', text: 'تستضاف المنصة على سحابة داخل المملكة متوافقة مع ضوابط الهيئة الوطنية للأمن السيبراني (ECC) ونظام حماية البيانات الشخصية (PDPL).' },
+    { id: 'AS5', text: 'يعيّن العميل مالك منتج وممثلين من المشتريات والقانونية والتخطيط والمالية والسلامة بتفرغ لا يقل عن 20% خلال الاستكشاف والقبول.' },
+    { id: 'AS6', text: 'تقتصر الكتابة العكسية إلى أنظمة العميل على علامات المخاطر والدرجات والتنبيهات ومهام المعالجة؛ لا تعديل لبيانات المصدر.' },
+  ],
+  outOfScope: [
+    'تعديل أو إعادة هندسة وحدات بلتكس الحالية أو أنظمة العميل المؤسسية',
+    'ترخيص أنظمة الطرف الثالث (Primavera P6، Autodesk، Oracle، مزودي البيانات)',
+    'تركيب الحساسات والكاميرات في المواقع وصيانتها',
+    'الاستشارات القانونية الملزمة؛ مخرجات محرك العقود مساندة للمراجعة القانونية لا بديلاً عنها',
+    'نقل البيانات التاريخية من أنظمة غير مذكورة في طبقة التكامل',
+  ],
+  milestones: [
+    { id: 'M0', name: 'تخصيص الفريق وانطلاق المشروع', month: 0, durationMonths: 0.5, paymentPct: null, status: 'منجز',
+      deliverables: ['ميثاق المشروع وخطة الحوكمة', 'تشكيل الفريق المشترك وتعيين مالك المنتج', 'ورشة الانطلاق وخارطة أصحاب المصلحة', 'بيئات العمل وقنوات التواصل'] },
+    { id: 'M1', name: 'الاستكشاف ومعمارية التكامل', month: 1, durationMonths: 1.5, paymentPct: null, status: 'جارٍ',
+      deliverables: ['تقييم جاهزية البيانات والمصادر', 'وثيقة معمارية التكامل (طبقات 1–5)', 'نموذج البيانات الموحد لبحيرة المخاطر', 'مصفوفة مؤشرات المخاطر الرئيسية (KRI) المعتمدة', 'خطة الأمن والامتثال (ECC/PDPL)'] },
+    { id: 'M2', name: 'بناء التكاملات وطبقة التحقق', month: 3, durationMonths: 2.5, paymentPct: null, status: 'قادم',
+      deliverables: ['موصلات بلتكس الست والموصلات المؤسسية (P6، APS، Oracle)', 'موصلات المصادر الخارجية (السلع، العملات، الأرصاد، GIS)', 'طبقة التحقق والتنظيف وقائمة الحجر', 'بحيرة بيانات المخاطر مع التصدير والتدقيق', 'اختبارات التكامل الشاملة'] },
+    { id: 'M3', name: 'تحسينات محرك المخاطر', month: 5, durationMonths: 2.5, paymentPct: null, status: 'قادم',
+      deliverables: ['الخطوط الخمسة مدرّبة على بيانات العميل', 'طبقة التقييم والتفسير المشتركة (0–100 + تفسير)', 'منطق التصنيف (النوع/التقييم) والعتبات', 'التنبيه وسير العمل والكتابة العكسية', 'تقرير أداء النماذج (الدقة، الاستدعاء، المعايرة)'] },
+    { id: 'M4', name: 'قمرة القيادة ومعاملات الاستجابة واختبار القبول والإطلاق', month: 8, durationMonths: 2, paymentPct: null, status: 'قادم',
+      deliverables: ['قمرة قيادة المخاطر وسجل المخاطر الذكي', 'معاملات الاستجابة لأصحاب المصلحة (PM/القانونية/المشتريات/الموقع/المالية/PMO)', 'اختبار قبول المستخدم (UAT) وتدريب المستخدمين', 'الإطلاق التدريجي ودعم ما بعد الإطلاق (Hypercare)', 'وثائق التشغيل ونقل المعرفة'] },
+  ],
+  paymentNote: 'النسب تُستكمل مع العميل؛ المجموع 100%',
+  totalMonths: 10,
+};
+
+// ------------------------------------------------------------------
+// 25. التصدير
+// ------------------------------------------------------------------
+
+const platformSeed = {
+  product: {
+    name: 'بلتكس — منصة إدارة المخاطر بالذكاء الاصطناعي',
+    nameEn: 'Biltix AI Risk Management Platform',
+    brandShort: 'بلتكس Risk AI',
+    tagline: 'قمرة قيادة المخاطر — خمسة مجالات، تصنيف فوري، معالجة مُتتبعة',
+    proposalVersion: 'v2',
+  },
+  projects, contracts, suppliers, commodities, boqItems, scheduleTasks, monteCarlo, resources, approvals,
+  subcontractors, weather, costLines, changeOrders, currencies, labourIndex, aiRisks, tasks, alerts,
+  pipelines, validation, connectors, auditLog, roadmap,
+};
+
+export { projects, contracts, suppliers, commodities, boqItems, scheduleTasks, monteCarlo, resources, approvals,
+  subcontractors, weather, costLines, changeOrders, currencies, labourIndex, aiRisks, tasks, alerts,
+  pipelines, validation, connectors, auditLog, roadmap };
+
+export default platformSeed;

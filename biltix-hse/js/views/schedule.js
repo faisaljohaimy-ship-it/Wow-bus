@@ -110,6 +110,10 @@ export default {
     function statusBadge(status, map, fallback = 'neutral') { return badge(status || '—', map[status] || fallback); }
     const probTone = (p) => (p >= 0.7 ? 'critical' : p >= HIGH_DELAY_PROB ? 'serious' : p >= 0.3 ? 'warning' : 'good');
     const riskTone = (p) => (p >= 0.6 ? 'critical' : p >= 0.3 ? 'warning' : 'good');
+    const rainPct = (v) => { const n = num(v); return n > 0 && n < 1 && !Number.isInteger(n) ? Math.round(n * 100) : Math.round(n); };
+    const escapeRe = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    /** Whole-token match for codes/ids (so AP1 never matches AP10). */
+    const hasToken = (hay, needle) => new RegExp(`(^|[^A-Za-z0-9])${escapeRe(needle)}(?![A-Za-z0-9])`, 'i').test(hay);
 
     /** Probability meter: charts.meter when available, components.progress otherwise — always with a visible % label. */
     function probMeter(p, label) {
@@ -238,8 +242,9 @@ export default {
 
     function relatedRisks(platform, { projectId, kind, needles }) {
       const ns = needles.map(lower).filter(Boolean);
+      const codeLike = (n) => /^[a-z]{1,4}\d/i.test(n);
       return (platform.aiRisks || []).filter((r) => r && r.category === CATEGORY && !CLOSED_RISK.has(r.status) && r.projectId === projectId && (!kind || !r.evidence || !r.evidence.kind || r.evidence.kind === kind)
-        && ns.some((n) => lower(`${r.evidence && r.evidence.ref} ${r.evidence && r.evidence.excerpt} ${r.title} ${r.driverExplanation}`).includes(n)));
+        && ns.some((n) => { const hay = lower(`${r.evidence && r.evidence.ref} ${r.evidence && r.evidence.excerpt} ${r.title} ${r.driverExplanation}`); return codeLike(n) ? hasToken(hay, n) : hay.includes(n); }));
     }
 
     function addTaskSafely(payload) {
@@ -383,12 +388,13 @@ export default {
       const cs = data.categoryScore;
       const spark = cs && Array.isArray(cs.trend) && cs.trend.length > 1 ? makeChart('sparkline', { values: cs.trend, width: 96, height: 28, color: 'var(--ink-3)', accentLast: true }) : null;
       const p80 = data.mc && data.mc.p80 ? fmt.date(data.mc.p80, { style: 'short' }) : '—';
-      const p80Slip = data.mc && data.project ? daysBetween(data.project.plannedFinish, data.mc.p80) : null;
+      const plannedFinish = (data.mc && data.mc.plannedFinish) || (data.project ? data.project.plannedFinish : null);
+      const p80Slip = data.mc && plannedFinish ? daysBetween(plannedFinish, data.mc.p80) : null;
       const criticalCount = data.tasksAll.filter((t) => t.critical).length;
       return h('div', { class: 'kpi-row' },
         statTile({ label: 'درجة مجال الجدول الزمني', value: num(cs.score), unit: '/ 100', tone: ratingTone(ratingOf(cs.score)), icon: svgIcon('calendar', 18), spark, hint: `${fmt.num(cs.open || 0)} مخاطر مفتوحة · ${fmt.num(cs.red || 0)} حمراء — ${RATING_META[ratingOf(cs.score)].hint}` }),
         statTile({ label: 'أنشطة حرجة معرّضة للتأخير', value: data.highRisk.length, tone: data.highRisk.length ? 'critical' : 'good', icon: glyph(data.highRisk.length ? 'critical' : 'good', 18), hint: `احتمال تأخير ≥ ${fmt.pct(HIGH_DELAY_PROB * 100)} من أصل ${fmt.num(criticalCount)} نشاطاً حرجاً`, onClick: () => { const t = root.querySelector('[data-section="critical"]'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }),
-        statTile({ label: 'التأخير المرجّح على المسار الحرج', value: data.weightedDelay, unit: 'يوم', tone: data.weightedDelay > 30 ? 'critical' : data.weightedDelay > 10 ? 'warning' : 'good', icon: glyph('clock', 18), hint: 'مجموع (احتمال التأخير × الأيام المتوقعة) لجميع الأنشطة الحرجة ضمن النطاق' }),
+        statTile({ label: 'التأخير المرجّح على المسار الحرج', value: data.weightedDelay, unit: 'يوم', tone: data.weightedDelay > 30 ? 'critical' : data.weightedDelay > 10 ? 'warning' : 'good', icon: glyph('clock', 18), hint: `مجموع (احتمال التأخير × الأيام المتوقعة) للأنشطة الحرجة — ${data.siteId ? siteName(data.state, data.siteId) : 'عبر المشاريع الستة مجتمعة'}` }),
         statTile({ label: `تاريخ الإنجاز P80 — ${site(data.state, data.projectId) ? site(data.state, data.projectId).code : data.projectId}`, value: p80, tone: p80Slip === null ? null : p80Slip > 30 ? 'critical' : p80Slip > 0 ? 'warning' : 'good', icon: svgIcon('calendar', 18), hint: p80Slip === null ? 'بثقة 80% وفق محاكاة مونت كارلو' : p80Slip > 0 ? `يتجاوز الموعد المخطط بـ${daysWord(p80Slip)} (بثقة 80%)` : 'ضمن الموعد المخطط بثقة 80%' }),
         statTile({ label: 'موافقات تنظيمية معرّضة للخطر', value: data.atRisk.length, tone: data.atRisk.some((a) => a.status === 'متأخر') ? 'critical' : data.atRisk.length ? 'warning' : 'good', icon: glyph(data.atRisk.length ? 'warning' : 'good', 18), hint: `تجاوزت ${fmt.pct(APPROVAL_RISK_RATIO * 100)} من المدة النظامية أو متأخرة`, onClick: () => { const t = root.querySelector('[data-section="approvals"]'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }),
         statTile({ label: 'موارد فوق التخصيص', value: data.overAllocated.length, tone: data.overAllocated.length ? 'serious' : 'good', icon: svgIcon('body', 18), hint: data.overAllocated.length ? data.overAllocated.slice(0, 3).map((r) => `${r.trade} ${fmt.pct(r._util)}`).join(' · ') : 'جميع الحرف ضمن الطاقة المتاحة' }),
@@ -433,7 +439,7 @@ export default {
         ariaLabel: 'توزيع احتمالات أيام التأخير عن الموعد المخطط وفق محاكاة مونت كارلو',
       }) : null;
       const fallback = () => simpleTable('توزيع مونت كارلو', ['الانحراف عن الموعد (يوم)', 'الاحتمال'], data.histogram.map((b) => [fmt.signed(b.days), fmt.pct(b.prob * 100, 1)]));
-      const planned = data.project ? data.project.plannedFinish : null;
+      const planned = (mc && mc.plannedFinish) || (data.project ? data.project.plannedFinish : null);
       const fact = (label, iso, pct) => {
         const slip = planned ? daysBetween(planned, iso) : null;
         const tone = slip === null ? null : slip > 30 ? 'critical' : slip > 0 ? 'warning' : 'good';
@@ -464,8 +470,8 @@ export default {
         items, horizontal: true, height: Math.max(220, items.length * 30 + 24), valueFormat: (v) => fmt.pct(v), color: 'var(--s1)', showValues: true, maxBars: 12,
         ariaLabel: 'نسبة استغلال الموارد حسب الحرفة، مرتبة تنازلياً؛ الأحمر يدل على تجاوز التخصيص',
       }) : null;
-      const fallback = () => simpleTable('استغلال الموارد', ['الحرفة', 'المشروع', 'المخطط', 'المتاح', 'الاستغلال', 'فجوة الأسبوع القادم'], data.resources.map((r) => [r.trade, siteName(data.state, r.projectId), fmt.num(num(r.planned)), fmt.num(num(r.available)), fmt.pct(r._util), fmt.num(r._gap)]));
-      const gaps = data.resources.filter((r) => r._gap > 0).slice(0, 5);
+      const fallback = () => simpleTable('استغلال الموارد', ['الحرفة', 'المشروع', 'المخطط', 'المتاح', 'الاستغلال', 'فجوة الأسبوع القادم'], data.resources.map((r) => [r.trade, siteName(data.state, r.projectId), fmt.num(num(r.planned)), fmt.num(num(r.available)), fmt.pct(r._util), fmt.signed(r._gap)]));
+      const gaps = data.resources.filter((r) => r._gap < 0).sort((a, b) => a._gap - b._gap).slice(0, 5);
       const body = h('div', { class: 'stack gap-3' },
         h('div', { class: 'tone-legend' },
           h('span', { class: 'tone-legend-item' }, h('span', { class: 'legend-key', style: { background: 'var(--s1)', inlineSize: '10px', blockSize: '10px', borderRadius: '2px', display: 'inline-block' } }), h('span', {}, 'ضمن الطاقة المتاحة')),
@@ -474,7 +480,7 @@ export default {
         chart ? chart.el : fallback(),
         gaps.length ? h('ul', { class: 'urgent-list' }, ...gaps.map((r) => h('li', { class: 'urgent-item tone-warning' },
           h('span', { class: 'urgent-icon' }, glyph('warning', 15)),
-          h('div', { class: 'urgent-text' }, h('span', {}, `${r.trade} — نقص ${fmt.num(r._gap)} ${r._gap === 1 ? 'عامل' : r._gap === 2 ? 'عاملين' : r._gap <= 10 ? 'عمال' : 'عاملاً'} الأسبوع القادم`), h('span', { class: 'urgent-sub' }, `${siteName(data.state, r.projectId)} · مخطط ${fmt.num(num(r.planned))} / متاح ${fmt.num(num(r.available))}`)),
+          h('div', { class: 'urgent-text' }, h('span', {}, `${r.trade} — نقص ${fmt.num(Math.abs(r._gap))} ${Math.abs(r._gap) === 1 ? 'عامل' : Math.abs(r._gap) === 2 ? 'عاملين' : Math.abs(r._gap) <= 10 ? 'عمال' : 'عاملاً'} الأسبوع القادم`), h('span', { class: 'urgent-sub' }, `${siteName(data.state, r.projectId)} · مخطط ${fmt.num(num(r.planned))} / متاح ${fmt.num(num(r.available))}`)),
           h('div', { class: 'urgent-due' }, mono(fmt.pct(r._util))),
         ))) : h('p', { class: 'text-xs muted' }, 'لا توجد فجوات موارد متوقعة الأسبوع القادم.'),
       );
@@ -494,7 +500,7 @@ export default {
           h('div', { class: 'row between gap-2' }, h('span', { class: 'semibold text-sm' }, fmt.dayName(d.date)), h('span', { class: 'text-xs muted' }, fmt.date(d.date, { style: 'short' }))),
           h('div', { class: 'row between gap-2 text-sm' }, h('span', { class: 'muted' }, 'الحرارة'), mono(`${fmt.num(num(d.tempMax))}°`)),
           h('div', { class: 'row between gap-2 text-sm' }, h('span', { class: 'muted' }, 'الرياح'), mono(`${fmt.num(num(d.windKmh))} كم/س`)),
-          h('div', { class: 'row between gap-2 text-sm' }, h('span', { class: 'muted' }, 'الأمطار'), mono(fmt.pct(num(d.rainProb) <= 1 ? Math.round(num(d.rainProb) * 100) : num(d.rainProb)))),
+          h('div', { class: 'row between gap-2 text-sm' }, h('span', { class: 'muted' }, 'الأمطار'), mono(fmt.pct(rainPct(d.rainProb)))),
           h('div', { class: 'row between gap-2 text-sm', style: { alignItems: 'center' } }, h('span', { class: 'muted' }, 'الغبار'), statusBadge(d.dustRisk, DUST_TONE)),
           h('div', { class: 'stack gap-1', style: { marginBlockStart: '4px' } },
             h('span', { class: 'text-xs muted' }, 'خطر التأخير'),
@@ -502,7 +508,7 @@ export default {
           ),
         );
       };
-      const fallback = () => simpleTable('توقعات الطقس 7 أيام', ['اليوم', 'الحرارة', 'الرياح', 'الأمطار', 'الغبار', 'خطر التأخير'], days.map((d) => [`${fmt.dayName(d.date)} ${fmt.date(d.date, { style: 'short' })}`, `${fmt.num(num(d.tempMax))}°`, `${fmt.num(num(d.windKmh))} كم/س`, fmt.pct(num(d.rainProb) <= 1 ? Math.round(num(d.rainProb) * 100) : num(d.rainProb)), d.dustRisk || '—', fmt.pct(Math.round(d._risk * 100))]));
+      const fallback = () => simpleTable('توقعات الطقس 7 أيام', ['اليوم', 'الحرارة', 'الرياح', 'الأمطار', 'الغبار', 'خطر التأخير'], days.map((d) => [`${fmt.dayName(d.date)} ${fmt.date(d.date, { style: 'short' })}`, `${fmt.num(num(d.tempMax))}°`, `${fmt.num(num(d.windKmh))} كم/س`, fmt.pct(rainPct(d.rainProb)), d.dustRisk || '—', fmt.pct(Math.round(d._risk * 100))]));
       const body = days.length
         ? h('div', { class: 'stack gap-3' },
           h('div', { class: 'cards-grid', role: 'list', 'aria-label': 'توقعات الطقس للأيام السبعة القادمة', style: { gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: '10px' } }, ...days.map(dayCard)),

@@ -131,12 +131,12 @@ export default {
         const id = m.id || MILESTONE_IDS[i] || `M${i}`;
         const savedPct = saved[id];
         const pct = savedPct === null || savedPct === undefined || savedPct === '' ? (m.paymentPct === null || m.paymentPct === undefined ? null : num(m.paymentPct)) : num(savedPct);
-        return { ...m, id, month: num(m.month, i), duration: Math.max(1, num(m.durationMonths, 1)), pct, deliverables: arr(m.deliverables) };
+        return { ...m, id, month: Math.max(0, num(m.month, i)), duration: Math.max(0.5, num(m.durationMonths, 1)), pct, deliverables: arr(m.deliverables) };
       }).sort((a, b) => a.month - b.month);
       const total = milestones.reduce((a, m) => a + (m.pct === null ? 0 : m.pct), 0);
       const current = milestones.find((m) => m.status === 'جارٍ') || null;
-      const maxMonth = Math.max(MONTHS - 1, ...milestones.map((m) => m.month + m.duration - 1));
-      return { state, plat, roadmap, milestones, total, current, months: maxMonth + 1, scope: arr(roadmap.scopeItems), assumptions: arr(roadmap.assumptions), outOfScope: arr(roadmap.outOfScope), paymentNote: roadmap.paymentNote || 'النسب تُستكمل مع العميل؛ المجموع 100%' };
+      const span = Math.max(MONTHS, Math.ceil(Math.max(0, ...milestones.map((m) => m.month + m.duration))), num(roadmap.totalMonths, 0));
+      return { state, plat, roadmap, milestones, total, current, months: span, scope: arr(roadmap.scopeItems), assumptions: arr(roadmap.assumptions), outOfScope: arr(roadmap.outOfScope), paymentNote: roadmap.paymentNote || 'النسب تُستكمل مع العميل؛ المجموع 100%' };
     }
 
     /* ───────────────────────── sections ───────────────────────── */
@@ -186,7 +186,11 @@ export default {
 
     function checkList(items, { icon, className, empty }) {
       if (!items.length) return emptyState({ title: empty });
-      return h('ul', { class: ['check-list', className] }, ...items.map((text) => h('li', {}, icon(), h('span', {}, typeof text === 'string' ? text : (text && (text.text || text.title)) || '—'))));
+      return h('ul', { class: ['check-list', className] }, ...items.map((item) => {
+        const text = typeof item === 'string' ? item : (item && (item.text || item.title)) || '—';
+        const done = item && typeof item === 'object' && item.done === true;
+        return h('li', {}, icon(), h('span', { class: 'row wrap gap-2', style: { alignItems: 'baseline' } }, h('span', {}, text), done ? badge('منجز', 'good') : null));
+      }));
     }
 
     function buildScopeCard(data) {
@@ -215,28 +219,31 @@ export default {
       const months = data.months;
       const gantt = h('div', { class: 'roadmap-gantt', role: 'table', 'aria-label': 'مخطط جانت للمعالم من M0 إلى M4', style: { '--months': String(months) } });
       const monthsRow = h('div', { class: 'roadmap-months', role: 'row' });
-      for (let m = 0; m < months; m += 1) monthsRow.appendChild(h('span', { class: 'roadmap-month', role: 'columnheader', style: data.current && data.current.month === m ? { color: 'var(--accent)', fontWeight: '600' } : undefined }, `M${m} · الشهر ${fmt.num(m)}`));
-      gantt.appendChild(h('div', { class: 'roadmap-gantt-head' }, h('span', { role: 'columnheader' }, 'المعلم'), monthsRow));
+      const currentMonth = data.current ? Math.floor(data.current.month) : -1;
+      for (let m = 0; m < months; m += 1) monthsRow.appendChild(h('span', { class: 'roadmap-month', role: 'columnheader', title: `الشهر ${fmt.num(m + 1)}`, 'aria-label': `الشهر ${fmt.num(m + 1)}`, style: currentMonth === m ? { color: 'var(--accent)', fontWeight: '600' } : undefined }, fmt.num(m + 1)));
+      gantt.appendChild(h('div', { class: 'roadmap-gantt-head' }, h('span', { role: 'columnheader' }, 'المعلم / الشهر'), monthsRow));
       data.milestones.forEach((m) => {
-        const start = Math.min(months - 1, Math.max(0, m.month));
-        const span = Math.max(1, Math.min(months - start, m.duration));
+        // Fractional months are common in the proposal (M0 = half a month), so bars are positioned by percentage.
+        const start = Math.min(months, Math.max(0, m.month));
+        const span = Math.max(0.5, Math.min(months - start, m.duration));
         const tone = STATUS_TONE[m.status] || 'neutral';
-        const bar = h('div', { class: ['roadmap-bar', m.status === 'منجز' ? 'is-done' : null, m.status === 'جارٍ' ? 'is-active' : null, m.status === 'قادم' ? 'is-upcoming' : null], 'data-status': m.status || 'قادم', style: { '--start': String(start), '--span': String(span) }, title: `${m.name || m.id} — ${m.status || ''}` },
+        const bar = h('div', { class: ['roadmap-bar', m.status === 'منجز' ? 'is-done' : null, m.status === 'جارٍ' ? 'is-active' : null, m.status === 'قادم' ? 'is-upcoming' : null], 'data-status': m.status || 'قادم',
+          style: { '--start': String(Math.floor(start)), '--span': String(Math.max(1, Math.round(span))), position: 'absolute', insetBlockStart: '5px', blockSize: '22px', margin: '0', insetInlineStart: `calc(${((start / months) * 100).toFixed(3)}% + 2px)`, inlineSize: `calc(${((span / months) * 100).toFixed(3)}% - 4px)` },
+          title: `${m.name || m.id} — ${m.status || ''} · من الشهر ${fmt.num(Math.floor(start) + 1)}، ${fmt.num(span, { maximumFractionDigits: 1 })} شهر` },
           glyph(tone, 12), h('span', {}, m.status || '—'));
         gantt.appendChild(h('div', { class: 'roadmap-row', role: 'row' },
           h('div', { class: 'roadmap-row-label', role: 'rowheader' }, h('span', { class: 'mono' }, m.id), h('strong', { title: m.name || '' }, m.name || m.id)),
           h('div', { class: 'roadmap-row-track', role: 'cell' }, bar),
         ));
       });
-      const legend = h('div', { class: 'row wrap gap-2' }, ...Object.entries(STATUS_TONE).map(([label, tone]) => badge(label, tone)));
+      const legend = h('div', { class: 'row wrap gap-2', 'aria-label': 'حالات المعالم' }, h('span', { class: 'text-xs muted' }, 'الحالة:'), ...Object.entries(STATUS_TONE).map(([label, tone]) => badge(label, tone)), h('span', { class: 'toolbar-spacer' }), h('span', { class: 'text-xs muted' }, `${fmt.num(months)} أشهر إجمالاً`));
       return card({
-        code: 'RM-04', title: 'المعالم الزمنية (M0 – M4)', subtitle: data.current ? `المعلم الجاري: ${data.current.id} — ${data.current.name}` : 'خمسة معالم على مدى أربعة أشهر',
-        actions: [legend],
-        body: gantt,
+        code: 'RM-04', title: 'المعالم الزمنية (M0 – M4)', subtitle: data.current ? `المعلم الجاري: ${data.current.id} — ${data.current.name}` : `خمسة معالم على مدى ${fmt.num(months)} أشهر`,
+        body: h('div', { class: 'stack gap-3' }, gantt, legend),
         tableView: () => {
           const t = h('table', { class: 'table is-dense' });
           t.appendChild(h('thead', {}, h('tr', {}, ...['المعلم', 'الاسم', 'الشهر', 'الحالة'].map((x) => h('th', { scope: 'col' }, x)))));
-          t.appendChild(h('tbody', {}, ...data.milestones.map((m) => h('tr', {}, h('td', { class: 'mono' }, m.id), h('td', {}, m.name || '—'), h('td', {}, `M${m.month}`), h('td', {}, m.status || '—')))));
+          t.appendChild(h('tbody', {}, ...data.milestones.map((m) => h('tr', {}, h('td', { class: 'mono' }, m.id), h('td', {}, m.name || '—'), h('td', {}, `الشهر ${fmt.num(Math.floor(m.month) + 1)} · ${fmt.num(m.duration, { maximumFractionDigits: 1 })} شهر`), h('td', {}, m.status || '—')))));
           return t;
         },
       });
@@ -276,7 +283,7 @@ export default {
         tbody.appendChild(h('tr', {},
           h('td', {}, h('div', { class: 'stack', style: { gap: '2px' } }, mono(m.id), h('span', { class: 'text-sm semibold' }, m.name || '—'))),
           h('td', {}, m.deliverables.length ? h('ul', { class: 'deliverables' }, ...m.deliverables.map((d) => h('li', {}, typeof d === 'string' ? d : (d && (d.text || d.title)) || '—'))) : h('span', { class: 'muted' }, '—')),
-          h('td', { class: 'align-center mono' }, `M${m.month}`),
+          h('td', { class: 'align-center' }, h('span', { class: 'stack', style: { gap: '1px', alignItems: 'center' } }, h('span', { class: 'mono num' }, `${fmt.num(Math.floor(m.month) + 1)}`), h('span', { class: 'text-xs muted nowrap' }, `${fmt.num(m.duration, { maximumFractionDigits: 1 })} شهر`))),
           h('td', {}, badge(m.status || '—', STATUS_TONE[m.status] || 'neutral')),
           h('td', { class: 'align-end' }, h('span', { class: 'roadmap-payment' }, input, h('span', { class: 'muted text-sm', 'aria-hidden': 'true' }, '%'))),
         ));

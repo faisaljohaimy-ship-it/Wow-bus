@@ -344,7 +344,7 @@ export default {
       const totalPct = data.commodities.reduce((a, c) => a + num(c.exposureSAR), 0) ? (totalImpact / data.commodities.reduce((a, c) => a + num(c.exposureSAR), 0)) * 100 : 0;
       return card({
         code: 'CST-03', title: 'أثر تضخم السلع', subtitle: 'التعرض الحالي لكل سلعة والتغير المتوقع في سعرها خلال 6 أشهر — انقر للتفاصيل في مخاطر المواد',
-        actions: [toneBadge(`أثر إجمالي متوقع ${totalImpact < 0 ? '−' : '+'}${sar(Math.abs(totalImpact))}`, changeTone(totalPct, { badAbove: 4, warnAbove: 1 }))],
+        actions: [toneBadge(`${totalImpact < 0 ? '−' : '+'}${sar(Math.abs(totalImpact))}`, changeTone(totalPct, { badAbove: 4, warnAbove: 1 }))],
         body: h('div', { class: 'kpi-row' }, ...tiles),
       });
     }
@@ -481,8 +481,8 @@ export default {
         rows, initialSort: { key: 'score', dir: 'desc' },
       });
       return card({
-        code: 'CST-09', title: 'مخاطر التكلفة المفتوحة', subtitle: 'مكتشفة بواسطة خط توقع التكلفة — انقر على أي صف للدليل والتفسير والتوصية',
-        actions: [toneBadge(`${fmt.num(red)} أحمر`, red ? 'critical' : 'good'), h('span', { class: 'text-sm muted' }, `${fmt.num(rows.length)} مفتوحة`)],
+        code: 'CST-09', title: 'مخاطر التكلفة المفتوحة', subtitle: `${fmt.num(rows.length)} مخاطرة مفتوحة مكتشفة بواسطة خط توقع التكلفة — انقر على أي صف للدليل والتفسير والتوصية`,
+        actions: [toneBadge(`${fmt.num(red)} أحمر`, red ? 'critical' : 'good')],
         body: table.el,
       });
     }
