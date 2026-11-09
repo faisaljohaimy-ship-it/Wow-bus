@@ -98,6 +98,13 @@ function ratingTone(rating) {
 const platformState = () => (store.state && store.state.platform && typeof store.state.platform === 'object' ? store.state.platform : {});
 const platformList = (key) => (Array.isArray(platformState()[key]) ? platformState()[key] : []);
 
+/*
+ * Provisional debug hooks (§12): the core is ready as soon as this module evaluates, so the QA
+ * harness / devtools can call store.setSettings({theme}) while the optional modules are still
+ * loading; boot() replaces this with the frozen, complete object.
+ */
+window.biltix = { store, bus, router, sel, fmt, live: null, psel: null, platformLive: null, ready: false };
+
 /* ------------------------------------------------------------------ */
 /* Small helpers                                                       */
 /* ------------------------------------------------------------------ */
@@ -1292,7 +1299,7 @@ async function boot() {
     try { platformLive.start({ store, bus }); } catch (err) { reportError(err, 'platformLive.start'); }
   }
 
-  window.biltix = Object.freeze({ store, bus, router, live, sel, fmt, psel, platformLive, views: Object.freeze(views.slice()), missingModules: Object.freeze(missingModules.slice()) });
+  window.biltix = Object.freeze({ store, bus, router, live, sel, fmt, psel, platformLive, ready: true, views: Object.freeze(views.slice()), missingModules: Object.freeze(missingModules.slice()) });
   document.body.classList.remove('is-booting');
   document.body.classList.add('is-ready');
 }

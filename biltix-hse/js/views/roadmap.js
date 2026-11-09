@@ -2,14 +2,16 @@
  * Biltix Risk AI — view: خارطة الطريق والمقترح التفصيلي (js/views/roadmap.js) — PLT-03
  *
  * The detailed proposal as a living page: a DOM-built vertical diagram of the five
- * architecture layers with the v2 additions highlighted (teal: enterprise connectors,
- * red: validation & cleansing layer, navy: backend classification logic), the scope-of-work
- * checklist, assumptions, the M0–M4 milestone Gantt (.roadmap-gantt), the milestone table
- * with editable payment percentages persisted in settings.platform.paymentPct (live total,
- * green at exactly 100%), the integration principle note and 'تصدير المقترح' (print).
+ * architecture layers (.layer-stack from css/platform.css) with the v2 additions
+ * highlighted (teal: enterprise connectors, red: validation & cleansing layer, navy: backend
+ * classification logic), the scope-of-work checklist, assumptions, the M0–M4 milestone Gantt
+ * (.roadmap-gantt), the milestone table with editable payment percentages persisted in
+ * settings.platform.paymentPct (live total, green at exactly 100%), the integration
+ * principle note and 'تصدير المقترح' (print).
  *
- * Fallback styles for the structures this view introduces live in a `@layer views` block,
- * so the unlayered css/platform.css (PLATFORM-CORE) always takes precedence.
+ * Fallback styles for the structures this view introduces (v2 accents, check lists, the
+ * principle grid) live in a `@layer views` block, so the unlayered css/platform.css
+ * (PLATFORM-CORE) always takes precedence.
  *
  * Contract: docs/ARCHITECTURE.md §4, B1 (layers), B3 (roadmap), B5 (paymentPct), B8, B9.11.
  * Data reaches the DOM only through textContent / components.h. No cross-view imports.
@@ -17,66 +19,49 @@
 
 const STYLE_ID = 'view-roadmap-style';
 const STYLE_TEXT = `@layer views {
-  .arch-diagram { display: flex; flex-direction: column; min-inline-size: 0; }
-  .arch-layer { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--bg-2); min-inline-size: 0; }
-  .arch-layer.is-v2 { border-color: color-mix(in srgb, var(--v2-tone, var(--line-2)) 55%, var(--line)); background: color-mix(in srgb, var(--v2-tone, var(--bg-2)) 8%, var(--bg-2)); }
-  .arch-layer-no { display: grid; place-items: center; inline-size: 44px; block-size: 44px; border-radius: 12px; background: var(--bg-1); border: 1px solid var(--line); font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }
-  .arch-layer-body { display: flex; flex-direction: column; gap: 8px; min-inline-size: 0; }
-  .arch-layer-title { margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--ink-1); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .arch-layer-desc { margin: 0; font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.55; }
+  .layer-stack-item.is-v2 { border-color: color-mix(in srgb, var(--v2-tone, var(--line-2)) 55%, var(--line)); background: color-mix(in srgb, var(--v2-tone, var(--bg-2)) 8%, var(--bg-2)); }
+  .layer-stack-body { display: flex; flex-direction: column; gap: 8px; min-inline-size: 0; }
+  .layer-stack-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .arch-nodes { display: flex; flex-wrap: wrap; gap: 8px; }
   .arch-node { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px; background: var(--bg-1); border: 1px solid var(--line); font-size: var(--fs-xs); color: var(--ink-2); min-inline-size: 0; }
   .arch-node > svg { flex: none; color: var(--ink-3); }
   .arch-node.is-v2 { border-color: color-mix(in srgb, var(--v2-tone) 60%, transparent); background: color-mix(in srgb, var(--v2-tone) 12%, var(--bg-1)); color: var(--ink-1); }
   .arch-node.is-v2 > svg { color: var(--v2-tone); }
-  .arch-connector { position: relative; block-size: 26px; display: flex; justify-content: center; align-items: center; }
-  .arch-connector::before { content: ""; position: absolute; inset-block: 0; inline-size: 2px; background: var(--line-2); }
-  .arch-connector > svg { position: relative; color: var(--ink-3); background: var(--bg-1); border-radius: 50%; }
+  .v2-badge { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: var(--radius-pill); font-size: 11px; font-weight: 600; color: color-mix(in srgb, var(--v2-tone) 80%, var(--ink-1)); background: color-mix(in srgb, var(--v2-tone) 14%, var(--bg-1)); border: 1px solid color-mix(in srgb, var(--v2-tone) 45%, var(--line)); }
+  .v2-badge > svg { inline-size: 12px; block-size: 12px; }
   .v2-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: var(--fs-xs); color: var(--ink-2); }
   .v2-legend-item { display: inline-flex; align-items: center; gap: 6px; }
   .v2-legend-key { inline-size: 10px; block-size: 10px; border-radius: 3px; background: var(--v2-tone); flex: none; }
+  .arch-connector { display: flex; justify-content: center; color: var(--ink-3); block-size: 18px; align-items: center; }
   .check-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
   .check-list > li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; font-size: var(--fs-sm); color: var(--ink-1); line-height: 1.55; }
   .check-list > li > svg { color: var(--good); margin-block-start: 2px; }
   .check-list.is-assumptions > li > svg { color: var(--brand); }
   .check-list.is-out > li { color: var(--ink-2); }
   .check-list.is-out > li > svg { color: var(--ink-3); }
-  .roadmap-gantt { display: grid; grid-template-columns: minmax(170px, 220px) repeat(var(--months, 5), minmax(0, 1fr)); gap: 6px 0; align-items: center; min-inline-size: 0; }
-  .roadmap-gantt-head { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); text-align: center; padding-block: 4px 8px; border-block-end: 1px solid var(--line); letter-spacing: .04em; }
-  .roadmap-gantt-head.is-label { text-align: start; font-family: var(--font-sans); letter-spacing: 0; }
-  .roadmap-gantt-head.is-current { color: var(--accent); font-weight: 600; }
-  .roadmap-gantt-row-label { display: flex; flex-direction: column; gap: 2px; padding-inline-end: 12px; min-inline-size: 0; font-size: var(--fs-sm); color: var(--ink-1); }
-  .roadmap-gantt-row-label .mono { font-size: 11px; color: var(--ink-3); }
-  .roadmap-gantt-track { position: relative; block-size: 34px; grid-column: 2 / -1; display: grid; grid-template-columns: repeat(var(--months, 5), minmax(0, 1fr)); background-image: linear-gradient(to left, var(--line) 1px, transparent 1px); background-size: calc(100% / var(--months, 5)) 100%; border-radius: 6px; }
-  .roadmap-gantt-bar { display: flex; align-items: center; gap: 6px; margin-block: 5px; margin-inline: 3px; padding-inline: 10px; border-radius: 6px; background: var(--tone-soft); border: 1px solid var(--tone-line); color: var(--tone-ink); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; overflow: hidden; min-inline-size: 0; }
-  .roadmap-gantt-bar > svg { flex: none; }
-  .roadmap-gantt-bar.is-done { background: color-mix(in srgb, var(--good) 22%, var(--bg-2)); }
-  .roadmap-gantt-bar.is-active { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
-  .payment-input { inline-size: 5.5em; text-align: end; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
   .deliverables { margin: 0; padding-inline-start: 1.1em; font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.55; display: grid; gap: 2px; }
   .principle-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
   .principle-col { padding: 12px 14px; border-radius: var(--radius-ctl); border: 1px solid var(--line); background: var(--bg-2); border-block-start: 3px solid var(--tone, var(--line-2)); }
   .principle-col h3 { margin: 0 0 8px; font-size: var(--fs-sm); display: flex; align-items: center; gap: 8px; }
   .principle-col ul { margin: 0; padding-inline-start: 1.1em; font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.6; }
-  @media (max-width: 720px) { .principle-grid { grid-template-columns: minmax(0, 1fr); } .roadmap-gantt { grid-template-columns: minmax(120px, 150px) repeat(var(--months, 5), minmax(0, 1fr)); } .roadmap-gantt-bar { padding-inline: 6px; } .roadmap-gantt-bar .bar-text { display: none; } }
-  @media print { .view-roadmap .view-actions, .view-roadmap .btn, .view-roadmap .card-view-toggle { display: none !important; } .view-roadmap .card { break-inside: avoid; } .view-roadmap .payment-input { border: 0; background: transparent; } }
+  @media (max-width: 720px) { .principle-grid { grid-template-columns: minmax(0, 1fr); } }
+  @media print { .view-roadmap .view-actions, .view-roadmap .btn, .view-roadmap .card-view-toggle { display: none !important; } .view-roadmap .card { break-inside: avoid; } .view-roadmap .roadmap-payment input { border: 0; background: transparent; } }
 }`;
 
 const MONTHS = 5; // M0 … M4
 const MILESTONE_IDS = ['M0', 'M1', 'M2', 'M3', 'M4'];
 const STATUS_TONE = { 'منجز': 'good', 'جارٍ': 'accent', 'قادم': 'neutral' };
-const STATUS_ICON = { 'منجز': 'good', 'جارٍ': 'accent', 'قادم': 'neutral' };
 const V2 = {
   connectors: { label: 'موصلات الأنظمة المؤسسية', tone: 'var(--accent)', toneName: 'سماوي' },
   validation: { label: 'طبقة التحقق والتنظيف', tone: 'var(--critical)', toneName: 'أحمر' },
   classification: { label: 'منطق التصنيف الخلفي', tone: 'var(--brand)', toneName: 'كحلي' },
 };
 const LAYERS = [
-  { no: '1', title: 'طبقة التكامل', desc: 'موصلات REST/SDK وWebhooks تقرأ من وحدات تطبيق بلتكس، ومن الأنظمة المؤسسية، ومن التغذيات الخارجية.', nodes: [['layers', 'وحدات بلتكس: العقود · BoM/BoQ · الجدول · تقارير الموقع · التكلفة · الصور'], ['server', 'Primavera P6 EPPM', 'connectors'], ['server', 'Autodesk Platform Services', 'connectors'], ['server', 'Oracle ERP / CRM', 'connectors'], ['server', 'SAP · Zoho · HubSpot (قابلة للضبط)', 'connectors'], ['globe', 'السلع · أسعار الصرف · الأرصاد · GIS']] },
+  { no: '1', title: 'طبقة التكامل', desc: 'موصلات REST/SDK وWebhooks تقرأ من وحدات تطبيق بلتكس، ومن الأنظمة المؤسسية، ومن التغذيات الخارجية.', nodes: [['layers', 'وحدات بلتكس: العقود · BoM/BoQ · الجدول · تقارير الموقع · التكلفة · الصور'], ['integration', 'Primavera P6 EPPM', 'connectors'], ['integration', 'Autodesk Platform Services', 'connectors'], ['integration', 'Oracle ERP / CRM', 'connectors'], ['plug', 'SAP · Zoho · HubSpot (قابلة للضبط)', 'connectors'], ['globe', 'السلع · أسعار الصرف · الأرصاد · GIS']] },
   { no: '2', title: 'طبقة التحقق والتنظيف', desc: 'فحص المخطط، إزالة التكرار، الاكتمال والاتساق — لا يصل سجل إلى المحرك قبل اجتيازها.', v2: 'validation', nodes: [['list', 'مخطط البيانات'], ['copy', 'إزالة التكرار'], ['badge-check', 'الاكتمال'], ['sliders', 'الاتساق'], ['alert', 'قائمة الحجر']] },
-  { no: '3', title: 'بحيرة بيانات المخاطر', desc: 'بيانات مهيكلة وغير مهيكلة مُوحَّدة، مُصدَّرة (versioned) وقابلة للتدقيق.', nodes: [['database', 'سجلات مهيكلة'], ['file-text', 'مستندات وصور'], ['clock', 'إصدارات زمنية'], ['shield-alert', 'مسار تدقيق']] },
+  { no: '3', title: 'بحيرة بيانات المخاطر', desc: 'بيانات مهيكلة وغير مهيكلة مُوحَّدة، مُصدَّرة (versioned) وقابلة للتدقيق.', nodes: [['erp', 'سجلات مهيكلة'], ['file-text', 'مستندات وصور'], ['clock', 'إصدارات زمنية'], ['shield-alert', 'مسار تدقيق']] },
   { no: '4', title: 'محرك المخاطر بالذكاء الاصطناعي', desc: 'خمسة خطوط على طبقة تسجيل وتفسير مشتركة: درجة 0–100 مع تفسير بلغة واضحة.', nodes: [['file-text', 'العقود (NLP)'], ['list', 'توقع المواد (BoM)'], ['calendar', 'نموذج الجدول + مونت كارلو'], ['helmet', 'صور وتقارير الموقع'], ['chart', 'توقع التكلفة (EVM)']] },
-  { no: '5', title: 'التصنيف والتنبيه وقمرة القيادة', desc: 'النوع (مالي / سلامة / تأخير / نزاع) والتقييم (أحمر / أصفر / أخضر)، ثم التنبيه وسير العمل والكتابة العكسية.', nodes: [['tag', 'منطق التصنيف الخلفي', 'classification'], ['bell', 'التنبيه والتصعيد'], ['refresh', 'الكتابة العكسية إلى Biltix PM'], ['file-check', 'مهام المعالجة'], ['radar', 'قمرة قيادة المخاطر']] },
+  { no: '5', title: 'التصنيف والتنبيه وقمرة القيادة', desc: 'النوع (مالي / سلامة / تأخير / نزاع) والتقييم (أحمر / أصفر / أخضر)، ثم التنبيه وسير العمل والكتابة العكسية.', nodes: [['filter', 'منطق التصنيف الخلفي', 'classification'], ['bell', 'التنبيه والتصعيد'], ['refresh', 'الكتابة العكسية إلى Biltix PM'], ['file-check', 'مهام المعالجة'], ['radar', 'قمرة قيادة المخاطر']] },
 ];
 const READS = ['العقود والبنود والالتزامات', 'جداول الكميات BoM/BoQ وكميات BIM', 'الجدول الزمني والمسار الحرج (P6)', 'تقارير الموقع اليومية والصور', 'التكلفة والميزانية والقيمة المكتسبة (ERP)', 'السلع وأسعار الصرف والأرصاد'];
 const WRITES = ['أعلام المخاطر على العنصر الأصلي (بند / سطر / نشاط)', 'الدرجة 0–100 والتقييم اللوني', 'التنبيهات والتصعيدات', 'مهام المعالجة المُسندة ومواعيدها'];
@@ -165,28 +150,29 @@ export default {
         ),
         h('div', { class: 'view-actions' },
           totalBadge(data.total),
-          button('تصدير المقترح', { variant: 'primary', size: 'sm', icon: 'printer', onClick: () => { try { window.print(); } catch { toast('تعذر فتح نافذة الطباعة', { tone: 'warning' }); } } }),
+          button('تصدير المقترح', { variant: 'primary', size: 'sm', icon: 'print', onClick: () => { try { window.print(); } catch { toast('تعذر فتح نافذة الطباعة', { tone: 'warning' }); } } }),
         ),
       );
     }
 
+    /** .layer-stack > .layer-stack-item[data-layer] > .layer-stack-index + body(h4 + p + nodes) — structure from css/platform.css, v2 accents from this view. */
     function buildArchitecture() {
-      const diagram = h('div', { class: 'arch-diagram', role: 'group', 'aria-label': 'المعمارية بخمس طبقات مع إضافات الإصدار الثاني' });
+      const diagram = h('div', { class: 'layer-stack', role: 'group', 'aria-label': 'المعمارية بخمس طبقات مع إضافات الإصدار الثاني' });
       LAYERS.forEach((layer, i) => {
         const v2 = layer.v2 ? V2[layer.v2] : null;
         const nodes = h('div', { class: 'arch-nodes' }, ...layer.nodes.map(([icon, label, v2key]) => {
           const tag = v2key ? V2[v2key] : null;
           return h('span', { class: ['arch-node', tag ? 'is-v2' : null], style: tag ? { '--v2-tone': tag.tone } : undefined, title: tag ? `إضافة الإصدار الثاني — ${tag.label}` : undefined }, svgIcon(icon, 13), h('span', {}, label), tag ? h('span', { class: 'sr-only' }, ` (إضافة الإصدار الثاني: ${tag.label})`) : null);
         }));
-        diagram.appendChild(h('div', { class: ['arch-layer', v2 ? 'is-v2' : null], style: v2 ? { '--v2-tone': v2.tone } : undefined },
-          h('span', { class: 'arch-layer-no', 'aria-hidden': 'true' }, layer.no),
-          h('div', { class: 'arch-layer-body' },
-            h('h3', { class: 'arch-layer-title' }, h('span', {}, layer.title), v2 ? h('span', { class: 'badge tone-neutral', style: { '--tone': v2.tone, color: 'var(--tone-ink)' }, 'data-tone': 'neutral' }, svgIcon('sparkles', 13), h('span', { class: 'badge-text' }, `إضافة الإصدار الثاني — ${v2.toneName}`)) : null),
-            h('p', { class: 'arch-layer-desc' }, layer.desc),
+        diagram.appendChild(h('div', { class: ['layer-stack-item', v2 ? 'is-v2' : null], 'data-layer': layer.no, style: v2 ? { '--v2-tone': v2.tone } : undefined },
+          h('span', { class: 'layer-stack-index', 'aria-hidden': 'true' }, layer.no),
+          h('div', { class: 'layer-stack-body' },
+            h('div', { class: 'layer-stack-title' }, h('h4', {}, layer.title), v2 ? h('span', { class: 'v2-badge' }, svgIcon('sparkles', 12), h('span', {}, `إضافة الإصدار الثاني — ${v2.toneName}`)) : null),
+            h('p', {}, layer.desc),
             nodes,
           ),
         ));
-        if (i < LAYERS.length - 1) diagram.appendChild(h('div', { class: 'arch-connector', 'aria-hidden': 'true' }, glyph('chevronDown', 18)));
+        if (i < LAYERS.length - 1) diagram.appendChild(h('div', { class: 'arch-connector', 'aria-hidden': 'true' }, glyph('chevronDown', 16)));
       });
       const legend = h('div', { class: 'v2-legend', 'aria-label': 'دليل ألوان إضافات الإصدار الثاني' },
         h('span', { class: 'semibold' }, 'إضافات الإصدار الثاني:'),
@@ -223,25 +209,24 @@ export default {
       });
     }
 
+    /** .roadmap-gantt[--months] > .roadmap-gantt-head(spacer + .roadmap-months > .roadmap-month*) + .roadmap-row*(.roadmap-row-label + .roadmap-row-track > .roadmap-bar[data-status][--start,--span]) */
     function buildGanttCard(data) {
       if (!data.milestones.length) return card({ code: 'RM-04', title: 'المعالم الزمنية', body: emptyState({ title: 'لم تُحمَّل معالم خارطة الطريق' }) });
       const months = data.months;
       const gantt = h('div', { class: 'roadmap-gantt', role: 'table', 'aria-label': 'مخطط جانت للمعالم من M0 إلى M4', style: { '--months': String(months) } });
-      const head = h('div', { role: 'row', style: { display: 'contents' } }, h('div', { class: 'roadmap-gantt-head is-label', role: 'columnheader' }, 'المعلم'));
-      for (let m = 0; m < months; m += 1) head.appendChild(h('div', { class: ['roadmap-gantt-head', data.current && data.current.month === m ? 'is-current' : null], role: 'columnheader' }, `M${m} · الشهر ${fmt.num(m)}`));
-      gantt.appendChild(head);
+      const monthsRow = h('div', { class: 'roadmap-months', role: 'row' });
+      for (let m = 0; m < months; m += 1) monthsRow.appendChild(h('span', { class: 'roadmap-month', role: 'columnheader', style: data.current && data.current.month === m ? { color: 'var(--accent)', fontWeight: '600' } : undefined }, `M${m} · الشهر ${fmt.num(m)}`));
+      gantt.appendChild(h('div', { class: 'roadmap-gantt-head' }, h('span', { role: 'columnheader' }, 'المعلم'), monthsRow));
       data.milestones.forEach((m) => {
-        const tone = STATUS_TONE[m.status] || 'neutral';
-        const row = h('div', { role: 'row', style: { display: 'contents' } });
-        row.appendChild(h('div', { class: 'roadmap-gantt-row-label', role: 'rowheader' }, h('span', { class: 'truncate', title: m.name || '' }, m.name || m.id), mono(m.id)));
-        const track = h('div', { class: 'roadmap-gantt-track', role: 'cell' });
         const start = Math.min(months - 1, Math.max(0, m.month));
         const span = Math.max(1, Math.min(months - start, m.duration));
-        const bar = h('div', { class: ['roadmap-gantt-bar', `tone-${tone}`, m.status === 'منجز' ? 'is-done' : null, m.status === 'جارٍ' ? 'is-active' : null], style: { gridColumn: `${start + 1} / span ${span}` }, title: `${m.name || m.id} — ${m.status || ''}` },
-          glyph(STATUS_ICON[m.status] || 'neutral', 13), h('span', { class: 'bar-text' }, m.status || '—'));
-        track.appendChild(bar);
-        row.appendChild(track);
-        gantt.appendChild(row);
+        const tone = STATUS_TONE[m.status] || 'neutral';
+        const bar = h('div', { class: ['roadmap-bar', m.status === 'منجز' ? 'is-done' : null, m.status === 'جارٍ' ? 'is-active' : null, m.status === 'قادم' ? 'is-upcoming' : null], 'data-status': m.status || 'قادم', style: { '--start': String(start), '--span': String(span) }, title: `${m.name || m.id} — ${m.status || ''}` },
+          glyph(tone, 12), h('span', {}, m.status || '—'));
+        gantt.appendChild(h('div', { class: 'roadmap-row', role: 'row' },
+          h('div', { class: 'roadmap-row-label', role: 'rowheader' }, h('span', { class: 'mono' }, m.id), h('strong', { title: m.name || '' }, m.name || m.id)),
+          h('div', { class: 'roadmap-row-track', role: 'cell' }, bar),
+        ));
       });
       const legend = h('div', { class: 'row wrap gap-2' }, ...Object.entries(STATUS_TONE).map(([label, tone]) => badge(label, tone)));
       return card({
@@ -260,8 +245,15 @@ export default {
     function buildMilestoneTable(data) {
       if (!data.milestones.length) return null;
       const total = totalBadge(data.total);
+      const totalRow = h('div', { class: ['roadmap-total', data.total === 100 ? 'is-ok' : 'is-off'] }, h('span', {}, 'إجمالي نسب الدفعات'), h('span', { class: 'row gap-2' }, h('span', { class: 'mono num' }, fmt.pct(data.total)), total));
       const inputs = new Map();
-      const recompute = () => { let sum = 0; for (const inp of inputs.values()) { const v = inp.value === '' ? null : num(inp.value); if (v !== null) sum += v; } paintTotal(total, sum); const headerBadge = root.querySelector('.view-head .payment-total'); if (headerBadge) paintTotal(headerBadge, sum); };
+      const recompute = () => {
+        let sum = 0; for (const inp of inputs.values()) { if (inp.value !== '') sum += num(inp.value); }
+        paintTotal(total, sum);
+        totalRow.classList.toggle('is-ok', sum === 100); totalRow.classList.toggle('is-off', sum !== 100);
+        const sumEl = totalRow.querySelector('.mono'); if (sumEl) sumEl.textContent = fmt.pct(sum);
+        const headerBadge = root.querySelector('.view-head .payment-total'); if (headerBadge) paintTotal(headerBadge, sum);
+      };
 
       const table = h('table', { class: 'table milestone-table' });
       table.appendChild(h('caption', { class: 'sr-only' }, 'جدول المعالم والمخرجات ونسب الدفعات'));
@@ -269,7 +261,7 @@ export default {
       const tbody = h('tbody');
       data.milestones.forEach((m) => {
         const id = `pay-${m.id}`;
-        const input = h('input', { type: 'number', id, class: ['field-control', 'payment-input'], min: '0', max: '100', step: '5', inputmode: 'decimal', dir: 'ltr', 'aria-label': `نسبة دفعة المعلم ${m.id} — ${m.name || ''}`, placeholder: '—' });
+        const input = h('input', { type: 'number', id, class: 'field-control', min: '0', max: '100', step: '5', inputmode: 'decimal', dir: 'ltr', 'aria-label': `نسبة دفعة المعلم ${m.id} — ${m.name || ''}`, placeholder: '—' });
         input.value = m.pct === null ? '' : String(m.pct);
         input.addEventListener('input', recompute);
         input.addEventListener('change', () => {
@@ -286,15 +278,14 @@ export default {
           h('td', {}, m.deliverables.length ? h('ul', { class: 'deliverables' }, ...m.deliverables.map((d) => h('li', {}, typeof d === 'string' ? d : (d && (d.text || d.title)) || '—'))) : h('span', { class: 'muted' }, '—')),
           h('td', { class: 'align-center mono' }, `M${m.month}`),
           h('td', {}, badge(m.status || '—', STATUS_TONE[m.status] || 'neutral')),
-          h('td', { class: 'align-end' }, h('div', { class: 'row gap-1', style: { justifyContent: 'flex-end' } }, input, h('span', { class: 'muted text-sm', 'aria-hidden': 'true' }, '%'))),
+          h('td', { class: 'align-end' }, h('span', { class: 'roadmap-payment' }, input, h('span', { class: 'muted text-sm', 'aria-hidden': 'true' }, '%'))),
         ));
       });
       table.appendChild(tbody);
-      table.appendChild(h('tfoot', {}, h('tr', {}, h('th', { scope: 'row', colspan: '4', style: { textAlign: 'start' } }, 'إجمالي نسب الدفعات'), h('td', { class: 'align-end' }, total))));
 
       return card({
         code: 'RM-05', title: 'المعالم والمخرجات وجدول الدفعات', subtitle: data.paymentNote,
-        body: h('div', { class: 'table-wrap' }, table),
+        body: h('div', { class: 'stack gap-3' }, h('div', { class: 'table-wrap' }, table), totalRow),
         footer: h('p', { class: 'text-xs muted' }, 'النسب تُحفظ محلياً في إعدادات المنصة وتظهر في المقترح المطبوع؛ يتحول المجموع إلى الأخضر عند بلوغ 100% بالضبط.'),
       });
     }

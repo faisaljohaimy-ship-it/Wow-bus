@@ -278,8 +278,39 @@ export default {
       code: 'RSK-CAT', title: 'أعلى الفئات', subtitle: 'عدد المخاطر المفتوحة لكل فئة خطر',
       body: catHost, tableView: categoriesTable, className: 'is-compact',
     });
-    root.appendChild(h('div', { class: 'grid-12' }, registerCard, h('div', { class: 'col-span-4 stack gap-4' }, matrixCard, catCard)));
+    const sideCol = h('div', { class: 'col-span-4 stack gap-4' }, matrixCard, catCard);
+    root.appendChild(h('div', { class: 'grid-12' }, registerCard, sideCol));
     container.appendChild(root);
+
+    // Register table has eleven columns: under ~1100px of view width it takes the full row and the
+    // side cards move beneath it (two-up), instead of squeezing the table into eight columns.
+    const applyLayout = (w) => {
+      const narrow = w < 1100;
+      registerCard.classList.toggle('col-span-8', !narrow);
+      registerCard.classList.toggle('col-span-12', narrow);
+      sideCol.classList.toggle('col-span-4', !narrow);
+      sideCol.classList.toggle('col-span-12', narrow);
+      sideCol.classList.toggle('stack', !narrow);
+      sideCol.classList.toggle('gap-4', !narrow);
+      if (narrow) {
+        sideCol.style.display = 'grid';
+        sideCol.style.gridTemplateColumns = w < 640 ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))';
+        sideCol.style.gap = 'var(--space-4)';
+        sideCol.style.alignItems = 'start';
+      } else {
+        sideCol.style.display = '';
+        sideCol.style.gridTemplateColumns = '';
+        sideCol.style.gap = '';
+        sideCol.style.alignItems = '';
+      }
+    };
+    let layoutObserver = null;
+    if (typeof ResizeObserver === 'function') {
+      layoutObserver = new ResizeObserver((entries) => { for (const e of entries) applyLayout(e.contentRect.width); });
+      layoutObserver.observe(root);
+    } else {
+      applyLayout(root.getBoundingClientRect().width || 1200);
+    }
 
     /* ───────────── table columns ───────────── */
     const scoreCell = (s) => h('span', { class: 'row gap-2 nowrap' }, h('strong', { class: 'mono' }, fmt.num(s)), C.tierBadge(tierOf(s)));
@@ -294,7 +325,7 @@ export default {
       return h('span', { class: 'mono text-xs' }, dateText);
     }
     const columns = [
-      { key: 'code', label: 'الكود', mono: true, width: 88, sortValue: (r) => r.code, render: (r) => String(r.code || '') },
+      { key: 'code', label: 'الكود', mono: true, width: 88, sortValue: (r) => r.code, render: (r) => h('span', { class: 'nowrap' }, String(r.code || '')) },
       { key: 'hazard', label: 'الخطر', sortValue: (r) => r.hazard, render: (r) => h('div', { class: 'stack gap-1', style: { minInlineSize: '200px', maxInlineSize: '300px' } }, h('strong', { class: 'truncate', title: String(r.hazard || '') }, String(r.hazard || '')), r.activity ? h('span', { class: 'muted text-xs truncate', title: String(r.activity) }, String(r.activity)) : null) },
       { key: 'siteId', label: 'الموقع', sortValue: (r) => siteName(r.siteId), render: (r) => { const s = siteById(r.siteId); return h('div', { class: 'stack gap-1', style: { maxInlineSize: '160px' } }, h('span', { class: 'truncate', title: s ? s.name : '' }, s ? s.name : '—'), s ? h('span', { class: 'muted text-xs mono' }, String(s.code || '')) : null); } },
       { key: 'categoryId', label: 'الفئة', sortValue: (r) => categoryById(r.categoryId).name, render: (r) => { const c = categoryById(r.categoryId); return h('span', { class: 'row gap-2 nowrap', title: c.name }, ico(c.icon, 14), h('span', { class: 'truncate', style: { maxInlineSize: '140px' } }, c.name)); } },
@@ -304,7 +335,7 @@ export default {
       { key: 'residual', label: 'المتبقية', sortValue: (r) => residual(r), render: (r) => scoreCell(residual(r)) },
       { key: 'owner', label: 'المالك', sortValue: (r) => r.owner, render: (r) => h('span', { class: 'nowrap' }, String(r.owner || '—')) },
       { key: 'dueDate', label: 'الاستحقاق', sortValue: (r) => parseMs(r.dueDate), render: dueCell },
-      { key: 'status', label: 'الحالة', sortValue: (r) => riskStatuses().indexOf(r.status), render: (r) => C.badge(String(r.status || '—'), STATUS_TONE[r.status] || 'neutral') },
+      { key: 'status', label: 'الحالة', sortValue: (r) => riskStatuses().indexOf(r.status), render: (r) => { const b = C.badge(String(r.status || '—'), STATUS_TONE[r.status] || 'neutral'); b.classList.add('nowrap'); return b; } },
     ];
 
     /* ───────────── table twins ───────────── */
@@ -686,6 +717,7 @@ export default {
       subs.splice(0).forEach((off) => { try { off(); } catch { /* ignore */ } });
       timers.splice(0).forEach((t) => { clearTimeout(t); clearInterval(t); });
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      if (layoutObserver) { try { layoutObserver.disconnect(); } catch { /* ignore */ } layoutObserver = null; }
       [drawerApi, modalApi, confirmApi].forEach((api) => { if (api) { try { api.close(); } catch { /* ignore */ } } });
       drawerApi = null; modalApi = null; confirmApi = null; drawerRiskId = null;
       try { if (charts && charts.tooltip && typeof charts.tooltip.hide === 'function') charts.tooltip.hide(); } catch { /* ignore */ }

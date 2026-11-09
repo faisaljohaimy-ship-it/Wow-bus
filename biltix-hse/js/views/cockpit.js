@@ -5,19 +5,22 @@
  *
  *   Row 1  hero card — consolidated score gauge (tone from rating: higher = worse),
  *          delta vs previous period, 12-week trend sparkline, weights legend (→ settings)
- *          + five category tiles (contract / bom / schedule / site / cost) → domain views.
- *   Row 2  flow strip (.flow) — eight stages with live counters and a packet that advances
- *          one stage every 2.4 s (class toggling + CSS variable; static under reduced motion).
+ *          + five category tiles (.cat-tile: contract / bom / schedule / site / cost) → domain views.
+ *   Row 2  flow strip (ol.flow, B8) — eight stages with live counters; the packet travels the
+ *          stage line (CSS keyframes, `--flow-travel` measured here) while the current stage
+ *          class advances every 2.4 s; static under reduced motion.
  *   Row 3  ranked open red risks (row click → #/airisks?risk=ID), alert queue with
- *          acknowledge buttons, pipeline health strip, data-quality mini card,
+ *          acknowledge buttons, pipeline health strip (.pipe-strip), data-quality mini card,
  *          type / rating distribution segmented bars.
  *   Row 4  projects table (consolidated project score, CPI/SPI, progress vs plan,
  *          red count, next milestone); row click focuses the project filter.
  *
- * Data reaches the DOM only through textContent (components.h). Every contract call
- * into psel / charts is guarded so a missing or throwing module degrades to a plain
- * DOM fallback instead of breaking the cockpit. Re-renders on store:change (except the
- * feed), filters:change and settings:change; the cleanup unsubscribes and clears timers.
+ * Data reaches the DOM only through textContent (components.h). Every contract call into
+ * psel / charts is guarded: a missing or throwing module degrades to a local fallback that
+ * mirrors the B2 rules instead of breaking the cockpit (psel stays the single definition
+ * whenever it is present; when ctx lacks it the module is imported lazily). Re-renders on
+ * store:change (except the feed), filters:change and settings:change; the cleanup
+ * unsubscribes, clears timers and disconnects observers.
  */
 
 import { components, reducedMotion } from '../ui/components.js';
@@ -38,19 +41,19 @@ const CATEGORY_META = {
   site: { label: 'الموقع والسلامة', icon: 'helmet', view: 'overview' },
   cost: { label: 'التكلفة', icon: 'chart', view: 'cost' },
 };
+const TYPE_ORDER = ['Financial', 'Safety', 'Delay', 'Conflict'];
 const TYPE_META = {
   Financial: { label: 'مالي', icon: 'chart' },
   Safety: { label: 'سلامة', icon: 'helmet' },
   Delay: { label: 'تأخير', icon: 'clock' },
   Conflict: { label: 'نزاع', icon: 'file-text' },
 };
+const RATING_ORDER = ['red', 'yellow', 'green'];
 const RATING_META = {
   red: { label: 'أحمر', tone: 'critical' },
   yellow: { label: 'أصفر', tone: 'warning' },
   green: { label: 'أخضر', tone: 'good' },
 };
-const RATING_ORDER = ['red', 'yellow', 'green'];
-const TYPE_ORDER = ['Financial', 'Safety', 'Delay', 'Conflict'];
 const OPEN_RISK_STATUSES = new Set(['مكتشف', 'تنبيه', 'مهمة مُسندة', 'قيد المعالجة']);
 const PIPELINE_STATUS = {
   running: { label: 'يعمل', tone: 'good' },
@@ -60,21 +63,22 @@ const PIPELINE_STATUS = {
 };
 const EVM_TONE = { 'ضمن الميزانية': 'good', 'تحذير': 'warning', 'تجاوز': 'critical' };
 const CHANNEL_LABEL = { email: 'البريد', slack: 'Slack', teams: 'Teams', whatsapp: 'واتساب' };
+const CHANNEL_ICON = { email: 'mail', slack: 'send', teams: 'teams', whatsapp: 'whatsapp' };
 
 /** The eight stages of the proposal's end-to-end flow (B4 riskFlowStage order). */
 const FLOW_STAGES = [
   { id: 'ingest', label: 'مُلتقط', icon: 'download' },
-  { id: 'validate', label: 'مُتحقق', icon: 'badge-check' },
-  { id: 'lake', label: 'في بحيرة البيانات', icon: 'database' },
+  { id: 'validate', label: 'مُتحقق', icon: 'badge-check', gate: true },
+  { id: 'lake', label: 'في بحيرة البيانات', icon: 'layers' },
   { id: 'score', label: 'مُقيَّم', icon: 'sliders' },
   { id: 'classify', label: 'مُصنَّف', icon: 'shield-alert' },
   { id: 'alert', label: 'تنبيه', icon: 'bell' },
   { id: 'task', label: 'مهمة', icon: 'file-check' },
-  { id: 'closed', label: 'مغلق', icon: 'good' },
+  { id: 'closed', label: 'مغلق', icon: 'check-circle' },
 ];
 
 /* ------------------------------------------------------------------ */
-/* Guards & small helpers                                               */
+/* Guards & helpers                                                     */
 /* ------------------------------------------------------------------ */
 
 const warned = new Set();
@@ -92,6 +96,15 @@ function safe(key, fn, fallback) {
     return fallback;
   }
 }
+/** Call a psel function when psel is present, else use the local fallback silently. */
+function viaPsel(psel, key, fn, fallback) {
+  return psel ? safe(`psel.${key}`, fn, fallback) : fallback;
+}
+let pselLoad = null;
+function loadPsel() {
+  if (!pselLoad) pselLoad = import('../core/platform-selectors.js').then((m) => (m && (m.psel || m.default)) || null).catch(() => null);
+  return pselLoad;
+}
 const isNum = (n) => typeof n === 'number' && Number.isFinite(n);
 const num = (n, d = 0) => (isNum(n) ? n : d);
 
@@ -101,68 +114,26 @@ const isOpenRisk = (r) => r && OPEN_RISK_STATUSES.has(r.status);
 
 /* ---- labels through psel with local fallbacks (B2 single definition lives in psel) ---- */
 
-function ratingOf(psel, score) {
-  return safe('psel.rating', () => psel.rating(score), score >= 70 ? 'red' : score >= 40 ? 'yellow' : 'green');
+const localRating = (score) => (score >= 70 ? 'red' : score >= 40 ? 'yellow' : 'green');
+function ratingOf(psel, score) { return viaPsel(psel, 'rating', () => psel.rating(score), localRating(score)); }
+function ratingTone(psel, rating) { return viaPsel(psel, 'ratingTone', () => psel.ratingTone(rating), (RATING_META[rating] || RATING_META.green).tone); }
+function ratingLabel(psel, rating) { return viaPsel(psel, 'ratingLabel', () => psel.ratingLabel(rating), (RATING_META[rating] || RATING_META.green).label); }
+function ratingBadge(psel, rating, { sm = false } = {}) {
+  return h('span', { class: ['rating', `is-${rating}`, sm ? 'is-sm' : null], 'data-rating': rating }, glyph(ratingTone(psel, rating), 12), h('span', {}, ratingLabel(psel, rating)));
 }
-function ratingTone(psel, rating) {
-  return safe('psel.ratingTone', () => psel.ratingTone(rating), (RATING_META[rating] || RATING_META.green).tone);
-}
-function ratingLabel(psel, rating) {
-  return safe('psel.ratingLabel', () => psel.ratingLabel(rating), (RATING_META[rating] || RATING_META.green).label);
-}
-function ratingBadge(psel, rating, { lg = false } = {}) {
-  const b = badge(ratingLabel(psel, rating), ratingTone(psel, rating));
-  b.classList.add('rating', `is-${rating}`);
-  if (lg) b.classList.add('is-lg');
-  return b;
-}
-function typeLabel(psel, type) {
-  return safe('psel.typeLabel', () => psel.typeLabel(type), (TYPE_META[type] || {}).label || String(type || '—'));
-}
+function typeLabel(psel, type) { return viaPsel(psel, 'typeLabel', () => psel.typeLabel(type), (TYPE_META[type] || {}).label || String(type || '—')); }
 function typeChip(psel, type) {
-  const meta = TYPE_META[type] || { icon: 'neutral' };
-  return h('span', { class: ['type-chip', `is-${String(type || 'unknown').toLowerCase()}`], 'data-type': type || '' },
-    svgIcon(meta.icon, 13), h('span', { class: 'type-chip-label' }, typeLabel(psel, type)));
+  const meta = TYPE_META[type] || { icon: 'alert-circle' };
+  return h('span', { class: ['type-chip', `is-${String(type || 'unknown').toLowerCase()}`], 'data-type': type || '' }, svgIcon(meta.icon, 12), h('span', {}, typeLabel(psel, type)));
 }
-function categoryLabel(psel, cat) {
-  return safe('psel.categoryLabel', () => psel.categoryLabel(cat), (CATEGORY_META[cat] || {}).label || String(cat || '—'));
-}
-function categoryIcon(psel, cat) {
-  return safe('psel.categoryIcon', () => psel.categoryIcon(cat), (CATEGORY_META[cat] || {}).icon || 'neutral');
-}
-function categoryCell(psel, cat) {
-  return h('span', { class: 'row gap-1 cat-cell' }, svgIcon(categoryIcon(psel, cat), 14), h('span', {}, categoryLabel(psel, cat)));
-}
-function pipelineLabel(psel, id) {
-  return safe('psel.pipelineLabel', () => psel.pipelineLabel(id), String(id || '—'));
-}
-
-function deltaChip(fmt, delta, { goodWhen = 'down', label = 'التغير مقارنة بالفترة السابقة' } = {}) {
-  const n = Number(delta);
-  if (!Number.isFinite(n)) return null;
-  const up = n > 0;
-  const zero = n === 0;
-  const good = zero ? null : (goodWhen === 'down' ? !up : up);
-  const text = fmt.signed(n, Number.isInteger(n) ? 0 : 1);
-  const el = h('span', {
-    class: ['tile-delta', zero ? 'is-flat' : (up ? 'is-up' : 'is-down'), good === null ? null : (good ? 'is-good' : 'is-bad')],
-    'aria-label': `${label}: ${text}`,
-  });
-  el.appendChild(glyph(zero ? 'neutral' : (up ? 'sortAsc' : 'sortDesc'), 12));
-  el.appendChild(h('span', {}, text));
-  return el;
-}
+function categoryLabel(psel, cat) { return viaPsel(psel, 'categoryLabel', () => psel.categoryLabel(cat), (CATEGORY_META[cat] || {}).label || String(cat || '—')); }
+function categoryIcon(psel, cat) { return viaPsel(psel, 'categoryIcon', () => psel.categoryIcon(cat), (CATEGORY_META[cat] || {}).icon || 'layers'); }
+function categoryChip(psel, cat) { return h('span', { class: 'cat-chip', 'data-category': cat || '' }, svgIcon(categoryIcon(psel, cat), 13), h('span', {}, categoryLabel(psel, cat))); }
+function pipelineLabel(psel, id) { return viaPsel(psel, 'pipelineLabel', () => psel.pipelineLabel(id), String(id || '—')); }
 
 function viewHead({ code, title, lead, actions = [] }) {
-  const text = h('div', { class: 'view-head-text' },
-    h('span', { class: 'code-tag' }, code),
-    h('h1', {}, title),
-    lead ? h('p', { class: 'view-lead' }, lead) : null);
+  const text = h('div', { class: 'view-head-text' }, h('span', { class: 'code-tag' }, code), h('h1', {}, title), lead ? h('p', { class: 'view-lead' }, lead) : null);
   return h('div', { class: 'view-head' }, text, actions.length ? h('div', { class: 'view-actions' }, actions) : null);
-}
-
-function sectionTitle(text) {
-  return h('h3', { class: 'drawer-section-title' }, text);
 }
 
 /* ------------------------------------------------------------------ */
@@ -180,8 +151,8 @@ export default {
     const bus = ctx.bus || defaultBus;
     const fmt = ctx.fmt || defaultFmt;
     const router = ctx.router;
-    const psel = ctx.psel;
     const charts = ctx.charts;
+    let psel = ctx.psel || null;
 
     let alive = true;
     let raf = 0;
@@ -189,15 +160,18 @@ export default {
     let flowStage = 0;
     let flowTimer = null;
     let flowEl = null;
-    let packetEl = null;
+    let flowObserver = null;
 
     const navigate = (id, params = {}) => { if (router && typeof router.navigate === 'function') router.navigate(id, params); };
     const nowDate = () => (typeof store.now === 'function' ? store.now() : new Date());
     const stateOf = () => store.state || store.get();
     const settings = () => (stateOf().settings || {});
-    const isReduced = () => reducedMotion() || settings().reducedMotion === true;
+    const isReduced = () => reducedMotion() || settings().reducedMotion === true || settings().motion === 'reduce';
+    const scoreNum = (score, rating) => h('span', { class: ['score-num', 'num', `is-${rating}`], 'data-rating': rating }, fmt.num(Math.round(num(score))));
 
-    const root = h('section', { class: 'view view-cockpit', 'aria-labelledby': 'cockpit-title' });
+    if (!psel) loadPsel().then((p) => { if (p && alive && !psel) { psel = p; schedule(); } });
+
+    const root = h('section', { class: 'view view-cockpit' });
     root.appendChild(viewHead({
       code: 'CPT-00',
       title: 'قمرة قيادة المخاطر',
@@ -207,7 +181,6 @@ export default {
         button('التنبيهات والتصعيد', { variant: 'ghost', size: 'sm', icon: 'bell', onClick: () => navigate('alerts') }),
       ],
     }));
-    root.querySelector('h1').id = 'cockpit-title';
     const body = h('div', { class: 'stack gap-4 cockpit-body' });
     root.appendChild(body);
     container.appendChild(root);
@@ -217,21 +190,19 @@ export default {
     /* ---------------------------------------------------------------- */
 
     function chartOr(key, make, fallback) {
-      if (charts) {
+      if (charts && typeof charts[key] === 'function') {
         try {
           const c = make();
           if (c && (c instanceof Node || (c.el instanceof Node))) return c;
         } catch (err) { warnOnce(`charts.${key}`, err); }
-      }
+      } else warnOnce(`charts.${key}`, new Error('الدالة غير موجودة'));
       return typeof fallback === 'function' ? fallback() : null;
     }
     const tableViewOf = (chart) => (chart && typeof chart.table === 'function' ? () => chart.table() : null);
 
-    function fallbackGauge(score, tone, label) {
-      return h('div', { class: ['gauge-fallback', 'stack', `tone-${tone}`] },
-        h('span', { class: 'tile-value num' }, fmt.num(score)),
-        h('span', { class: 'muted text-xs' }, label),
-        progress({ value: score, max: 100, tone, label }));
+    function fallbackGauge(score, rating, label) {
+      return h('div', { class: 'stack gap-1 gauge-fallback', style: { alignItems: 'center' } },
+        scoreNum(score, rating), h('span', { class: 'muted text-xs' }, label), progress({ value: score, max: 100, tone: ratingTone(psel, rating), label }));
     }
     function fallbackSegments(parts, valueFormat = fmt.num) {
       const total = parts.reduce((s, p) => s + num(p.value), 0) || 1;
@@ -260,21 +231,23 @@ export default {
       const sites = state.sites || [];
       const projectName = (id) => { const s = sites.find((x) => x.id === id); return s ? s.name : String(id || '—'); };
 
-      const allRisks = safe('psel.filteredAiRisks', () => psel.filteredAiRisks(state, filters), (platform.aiRisks || []).filter((r) => inSite(r.projectId)));
-      const openRisks = safe('psel.openAiRisks', () => psel.openAiRisks(state, filters), allRisks.filter(isOpenRisk));
-      const withRating = (r) => ({ ...r, rating: ratingOf(psel, num(r.score)) });
-      const open = openRisks.map(withRating);
+      const allRisks = viaPsel(psel, 'filteredAiRisks', () => psel.filteredAiRisks(state, filters), null) || (platform.aiRisks || []).filter((r) => inSite(r.projectId));
+      const openRisks = viaPsel(psel, 'openAiRisks', () => psel.openAiRisks(state, filters), null) || allRisks.filter(isOpenRisk);
+      const open = openRisks.map((r) => ({ ...r, rating: ratingOf(psel, num(r.score)) }));
       const red = open.filter((r) => r.rating === 'red').sort((a, b) => num(b.score) - num(a.score));
       const yellow = open.filter((r) => r.rating === 'yellow').length;
       const green = open.filter((r) => r.rating === 'green').length;
       const closedRisks = allRisks.filter((r) => r.status === 'مغلق').length;
 
-      const consolidated = safe('psel.consolidatedScore', () => psel.consolidatedScore(state, filters), null) || {
-        score: 0, rating: 'green', delta: 0, trend: [], weights: (settings().platform || {}).weights || {},
-      };
+      const consolidated = viaPsel(psel, 'consolidatedScore', () => psel.consolidatedScore(state, filters), null) || (() => {
+        const weights = (settings().platform || {}).weights || { contract: 0.2, bom: 0.2, schedule: 0.25, site: 0.2, cost: 0.15 };
+        const catScore = (category) => { const s = open.filter((r) => r.category === category).map((r) => num(r.score)); return s.length ? Math.round(0.5 * Math.max(...s) + 0.5 * (s.reduce((a, b) => a + b, 0) / s.length)) : 0; };
+        const score = Math.round(CATEGORY_ORDER.reduce((sum, c) => sum + num(weights[c]) * catScore(c), 0));
+        return { score, rating: ratingOf(psel, score), delta: 0, trend: [], weights };
+      })();
       if (!consolidated.rating) consolidated.rating = ratingOf(psel, num(consolidated.score));
 
-      const categories = safe('psel.categoryScores', () => psel.categoryScores(state, filters), null) || CATEGORY_ORDER.map((category) => {
+      const categories = viaPsel(psel, 'categoryScores', () => psel.categoryScores(state, filters), null) || CATEGORY_ORDER.map((category) => {
         const items = open.filter((r) => r.category === category);
         const scores = items.map((r) => num(r.score));
         const score = scores.length ? Math.round(0.5 * Math.max(...scores) + 0.5 * (scores.reduce((s, v) => s + v, 0) / scores.length)) : 0;
@@ -282,7 +255,7 @@ export default {
           red: items.filter((r) => r.rating === 'red').length, yellow: items.filter((r) => r.rating === 'yellow').length, green: items.filter((r) => r.rating === 'green').length, trend: [] };
       });
 
-      const validation = safe('psel.validationSummary', () => psel.validationSummary(state), null) || (() => {
+      const validation = viaPsel(psel, 'validationSummary', () => psel.validationSummary(state), null) || (() => {
         const sources = (platform.validation && platform.validation.sources) || [];
         const sum = (k) => sources.reduce((s, x) => s + num(x[k]), 0);
         const recordsIn = sum('recordsIn'); const passed = sum('passed');
@@ -291,8 +264,8 @@ export default {
           quarantineOpen: ((platform.validation && platform.validation.quarantine) || []).filter((q) => q.status === 'معلّق').length, bySource: sources };
       })();
 
-      const queue = safe('psel.alertQueue', () => psel.alertQueue(state), null) || (() => {
-        const list = (platform.alerts || []).slice().sort((a, b) => Number(a.acknowledged) - Number(b.acknowledged) || Date.parse(b.sentAt) - Date.parse(a.sentAt));
+      const queue = viaPsel(psel, 'alertQueue', () => psel.alertQueue(state), null) || (() => {
+        const list = (platform.alerts || []).slice().sort((a, b) => Number(!!a.acknowledged) - Number(!!b.acknowledged) || (Date.parse(b.sentAt) || 0) - (Date.parse(a.sentAt) || 0));
         return { immediate: list.filter((a) => a.queue === 'immediate'), standard: list.filter((a) => a.queue !== 'immediate') };
       })();
       const immediate = (queue.immediate || []).filter((a) => inSite(a.projectId));
@@ -304,19 +277,25 @@ export default {
       const overdueTasks = openTasks.filter((t) => t.status === 'متأخرة' || isOverdue(t.dueDate, now));
       const closedTasks = tasks.length - openTasks.length;
 
-      const pipelines = safe('psel.pipelineHealth', () => psel.pipelineHealth(state), null) || (platform.pipelines || []);
+      const pipelines = viaPsel(psel, 'pipelineHealth', () => psel.pipelineHealth(state), null) || (platform.pipelines || []);
 
-      const typeDist = safe('psel.typeDistribution', () => psel.typeDistribution(state, filters), null) || TYPE_ORDER.map((type) => ({ type, label: typeLabel(psel, type), value: open.filter((r) => r.type === type).length }));
-      const ratingDist = safe('psel.ratingDistribution', () => psel.ratingDistribution(state, filters), null) || RATING_ORDER.map((rating) => ({ rating, label: ratingLabel(psel, rating), value: open.filter((r) => r.rating === rating).length }));
+      const typeDist = viaPsel(psel, 'typeDistribution', () => psel.typeDistribution(state, filters), null) || TYPE_ORDER.map((type) => ({ type, label: typeLabel(psel, type), value: open.filter((r) => r.type === type).length }));
+      const ratingDist = viaPsel(psel, 'ratingDistribution', () => psel.ratingDistribution(state, filters), null) || RATING_ORDER.map((rating) => ({ rating, label: ratingLabel(psel, rating), value: open.filter((r) => r.rating === rating).length }));
 
+      const today = startOfDay(now);
       const projects = (platform.projects || []).filter((p) => inSite(p.id)).map((p) => {
-        const evm = safe('psel.evm', () => psel.evm(state, p.id), null) || { ...(p.evm || {}), percentComplete: p.percentComplete, plannedPercent: p.plannedPercent, status: '—' };
-        const cons = safe('psel.consolidatedScore(project)', () => psel.consolidatedScore(state, { ...filters, siteId: p.id }), null) || { score: 0, rating: 'green' };
+        const evm = viaPsel(psel, 'evm', () => psel.evm(state, p.id), null) || { ...(p.evm || {}), percentComplete: p.percentComplete, plannedPercent: p.plannedPercent, status: null };
+        const cons = viaPsel(psel, 'consolidatedScore', () => psel.consolidatedScore(state, { ...filters, siteId: p.id }), null) || (() => {
+          const weights = consolidated.weights || {};
+          const mine = (platform.aiRisks || []).filter((r) => r.projectId === p.id && isOpenRisk(r));
+          const catScore = (c) => { const s = mine.filter((r) => r.category === c).map((r) => num(r.score)); return s.length ? Math.round(0.5 * Math.max(...s) + 0.5 * (s.reduce((a, b) => a + b, 0) / s.length)) : 0; };
+          const score = Math.round(CATEGORY_ORDER.reduce((sum, c) => sum + num(weights[c]) * catScore(c), 0));
+          return { score, rating: ratingOf(psel, score) };
+        })();
         if (!cons.rating) cons.rating = ratingOf(psel, num(cons.score));
         const redCount = (platform.aiRisks || []).filter((r) => r.projectId === p.id && isOpenRisk(r) && ratingOf(psel, num(r.score)) === 'red').length;
-        const today = startOfDay(now);
         const next = (platform.scheduleTasks || [])
-          .filter((t) => t.projectId === p.id && t.critical && defaultFmt.toDate(t.finish) && defaultFmt.toDate(t.finish).getTime() >= today)
+          .filter((t) => t.projectId === p.id && t.critical && (Date.parse(t.finish) || 0) >= today)
           .sort((a, b) => Date.parse(a.finish) - Date.parse(b.finish))[0] || null;
         return { ...p, name: projectName(p.id), evm, cons, redCount, next };
       });
@@ -328,63 +307,61 @@ export default {
     /* Row 1 — hero + category tiles                                      */
     /* ---------------------------------------------------------------- */
 
+    function deltaChip(delta) {
+      const n = Number(delta);
+      if (!Number.isFinite(n)) return null;
+      const up = n > 0; const zero = n === 0;
+      const tone = zero ? 'neutral' : (up ? 'critical' : 'good'); // higher consolidated score = worse
+      return h('span', { class: ['score-hero-delta', zero ? 'is-flat' : (up ? 'is-up' : 'is-down'), `tone-${tone}`], 'aria-label': `التغير مقارنة بالفترة السابقة: ${fmt.signed(n)}` },
+        svgIcon(zero ? 'minus' : (up ? 'trend-up' : 'trend-down'), 14), h('span', { class: 'mono num' }, fmt.signed(n, Number.isInteger(n) ? 0 : 1)), h('span', { class: 'muted' }, 'مقارنة بالفترة السابقة'));
+    }
+
     function heroCard(d) {
       const c = d.consolidated;
       const score = Math.round(num(c.score));
       const rating = c.rating || ratingOf(psel, score);
       const tone = ratingTone(psel, rating);
-      const gauge = chartOr('gauge', () => charts.gauge({ value: score, max: 100, size: 196, label: 'الدرجة الموحدة', sublabel: ratingLabel(psel, rating) }), () => fallbackGauge(score, tone, 'الدرجة الموحدة'));
-      const gaugeWrap = h('div', { class: ['cockpit-gauge', `tone-${tone}`], 'data-rating': rating, role: 'img', 'aria-label': `الدرجة الموحدة للمخاطر ${fmt.num(score)} من 100 — تصنيف ${ratingLabel(psel, rating)}` }, gauge);
-
+      const gauge = chartOr('gauge', () => charts.gauge({ value: score, max: 100, size: 196, label: 'الدرجة الموحدة', sublabel: ratingLabel(psel, rating) }), () => fallbackGauge(score, rating, 'الدرجة الموحدة'));
+      const gaugeWrap = h('div', { class: ['score-hero-gauge', `tone-${tone}`], 'data-rating': rating, role: 'img', 'aria-label': `الدرجة الموحدة للمخاطر ${fmt.num(score)} من 100 — تصنيف ${ratingLabel(psel, rating)}` }, gauge);
       const trend = Array.isArray(c.trend) ? c.trend.filter(isNum) : [];
-      const spark = trend.length >= 2 ? chartOr('sparkline', () => charts.sparkline({ values: trend, width: 150, height: 34, color: 'var(--ink-3)', accentLast: true }), () => null) : null;
-
-      const facts = h('div', { class: 'hero-facts' },
-        h('div', { class: 'fact' }, h('span', { class: 'fact-label' }, 'مخاطر مفتوحة'), h('span', { class: 'fact-value num' }, fmt.num(d.open.length))),
-        h('div', { class: 'fact tone-critical' }, h('span', { class: 'fact-label' }, 'تصنيف أحمر'), h('span', { class: 'fact-value num' }, fmt.num(d.red.length))),
-        h('div', { class: 'fact' }, h('span', { class: 'fact-label' }, 'تنبيهات بانتظار الإقرار'), h('span', { class: 'fact-value num' }, fmt.num(d.unacked.length))));
-
+      const spark = trend.length >= 2 ? chartOr('sparkline', () => charts.sparkline({ values: trend, width: 160, height: 34, color: 'var(--ink-3)', accentLast: true }), () => null) : null;
       const weights = c.weights && typeof c.weights === 'object' ? c.weights : {};
-      const legend = h('div', { class: 'chip-group weights-legend', role: 'group', 'aria-label': 'أوزان المجالات في الدرجة الموحدة — انقر للتعديل' },
-        CATEGORY_ORDER.filter((k) => weights[k] !== undefined).map((k) => h('button', {
-          type: 'button', class: 'chip is-sm', title: 'تعديل الأوزان في الإعدادات', onClick: () => navigate('settings'),
-        }, svgIcon(categoryIcon(psel, k), 12), h('span', {}, categoryLabel(psel, k)), h('span', { class: 'chip-count' }, fmt.pct(num(weights[k]) * 100)))));
 
-      const side = h('div', { class: 'stack gap-3 grow' },
-        h('div', { class: 'row wrap gap-2' }, ratingBadge(psel, rating, { lg: true }), deltaChip(fmt, c.delta, { goodWhen: 'down' }), h('span', { class: 'muted text-xs' }, 'مقارنة بالفترة السابقة')),
-        spark ? h('div', { class: 'row gap-2 wrap' }, h('span', { class: 'tile-spark', 'aria-hidden': 'true' }, spark), h('span', { class: 'muted text-xs' }, 'اتجاه 12 أسبوعاً')) : null,
-        facts,
-        h('div', { class: 'stack gap-1' }, h('span', { class: 'muted text-xs' }, 'الأوزان: Σ وزن المجال × درجة المجال'), legend));
+      const hero = h('div', { class: 'score-hero' },
+        gaugeWrap,
+        h('div', { class: 'row gap-2 wrap', style: { justifyContent: 'center' } }, ratingBadge(psel, rating), deltaChip(c.delta)),
+        h('span', { class: 'score-hero-label' }, 'الدرجة الموحدة = Σ وزن المجال × درجة المجال · كلما ارتفعت ازداد الخطر'),
+        spark ? h('div', { class: 'row gap-2 wrap', style: { justifyContent: 'center' } }, h('span', { class: 'tile-spark', 'aria-hidden': 'true' }, spark), h('span', { class: 'muted text-xs' }, 'اتجاه 12 أسبوعاً')) : null,
+        h('div', { class: 'hero-facts', style: { inlineSize: '100%' } },
+          h('div', { class: 'fact' }, h('span', { class: 'fact-label' }, 'مخاطر مفتوحة'), h('span', { class: 'fact-value num' }, fmt.num(d.open.length))),
+          h('div', { class: 'fact' }, h('span', { class: 'fact-label' }, 'تصنيف أحمر'), h('span', { class: 'fact-value num' }, fmt.num(d.red.length))),
+          h('div', { class: 'fact' }, h('span', { class: 'fact-label' }, 'تنبيهات بانتظار الإقرار'), h('span', { class: 'fact-value num' }, fmt.num(d.unacked.length)))),
+        h('div', { class: 'weights-legend', role: 'group', 'aria-label': 'أوزان المجالات في الدرجة الموحدة — انقر للتعديل في الإعدادات' },
+          CATEGORY_ORDER.filter((k) => weights[k] !== undefined).map((k) => h('button', { type: 'button', title: 'تعديل الأوزان في الإعدادات', onClick: () => navigate('settings') },
+            h('span', {}, categoryLabel(psel, k)), ' ', h('span', { class: 'mono num' }, fmt.pct(num(weights[k]) * 100))))));
 
-      return card({
-        code: 'CPT-00', title: 'الدرجة الموحدة للمخاطر', subtitle: 'كلما ارتفعت الدرجة ازداد الخطر — أحمر ≥ 70، أصفر 40–69، أخضر < 40',
-        hero: true, className: 'cockpit-hero col-span-4',
-        body: h('div', { class: 'row gap-4 wrap cockpit-hero-row', style: { alignItems: 'flex-start' } }, gaugeWrap, side),
-      });
+      return card({ code: 'CPT-00', title: 'الدرجة الموحدة للمخاطر', subtitle: 'أحمر ≥ 70 تدخل فوري · أصفر 40–69 مراقبة · أخضر < 40 ضمن حدود التحمل', hero: true, className: 'cockpit-hero col-span-4', body: hero });
     }
 
     function categoryTiles(d) {
-      const grid = h('div', { class: 'kpi-row cat-tiles col-span-8', style: { gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }, role: 'list', 'aria-label': 'درجات مجالات المخاطر' });
+      const grid = h('div', { class: 'cat-tiles col-span-8', role: 'list', 'aria-label': 'درجات مجالات المخاطر الخمسة' });
       const byCat = new Map((d.categories || []).map((c) => [c.category, c]));
       CATEGORY_ORDER.forEach((category) => {
         const c = byCat.get(category) || { category, score: 0, rating: 'green', open: 0, red: 0, trend: [] };
         const score = Math.round(num(c.score));
         const rating = c.rating || ratingOf(psel, score);
-        const tone = ratingTone(psel, rating);
         const meta = CATEGORY_META[category] || {};
         const trend = Array.isArray(c.trend) ? c.trend.filter(isNum) : [];
-        const spark = trend.length >= 2 ? chartOr('sparkline', () => charts.sparkline({ values: trend, width: 72, height: 22, color: 'var(--ink-3)' }), () => null) : null;
-        const tile = h('button', {
-          type: 'button', class: ['tile', 'is-clickable', 'cat-tile', `tone-${tone}`], 'data-category': category, role: 'listitem',
-          'aria-label': `${categoryLabel(psel, category)}: الدرجة ${fmt.num(score)} — ${ratingLabel(psel, rating)} — ${fmt.num(num(c.open))} مخاطر مفتوحة. فتح مجال ${categoryLabel(psel, category)}`,
+        const spark = trend.length >= 2 ? chartOr('sparkline', () => charts.sparkline({ values: trend, width: 96, height: 24, color: 'var(--ink-3)' }), () => null) : null;
+        grid.appendChild(h('button', {
+          type: 'button', class: 'cat-tile', 'data-rating': rating, 'data-category': category, role: 'listitem',
+          'aria-label': `${categoryLabel(psel, category)}: الدرجة ${fmt.num(score)} — ${ratingLabel(psel, rating)} — ${fmt.num(num(c.open))} مخاطر مفتوحة منها ${fmt.num(num(c.red))} حمراء. فتح مجال ${categoryLabel(psel, category)}`,
           onClick: () => navigate(meta.view || 'cockpit'),
         },
-        h('div', { class: 'tile-top' }, h('span', { class: 'tile-label' }, c.label || categoryLabel(psel, category)), h('span', { class: 'tile-icon', 'aria-hidden': 'true' }, svgIcon(categoryIcon(psel, category), 16))),
-        h('div', { class: 'tile-value-row' }, h('span', { class: 'tile-value num' }, fmt.num(score)), ratingBadge(psel, rating)),
-        h('div', { class: 'tile-bottom' },
-          h('span', { class: 'text-xs muted' }, `مفتوحة ${fmt.num(num(c.open))} · أحمر ${fmt.num(num(c.red))}`),
-          spark ? h('span', { class: 'tile-spark', 'aria-hidden': 'true' }, spark) : null));
-        grid.appendChild(tile);
+        h('div', { class: 'cat-tile-head' }, h('span', { class: 'cat-tile-icon', 'aria-hidden': 'true' }, svgIcon(categoryIcon(psel, category), 16)), h('span', { class: 'cat-tile-label' }, c.label || categoryLabel(psel, category))),
+        h('div', { class: 'cat-tile-score' }, scoreNum(score, rating), ratingBadge(psel, rating)),
+        h('div', { class: 'cat-tile-meta' }, h('span', {}, 'مفتوحة ', h('strong', {}, fmt.num(num(c.open)))), h('span', {}, 'أحمر ', h('strong', {}, fmt.num(num(c.red))))),
+        spark ? h('div', { class: 'cat-tile-spark', 'aria-hidden': 'true' }, spark) : null));
       });
       return grid;
     }
@@ -395,13 +372,14 @@ export default {
 
     function flowCounters(d) {
       const v = d.validation;
+      const immediateUnacked = d.immediate.filter((a) => !a.acknowledged).length;
       return [
         { value: fmt.compact(num(v.recordsIn)), sub: 'سجل وارد اليوم' },
         { value: fmt.pct(num(v.passRatePct)), sub: `رُفض ${fmt.num(num(v.rejected))} · مكرر ${fmt.num(num(v.deduplicated))}` },
         { value: fmt.compact(num(v.passed)), sub: 'سجل مُطبَّع ومُؤرشف' },
         { value: fmt.num(d.allRisks.length), sub: 'مخاطرة مُقيَّمة 0–100' },
         { value: fmt.num(d.open.length), sub: `أحمر ${fmt.num(d.red.length)} · أصفر ${fmt.num(d.yellow)} · أخضر ${fmt.num(d.green)}` },
-        { value: fmt.num(d.unacked.length), sub: `فوري ${fmt.num(d.immediate.filter((a) => !a.acknowledged).length)} · قياسي ${fmt.num(d.standard.filter((a) => !a.acknowledged).length)}` },
+        { value: fmt.num(d.unacked.length), sub: `فوري ${fmt.num(immediateUnacked)} · قياسي ${fmt.num(d.unacked.length - immediateUnacked)}`, alert: d.unacked.length > 0, critical: immediateUnacked > 0 },
         { value: fmt.num(d.openTasks.length), sub: `متأخرة ${fmt.num(d.overdueTasks.length)}` },
         { value: fmt.num(d.closedRisks), sub: `مهام مغلقة ${fmt.num(d.closedTasks)}` },
       ];
@@ -410,53 +388,47 @@ export default {
     function buildFlow(d) {
       const reduced = isReduced();
       const counters = flowCounters(d);
-      const flow = h('div', {
-        class: ['flow', reduced ? 'is-static' : 'is-live'], role: 'list', 'aria-label': 'مسار معالجة المخاطر — ثماني مراحل من الالتقاط حتى الإغلاق',
-        'data-stage': String(flowStage), 'data-stages': String(FLOW_STAGES.length), style: { '--flow-stage': String(flowStage), '--flow-count': String(FLOW_STAGES.length) },
-      });
-      const track = h('div', { class: 'flow-track', style: { position: 'relative' } });
-      const line = h('div', { class: 'flow-line', 'aria-hidden': 'true' });
-      const packet = h('span', { class: 'flow-packet', 'aria-hidden': 'true', hidden: reduced, style: { position: 'absolute', insetBlockStart: 'var(--flow-dot-center, 18px)', transition: reduced ? 'none' : 'inset-inline-start 640ms var(--ease)' } });
-      const nodes = h('div', { class: 'flow-nodes', style: { display: 'grid', gridTemplateColumns: `repeat(${FLOW_STAGES.length}, minmax(0, 1fr))` } });
+      const flow = h('ol', { class: ['flow', reduced ? 'is-static' : 'is-live'], 'aria-label': 'مسار معالجة المخاطر — ثماني مراحل من الالتقاط حتى الإغلاق', 'data-stage': String(flowStage), style: { '--flow-stage': String(flowStage) } });
       FLOW_STAGES.forEach((stage, i) => {
         const counter = counters[i] || { value: '—', sub: '' };
-        const node = h('div', { class: ['flow-node', `is-${stage.id}`], role: 'listitem', 'data-stage': String(i) },
-          h('span', { class: 'flow-node-dot', 'aria-hidden': 'true' }, svgIcon(stage.icon, 16)),
-          h('span', { class: 'flow-node-label' }, stage.label),
-          h('span', { class: 'flow-node-value mono num' }, counter.value),
-          counter.sub ? h('span', { class: 'flow-node-sub muted text-xs' }, counter.sub) : null);
-        if (i === 1) node.appendChild(h('span', { class: 'flow-gate badge tone-accent', title: 'بوابة التحقق: لا يصل أي سجل إلى المحرك قبل اجتياز التحقق' }, glyph('accent', 11), h('span', { class: 'badge-text' }, 'بوابة التحقق')));
-        nodes.appendChild(node);
+        flow.appendChild(h('li', { class: ['flow-node', `is-${stage.id}`, stage.gate ? 'is-gate' : null, counter.critical ? 'is-critical' : (counter.alert ? 'is-alert' : null)], 'data-stage': String(i), title: stage.gate ? 'بوابة التحقق: لا يصل أي سجل إلى المحرك قبل اجتياز التحقق' : undefined },
+          h('span', { class: 'flow-dot', 'aria-hidden': 'true' }, svgIcon(stage.icon, 12)),
+          h('span', { class: 'flow-label' }, stage.label),
+          h('span', { class: 'flow-count mono num' }, counter.value),
+          counter.sub ? h('span', { class: 'flow-sub' }, counter.sub) : null));
       });
-      track.append(line, nodes, packet);
-      flow.appendChild(track);
+      if (!reduced) flow.appendChild(h('span', { class: 'flow-packet', 'aria-hidden': 'true' }));
       flowEl = flow;
-      packetEl = packet;
+      measureFlow();
       applyFlowStage();
       return flow;
     }
 
+    /** The CSS packet travels `--flow-travel` (node 0 → node 7 = 87.5% of the strip); measure it here. */
+    function measureFlow() {
+      if (flowObserver) { flowObserver.disconnect(); flowObserver = null; }
+      const setTravel = () => {
+        if (!flowEl || !flowEl.isConnected) return;
+        const w = flowEl.clientWidth;
+        if (w > 0) flowEl.style.setProperty('--flow-travel', `${Math.max(0, Math.round(w * 0.875) - 8)}px`);
+      };
+      if (typeof ResizeObserver !== 'undefined') {
+        flowObserver = new ResizeObserver(() => setTravel());
+        flowObserver.observe(flowEl);
+      }
+      requestAnimationFrame(setTravel);
+    }
+
     function applyFlowStage() {
       if (!flowEl || !flowEl.isConnected) return;
-      const n = FLOW_STAGES.length;
       flowEl.dataset.stage = String(flowStage);
       flowEl.style.setProperty('--flow-stage', String(flowStage));
       flowEl.querySelectorAll('.flow-node').forEach((node, i) => {
-        node.classList.toggle('is-active', i === flowStage);
+        node.classList.toggle('is-current', i === flowStage);
         node.classList.toggle('is-done', i < flowStage);
-        node.classList.toggle('is-next', i === (flowStage + 1) % n);
         if (i === flowStage) node.setAttribute('aria-current', 'step'); else node.removeAttribute('aria-current');
       });
-      if (packetEl) {
-        packetEl.style.insetInlineStart = `calc(${(((flowStage + 0.5) / n) * 100).toFixed(3)}% - var(--flow-packet-half, 6px))`;
-        packetEl.dataset.stage = String(flowStage);
-        // retrigger the arrival pulse (class toggling only — CSS owns the keyframes)
-        packetEl.classList.remove('is-arrive');
-        void packetEl.offsetWidth;
-        packetEl.classList.add('is-arrive');
-      }
     }
-
     function flowTick() {
       if (!alive) return;
       flowStage = (flowStage + 1) % FLOW_STAGES.length;
@@ -478,7 +450,7 @@ export default {
         body: buildFlow(d),
         footer: h('div', { class: 'row wrap gap-2 between' },
           h('span', { class: 'row gap-2 text-xs muted' }, liveDot('accent'), 'المنصة تقرأ من أنظمة العميل ولا تكتب إليها سوى أعلام المخاطر والدرجات والتنبيهات ومهام المعالجة.'),
-          h('span', { class: 'text-xs muted' }, isReduced() ? 'الحركة متوقفة وفق تفضيل تقليل الحركة' : 'الحزمة تتقدم مرحلة كل 2.4 ثانية')),
+          h('span', { class: 'text-xs muted' }, isReduced() ? 'الحركة متوقفة وفق تفضيل تقليل الحركة' : 'المرحلة النشطة تتقدم كل 2.4 ثانية')),
       });
     }
 
@@ -486,18 +458,24 @@ export default {
     /* Row 3 — red risks table, alert queue                               */
     /* ---------------------------------------------------------------- */
 
+    function dueCell(iso, now) {
+      const overdue = isOverdue(iso, now);
+      return h('span', { class: ['row gap-1 due-cell', overdue ? 'is-overdue' : null], title: overdue ? 'متأخر عن موعد الاستحقاق' : undefined },
+        glyph(overdue ? 'critical' : 'clock', 13), h('span', {}, fmt.date(iso, { style: 'short' })), overdue ? h('span', { class: 'sr-only' }, ' — متأخر') : null);
+    }
+
     function redRisksCard(d) {
       const table = dataTable({
         caption: 'المخاطر الحمراء المفتوحة مرتبة تنازلياً حسب الدرجة',
         rows: d.red, rowKey: 'id', pageSize: 8, dense: true, emptyText: 'لا توجد مخاطر حمراء مفتوحة ضمن عوامل التصفية الحالية',
         onRowClick: (row) => navigate('airisks', { risk: row.id }),
         columns: [
-          { key: 'code', label: 'الرمز', width: 92, mono: true },
+          { key: 'code', label: 'الرمز', width: 96, mono: true },
           { key: 'title', label: 'المخاطرة', render: (r) => h('span', { class: 'semibold' }, r.title) },
           { key: 'projectId', label: 'المشروع', render: (r) => d.projectName(r.projectId), sortValue: (r) => d.projectName(r.projectId) },
-          { key: 'category', label: 'المجال', render: (r) => categoryCell(psel, r.category), sortValue: (r) => categoryLabel(psel, r.category) },
+          { key: 'category', label: 'المجال', render: (r) => categoryChip(psel, r.category), sortValue: (r) => categoryLabel(psel, r.category) },
           { key: 'type', label: 'النوع', render: (r) => typeChip(psel, r.type), sortValue: (r) => typeLabel(psel, r.type) },
-          { key: 'score', label: 'الدرجة', align: 'center', render: (r) => h('span', { class: 'mono num semibold' }, fmt.num(num(r.score))), sortValue: (r) => num(r.score) },
+          { key: 'score', label: 'الدرجة', align: 'center', render: (r) => scoreNum(r.score, r.rating), sortValue: (r) => num(r.score) },
           { key: 'rating', label: 'التصنيف', render: (r) => ratingBadge(psel, r.rating), sortValue: (r) => RATING_ORDER.indexOf(r.rating) },
           { key: 'owner', label: 'المالك' },
           { key: 'dueDate', label: 'الاستحقاق', render: (r) => dueCell(r.dueDate, d.now), sortValue: (r) => Date.parse(r.dueDate) || 0 },
@@ -512,36 +490,28 @@ export default {
       });
     }
 
-    function dueCell(iso, now) {
-      const overdue = isOverdue(iso, now);
-      return h('span', { class: ['row gap-1 due-cell', overdue ? 'is-overdue' : null], title: overdue ? 'متأخر عن موعد الاستحقاق' : undefined },
-        glyph(overdue ? 'critical' : 'clock', 13), h('span', {}, fmt.date(iso, { style: 'short' })), overdue ? h('span', { class: 'sr-only' }, ' — متأخر') : null);
-    }
-
     function alertItem(a, d) {
       const critical = a.severity === 'critical' || a.queue === 'immediate';
-      const tone = critical ? 'critical' : 'warning';
-      const channels = Array.isArray(a.channels) ? a.channels.map((c) => CHANNEL_LABEL[c] || c).join(' · ') : '';
       const ackable = !a.acknowledged && typeof store.ackAlert === 'function';
-      const trailing = h('div', { class: 'urgent-due stack gap-1' },
-        h('span', {}, fmt.relative(a.sentAt)),
-        a.acknowledged
-          ? badge('تم الإقرار', 'good')
-          : (ackable
-            ? button('إقرار', { variant: 'outline', size: 'sm', onClick: () => { try { store.ackAlert(a.id, USER); toast(`تم الإقرار بالتنبيه — ${a.title}`, { tone: 'good' }); } catch (err) { toast('تعذر الإقرار بالتنبيه', { tone: 'critical' }); warnOnce('store.ackAlert', err); } } })
-            : badge('بانتظار الإقرار', 'warning')));
-      return h('div', { class: ['urgent-item', `tone-${tone}`, a.acknowledged ? 'is-acked' : null], role: 'listitem' },
-        h('span', { class: 'urgent-icon', 'aria-hidden': 'true' }, glyph(tone, 15)),
-        h('div', { class: 'urgent-text' },
-          h('span', { class: 'row gap-2 wrap' }, h('span', { class: 'semibold' }, a.title || 'تنبيه'), badge(critical ? 'تصعيد فوري' : 'قياسي', critical ? 'critical' : 'neutral')),
-          h('span', { class: 'urgent-sub' }, [d.projectName(a.projectId), channels].filter(Boolean).join(' · '))),
-        trailing);
+      const channels = Array.isArray(a.channels) ? a.channels : [];
+      return h('li', { class: 'alert-queue-item', 'data-severity': critical ? 'critical' : 'routine', 'data-acked': a.acknowledged ? 'true' : 'false' },
+        h('div', { class: 'alert-queue-main' },
+          h('span', { class: 'row gap-2 wrap' }, h('span', { class: 'alert-queue-title' }, a.title || 'تنبيه'), badge(critical ? 'تصعيد فوري' : 'قياسي', critical ? 'critical' : 'neutral')),
+          h('span', { class: 'alert-queue-meta' }, h('span', {}, d.projectName(a.projectId)), h('span', { title: fmt.dateTime(a.sentAt) }, fmt.relative(a.sentAt)),
+            a.acknowledged ? h('span', {}, `أقرّه ${a.ackBy || '—'}${a.ackAt ? ` ${fmt.relative(a.ackAt)}` : ''}`) : null)),
+        h('div', { class: 'alert-queue-actions' },
+          a.acknowledged
+            ? badge('تم الإقرار', 'good')
+            : (ackable
+              ? button('إقرار', { variant: 'outline', size: 'sm', onClick: () => { try { store.ackAlert(a.id, USER); toast(`تم الإقرار بالتنبيه — ${a.title || ''}`, { tone: 'good' }); } catch (err) { warnOnce('store.ackAlert', err); toast('تعذر الإقرار بالتنبيه', { tone: 'critical' }); } } })
+              : badge('بانتظار الإقرار', 'warning'))),
+        channels.length ? h('div', { class: 'alert-queue-channels', 'aria-label': 'قنوات الإرسال' }, channels.map((c) => h('span', { class: 'channel-chip' }, svgIcon(CHANNEL_ICON[c] || 'send', 11), CHANNEL_LABEL[c] || String(c)))) : null);
     }
 
     function alertQueueCard(d) {
       const items = d.immediate.concat(d.standard).slice(0, 8);
       const list = items.length
-        ? h('div', { class: 'urgent-list', role: 'list', 'aria-label': 'قائمة التنبيهات' }, items.map((a) => alertItem(a, d)))
+        ? h('ul', { class: 'alert-queue', 'aria-label': 'قائمة التنبيهات — التصعيد الفوري أولاً' }, items.map((a) => alertItem(a, d)))
         : emptyState({ icon: 'bell', title: 'لا توجد تنبيهات', text: 'تظهر هنا التنبيهات عندما تتجاوز درجة مخاطرة عتبة التنبيه.' });
       return card({
         code: 'AIR-03', title: 'قائمة التنبيهات', subtitle: `${fmt.num(d.immediate.filter((a) => !a.acknowledged).length)} تصعيد فوري · ${fmt.num(d.standard.filter((a) => !a.acknowledged).length)} قياسي بانتظار الإقرار`,
@@ -556,29 +526,25 @@ export default {
     /* ---------------------------------------------------------------- */
 
     function pipelineStrip(d) {
-      const grid = h('div', { class: 'kpi-row pipeline-strip', role: 'list', 'aria-label': 'صحة خطوط المعالجة الخمسة' });
+      const strip = h('div', { class: 'pipe-strip', role: 'list', 'aria-label': 'صحة خطوط المعالجة الخمسة' });
       (d.pipelines || []).slice(0, 5).forEach((item) => {
         const p = item && item.pipeline ? item.pipeline : item;
         const status = PIPELINE_STATUS[p.status] || { label: String(p.status || '—'), tone: 'neutral' };
         const tone = item.tone || item.health || status.tone;
-        const acceptance = num(p.acceptanceRatePct);
-        const tile = h('button', {
-          type: 'button', class: ['tile', 'is-clickable', 'pipeline-tile', `tone-${tone}`], role: 'listitem', onClick: () => navigate('engine'),
-          'aria-label': `${p.nameAr || p.name}: ${status.label} — نسبة القبول ${fmt.pct(acceptance)} — ${fmt.num(num(p.runsToday))} تشغيلاً اليوم`,
+        const name = p.nameAr || p.name || pipelineLabel(psel, p.id);
+        strip.appendChild(h('button', {
+          type: 'button', class: ['pipe-mini', `tone-${tone}`], role: 'listitem', 'data-status': p.status || '', onClick: () => navigate('engine'),
+          'aria-label': `${name}: ${status.label} — نسبة القبول ${fmt.pct(num(p.acceptanceRatePct))} — ${fmt.num(num(p.runsToday))} تشغيلاً اليوم — آخر تشغيل ${fmt.relative(p.lastRun)}. فتح محرك الذكاء الاصطناعي`,
         },
-        h('div', { class: 'tile-top' }, h('span', { class: 'tile-label' }, p.nameAr || p.name || pipelineLabel(psel, p.id)), h('span', { class: 'row gap-1' }, liveDot(tone), badge(status.label, tone))),
-        h('div', { class: 'tile-value-row' }, h('span', { class: 'tile-value num' }, fmt.pct(acceptance)), h('span', { class: 'tile-unit' }, 'نسبة القبول')),
-        h('div', { class: 'tile-bottom' },
-          h('span', { class: 'text-xs muted' }, `${fmt.num(num(p.runsToday))} تشغيلاً اليوم`),
-          h('span', { class: 'text-xs muted' }, `آخر تشغيل ${fmt.relative(p.lastRun)}`)),
-        h('span', { class: 'tile-hint mono' }, [p.version, isNum(p.avgLatencyMs) ? `${fmt.num(p.avgLatencyMs)} ms` : null].filter(Boolean).join(' · ')));
-        grid.appendChild(tile);
+        h('div', { class: 'pipe-mini-head' }, liveDot(tone), h('span', { class: 'grow truncate' }, name), badge(status.label, tone)),
+        h('div', { class: 'pipe-mini-meta' }, 'نسبة القبول ', h('span', { class: 'mono num' }, fmt.pct(num(p.acceptanceRatePct))), ' · تشغيلات اليوم ', h('span', { class: 'mono num' }, fmt.num(num(p.runsToday)))),
+        h('div', { class: 'pipe-mini-meta' }, 'آخر تشغيل ', h('span', { class: 'mono' }, fmt.relative(p.lastRun)), isNum(p.avgLatencyMs) ? h('span', {}, ' · ', h('span', { class: 'mono num' }, `${fmt.num(p.avgLatencyMs)} ms`)) : null, p.version ? h('span', {}, ' · ', h('span', { class: 'mono' }, p.version)) : null)));
       });
       return card({
         code: 'PLT-01', title: 'صحة خطوط المعالجة', subtitle: 'خمسة نماذج على طبقة تقييم وتفسير مشتركة — الحالة، آخر تشغيل، تشغيلات اليوم، ونسبة قبول التوصيات (الإنسان في الحلقة)',
         className: 'col-span-12',
         actions: [button('محرك الذكاء الاصطناعي', { variant: 'ghost', size: 'sm', icon: 'sliders', onClick: () => navigate('engine') })],
-        body: grid,
+        body: strip,
       });
     }
 
@@ -589,7 +555,7 @@ export default {
       const meter = chartOr('meter', () => charts.meter({ value: pass, max: 100, label: 'نسبة اجتياز التحقق', thresholds: [{ upTo: 90, tone: 'critical' }, { upTo: 97, tone: 'warning' }, { upTo: 100, tone: 'good' }], height: 10 }), () => fallbackMeter(pass, 'نسبة اجتياز التحقق', tone));
       const quarantine = h('button', {
         type: 'button', class: ['tile', 'is-clickable', num(v.quarantineOpen) ? 'tone-warning' : 'tone-good'], onClick: () => navigate('dataquality'),
-        'aria-label': `${fmt.num(num(v.quarantineOpen))} سجلاً في الحجر الصحي بانتظار المعالجة — فتح جودة البيانات`,
+        'aria-label': `${fmt.num(num(v.quarantineOpen))} سجلاً في الحجر بانتظار المعالجة — فتح جودة البيانات`,
       },
       h('div', { class: 'tile-top' }, h('span', { class: 'tile-label' }, 'سجلات في الحجر'), h('span', { class: 'tile-icon', 'aria-hidden': 'true' }, svgIcon('badge-check', 16))),
       h('div', { class: 'tile-value-row' }, h('span', { class: 'tile-value num' }, fmt.num(num(v.quarantineOpen))), h('span', { class: 'tile-unit' }, 'معلّق')));
@@ -614,14 +580,12 @@ export default {
       const seg = total > 0
         ? chartOr('segmentedBar', () => charts.segmentedBar({ parts: parts.map((p) => ({ id: p.id, label: p.label, value: num(p.value), color: p.color })), tall: true, valueFormat: fmt.num, ariaLabel }), () => fallbackSegments(parts))
         : emptyState({ title: 'لا توجد مخاطر مفتوحة ضمن عوامل التصفية' });
-      const legend = h('div', { class: 'row wrap gap-2 dist-legend', role: 'list' }, parts.map((p) => h('span', { class: 'row gap-1 text-xs', role: 'listitem' },
-        p.icon ? p.icon : h('span', { class: 'legend-key is-dot', 'aria-hidden': 'true', style: { background: p.color, inlineSize: '10px', blockSize: '10px', borderRadius: '50%', display: 'inline-block' } }),
-        h('span', {}, p.label), h('span', { class: 'mono num muted' }, fmt.num(num(p.value))))));
+      const legend = h('div', { class: 'row wrap gap-2 dist-legend', role: 'list' }, parts.map((p) => h('span', { class: 'row gap-1 text-xs', role: 'listitem' }, p.icon, h('span', { class: 'mono num muted' }, fmt.num(num(p.value))))));
       return card({ code, title, subtitle, className: 'col-span-4', body: h('div', { class: 'stack gap-3' }, seg, legend), tableView: tableViewOf(seg) });
     }
 
     function typeDistributionCard(d) {
-      const palette = (i) => safe('charts.paletteFor', () => charts.paletteFor(i), `var(--s${(i % 8) + 1})`);
+      const palette = (i) => (charts && typeof charts.paletteFor === 'function' ? safe('charts.paletteFor', () => charts.paletteFor(i), `var(--s${(i % 8) + 1})`) : `var(--s${(i % 8) + 1})`);
       const parts = TYPE_ORDER.map((type, i) => {
         const found = (d.typeDist || []).find((x) => x.type === type) || { value: 0 };
         return { id: type, label: typeLabel(psel, type), value: num(found.value), color: palette(i), icon: typeChip(psel, type) };
@@ -649,7 +613,7 @@ export default {
         onRowClick: (p) => { try { store.setFilter('siteId', p.id); toast(`تم تركيز المحفظة على مشروع ${p.name}`, { tone: 'accent', action: { label: 'إلغاء', onClick: () => store.setFilter('siteId', 'all') } }); } catch (err) { warnOnce('store.setFilter', err); } },
         columns: [
           { key: 'name', label: 'المشروع', render: (p) => h('span', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, p.name), h('span', { class: 'text-xs muted mono' }, String(p.code || p.id))) },
-          { key: 'score', label: 'الدرجة الموحدة', render: (p) => h('span', { class: 'row gap-2' }, h('span', { class: 'mono num semibold' }, fmt.num(Math.round(num(p.cons.score)))), ratingBadge(psel, p.cons.rating)), sortValue: (p) => num(p.cons.score) },
+          { key: 'score', label: 'الدرجة الموحدة', render: (p) => h('span', { class: 'row gap-2' }, scoreNum(p.cons.score, p.cons.rating), ratingBadge(psel, p.cons.rating)), sortValue: (p) => num(p.cons.score) },
           { key: 'cpi', label: 'CPI / SPI', align: 'center', render: (p) => h('span', { class: 'stack gap-1', style: { alignItems: 'center' } }, h('span', { class: 'mono num' }, `${ratio(p.evm.CPI)} / ${ratio(p.evm.SPI)}`), p.evm.status && EVM_TONE[p.evm.status] ? badge(p.evm.status, EVM_TONE[p.evm.status]) : null), sortValue: (p) => num(p.evm.CPI) },
           { key: 'percentComplete', label: 'الإنجاز مقابل الخطة', render: (p) => {
             const actual = num(p.evm.percentComplete, num(p.percentComplete)); const planned = num(p.evm.plannedPercent, num(p.plannedPercent));
@@ -658,7 +622,7 @@ export default {
           }, sortValue: (p) => num(p.evm.percentComplete, num(p.percentComplete)) },
           { key: 'redCount', label: 'أحمر', align: 'center', render: (p) => (p.redCount ? badge(fmt.num(p.redCount), 'critical') : badge(fmt.num(0), 'good')), sortValue: (p) => p.redCount },
           { key: 'next', label: 'المعلم القادم', render: (p) => (p.next
-            ? h('span', { class: 'stack gap-1' }, h('span', {}, p.next.name), h('span', { class: 'text-xs muted' }, `${p.next.code || ''} · ${fmt.date(p.next.finish, { style: 'short' })}`.trim()))
+            ? h('span', { class: 'stack gap-1' }, h('span', {}, p.next.name), h('span', { class: 'text-xs muted' }, `${p.next.code ? `${p.next.code} · ` : ''}${fmt.date(p.next.finish, { style: 'short' })}`))
             : h('span', { class: 'stack gap-1' }, h('span', {}, 'الإنجاز المخطط'), h('span', { class: 'text-xs muted' }, fmt.date(p.plannedFinish, { style: 'short' })))), sortValue: (p) => Date.parse(p.next ? p.next.finish : p.plannedFinish) || 0 },
         ],
       });
@@ -675,11 +639,9 @@ export default {
 
     function paint() {
       clear(body);
+      if (flowObserver) { flowObserver.disconnect(); flowObserver = null; }
+      flowEl = null;
       const state = stateOf();
-      if (!psel) {
-        body.appendChild(emptyState({ icon: 'radar', title: 'وحدة محددات المنصة غير محمّلة', text: 'يتطلب هذا القسم platform-selectors.js (psel) ضمن سياق العرض.' }));
-        return;
-      }
       if (!state.platform || !Array.isArray(state.platform.aiRisks)) {
         body.appendChild(emptyState({ icon: 'radar', title: 'بيانات المنصة غير متاحة بعد', text: 'لم تُحمَّل بيانات منصة إدارة المخاطر (state.platform). أعد تحميل الصفحة بعد اكتمال التهيئة.' }));
         return;
@@ -691,6 +653,10 @@ export default {
       body.appendChild(h('div', { class: 'grid-12 cockpit-row-3b' }, pipelineStrip(d)));
       body.appendChild(h('div', { class: 'grid-12 cockpit-row-3c' }, dataQualityCard(d), typeDistributionCard(d), ratingDistributionCard(d)));
       body.appendChild(h('div', { class: 'grid-12 cockpit-row-4' }, projectsCard(d)));
+      // the packet element is recreated on paint (its CSS animation restarts) — restart the stage clock with it
+      flowStage = 0;
+      applyFlowStage();
+      startFlow();
     }
 
     function schedule() {
@@ -701,22 +667,22 @@ export default {
 
     subs.push(bus.on('store:change', (payload) => {
       const path = payload && typeof payload.path === 'string' ? payload.path : '*';
-      if (path.startsWith('feed')) return; // the live feed does not change anything the cockpit shows
+      if (path.startsWith('feed')) return; // the live feed changes nothing the cockpit shows
       schedule();
     }));
     subs.push(bus.on('filters:change', schedule));
-    subs.push(bus.on('settings:change', () => { schedule(); startFlow(); }));
+    subs.push(bus.on('settings:change', schedule));
 
     paint();
-    startFlow();
 
     return () => {
       alive = false;
       if (raf) cancelAnimationFrame(raf);
       stopFlow();
+      if (flowObserver) { flowObserver.disconnect(); flowObserver = null; }
       document.removeEventListener('visibilitychange', onVisibility);
       subs.splice(0).forEach((unsub) => { try { unsub(); } catch { /* ignore */ } });
-      flowEl = null; packetEl = null;
+      flowEl = null;
     };
   },
 };

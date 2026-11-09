@@ -223,7 +223,8 @@ export default {
     /* ───────────── row 1: hero + radar ───────────── */
     const gaugeHost = h('div', { style: { display: 'grid', placeItems: 'center' } });
     const deltaHost = h('div', { class: 'row wrap', style: { justifyContent: 'center' } });
-    const factsHost = h('div', { class: 'hero-facts' });
+    // Facts stack as label/value rows: the hero card is narrow (4 of 12 columns) but tall next to the radar.
+    const factsHost = h('div', { class: 'hero-facts', style: { gridTemplateColumns: 'minmax(0, 1fr)' } });
     const tierHost = h('div', { class: 'stack gap-2' });
     const heroBody = h('div', { class: 'stack', style: { gap: '14px', blockSize: '100%' } }, gaugeHost, deltaHost, factsHost, h('div', { class: 'grow' }), tierHost);
     const infoBtn = C.button('', {
@@ -378,9 +379,9 @@ export default {
         C.badge(`${fmt.signed(d)} نقطة`, tone),
         h('span', { class: 'text-xs muted' }, 'مقارنة بالفترة السابقة'));
 
-      const fact = (label, value, unit) => h('div', { class: 'fact' },
+      const fact = (label, value, unit) => h('div', { class: 'fact', style: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: '12px' } },
         h('span', { class: 'fact-label' }, label),
-        h('span', { class: 'fact-value' }, value, unit ? h('small', {}, unit) : null));
+        h('span', { class: 'fact-value nowrap' }, value, unit ? h('small', {}, unit) : null));
       factsHost.replaceChildren(
         fact('أيام بدون إصابة مضيعة للوقت', fmt.num(k ? k.daysSinceLTI : 0), 'يوم'),
         fact('LTIFR — الإصابات المضيعة للوقت', fmt.num(k ? k.ltifr : 0, { maximumFractionDigits: 2 }), '/مليون ساعة'),

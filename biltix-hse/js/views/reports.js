@@ -714,8 +714,8 @@ function render(container, ctx) {
     );
     const sec = sectionEl('RPT-03', 'الحوادث', `${copy.count(d.kpis.incidentsInPeriod, NOUNS.report)} خلال الفترة، ${fmt.num(d.kpis.openIncidents)} ما تزال مفتوحة.`, { breakBefore: true, narrative: narrativeBlock(d, 'incidents') });
     sec.appendChild(h('div', { class: 'grid-12' },
-      h('div', { class: 'col-span-8' }, chartCard({ code: 'RPT-03A', title: 'اتجاه الحوادث', subtitle: 'الحوادث مقابل الحوادث الوشيكة لكل أسبوع', chart: line })),
-      h('div', { class: 'col-span-4' }, chartCard({ code: 'RPT-03B', title: 'البلاغات حسب النوع', subtitle: 'ضمن فترة التقرير', chart: seg })),
+      h('div', { class: 'col-span-7' }, chartCard({ code: 'RPT-03A', title: 'اتجاه الحوادث', subtitle: 'الحوادث مقابل الحوادث الوشيكة لكل أسبوع', chart: line })),
+      h('div', { class: 'col-span-5' }, chartCard({ code: 'RPT-03B', title: 'حسب النوع', subtitle: 'توزيع البلاغات ضمن فترة التقرير', chart: seg })),
       h('div', { class: 'col-span-12' }, causes.length
         ? chartCard({ code: 'RPT-03C', title: 'الأسباب الجذرية', subtitle: 'الأكثر تكراراً أولاً — النسبة التراكمية في عرض الجدول', chart: pareto })
         : card({ code: 'RPT-03C', title: 'الأسباب الجذرية', body: emptyState({ title: 'لا توجد بلاغات محللة ضمن الفترة' }) }))));
@@ -737,7 +737,7 @@ function render(container, ctx) {
     const heat = mountChart(
       () => charts.heatmap({
         rows: rows.map((r) => `الشدة ${fmt.num(Number(r))}`),
-        cols: cols.map((c) => `الاحتمالية ${fmt.num(Number(c))}`),
+        cols: cols.map((c) => fmt.num(Number(c))),
         cells,
         colorFor: (value, ri, ci) => `color-mix(in srgb, var(--${toneAt(ri, ci)}) ${value > 0 ? 72 : 16}%, var(--bg-1))`,
         labelFor: (value) => (value > 0 ? fmt.num(value) : ''),
@@ -755,8 +755,8 @@ function render(container, ctx) {
     const k = d.kpis;
     const sec = sectionEl('RPT-04', 'المخاطر', `${copy.count(k.openRisks, NOUNS.risk)} مفتوحة — ${fmt.num(k.criticalRisks)} حرجة، ${fmt.num(k.highRisks)} عالية، ${fmt.num(k.overdueRisks)} متأخرة.`, { narrative: narrativeBlock(d, 'risks') });
     sec.appendChild(h('div', { class: 'grid-12' },
-      h('div', { class: 'col-span-5' }, chartCard({ code: 'RPT-04A', title: 'مصفوفة المخاطر', subtitle: 'المخاطر المفتوحة حسب الشدة والاحتمالية', chart: heat })),
-      h('div', { class: 'col-span-7' }, cats.length
+      h('div', { class: 'col-span-6' }, chartCard({ code: 'RPT-04A', title: 'مصفوفة المخاطر', subtitle: 'المخاطر المفتوحة حسب الشدة والاحتمالية', chart: heat })),
+      h('div', { class: 'col-span-6' }, cats.length
         ? chartCard({ code: 'RPT-04B', title: 'أعلى فئات المخاطر', subtitle: 'عدد المخاطر المفتوحة لكل فئة', chart: bars })
         : card({ code: 'RPT-04B', title: 'أعلى فئات المخاطر', body: emptyState({ title: 'لا توجد مخاطر مفتوحة ضمن النطاق' }) }))));
     return sec;
@@ -774,18 +774,20 @@ function render(container, ctx) {
     const facts = h('div', { class: 'hero-facts' },
       factEl('نشطة الآن', fmt.num(d.kpis.activePermits), { tone: 'good' }),
       factEl('بانتظار الاعتماد', fmt.num(value('بانتظار الاعتماد')), { tone: 'accent' }),
-      factEl('تنتهي خلال ساعة', fmt.num(d.permitsSoon.length), { tone: d.permitsSoon.length ? 'warning' : null }));
+      factEl('تنتهي قريباً', fmt.num(d.permitsSoon.length), { tone: d.permitsSoon.length ? 'warning' : null }));
     const soon = d.permitsSoon.slice(0, 4);
     const list = soon.length
-      ? h('ul', { class: 'stack gap-2 text-sm', style: { listStyle: 'none', padding: 0, margin: 0 } }, soon.map((p) => h('li', { class: 'row between gap-2 wrap' },
-        h('span', { class: 'row gap-2' }, h('span', { class: 'mono' }, p.code), h('span', {}, p.type)),
-        h('span', { class: 'muted mono' }, fmt.time(p.expiresAt)))))
+      ? h('div', { class: 'stack gap-2' },
+        h('p', { class: 'text-xs muted' }, 'التصاريح النشطة التي تنتهي خلال الساعة القادمة'),
+        h('ul', { class: 'stack gap-2 text-sm', style: { listStyle: 'none', padding: 0, margin: 0 } }, soon.map((p) => h('li', { class: 'row between gap-2 wrap' },
+          h('span', { class: 'row gap-2' }, h('span', { class: 'mono' }, p.code), h('span', {}, p.type)),
+          h('span', { class: 'muted mono' }, fmt.time(p.expiresAt))))))
       : h('p', { class: 'muted text-sm' }, 'لا توجد تصاريح نشطة تنتهي خلال الساعة القادمة.');
     const total = d.permits.reduce((s, p) => s + p.value, 0);
     const sec = sectionEl('RPT-05', 'تصاريح العمل', `${copy.count(total, NOUNS.permit)} ضمن النطاق — ${fmt.num(value('معلق'))} معلقة.`, { narrative: narrativeBlock(d, 'permits') });
     sec.appendChild(h('div', { class: 'grid-12' },
-      h('div', { class: 'col-span-8' }, chartCard({ code: 'RPT-05A', title: 'التصاريح حسب الحالة', subtitle: 'مسودة · بانتظار الاعتماد · نشط · معلق · مغلق', chart: seg })),
-      h('div', { class: 'col-span-4' }, card({ code: 'RPT-05B', title: 'الوضع الحالي', body: h('div', { class: 'stack gap-3' }, facts, h('hr', { class: 'divider' }), h('p', { class: 'text-xs muted' }, 'التصاريح النشطة التي تنتهي خلال الساعة القادمة'), list) }))));
+      h('div', { class: 'col-span-7' }, chartCard({ code: 'RPT-05A', title: 'التصاريح حسب الحالة', subtitle: 'مسودة · بانتظار الاعتماد · نشط · معلق · مغلق', chart: seg })),
+      h('div', { class: 'col-span-5' }, card({ code: 'RPT-05B', title: 'الوضع الحالي', body: h('div', { class: 'stack gap-3' }, facts, h('hr', { class: 'divider' }), list) }))));
     return sec;
   }
 
@@ -810,10 +812,10 @@ function render(container, ctx) {
       : h('p', { class: 'muted text-sm' }, 'لا توجد شهادات تنتهي خلال الستين يوماً القادمة.');
     const sec = sectionEl('RPT-06', 'التدريب', `الامتثال التدريبي ${fmt.pct(d.kpis.trainingCompliance)} — الهدف ${fmt.pct(TRAINING_TARGET)} لكل دورة إلزامية.`, { breakBefore: true, narrative: narrativeBlock(d, 'training') });
     sec.appendChild(h('div', { class: 'grid-12' },
-      h('div', { class: 'col-span-8' }, items.length
+      h('div', { class: 'col-span-7' }, items.length
         ? chartCard({ code: 'RPT-06A', title: 'إتمام الدورات التدريبية', subtitle: 'نسبة العمال الحاصلين على شهادة سارية لكل دورة', chart: bars })
         : card({ code: 'RPT-06A', title: 'إتمام الدورات التدريبية', body: emptyState({ title: 'لا تتوفر بيانات تدريب' }) })),
-      h('div', { class: 'col-span-4' }, card({ code: 'RPT-06B', title: 'الشهادات', body: h('div', { class: 'stack gap-3' }, facts, h('hr', { class: 'divider' }), h('p', { class: 'text-xs muted' }, 'أقرب الشهادات انتهاءً'), list) }))));
+      h('div', { class: 'col-span-5' }, card({ code: 'RPT-06B', title: 'الشهادات', body: h('div', { class: 'stack gap-3' }, facts, h('hr', { class: 'divider' }), h('p', { class: 'text-xs muted' }, 'أقرب الشهادات انتهاءً'), list) }))));
     return sec;
   }
 
@@ -840,7 +842,8 @@ function render(container, ctx) {
       h('div', { class: 'ring-row' }, ring.el, h('div', { class: 'ring-text' },
         h('span', { class: 'text-xs muted' }, 'متوسط الامتثال'),
         h('strong', { class: 'text-lg' }, fmt.pct(d.isoOverall)),
-        badge(d.isoOverall >= ISO_TARGET ? 'ضمن المستهدف' : 'دون المستهدف', d.isoOverall >= ISO_TARGET ? 'good' : 'warning'))),
+        h('span', { class: 'text-xs muted' }, `المستهدف ${fmt.pct(ISO_TARGET)}`))),
+      h('div', { class: 'row gap-2 wrap' }, badge(d.isoOverall >= ISO_TARGET ? 'ضمن المستهدف' : 'دون المستهدف', d.isoOverall >= ISO_TARGET ? 'good' : 'warning')),
       kv([
         [`بنود ≥ ${fmt.pct(ISO_TARGET)}`, `${fmt.num(above)} من ${fmt.num(d.iso.length)}`],
         ['الفجوات الموثقة', fmt.num(gaps)],
@@ -848,8 +851,8 @@ function render(container, ctx) {
       ]));
     const sec = sectionEl('RPT-07', 'الامتثال', `ISO 45001:2018 — متوسط ${fmt.pct(d.isoOverall)} مقابل مستهدف ${fmt.pct(ISO_TARGET)}.`, { narrative: narrativeBlock(d, 'compliance') });
     sec.appendChild(h('div', { class: 'grid-12' },
-      h('div', { class: 'col-span-4' }, card({ code: 'RPT-07A', title: 'الامتثال العام', body: overall })),
-      h('div', { class: 'col-span-8' }, d.iso.length
+      h('div', { class: 'col-span-5' }, card({ code: 'RPT-07A', title: 'الامتثال العام', body: overall })),
+      h('div', { class: 'col-span-7' }, d.iso.length
         ? chartCard({ code: 'RPT-07B', title: 'درجات البنود 4–10', subtitle: 'متوسط درجات البنود الفرعية لكل بند رئيسي', chart: spider })
         : card({ code: 'RPT-07B', title: 'درجات البنود 4–10', body: emptyState({ title: 'لا تتوفر بيانات امتثال' }) }))));
     return sec;
@@ -933,7 +936,7 @@ function render(container, ctx) {
         h('div', { class: 'urgent-text' },
           h('div', { class: 'row gap-2 wrap' }, badge(PRIORITY_LABEL[r.tone] || 'معلومة', r.tone), h('strong', {}, `${fmt.num(i + 1)}. ${r.title}`)),
           r.detail ? h('span', { class: 'urgent-sub' }, r.detail) : null),
-        h('span', { class: 'urgent-due' }, link));
+        h('span', { class: 'text-xs nowrap', style: { alignSelf: 'center' } }, link));
     }));
     const sec = sectionEl('RPT-08', 'التوصيات', 'مشتقة من الإجراءات العاجلة وفجوات الامتثال والتدريب، مرتبة حسب الأولوية.');
     sec.appendChild(card({ body: list }));

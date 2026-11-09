@@ -51,7 +51,7 @@ const CHIPS = [
   { id: 'people', label: 'الأشخاص في الموقع', icon: 'users', unit: 'شخص' },
   { id: 'vehicles', label: 'المعدات المتحركة', icon: 'truck', unit: 'معدّة' },
   { id: 'wind', label: 'سرعة الرياح', icon: 'wind', unit: 'كم/س' },
-  { id: 'wbgt', label: 'الإجهاد الحراري WBGT', icon: 'thermo', unit: '°م' },
+  { id: 'wbgt', label: 'WBGT', title: 'مؤشر الإجهاد الحراري (درجة حرارة الكرة الرطبة)', icon: 'thermo', unit: '°م' },
 ];
 
 const ICONS = {
@@ -315,7 +315,7 @@ export default {
       const value = h('span', {}, '—');
       const unit = h('span', { class: 'live-chip-unit' }, c.unit);
       const dot = C.liveDot('accent');
-      const el = h('div', { class: 'live-chip', role: 'listitem', 'data-chip': c.id },
+      const el = h('div', { class: 'live-chip', role: 'listitem', 'data-chip': c.id, title: c.title || c.label },
         ico(c.icon, 18),
         h('div', { class: 'live-chip-text' },
           h('span', { class: 'live-chip-label' }, c.label),
@@ -325,6 +325,15 @@ export default {
       return el;
     }));
     root.appendChild(strip);
+    // Six chips in one row when the strip is wide enough, otherwise balanced 3+3 / 2+2+2 (never 5+1).
+    const fitStrip = (w) => { strip.style.gridTemplateColumns = w >= 900 ? 'repeat(6, minmax(0, 1fr))' : w >= 520 ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))'; };
+    let stripObserver = null;
+    if (typeof ResizeObserver === 'function') {
+      stripObserver = new ResizeObserver((entries) => { for (const e of entries) fitStrip(e.contentRect.width); });
+      stripObserver.observe(strip);
+    } else {
+      fitStrip(strip.getBoundingClientRect().width || 900);
+    }
 
     /* ───────────── radar cards ───────────── */
     function radarCard({ code, title, subtitle, caption, wide, large, landscape, legend, tableView, sideTitle, actions = [] }) {
@@ -634,6 +643,7 @@ export default {
       subs.splice(0).forEach((off) => { try { off(); } catch { /* ignore */ } });
       timers.splice(0).forEach((t) => { clearInterval(t); clearTimeout(t); });
       Object.keys(radars).forEach((k) => { killRadar(radars[k]); radars[k] = null; });
+      if (stripObserver) { try { stripObserver.disconnect(); } catch { /* ignore */ } stripObserver = null; }
       if (paused) { try { if (loop && typeof loop.resume === 'function') loop.resume(); } catch { /* ignore */ } }
       sweepCard.tip.hidden = true;
     };
