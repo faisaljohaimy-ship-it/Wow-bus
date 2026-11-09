@@ -157,6 +157,17 @@ export const permitsView = {
     const timers = { strip: new Set(), board: new Set(), drawer: new Set() };
     const track = (region, cd) => { if (cd) timers[region].add(cd); return cd; };
     const stopRegion = (region) => { timers[region].forEach((cd) => { try { cd.stop(); } catch { /* ignore */ } }); timers[region].clear(); };
+    /**
+     * Countdown whose natural expiry refreshes the strip. The handler is armed only after
+     * construction: countdown() ticks synchronously, so an already-expired permit would
+     * otherwise fire onExpire during every repaint and loop the strip forever.
+     */
+    const liveCountdown = (region, iso) => {
+      let armed = false;
+      const cd = track(region, countdown(iso, { onExpire: () => { if (armed) schedule(1); } }));
+      armed = true;
+      return cd;
+    };
 
     const state = () => store.state;
     const globalFilters = () => ({ ...(store.filters || state().filters || {}) });
@@ -230,7 +241,7 @@ export const permitsView = {
       const ul = h('ul', { class: 'urgent-list' });
       urgent.forEach((p) => {
         const expired = ms(p.expiresAt) <= now;
-        const cd = track('strip', countdown(p.expiresAt, { onExpire: () => schedule(1) }));
+        const cd = liveCountdown('strip', p.expiresAt);
         const item = h('button', { type: 'button', class: ['urgent-item', expired ? 'tone-critical' : 'tone-warning', expired ? 'is-overdue' : null], onClick: () => openDrawer(p.id) },
           h('span', { class: 'urgent-icon', 'aria-hidden': 'true' }, svgIcon(typeIcon(p.type), 15)),
           h('span', { class: 'urgent-text' },
@@ -280,7 +291,7 @@ export const permitsView = {
 
       const foot = h('div', { class: 'kanban-card-foot' });
       if (p.status === ACTIVE) {
-        const cd = track('board', countdown(p.expiresAt, { onExpire: () => schedule(1) }));
+        const cd = liveCountdown('board', p.expiresAt);
         foot.appendChild(h('span', { class: 'row gap-1 text-xs muted' }, cd.el, h('span', { class: 'nowrap' }, `حتى ${fmt.time(p.expiresAt)}`)));
       } else if (p.status === CLOSED) {
         foot.appendChild(h('span', { class: 'text-xs muted nowrap' }, `أُغلق ${fmt.relative(p.updatedAt || p.expiresAt)}`));
@@ -378,7 +389,7 @@ export const permitsView = {
         else if (p.status === ACTIVE && ms(p.expiresAt) - now <= EXPIRING_MINUTES * 60_000) badges.appendChild(badge('يقترب من الانتهاء', 'warning'));
 
         const expiryCell = h('span', { class: 'row wrap gap-2' }, h('span', {}, fmt.dateTime(p.expiresAt)));
-        if (p.status === ACTIVE) expiryCell.appendChild(track('drawer', countdown(p.expiresAt, { onExpire: () => schedule(1) })).el);
+        if (p.status === ACTIVE) expiryCell.appendChild(liveCountdown('drawer', p.expiresAt).el);
 
         body.appendChild(section('بيانات التصريح', badges, kv([
           ['الموقع', siteName(st, p.siteId)],
