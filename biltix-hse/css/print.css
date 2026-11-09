@@ -133,7 +133,7 @@
   a { color: inherit; text-decoration: none; }
   a[href^="http"]:not(.brand)::after {
     content: " (" attr(href) ")";
-    font-family: var(--font-mono);
+    font-family: var(--font-mono-mixed);
     font-size: 8.5pt;
     color: var(--ink-3);
     direction: ltr;
@@ -148,7 +148,7 @@
   /* Report cover / footer blocks */
   .report-cover { display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm; padding-block-end: 4mm; border-block-end: 2px solid var(--line-2); }
   .report-cover-title { font-size: 22pt; font-weight: 700; }
-  .report-cover-meta { font-family: var(--font-mono); font-size: 9pt; color: var(--ink-3); text-align: end; }
+  .report-cover-meta { font-family: var(--font-mono-mixed); font-size: 9pt; color: var(--ink-3); text-align: end; }
   .report-footer { margin-block-start: 8mm; padding-block-start: 3mm; border-block-start: 1px solid var(--line); font-size: 8.5pt; color: var(--ink-3); display: flex; justify-content: space-between; gap: 6mm; }
   .report-sign { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8mm; margin-block-start: 12mm; }
   .report-sign > div { padding-block-start: 3mm; border-block-start: 1px solid var(--ink-3); font-size: 9pt; color: var(--ink-2); }

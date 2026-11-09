@@ -4,7 +4,7 @@
  * مصدر البيانات الأولية لمركز قيادة السلامة والصحة المهنية.
  * كل النصوص عربية ما عدا الأكواد والمعايير (R-1042, PTW-5521, ISO 45001,
  * LTIFR, TRIR, WBGT, H2S). التواريخ بصيغة ISO، والمرجع الزمني ("اليوم")
- * هو الأحد 2026-11-09 بتوقيت الرياض (+03:00).
+ * هو الاثنين 2026-11-09 بتوقيت الرياض (+03:00).
  *
  * هذا الملف خالٍ من الآثار الجانبية عند الاستيراد؛ المولّد الوحيد المستخدم
  * هو مولّد العاملين (72 عاملاً) ويعتمد على مولّد أرقام عشوائية حتمي
@@ -285,9 +285,9 @@ const risks = [
     ],
     owner: 'م. عمر باجابر', dueDate: d(-6), status: 'مفتوح', source: 'جولة سلامة',
     legalRef: LEGAL.sbc201,
-    createdAt: d(-24), updatedAt: d(-6),
+    createdAt: d(-46), updatedAt: d(-6),
     history: [
-      { at: d(-24), by: 'م. عمر باجابر', text: 'رصد الفتحات غير المحمية خلال جولة الخميس الأسبوعية.' },
+      { at: d(-46), by: 'م. عمر باجابر', text: 'رصد الفتحات غير المحمية خلال جولة الخميس الأسبوعية.' },
       { at: d(-6), by: 'م. نورة الزهراني', text: 'تأخر توريد الأغطية الفولاذية؛ تم تكليف مقاول الباطن بالتصنيع محلياً.' },
     ],
   },
@@ -437,9 +437,9 @@ const risks = [
     ],
     owner: 'م. عبدالله الدوسري', dueDate: d(2), status: 'مفتوح', source: 'تدقيق',
     legalRef: LEGAL.ohsRegLift,
-    createdAt: d(-12), updatedAt: d(-12),
+    createdAt: d(-40), updatedAt: d(-40),
     history: [
-      { at: d(-12), by: 'م. مها الغامدي', text: 'ملاحظة من التدقيق الداخلي على طريقة تعليق الجمالونات.' },
+      { at: d(-40), by: 'م. مها الغامدي', text: 'ملاحظة من التدقيق الداخلي على طريقة تعليق الجمالونات.' },
     ],
   },
   {
@@ -474,9 +474,9 @@ const risks = [
     ],
     owner: 'م. ماجد الأنصاري', dueDate: d(55), status: 'مُسيطر عليه', source: 'تقييم مخاطر',
     legalRef: LEGAL.ohsRegLift,
-    createdAt: d(-28), updatedAt: d(-6),
+    createdAt: d(-58), updatedAt: d(-6),
     history: [
-      { at: d(-28), by: 'م. هند الحربي', text: 'تقييم مخاطر رفعة حرجة.' },
+      { at: d(-58), by: 'م. هند الحربي', text: 'تقييم مخاطر رفعة حرجة.' },
       { at: d(-6), by: 'م. ماجد الأنصاري', text: 'اعتماد خطة الرفع من الاستشاري وإدارة المستشفى.' },
     ],
   },
@@ -494,9 +494,9 @@ const risks = [
     ],
     owner: 'م. يوسف الشهراني', dueDate: d(-12), status: 'مفتوح', source: 'تفتيش كهرباء',
     legalRef: LEGAL.sbc401,
-    createdAt: d(-26), updatedAt: d(-12),
+    createdAt: d(-54), updatedAt: d(-12),
     history: [
-      { at: d(-26), by: 'م. يوسف الشهراني', text: 'تفتيش كهرباء رصد غياب RCD في 7 لوحات.' },
+      { at: d(-54), by: 'م. يوسف الشهراني', text: 'تفتيش كهرباء رصد غياب RCD في 7 لوحات.' },
       { at: d(-12), by: 'م. عمر باجابر', text: 'طلب الشراء معلق لدى المقاول؛ تصعيد إلى مدير المشروع.' },
     ],
   },
@@ -571,9 +571,9 @@ const risks = [
     ],
     owner: 'م. عمر باجابر', dueDate: d(7), status: 'قيد المعالجة', source: 'تقييم مخاطر',
     legalRef: LEGAL.ohsRegConf,
-    createdAt: d(-21), updatedAt: d(-3),
+    createdAt: d(-49), updatedAt: d(-3),
     history: [
-      { at: d(-21), by: 'م. عمر باجابر', text: 'تقييم مخاطر أعمال الربط مع الشبكة البلدية.' },
+      { at: d(-49), by: 'م. عمر باجابر', text: 'تقييم مخاطر أعمال الربط مع الشبكة البلدية.' },
       { at: d(-3), by: 'م. عمر باجابر', text: 'استلام جهازي قياس غازات إضافيين وتدريب فريق الإنقاذ.' },
     ],
   },
@@ -608,9 +608,9 @@ const risks = [
     ],
     owner: 'م. مها الغامدي', dueDate: d(60), status: 'مُسيطر عليه', source: 'تقييم مخاطر',
     legalRef: `${LEGAL.ohsRegConf}؛ ${LEGAL.civilFire}`,
-    createdAt: d(-15), updatedAt: d(-8),
+    createdAt: d(-43), updatedAt: d(-8),
     history: [
-      { at: d(-15), by: 'م. مها الغامدي', text: 'تقييم مخاطر قبل بدء الطلاء الداخلي.' },
+      { at: d(-43), by: 'م. مها الغامدي', text: 'تقييم مخاطر قبل بدء الطلاء الداخلي.' },
       { at: d(-8), by: 'م. مها الغامدي', text: 'تحقق من معدات التهوية Ex وأجهزة القياس.' },
     ],
   },
@@ -647,9 +647,9 @@ const risks = [
     ],
     owner: 'م. عبدالله الدوسري', dueDate: d(-1), status: 'مفتوح', source: 'تفتيش',
     legalRef: `${LEGAL.civilHot}؛ ${LEGAL.labor125}`,
-    createdAt: d(-16), updatedAt: d(-4),
+    createdAt: d(-39), updatedAt: d(-4),
     history: [
-      { at: d(-16), by: 'م. مها الغامدي', text: 'رصد لحام دون مراقب حريق قرب ألواح العزل.' },
+      { at: d(-39), by: 'م. مها الغامدي', text: 'رصد لحام دون مراقب حريق قرب ألواح العزل.' },
       { at: d(-4), by: 'م. عبدالله الدوسري', text: 'جاري دراسة التثبيت الميكانيكي مع الاستشاري.' },
     ],
   },
@@ -666,9 +666,9 @@ const risks = [
     ],
     owner: 'م. سارة القحطاني', dueDate: d(12), status: 'قيد المعالجة', source: 'جولة سلامة',
     legalRef: LEGAL.civilHot,
-    createdAt: d(-22), updatedAt: d(-5),
+    createdAt: d(-50), updatedAt: d(-5),
     history: [
-      { at: d(-22), by: 'م. سارة القحطاني', text: 'ملاحظة جولة سلامة على قرب الخزان من محطة القص.' },
+      { at: d(-50), by: 'م. سارة القحطاني', text: 'ملاحظة جولة سلامة على قرب الخزان من محطة القص.' },
       { at: d(-5), by: 'م. خالد العتيبي', text: 'تجهيز الموقع الجديد للخزان بحوض احتواء.' },
     ],
   },
@@ -802,9 +802,9 @@ const risks = [
     ],
     owner: 'م. دانة العمري', dueDate: d(16), status: 'قيد المعالجة', source: 'تفتيش',
     legalRef: `${LEGAL.ohsRegChem}؛ ${LEGAL.labor123}`,
-    createdAt: d(-27), updatedAt: d(-7),
+    createdAt: d(-57), updatedAt: d(-7),
     history: [
-      { at: d(-27), by: 'م. عمر باجابر', text: 'شكاوى صداع من فريق الدهان؛ تسجيل المخاطرة.' },
+      { at: d(-57), by: 'م. عمر باجابر', text: 'شكاوى صداع من فريق الدهان؛ تسجيل المخاطرة.' },
       { at: d(-7), by: 'م. دانة العمري', text: 'تركيب مراوح سحب وقياس VOC يومياً؛ المستويات انخفضت 60%.' },
     ],
   },
@@ -821,9 +821,9 @@ const risks = [
     ],
     owner: 'م. دانة العمري', dueDate: d(3), status: 'مفتوح', source: 'بيانات الحساسات',
     legalRef: LEGAL.ohsRegChem,
-    createdAt: d(-23), updatedAt: d(-23),
+    createdAt: d(-51), updatedAt: d(-51),
     history: [
-      { at: d(-23), by: 'م. دانة العمري', text: 'تجاوزات متكررة لحساس PM2.5 عند الكسارة؛ تسجيل المخاطرة.' },
+      { at: d(-51), by: 'م. دانة العمري', text: 'تجاوزات متكررة لحساس PM2.5 عند الكسارة؛ تسجيل المخاطرة.' },
     ],
   },
   {
@@ -1029,9 +1029,9 @@ const risks = [
     ],
     owner: 'م. عبدالله الدوسري', dueDate: d(8), status: 'قيد المعالجة', source: 'تدقيق',
     legalRef: LEGAL.sbc306,
-    createdAt: d(-17), updatedAt: d(-2),
+    createdAt: d(-45), updatedAt: d(-2),
     history: [
-      { at: d(-17), by: 'م. سلطان الرشيدي', text: 'ملاحظة تدقيق: غياب مخطط تدعيم مؤقت معتمد.' },
+      { at: d(-45), by: 'م. سلطان الرشيدي', text: 'ملاحظة تدقيق: غياب مخطط تدعيم مؤقت معتمد.' },
       { at: d(-2), by: 'م. عبدالله الدوسري', text: 'استلام مخطط التدعيم من المهندس الإنشائي؛ التنفيذ خلال أسبوع.' },
     ],
   },
@@ -1103,9 +1103,9 @@ const risks = [
     ],
     owner: 'م. أروى البقمي', dueDate: d(15), status: 'قيد المعالجة', source: 'ملاحظة عامل',
     legalRef: LEGAL.ncoshErgo,
-    createdAt: d(-25), updatedAt: d(-7),
+    createdAt: d(-55), updatedAt: d(-7),
     history: [
-      { at: d(-25), by: 'م. عمر باجابر', text: 'شكاوى آلام ظهر من فريق الرخام.' },
+      { at: d(-55), by: 'م. عمر باجابر', text: 'شكاوى آلام ظهر من فريق الرخام.' },
       { at: d(-7), by: 'م. أروى البقمي', text: 'تمديد تشغيل المصعد الإنشائي حتى 22:00.' },
     ],
   },
@@ -1992,3 +1992,695 @@ const inspections = [
     date: d(28), status: 'مجدول', score: null, checklistTotal: 45, checklistDone: 0, findings: [],
   },
 ];
+
+// الحوادث المغلقة تحمل طابع إغلاق (closedAt) والإجراءات المنجزة طابع إنجاز (doneAt)،
+// مشتقَّين حتمياً من التواريخ المكتوبة أعلاه (7–21 يوماً بعد الحادث وقبل اليوم) حتى
+// تعكس مقارنات الفترة السابقة في المؤشرات ما كان مفتوحاً فعلاً آنذاك.
+for (const inc of incidents) {
+  const dayOffset = Math.round((Date.parse(`${inc.date}T00:00:00Z`) - ANCHOR_UTC) / DAY_MS);
+  if (inc.status === 'مغلق' && !inc.closedAt) {
+    inc.closedAt = t(Math.min(-1, dayOffset + 7 + (Math.abs(dayOffset) % 15)), '16:00');
+  }
+  for (const a of inc.actions) {
+    if (a.done && !a.doneAt) a.doneAt = a.due <= d(-1) ? a.due : d(-1);
+  }
+}
+
+// ------------------------------------------------------------------
+// 7. الدورات التدريبية — 10 دورات
+//    الدورات الإلزامية (mandatory) هي أساس مؤشر الامتثال التدريبي.
+// ------------------------------------------------------------------
+
+const courses = [
+  { id: 'C1',  code: 'HSE-IND-01', name: 'التوعية بالسلامة في الموقع',        validityMonths: 12, mandatory: true,  hours: 4,  provider: 'بلتكس HSE',                         description: 'تعريف إلزامي لكل عامل قبل أول دخول للموقع: قواعد الموقع الذهبية، معدات الوقاية، الإبلاغ عن الحوادث، ومسارات الإخلاء.' },
+  { id: 'C2',  code: 'HSE-WAH-02', name: 'العمل على ارتفاعات',                 validityMonths: 24, mandatory: true,  hours: 8,  provider: 'بلتكس HSE',                         description: 'هرمية الحماية من السقوط، فحص أحزمة الأمان ونقاط التثبيت، العمل على السقالات والمنصات المتحركة، وخطة الإنقاذ.' },
+  { id: 'C3',  code: 'HSE-CSE-03', name: 'الأماكن المغلقة',                    validityMonths: 24, mandatory: false, hours: 8,  provider: 'معهد الخليج للسلامة',                description: 'تصنيف الأماكن المغلقة، اختبار الغازات، التهوية، أدوار الداخل والمراقب الخارجي، وتمرين إنقاذ عملي.' },
+  { id: 'C4',  code: 'HSE-PTW-04', name: 'تصاريح العمل',                       validityMonths: 24, mandatory: false, hours: 6,  provider: 'بلتكس HSE',                         description: 'نظام تصاريح العمل في بلتكس: الأنواع السبعة، أدوار الطالب والمعتمد، العزل والتسليم والإغلاق.' },
+  { id: 'C5',  code: 'HSE-FAD-05', name: 'الإسعافات الأولية',                  validityMonths: 36, mandatory: false, hours: 16, provider: 'هيئة الهلال الأحمر السعودي',          description: 'الإنعاش القلبي الرئوي واستخدام جهاز الصدمات، التعامل مع النزيف والكسور وضربة الشمس حتى وصول الإسعاف.' },
+  { id: 'C6',  code: 'HSE-FIR-06', name: 'مكافحة الحريق',                      validityMonths: 24, mandatory: true,  hours: 4,  provider: 'معهد الخليج للسلامة',                description: 'مثلث الاحتراق، أنواع الطفايات واستخدامها العملي، مراقب الحريق في الأعمال الساخنة، وإجراءات الإخلاء.' },
+  { id: 'C7',  code: 'HSE-HST-07', name: 'الإجهاد الحراري',                    validityMonths: 12, mandatory: true,  hours: 2,  provider: 'بلتكس HSE',                         description: 'أعراض الإجهاد الحراري ودرجاته، الترطيب والتأقلم، جدول العمل/الراحة وفق WBGT، وحظر العمل تحت الشمس.' },
+  { id: 'C8',  code: 'HSE-HEQ-08', name: 'قيادة المعدات الثقيلة',              validityMonths: 36, mandatory: false, hours: 24, provider: 'المؤسسة العامة للتدريب التقني والمهني', description: 'تشغيل الحفارات واللوادر وشاحنات القلاب بأمان، الفحص اليومي، النقاط العمياء، والعمل قرب الخنادق والخدمات المدفونة.' },
+  { id: 'C9',  code: 'HSE-RIG-09', name: 'الإشارة والربط (Rigging)',           validityMonths: 24, mandatory: false, hours: 16, provider: 'معهد الخليج للسلامة',                description: 'اختيار أدوات الرفع وفحصها، حساب الأحمال وزوايا الرفع، إشارات اليد والاتصال اللاسلكي، وخطط الرفع الحرج.' },
+  { id: 'C10', code: 'HSE-DDR-10', name: 'قيادة دفاعية',                       validityMonths: 24, mandatory: false, hours: 8,  provider: 'الإدارة العامة للمرور — برنامج معتمد',   description: 'القيادة على الطرق الترابية والداخلية، السرعة والمسافة الآمنة، الإرهاق، والقيادة قرب المشاة والمعدات.' },
+];
+
+// ------------------------------------------------------------------
+// 8. العاملون — 72 عاملاً (12 لكل موقع) بمولّد حتمي
+//    حالات الشهادات عبر 720 خلية (72 عاملاً × 10 دورات): 78% سارية،
+//    10% تنتهي خلال 60 يوماً، 7% منتهية، 5% غير متوفرة.
+// ------------------------------------------------------------------
+
+const WORKER_COMPANIES = ['بلتكس للمقاولات', 'شركة الإنشاءات الحديثة', 'الخليج للكهروميكانيك', 'مقاولو الصلب'];
+
+const SAUDI_FIRST = ['أحمد', 'محمد', 'عبدالله', 'سعد', 'فهد', 'خالد', 'سلطان', 'تركي', 'ناصر', 'بندر', 'مشعل', 'عبدالعزيز', 'فيصل', 'ماجد', 'نايف', 'سعود', 'عمر', 'يوسف', 'إبراهيم', 'حمد', 'بدر', 'راكان', 'مشاري', 'ثامر'];
+const SAUDI_FATHER = ['سعد', 'عبدالله', 'محمد', 'فهد', 'علي', 'صالح', 'ناصر', 'عبدالرحمن', 'سعيد', 'حسن', 'إبراهيم', 'عايض', 'مبارك', 'خالد'];
+const SAUDI_FAMILY = ['العتيبي', 'القحطاني', 'الشمري', 'الدوسري', 'الحربي', 'الغامدي', 'الزهراني', 'المطيري', 'السبيعي', 'العنزي', 'الجهني', 'البقمي', 'الشهراني', 'العمري', 'الرشيدي', 'الأنصاري', 'الصاعدي', 'الحازمي', 'اليامي', 'المالكي', 'الشهري', 'العسيري', 'الرويلي', 'الخالدي'];
+
+/** أسماء عمال وافدين كما تُكتب في سجلات المواقع السعودية (الجنسية للعرض فقط). */
+const EXPAT_WORKERS = [
+  ['محمد إقبال', 'باكستاني'], ['راجيش كومار', 'هندي'], ['شاهد حسين', 'باكستاني'], ['نور الأمين', 'بنغلاديشي'],
+  ['رفيق الإسلام', 'بنغلاديشي'], ['ديبك شارما', 'نيبالي'], ['أنيل غورونغ', 'نيبالي'], ['طارق جاويد', 'باكستاني'],
+  ['منير حسين', 'بنغلاديشي'], ['عبدالقادر مولا', 'بنغلاديشي'], ['محمد علام', 'بنغلاديشي'], ['سانجاي ياداف', 'هندي'],
+  ['راجو ناير', 'هندي'], ['رحمت الله', 'باكستاني'], ['بيجاي تامانغ', 'نيبالي'], ['سوريش بابو', 'هندي'],
+  ['ظفر إقبال', 'باكستاني'], ['جمال الدين', 'بنغلاديشي'], ['كمال حسين', 'بنغلاديشي'], ['سليم ميا', 'بنغلاديشي'],
+  ['رام بهادور', 'نيبالي'], ['أرشد خان', 'باكستاني'], ['امتياز أحمد', 'باكستاني'], ['فيصل محمود', 'باكستاني'],
+  ['شهاب الدين', 'بنغلاديشي'], ['عادل الصديق', 'سوداني'], ['الطيب حسن', 'سوداني'], ['رامي حسن', 'مصري'],
+  ['محمود عبدالفتاح', 'مصري'], ['عصام الدين', 'مصري'], ['ياسر النور', 'سوداني'], ['صلاح عبدالقادر', 'سوداني'],
+  ['حسام فاروق', 'مصري'], ['عبده الحميري', 'يمني'], ['مراد البكري', 'يمني'], ['فينود باتيل', 'هندي'],
+  ['براكاش ثابا', 'نيبالي'], ['أمير حمزة', 'باكستاني'], ['جوزيف فرنانديز', 'فلبيني'], ['رونالد سانتوس', 'فلبيني'],
+  ['مارك دي لا كروز', 'فلبيني'], ['عبدالرزاق مياه', 'بنغلاديشي'], ['غلام مصطفى', 'باكستاني'], ['بابو لال', 'هندي'],
+  ['سيد عارف', 'هندي'], ['حافظ الرحمن', 'بنغلاديشي'], ['كريشنا بهاتاراي', 'نيبالي'], ['عثمان بله', 'سوداني'],
+];
+
+const WORKER_ROLES = ['عامل بناء', 'عامل بناء', 'عامل بناء', 'حدّاد تسليح', 'نجار شدات', 'كهربائي', 'لحّام', 'عامل سقالات', 'مُشير رفع (Rigger)', 'سبّاك', 'دهّان', 'فني تكييف وتبريد', 'سائق شاحنة قلاب', 'مشغل معدات ثقيلة', 'مشرف موقع', 'مراقب سلامة', 'مُسعف موقع'];
+const SITE_ROLES = {
+  S1: ['مشغل رافعة برجية', 'عامل صب خرسانة', 'فني واجهات زجاجية'],
+  S2: ['مبلّط', 'فني جبس', 'عامل صرف صحي'],
+  S3: ['فني تركيب ألواح شمسية', 'مشغل رافعة تلسكوبية', 'فني كابلات DC'],
+  S4: ['مركّب هياكل فولاذية', 'مشغل رافعة شوكية', 'فني أسقف معدنية'],
+  S5: ['مشغل حفار', 'منظم حركة', 'مشغل معدات دك'],
+  S6: ['فني غازات طبية', 'فني مجاري هواء', 'عامل تبطين خزانات'],
+};
+
+/** إزاحة بالأشهر لتاريخ ISO (YYYY-MM-DD) مع تطبيع نهاية الشهر. */
+function shiftMonths(iso, months) {
+  const [y, m, day] = iso.split('-').map(Number);
+  const x = new Date(Date.UTC(y, m - 1 + months, day));
+  return `${x.getUTCFullYear()}-${pad2(x.getUTCMonth() + 1)}-${pad2(x.getUTCDate())}`;
+}
+
+function buildWorkers() {
+  const rng = mulberry32(20261109);
+  const pick = (arr) => arr[Math.floor(rng() * arr.length)];
+  const total = 72;
+  const perSite = total / sites.length;
+
+  // سطح الحالات: أعداد دقيقة ثم خلط حتمي (Fisher–Yates).
+  const cells = total * courses.length;
+  const deck = [
+    ...Array(Math.round(cells * 0.78)).fill('valid'),
+    ...Array(Math.round(cells * 0.10)).fill('expiring'),
+    ...Array(Math.round(cells * 0.07)).fill('expired'),
+  ];
+  while (deck.length < cells) deck.push('missing');
+  for (let i = deck.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rng() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+
+  const usedNames = new Set();
+  let expatIndex = 0;
+  const out = [];
+  for (let i = 0; i < total; i += 1) {
+    const site = sites[Math.floor(i / perSite)];
+    let name;
+    let nationality;
+    if (rng() < 0.42 || expatIndex >= EXPAT_WORKERS.length) {
+      do { name = `${pick(SAUDI_FIRST)} بن ${pick(SAUDI_FATHER)} ${pick(SAUDI_FAMILY)}`; } while (usedNames.has(name));
+      nationality = 'سعودي';
+    } else {
+      [name, nationality] = EXPAT_WORKERS[expatIndex];
+      expatIndex += 1;
+    }
+    usedNames.add(name);
+
+    const company = rng() < 0.7 ? site.contractor : pick(WORKER_COMPANIES.filter((c) => c !== site.contractor));
+    const role = rng() < 0.3 ? pick(SITE_ROLES[site.id]) : pick(WORKER_ROLES);
+
+    const certs = [];
+    courses.forEach((course, j) => {
+      const status = deck[i * courses.length + j];
+      if (status === 'missing') return;
+      const validityDays = course.validityMonths * 30;
+      let offset;
+      if (status === 'valid') offset = 61 + Math.floor(rng() * (validityDays - 62));
+      else if (status === 'expiring') offset = 1 + Math.floor(rng() * 60);
+      else offset = -(1 + Math.floor(rng() * 180));
+      const expiresAt = d(offset);
+      certs.push({
+        courseId: course.id,
+        completedAt: shiftMonths(expiresAt, -course.validityMonths),
+        expiresAt,
+        certificateNo: `${course.code}-${String(2400 + i * 11 + j).padStart(5, '0')}`,
+      });
+    });
+
+    out.push({
+      id: `W${i + 1}`,
+      badge: `${site.code}-${String(101 + i).padStart(4, '0')}`,
+      name,
+      role,
+      siteId: site.id,
+      company,
+      nationality,
+      joinedAt: d(-(90 + Math.floor(rng() * 540))),
+      certs,
+    });
+  }
+  return out;
+}
+
+const workers = buildWorkers();
+
+// ------------------------------------------------------------------
+// 9. بنود ISO 45001:2018 (4–10) — درجات 62–96 مع فجوات محددة
+// ------------------------------------------------------------------
+
+const isoClauses = [
+  {
+    id: '4', title: 'سياق المنظمة',
+    subclauses: [
+      { id: '4.1', title: 'فهم المنظمة وسياقها', score: 92, gaps: [] },
+      { id: '4.2', title: 'فهم احتياجات وتوقعات العاملين والأطراف المعنية الأخرى', score: 85, gaps: [
+        'قائمة الأطراف المعنية لا تشمل مشغّلي المنشآت المجاورة العاملة (إدارة المستشفى في MED-06 وهيئة الموانئ في DMM-04).',
+      ] },
+      { id: '4.3', title: 'تحديد نطاق نظام إدارة السلامة والصحة المهنية', score: 90, gaps: [] },
+      { id: '4.4', title: 'نظام إدارة السلامة والصحة المهنية وعملياته', score: 84, gaps: [
+        'خريطة العمليات لا تغطي أنشطة مقاولي الباطن في مرحلة التشغيل التجريبي (MED-06).',
+      ] },
+    ],
+  },
+  {
+    id: '5', title: 'القيادة ومشاركة العاملين',
+    subclauses: [
+      { id: '5.1', title: 'القيادة والالتزام', score: 88, gaps: [
+        'جولات القيادة العليا الميدانية نُفذت في 4 مواقع من 6 خلال الربع؛ NEOM-03 و QID-05 متأخران.',
+      ] },
+      { id: '5.2', title: 'سياسة السلامة والصحة المهنية', score: 96, gaps: [] },
+      { id: '5.3', title: 'الأدوار والمسؤوليات والصلاحيات التنظيمية', score: 82, gaps: [
+        'صلاحية إيقاف العمل غير موثقة كتابياً لمراقبي السلامة لدى مقاولي الباطن.',
+      ] },
+      { id: '5.4', title: 'التشاور مع العاملين ومشاركتهم', score: 68, gaps: [
+        'لجنة السلامة المشتركة في QID-05 لم تُشكَّل بعد رغم تجاوز عدد العاملين 50 عاملاً.',
+        'محاضر لجنة السلامة في JED-02 تتضمن 7 بنود عمل مفتوحة دون متابعة موثقة.',
+      ] },
+    ],
+  },
+  {
+    id: '6', title: 'التخطيط',
+    subclauses: [
+      { id: '6.1', title: 'الإجراءات للتعامل مع المخاطر والفرص (تحديد الأخطار وتقييم المخاطر والمتطلبات القانونية)', score: 74, gaps: [
+        'مراجعة تقييم المخاطر للمبنى C في JED-02 متأخرة شهرين.',
+        'غرف التفتيش في QID-05 لم تُصنَّف كأماكن مغلقة في تقييم المخاطر الأصلي (R-1020).',
+        'سجل المتطلبات القانونية لا يتضمن آخر تحديث للائحة السلامة والصحة المهنية.',
+      ] },
+      { id: '6.2', title: 'أهداف السلامة والصحة المهنية والتخطيط لتحقيقها', score: 80, gaps: [
+        'هدف خفض LTIFR إلى أقل من 0.5 غير مُجزّأ إلى أهداف على مستوى كل موقع.',
+      ] },
+    ],
+  },
+  {
+    id: '7', title: 'الدعم',
+    subclauses: [
+      { id: '7.1', title: 'الموارد', score: 86, gaps: [
+        'نقص أجهزة قياس الغازات متعددة الاستشعار في JED-02 (4 أجهزة لستة فرق صرف).',
+      ] },
+      { id: '7.2', title: 'الكفاءة', score: 71, gaps: [
+        'سجل التدريب لا يتضمن 6 عمال جدد من مقاول الباطن في JED-02 (ملاحظة التدقيق F-0908-1).',
+        'شهادات 8 مشغلي رافعات تلسكوبية في NEOM-03 بحاجة إلى تجديد (R-1011).',
+        'شهادات إلزامية منتهية الصلاحية لدى عاملين على رأس العمل وفق مصفوفة التدريب.',
+      ] },
+      { id: '7.3', title: 'التوعية', score: 83, gaps: [
+        'حملة التوعية بالإجهاد الحراري لم تُقدَّم بلغات العمال (الأردية والبنغالية) في QID-05.',
+      ] },
+      { id: '7.4', title: 'التواصل', score: 87, gaps: [] },
+      { id: '7.5', title: 'المعلومات الموثقة', score: 76, gaps: [
+        'سجلات تفتيش السقالات في DMM-04 ورقية ولم تُرفع إلى بلتكس DMS (R-1040).',
+        'نسخ قديمة من إجراء العزل الكهربائي (LOTO) لا تزال متداولة في NEOM-03 بعد تحديثه ليشمل الجانب DC.',
+      ] },
+    ],
+  },
+  {
+    id: '8', title: 'التشغيل',
+    subclauses: [
+      { id: '8.1', title: 'التخطيط والضبط التشغيلي (إلغاء الأخطار وتقليل المخاطر، إدارة التغيير، المشتريات والمقاولون)', score: 72, gaps: [
+        'إجراء إدارة التغيير لم يُطبَّق عند نقل نقاط تنظيم الحركة في QID-05 مع تقدم الحفر (R-1026).',
+        'تقييم السلامة المسبق لمقاولي الباطن غير موثق لمقاول السقالات في RUH-01.',
+        '7 مخاطر مفتوحة تجاوزت موعد المعالجة، منها 3 حرجة.',
+      ] },
+      { id: '8.2', title: 'الاستعداد والاستجابة للطوارئ', score: 79, gaps: [
+        'لم يُنفَّذ تمرين إخلاء ليلي في NEOM-03 منذ بدء الأعمال الليلية.',
+        'خطة الإنقاذ من الأماكن المغلقة في MED-06 لم تُختبر عملياً قبل تبطين الخزان.',
+      ] },
+    ],
+  },
+  {
+    id: '9', title: 'تقييم الأداء',
+    subclauses: [
+      { id: '9.1', title: 'المراقبة والقياس والتحليل وتقييم الأداء', score: 84, gaps: [
+        'معايرة حساسات WBGT في QID-05 متأخرة عن موعدها الربع سنوي.',
+      ] },
+      { id: '9.2', title: 'التدقيق الداخلي', score: 70, gaps: [
+        'التدقيق الداخلي INS-0916 في NEOM-03 متأخر 7 أيام (منجز 18 بنداً من 72).',
+        'برنامج التدقيق السنوي لم يغطِّ موقع DMM-04 حتى الآن.',
+      ] },
+      { id: '9.3', title: 'مراجعة الإدارة', score: 81, gaps: [
+        'مخرجات مراجعة الإدارة الأخيرة لا تتضمن قرارات موارد لتوصيات الإجهاد الحراري.',
+      ] },
+    ],
+  },
+  {
+    id: '10', title: 'التحسين',
+    subclauses: [
+      { id: '10.1', title: 'عام', score: 85, gaps: [] },
+      { id: '10.2', title: 'الحوادث وعدم المطابقة والإجراءات التصحيحية', score: 62, gaps: [
+        'تحليل الأسباب الجذرية (5 لماذا) غير موثق في 3 من آخر 10 حوادث.',
+        'التعلم من الحوادث لا يُعمَّم بين المواقع منهجياً؛ الحادث INC-2026-012 في NEOM-03 لم يُشارك مع MED-06 رغم تشابه مخاطر العزل الكهربائي.',
+        'فعالية الإجراءات التصحيحية لا تُتحقق بعد 90 يوماً من الإغلاق.',
+      ] },
+      { id: '10.3', title: 'التحسين المستمر', score: 78, gaps: [
+        'المؤشرات الاستباقية (جولات القيادة، ملاحظات العمال) غير مرتبطة بخطة التحسين السنوية.',
+      ] },
+    ],
+  },
+];
+
+// ------------------------------------------------------------------
+// 10. السجل القانوني — 8 تشريعات ومتطلبات سعودية
+// ------------------------------------------------------------------
+
+const legalRegister = [
+  {
+    id: 'L1',
+    title: 'نظام العمل السعودي — الباب الثامن (الوقاية من مخاطر العمل والوقاية من الحوادث الصناعية الكبرى وإصابات العمل)',
+    ref: 'المرسوم الملكي رقم م/51 وتاريخ 23/8/1426هـ وتعديلاته',
+    authority: 'وزارة الموارد البشرية والتنمية الاجتماعية',
+    status: 'ممتثل', lastReview: d(-41), nextReview: d(139), owner: 'م. سلطان الرشيدي',
+    requirements: ['إحاطة العامل بمخاطر مهنته ووسائل الوقاية (المادة 123)', 'اتخاذ الاحتياطات اللازمة لحماية العمال (المادة 122)', 'توفير الإسعافات الأولية والرعاية الطبية', 'الإبلاغ عن إصابات العمل'],
+    evidence: 'برنامج التعريف بالسلامة، سجلات التدريب، عيادات المواقع، سجل الإصابات في Biltix HSE.',
+    gap: null,
+  },
+  {
+    id: 'L2',
+    title: 'لائحة السلامة والصحة المهنية ومتطلبات الحماية من السقوط والحفريات والأماكن المغلقة',
+    ref: 'اللائحة التنفيذية لنظام العمل — أحكام السلامة والصحة المهنية',
+    authority: 'وزارة الموارد البشرية والتنمية الاجتماعية',
+    status: 'جزئي', lastReview: d(-25), nextReview: d(65), owner: 'م. سلطان الرشيدي',
+    requirements: ['حواجز الحماية من السقوط والفتحات', 'تدعيم الخنادق التي يتجاوز عمقها 1.2 م', 'تصاريح الدخول إلى الأماكن المغلقة', 'حدود التعرض المهني للغبار والمواد الكيميائية'],
+    evidence: 'نظام التصاريح، سجل المخاطر، تقارير التفتيش.',
+    gap: 'خنادق غير مدعومة في QID-05 (R-1005) وفتحات غير محمية في JED-02 (R-1002) ما زالت مفتوحة.',
+  },
+  {
+    id: 'L3',
+    title: 'متطلبات وأدلة المجلس الوطني للسلامة والصحة المهنية (NCOSH) — الإجهاد الحراري والعمل على ارتفاعات وإدارة المركبات',
+    ref: 'الأدلة الإرشادية الوطنية وقرار حظر العمل تحت أشعة الشمس (12:00–15:00، 15 يونيو – 15 سبتمبر)',
+    authority: 'المجلس الوطني للسلامة والصحة المهنية',
+    status: 'جزئي', lastReview: d(-62), nextReview: d(28), owner: 'م. لمى العنزي',
+    requirements: ['الالتزام بحظر العمل تحت أشعة الشمس', 'برنامج تأقلم حراري ومحطات تبريد', 'خطة إدارة حركة المركبات في المواقع', 'تدريب العمل على ارتفاعات لكل من يعمل فوق 1.8 م'],
+    evidence: 'جداول العمل/الراحة المرتبطة بحساسات WBGT، سجلات التأقلم في NEOM-03.',
+    gap: 'خطة إدارة المرور في QID-05 غير معتمدة ومنظمو الحركة غير مدربين (R-1033).',
+  },
+  {
+    id: 'L4',
+    title: 'نظام التأمينات الاجتماعية — فرع الأخطار المهنية (إصابات العمل والإبلاغ عنها)',
+    ref: 'المرسوم الملكي رقم م/33 وتاريخ 3/9/1421هـ ولائحته',
+    authority: 'المؤسسة العامة للتأمينات الاجتماعية (GOSI)',
+    status: 'ممتثل', lastReview: d(-33), nextReview: d(147), owner: 'م. سارة القحطاني',
+    requirements: ['الإبلاغ عن إصابة العمل خلال 3 أيام من وقوعها', 'توثيق أيام الغياب والعلاج', 'تسجيل جميع العمال في الفرع المهني'],
+    evidence: 'بلاغا الإصابتين INC-2026-018 و INC-2026-009 مرسلان خلال المدة النظامية عبر تكامل GOSI.',
+    gap: null,
+  },
+  {
+    id: 'L5',
+    title: 'اشتراطات الدفاع المدني للسلامة والحماية من الحريق في مواقع الإنشاء والأعمال الساخنة',
+    ref: 'نظام الدفاع المدني (المرسوم الملكي رقم م/10 لعام 1406هـ) والاشتراطات الفنية',
+    authority: 'المديرية العامة للدفاع المدني',
+    status: 'جزئي', lastReview: d(-18), nextReview: d(72), owner: 'م. مها الغامدي',
+    requirements: ['طفايات حريق مفحوصة في متناول اليد', 'مراقب حريق 60 دقيقة بعد الأعمال الساخنة', 'تخزين الوقود والغازات وفق الاشتراطات', 'خطط إخلاء وتمارين دورية'],
+    evidence: 'تصاريح الأعمال الساخنة، سجلات فحص الطفايات، تمارين الإخلاء النهارية.',
+    gap: 'خزان الديزل قرب محطة القص في RUH-01 (R-1022) ولحام قرب ألواح العزل في DMM-04 (R-1021).',
+  },
+  {
+    id: 'L6',
+    title: 'كود البناء السعودي SBC 201 — الفصل 33 (الحماية أثناء التنفيذ) والأكواد المرتبطة (SBC 306 الفولاذ، SBC 401 الكهرباء)',
+    ref: 'نظام تطبيق كود البناء السعودي (المرسوم الملكي رقم م/43 لعام 1438هـ)',
+    authority: 'اللجنة الوطنية لكود البناء السعودي — الهيئة السعودية للمواصفات والمقاييس والجودة',
+    status: 'ممتثل', lastReview: d(-55), nextReview: d(125), owner: 'م. خالد العتيبي',
+    requirements: ['حماية المشاة والممتلكات المجاورة أثناء التنفيذ', 'تصميم الشدات والأعمال المؤقتة من مهندس مختص', 'التمديدات الكهربائية المؤقتة بقواطع تسرب أرضي', 'التدعيم المؤقت للمنشآت الفولاذية'],
+    evidence: 'تصاميم الشدات المعتمدة لبلاطة النقل (R-1042)، مخططات التدعيم المؤقت في DMM-04.',
+    gap: null,
+  },
+  {
+    id: 'L7',
+    title: 'نظام البيئة ولوائحه التنفيذية — إدارة النفايات الخطرة (الأسبستوس) والتسربات وجودة الهواء والضوضاء',
+    ref: 'المرسوم الملكي رقم م/165 وتاريخ 19/11/1441هـ واللوائح التنفيذية',
+    authority: 'المركز الوطني للرقابة على الالتزام البيئي',
+    status: 'فجوة', lastReview: d(-12), nextReview: d(18), owner: 'م. دانة العمري',
+    requirements: ['إزالة المواد الحاوية على الأسبستوس بمقاول مرخص وإشعار المركز', 'الإبلاغ عن التسربات ومعالجة التربة الملوثة', 'مراقبة الغبار PM2.5 والضوضاء عند حدود الموقع', 'مناولة النفايات الخطرة عبر ناقل مرخص'],
+    evidence: 'بلاغ تسرب الديزل INC-2026-016 ومستندات معالجة التربة، تقارير حساسات PM2.5.',
+    gap: 'لم يُعيَّن مقاول إزالة أسبستوس مرخص لمنطقة الربط في MED-06 (R-1031)، وتجاوزات متكررة لحساس PM2.5 عند كسارة QID-05 (R-1030).',
+  },
+  {
+    id: 'L8',
+    title: 'نظام المرور ولائحته التنفيذية — ترخيص السائقين والمركبات الثقيلة والسلامة المرورية داخل المواقع ومحيطها',
+    ref: 'المرسوم الملكي رقم م/85 وتاريخ 26/10/1428هـ ولائحته التنفيذية',
+    authority: 'الإدارة العامة للمرور — وزارة الداخلية',
+    status: 'جزئي', lastReview: d(-30), nextReview: d(60), owner: 'م. ريم السبيعي',
+    requirements: ['رخص قيادة سارية للمركبات الثقيلة ومعاينة دورية', 'تثبيت الحمولات وتغطية شاحنات الردم', 'الالتزام بحدود السرعة وتصاريح التحميل على الطرق العامة'],
+    evidence: 'سجل رخص السائقين في نظام الموارد البشرية، تقارير أجهزة التتبع في NEOM-03.',
+    gap: 'تجاوزات سرعة متكررة للمركبات الخفيفة في NEOM-03 (R-1036) ومركبات في QID-05 بأجراس رجوع معطلة (F-0906-1).',
+  },
+];
+
+// ------------------------------------------------------------------
+// 11. التكاملات — 19 موصلاً
+//     11 متصل · 2 أداء متدهور (cctv-ai, weather-ncm) · 1 غير متصل (powerbi)
+//     · 5 قابل للإعداد (قنوات التنبيه ومصادر البيانات التي تحتاج إعدادات المستخدم)
+//     connectionType: نوع الاتصال الذي تفهمه sources.testConnection (json|sheets|supabase|webhook) أو null.
+// ------------------------------------------------------------------
+
+const integrations = [
+  {
+    id: 'biltix-pm', name: 'منصة بلتكس لإدارة المشاريع', vendor: 'Biltix', category: 'core', icon: 'biltix',
+    status: 'connected', connectionType: 'json', lastSync: t(0, '12:39'), latencyMs: 120, eventsPerHour: 340, uptimePct: 99.9,
+    eventsHistory: [310, 325, 298, 342, 360, 351, 333, 347, 355, 338, 344, 340],
+    description: 'مزامنة المشاريع والمراحل والجداول والعاملين من منصة بلتكس؛ تُسقط ملاحظات السلامة على أنشطة الجدول الزمني.',
+    configFields: [
+      { key: 'apiUrl', label: 'عنوان API', type: 'url', placeholder: 'https://api.biltix.sa/v1' },
+      { key: 'apiKey', label: 'مفتاح API', type: 'password', placeholder: '' },
+      { key: 'projectIds', label: 'معرّفات المشاريع (مفصولة بفاصلة)', type: 'text', placeholder: 'RUH-01, JED-02, NEOM-03' },
+    ],
+  },
+  {
+    id: 'biltix-dms', name: 'بلتكس DMS — إدارة المستندات', vendor: 'Biltix', category: 'core', icon: 'document',
+    status: 'connected', connectionType: 'json', lastSync: t(0, '12:37'), latencyMs: 180, eventsPerHour: 120, uptimePct: 99.8,
+    eventsHistory: [98, 104, 110, 125, 118, 122, 131, 115, 119, 127, 124, 120],
+    description: 'أرشفة تصاريح العمل وتقارير التفتيش وتقييمات المخاطر كمستندات مُتحكَّم بها مع تتبع الإصدارات والتوقيعات.',
+    configFields: [
+      { key: 'apiUrl', label: 'عنوان API', type: 'url', placeholder: 'https://dms.biltix.sa/api' },
+      { key: 'apiKey', label: 'مفتاح API', type: 'password', placeholder: '' },
+      { key: 'folder', label: 'المجلد الجذري لمستندات HSE', type: 'text', placeholder: '/HSE/2026' },
+    ],
+  },
+  {
+    id: 'iot-gateway', name: 'بوابة الحساسات (MQTT)', vendor: 'Biltix IoT', category: 'sensors', icon: 'sensor',
+    status: 'connected', connectionType: null, lastSync: t(0, '12:40'), latencyMs: 45, eventsPerHour: 1680, uptimePct: 99.7,
+    eventsHistory: [1620, 1655, 1640, 1702, 1688, 1675, 1710, 1695, 1660, 1684, 1672, 1680],
+    description: 'استقبال قراءات حساسات الغازات والضوضاء وWBGT والغبار والرياح من 14 حساساً عبر MQTT مع تنبيهات تجاوز العتبات.',
+    configFields: [
+      { key: 'brokerUrl', label: 'عنوان الوسيط MQTT', type: 'url', placeholder: 'mqtts://iot.biltix.sa:8883' },
+      { key: 'topic', label: 'الموضوع (Topic)', type: 'text', placeholder: 'sites/+/sensors/#' },
+      { key: 'username', label: 'اسم المستخدم', type: 'text', placeholder: 'hse-dashboard' },
+      { key: 'password', label: 'كلمة المرور', type: 'password', placeholder: '' },
+    ],
+  },
+  {
+    id: 'cctv-ai', name: 'الكاميرات الذكية — كشف معدات الوقاية', vendor: 'Biltix Vision', category: 'sensors', icon: 'camera',
+    status: 'degraded', connectionType: null, lastSync: t(0, '12:31'), latencyMs: 2400, eventsPerHour: 95, uptimePct: 96.2,
+    eventsHistory: [140, 138, 145, 132, 128, 121, 110, 104, 98, 102, 97, 95],
+    description: 'تحليل بث 48 كاميرا لرصد العمل بدون خوذة أو سترة أو حزام أمان والاقتراب من المناطق المحظورة. تدهور الأداء: تأخر معالجة الإطارات في NEOM-03 بسبب ضعف الاتصال.',
+    configFields: [
+      { key: 'streamUrl', label: 'عنوان خادم التحليل', type: 'url', placeholder: 'https://vision.biltix.sa' },
+      { key: 'apiKey', label: 'مفتاح API', type: 'password', placeholder: '' },
+      { key: 'confidence', label: 'حد الثقة للرصد (0–1)', type: 'number', placeholder: '0.75' },
+    ],
+  },
+  {
+    id: 'wearables', name: 'الأجهزة القابلة للارتداء', vendor: 'SafeBand', category: 'sensors', icon: 'watch',
+    status: 'connected', connectionType: 'json', lastSync: t(0, '12:39'), latencyMs: 210, eventsPerHour: 860, uptimePct: 99.1,
+    eventsHistory: [790, 812, 835, 848, 870, 905, 890, 876, 862, 855, 868, 860],
+    description: 'شارات ذكية تقيس معدل النبض ودرجة حرارة الجلد والسقوط وتنبه بالإجهاد الحراري؛ مفعّلة لفرق التركيب في NEOM-03 و QID-05.',
+    configFields: [
+      { key: 'apiUrl', label: 'عنوان API', type: 'url', placeholder: 'https://api.safeband.io/v2' },
+      { key: 'apiKey', label: 'مفتاح API', type: 'password', placeholder: '' },
+      { key: 'tenant', label: 'معرّف المنشأة', type: 'text', placeholder: 'biltix-sa' },
+    ],
+  },
+  {
+    id: 'access-control', name: 'بوابات الدخول والحضور', vendor: 'Gatekeeper', category: 'people', icon: 'gate',
+    status: 'connected', connectionType: 'json', lastSync: t(0, '12:38'), latencyMs: 95, eventsPerHour: 410, uptimePct: 99.9,
+    eventsHistory: [1210, 980, 620, 450, 380, 395, 410, 402, 415, 398, 405, 410],
+    description: 'بوابات دوّارة ببطاقات وبصمة وجه في 6 مواقع؛ تمنع دخول العاملين بشهادات إلزامية منتهية وتزوّد الرادار بعدد الأشخاص في كل منطقة.',
+    configFields: [
+      { key: 'apiUrl', label: 'عنوان API', type: 'url', placeholder: 'https://acs.biltix.sa/api' },
+      { key: 'apiKey', label: 'مفتاح API', type: 'password', placeholder: '' },
+      { key: 'blockExpired', label: 'منع الدخول عند انتهاء الشهادات الإلزامية (نعم/لا)', type: 'text', placeholder: 'نعم' },
+    ],
+  },
+  {
+    id: 'weather-ncm', name: 'المركز الوطني للأرصاد', vendor: 'NCM', category: 'external', icon: 'weather',
+    status: 'degraded', connectionType: 'json', lastSync: t(0, '11:52'), latencyMs: 1850, eventsPerHour: 12, uptimePct: 97.4,
+    eventsHistory: [12, 12, 12, 12, 11, 12, 12, 9, 7, 12, 12, 12],
+    description: 'إنذارات الرياح والأمطار والغبار ودرجات الحرارة للمواقع الستة؛ تغذي قواعد إيقاف الرفع وجداول الإجهاد الحراري. تدهور: انتهاء مهلة الطلبات منذ 48 دقيقة.',
+    configFields: [
+      { key: 'apiUrl', label: 'عنوان API', type: 'url', placeholder: 'https://api.ncm.gov.sa/v1' },
+      { key: 'apiKey', label: 'مفتاح API', type: 'password', placeholder: '' },
+      { key: 'stations', label: 'محطات الرصد (مفصولة بفاصلة)', type: 'text', placeholder: 'RUH, JED, NEOM, DMM, QID, MED' },
+    ],
+  },
+  {
+    id: 'gosi', name: 'التأمينات الاجتماعية — إصابات العمل', vendor: 'GOSI', category: 'external', icon: 'shield',
+    status: 'connected', connectionType: 'json', lastSync: t(0, '12:05'), latencyMs: 640, eventsPerHour: 2, uptimePct: 99.5,
+    eventsHistory: [1, 3, 2, 2, 1, 4, 2, 2, 3, 1, 2, 2],
+    description: 'إرسال بلاغات إصابات العمل إلكترونياً خلال المهلة النظامية (3 أيام) ومزامنة حالة المطالبات وأيام الغياب.',
+    configFields: [
+      { key: 'apiUrl', label: 'عنوان الخدمة', type: 'url', placeholder: 'https://api.gosi.gov.sa/oh' },
+      { key: 'clientId', label: 'معرّف العميل', type: 'text', placeholder: '' },
+      { key: 'clientSecret', label: 'سر العميل', type: 'password', placeholder: '' },
+      { key: 'establishmentNo', label: 'رقم المنشأة في التأمينات', type: 'text', placeholder: '5xxxxxxxxx' },
+    ],
+  },
+  {
+    id: 'hrms', name: 'نظام الموارد البشرية', vendor: 'Biltix HR', category: 'people', icon: 'users',
+    status: 'connected', connectionType: 'json', lastSync: t(0, '12:10'), latencyMs: 320, eventsPerHour: 18, uptimePct: 99.6,
+    eventsHistory: [22, 19, 15, 24, 17, 20, 16, 18, 21, 19, 17, 18],
+    description: 'مزامنة بيانات العاملين والمقاولين والشهادات التدريبية وتواريخ انتهائها لتغذية مصفوفة التدريب.',
+    configFields: [
+      { key: 'apiUrl', label: 'عنوان API', type: 'url', placeholder: 'https://hr.biltix.sa/api/v1' },
+      { key: 'apiKey', label: 'مفتاح API', type: 'password', placeholder: '' },
+      { key: 'syncIntervalMin', label: 'فترة المزامنة (دقائق)', type: 'number', placeholder: '30' },
+    ],
+  },
+  {
+    id: 'erp-sap', name: 'SAP / Oracle ERP', vendor: 'SAP', category: 'core', icon: 'database',
+    status: 'connected', connectionType: 'json', lastSync: t(0, '12:25'), latencyMs: 480, eventsPerHour: 26, uptimePct: 99.3,
+    eventsHistory: [30, 28, 24, 27, 31, 25, 26, 29, 23, 27, 28, 26],
+    description: 'طلبات شراء معدات الوقاية والضوابط الهندسية، وتكاليف الحوادث، وساعات العمل الفعلية المستخدمة في حساب LTIFR و TRIR.',
+    configFields: [
+      { key: 'baseUrl', label: 'عنوان الخادم', type: 'url', placeholder: 'https://erp.biltix.sa/sap/opu/odata' },
+      { key: 'username', label: 'اسم المستخدم', type: 'text', placeholder: '' },
+      { key: 'password', label: 'كلمة المرور', type: 'password', placeholder: '' },
+      { key: 'costCenter', label: 'مركز التكلفة لـ HSE', type: 'text', placeholder: 'CC-HSE-100' },
+    ],
+  },
+  {
+    id: 'slack', name: 'Slack', vendor: 'Slack', category: 'alerts', icon: 'chat',
+    status: 'connected', connectionType: 'webhook', lastSync: t(0, '12:36'), latencyMs: 260, eventsPerHour: 44, uptimePct: 99.9,
+    eventsHistory: [38, 41, 52, 47, 40, 43, 49, 45, 42, 46, 44, 44],
+    description: 'نشر التنبيهات الحرجة وملخص الوردية في قناة #hse-alerts مع روابط مباشرة إلى سجل المخاطر والتصاريح.',
+    configFields: [
+      { key: 'webhookUrl', label: 'رابط Webhook الوارد', type: 'url', placeholder: 'https://hooks.slack.com/services/…' },
+      { key: 'channel', label: 'القناة', type: 'text', placeholder: '#hse-alerts' },
+    ],
+  },
+  {
+    id: 'teams', name: 'Microsoft Teams', vendor: 'Microsoft', category: 'alerts', icon: 'chat',
+    status: 'connected', connectionType: 'webhook', lastSync: t(0, '12:36'), latencyMs: 290, eventsPerHour: 38, uptimePct: 99.8,
+    eventsHistory: [35, 37, 42, 39, 36, 40, 41, 38, 37, 39, 38, 38],
+    description: 'بطاقات تنبيه تكيفية لفرق المواقع ومديري المشاريع مع إجراءات سريعة (اعتماد تصريح، إسناد مخاطرة).',
+    configFields: [
+      { key: 'webhookUrl', label: 'رابط Webhook للقناة', type: 'url', placeholder: 'https://biltix.webhook.office.com/…' },
+      { key: 'team', label: 'الفريق', type: 'text', placeholder: 'HSE Operations' },
+    ],
+  },
+  {
+    id: 'whatsapp', name: 'تنبيهات واتساب للأعمال', vendor: 'Meta', category: 'alerts', icon: 'whatsapp',
+    status: 'configurable', connectionType: null, lastSync: null, latencyMs: null, eventsPerHour: 0, uptimePct: null,
+    eventsHistory: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    description: 'رسائل قوالب معتمدة لمشرفي المواقع ومنسقي الطوارئ (تنبيه حرج، انتهاء تصريح، إنذار طقس). يتطلب حساب WhatsApp Business API.',
+    configFields: [
+      { key: 'phoneNumberId', label: 'معرّف رقم الهاتف', type: 'text', placeholder: '' },
+      { key: 'accessToken', label: 'رمز الوصول', type: 'password', placeholder: '' },
+      { key: 'recipients', label: 'أرقام المستلمين (مفصولة بفاصلة)', type: 'text', placeholder: '+9665xxxxxxxx, +9665xxxxxxxx' },
+    ],
+  },
+  {
+    id: 'email-smtp', name: 'البريد الإلكتروني (SMTP)', vendor: 'Biltix Mail', category: 'alerts', icon: 'mail',
+    status: 'connected', connectionType: null, lastSync: t(0, '12:34'), latencyMs: 710, eventsPerHour: 21, uptimePct: 99.9,
+    eventsHistory: [18, 20, 25, 22, 19, 21, 24, 20, 22, 21, 20, 21],
+    description: 'التقرير اليومي الساعة 06:30، وتقرير الشهر في أول يوم عمل، وإشعارات انتهاء الشهادات للمشرفين.',
+    configFields: [
+      { key: 'host', label: 'خادم SMTP', type: 'text', placeholder: 'smtp.biltix.sa' },
+      { key: 'port', label: 'المنفذ', type: 'number', placeholder: '587' },
+      { key: 'username', label: 'اسم المستخدم', type: 'text', placeholder: 'hse-noreply@biltix.sa' },
+      { key: 'password', label: 'كلمة المرور', type: 'password', placeholder: '' },
+      { key: 'recipients', label: 'المستلمون الافتراضيون', type: 'text', placeholder: 'hse@biltix.sa' },
+    ],
+  },
+  {
+    id: 'sms-twilio', name: 'الرسائل النصية (Twilio)', vendor: 'Twilio', category: 'alerts', icon: 'sms',
+    status: 'configurable', connectionType: null, lastSync: null, latencyMs: null, eventsPerHour: 0, uptimePct: null,
+    eventsHistory: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    description: 'رسائل نصية للتنبيهات الحرجة فقط (إنذار غاز، زر طوارئ، انتهاء تصريح نشط) إلى منسقي الطوارئ في كل موقع.',
+    configFields: [
+      { key: 'accountSid', label: 'Account SID', type: 'text', placeholder: 'ACxxxxxxxxxxxxxxxx' },
+      { key: 'authToken', label: 'رمز المصادقة', type: 'password', placeholder: '' },
+      { key: 'fromNumber', label: 'الرقم المرسل', type: 'text', placeholder: '+9665xxxxxxxx' },
+      { key: 'recipients', label: 'أرقام المستلمين (مفصولة بفاصلة)', type: 'text', placeholder: '' },
+    ],
+  },
+  {
+    id: 'webhooks', name: 'Webhooks / n8n / Zapier', vendor: 'مفتوح', category: 'data', icon: 'webhook',
+    status: 'configurable', connectionType: 'webhook', lastSync: null, latencyMs: null, eventsPerHour: 0, uptimePct: null,
+    eventsHistory: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    description: 'إرسال كل حدث (حادث، تجاوز عتبة، تغيير حالة تصريح) كحمولة JSON موقّعة إلى أي نقطة نهاية لأتمتة سير العمل.',
+    configFields: [
+      { key: 'url', label: 'عنوان الاستقبال', type: 'url', placeholder: 'https://n8n.biltix.sa/webhook/hse' },
+      { key: 'secret', label: 'سر التوقيع (HMAC)', type: 'password', placeholder: '' },
+      { key: 'events', label: 'الأحداث المرسلة', type: 'text', placeholder: 'incident, alert, permit, sensor' },
+    ],
+  },
+  {
+    id: 'google-sheets', name: 'Google Sheets', vendor: 'Google', category: 'data', icon: 'sheet',
+    status: 'configurable', connectionType: 'sheets', lastSync: null, latencyMs: null, eventsPerHour: 0, uptimePct: null,
+    eventsHistory: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    description: 'استيراد سجل مخاطر من جدول منشور بصيغة CSV وفق قالب الأعمدة المعتمد، أو تصدير المؤشرات إليه.',
+    configFields: [
+      { key: 'sheetUrl', label: 'رابط CSV المنشور', type: 'url', placeholder: 'https://docs.google.com/spreadsheets/d/…/export?format=csv' },
+      { key: 'sheetName', label: 'اسم الورقة', type: 'text', placeholder: 'risks' },
+    ],
+  },
+  {
+    id: 'supabase', name: 'Supabase', vendor: 'Supabase', category: 'data', icon: 'database',
+    status: 'configurable', connectionType: 'supabase', lastSync: null, latencyMs: null, eventsPerHour: 0, uptimePct: null,
+    eventsHistory: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    description: 'قاعدة بيانات Postgres مستضافة لمزامنة المخاطر والحوادث ثنائية الاتجاه عبر REST مع سياسات صلاحيات على مستوى الصفوف.',
+    configFields: [
+      { key: 'url', label: 'عنوان المشروع', type: 'url', placeholder: 'https://xxxx.supabase.co' },
+      { key: 'apiKey', label: 'مفتاح anon', type: 'password', placeholder: '' },
+      { key: 'table', label: 'الجدول', type: 'text', placeholder: 'risks' },
+    ],
+  },
+  {
+    id: 'powerbi', name: 'Power BI', vendor: 'Microsoft', category: 'data', icon: 'chart',
+    status: 'disconnected', connectionType: null, lastSync: t(0, '11:47'), latencyMs: null, eventsPerHour: 0, uptimePct: 91.0,
+    eventsHistory: [6, 6, 6, 6, 6, 6, 6, 6, 0, 0, 0, 0],
+    description: 'دفع المؤشرات الساعية إلى مجموعة بيانات Power BI للتقارير التنفيذية. غير متصل: انتهت صلاحية سر التطبيق في Azure AD منذ 53 دقيقة.',
+    configFields: [
+      { key: 'workspaceId', label: 'معرّف مساحة العمل', type: 'text', placeholder: '' },
+      { key: 'datasetId', label: 'معرّف مجموعة البيانات', type: 'text', placeholder: '' },
+      { key: 'clientId', label: 'معرّف التطبيق (Azure AD)', type: 'text', placeholder: '' },
+      { key: 'clientSecret', label: 'سر التطبيق', type: 'password', placeholder: '' },
+    ],
+  },
+];
+
+// ------------------------------------------------------------------
+// 12. الحساسات الحية — 14 حساساً ثابتاً
+//     threshold هو حد التنبيه الأعلى. حساس الأكسجين يحمل أيضاً lowThreshold (19.5%)
+//     لأن خطره في النقص؛ العتبة العليا 23.5% تمثل الإثراء بالأكسجين (خطر حريق).
+//     MED-06 بلا حساسات ثابتة في هذه المرحلة (أجهزة محمولة فقط).
+// ------------------------------------------------------------------
+
+const sensors = [
+  { id: 'SN1',  code: 'RUH-WS-01',  siteId: 'S1', zoneId: 'S1-Z2', kind: 'سرعة الرياح',          unit: 'كم/س',   value: 31,   min: 0,    max: 80,  threshold: 38,  location: 'قمة برج الرافعة 2 (ارتفاع 118 م)' },
+  { id: 'SN2',  code: 'RUH-NS-01',  siteId: 'S1', zoneId: 'S1-Z3', kind: 'الضوضاء',              unit: 'dB(A)',  value: 83.5, min: 40,   max: 110, threshold: 85,  location: 'ورشة الحديد — محطة القص' },
+  { id: 'SN3',  code: 'RUH-PM-01',  siteId: 'S1', zoneId: 'S1-Z4', kind: 'الغبار PM2.5',          unit: 'µg/m³',  value: 41,   min: 0,    max: 150, threshold: 75,  location: 'ساحة التخزين — بوابة الشاحنات' },
+  { id: 'SN4',  code: 'JED-H2S-01', siteId: 'S2', zoneId: 'S2-Z4', kind: 'غاز H2S',               unit: 'ppm',    value: 1.8,  min: 0,    max: 20,  threshold: 10,  location: 'غرفة التفتيش MH-14' },
+  { id: 'SN5',  code: 'JED-O2-01',  siteId: 'S2', zoneId: 'S2-Z4', kind: 'الأكسجين O₂',           unit: '%',      value: 20.8, min: 19.5, max: 25,  threshold: 23.5, lowThreshold: 19.5, location: 'غرفة التفتيش MH-14' },
+  { id: 'SN6',  code: 'NEOM-WB-01', siteId: 'S3', zoneId: 'S3-Z2', kind: 'الإجهاد الحراري WBGT',  unit: '°م',     value: 26.4, min: 10,   max: 40,  threshold: 30,  location: 'القطاع الجنوبي — الصف 48' },
+  { id: 'SN7',  code: 'NEOM-WS-01', siteId: 'S3', zoneId: 'S3-Z1', kind: 'سرعة الرياح',          unit: 'كم/س',   value: 22,   min: 0,    max: 80,  threshold: 38,  location: 'برج الأرصاد — القطاع الشمالي' },
+  { id: 'SN8',  code: 'NEOM-PM-01', siteId: 'S3', zoneId: 'S3-Z4', kind: 'الغبار PM2.5',          unit: 'µg/m³',  value: 57,   min: 0,    max: 150, threshold: 75,  location: 'ساحة التجميع — مسار الشاحنات' },
+  { id: 'SN9',  code: 'DMM-CO-01',  siteId: 'S4', zoneId: 'S4-Z4', kind: 'أول أكسيد الكربون CO', unit: 'ppm',    value: 9,    min: 0,    max: 50,  threshold: 25,  location: 'ورشة الهياكل — محطات اللحام' },
+  { id: 'SN10', code: 'DMM-NS-01',  siteId: 'S4', zoneId: 'S4-Z4', kind: 'الضوضاء',              unit: 'dB(A)',  value: 81.6, min: 40,   max: 110, threshold: 85,  location: 'ورشة الهياكل — منطقة الجلخ' },
+  { id: 'SN11', code: 'DMM-WS-01',  siteId: 'S4', zoneId: 'S4-Z2', kind: 'سرعة الرياح',          unit: 'كم/س',   value: 34,   min: 0,    max: 80,  threshold: 38,  location: 'سقف المستودع 2' },
+  { id: 'SN12', code: 'QID-PM-01',  siteId: 'S5', zoneId: 'S5-Z2', kind: 'الغبار PM2.5',          unit: 'µg/m³',  value: 71,   min: 0,    max: 150, threshold: 75,  location: 'الكسارة — فتحة التفريغ' },
+  { id: 'SN13', code: 'QID-VB-01',  siteId: 'S5', zoneId: 'S5-Z3', kind: 'الاهتزاز',              unit: 'م/ث²',   value: 0.42, min: 0,    max: 2,   threshold: 0.5, location: 'معدة الدك CP-3 — مقعد المشغل' },
+  { id: 'SN14', code: 'QID-WB-01',  siteId: 'S5', zoneId: 'S5-Z1', kind: 'الإجهاد الحراري WBGT',  unit: '°م',     value: 27.1, min: 10,   max: 40,  threshold: 30,  location: 'منطقة الحفريات — التقاطع الشرقي' },
+];
+
+// ------------------------------------------------------------------
+// 13. قوالب البث الحي — 45 قالباً مجمّعة حسب النوع
+//     الحقول تطابق FeedEvent: type · tone · sourceId · title · detail (+ weight اختياري)
+//     العناصر النائبة هي مفاتيح سياق live.js (buildContext) وتُملأ بقيم حقيقية من الحالة:
+//       الموقع/المنطقة: {site} {zone}
+//       الحساسات:      {sensor} {value} {unit} {threshold} {wbgt} {wind}
+//       التصاريح:      {permit} {permitType} {permitLocation} {approver} {requester} {workersCount} {o2} {h2s} {co}
+//       السجلات:       {incident} {inspection} {inspectionType} {inspector} {checklist} {course} {worker} {integration}
+//       أعداد:         {n} {n2} {days} {latency} {latencyHigh} {windHigh} {temp} {humidity}
+//     المفاتيح الاختيارية (قد تكون فارغة) تُوضع في نهاية النص حتى يحذف live.js الفاصل الزائد.
+//     القوالب العشوائية لا تدّعي تجاوزات أو انتهاءات حتى لا تناقض ما يعرضه الرادار؛
+//     تلك الأحداث يولّدها محرك live.js من القيم الفعلية.
+// ------------------------------------------------------------------
+
+const feedTemplates = [
+  // --- sensor ---
+  { type: 'sensor', tone: 'warning', sourceId: 'iot-gateway', weight: 2, title: 'قراءة {sensor} بلغت {value} {unit} — {zone}', detail: 'اقتراب من حد التنبيه ({threshold} {unit}) — {site}' },
+  { type: 'sensor', tone: 'accent',  sourceId: 'iot-gateway', weight: 2, title: 'قراءة {sensor} ضمن الحد الطبيعي ({value} {unit}) — {zone}', detail: 'الحد المسموح {threshold} {unit} — {site}' },
+  { type: 'sensor', tone: 'good',    sourceId: 'iot-gateway', title: 'عودة قراءة {sensor} إلى المعدل الطبيعي ({value} {unit})', detail: 'استئناف العمل في {zone} — {site}' },
+  { type: 'sensor', tone: 'accent',  sourceId: 'iot-gateway', title: 'معايرة دورية لحسّاس {sensor} — {zone}', detail: 'اكتملت المعايرة وانحراف القراءة أقل من 2% — {site}' },
+  { type: 'sensor', tone: 'accent',  sourceId: 'iot-gateway', title: 'قراءة WBGT {wbgt}°م في {zone}', detail: 'ضمن النطاق الآمن؛ الترطيب كل 20 دقيقة — {site}' },
+  { type: 'sensor', tone: 'warning', sourceId: 'iot-gateway', title: 'سرعة الرياح {wind} كم/س عند {zone}', detail: 'تنبيه لمشغلي الرافعات — إيقاف الرفع عند 38 كم/س ({site})' },
+  // --- permit ---
+  { type: 'permit', tone: 'accent',  sourceId: 'biltix-pm', weight: 2, title: 'تجديد اعتماد التصريح {permit} — {permitType}', detail: '{permitLocation} — المعتمد: {approver}' },
+  { type: 'permit', tone: 'accent',  sourceId: 'biltix-pm', title: 'جولة تحقق ميدانية على التصريح {permit}', detail: '{permitType} — {permitLocation}؛ الضوابط مطبقة وعدد العاملين {workersCount}' },
+  { type: 'permit', tone: 'accent',  sourceId: 'access-control', title: 'تحديث قائمة العاملين على التصريح {permit}', detail: '{workersCount} عاملاً مسجلون عبر بوابة الدخول — {permitLocation}' },
+  { type: 'permit', tone: 'warning', sourceId: 'biltix-pm', title: 'ملاحظة على التصريح {permit}: حاجز المنطقة المحظورة غير مكتمل', detail: '{permitLocation} — تصحيح فوري قبل استئناف العمل' },
+  { type: 'permit', tone: 'accent',  sourceId: 'iot-gateway', title: 'اختبار غازات دوري: O₂ {o2}%، H2S {h2s} ppm، CO {co} ppm', detail: 'ضمن الحدود المسموحة — {zone}، {site}' },
+  { type: 'permit', tone: 'accent',  sourceId: 'biltix-pm', title: 'طلب تصريح جديد بانتظار الاعتماد — {site}', detail: 'المعتمد المقترح: {approver} — {zone}' },
+  { type: 'permit', tone: 'good',    sourceId: 'biltix-pm', title: 'إغلاق تصريح مكتمل وتسليم المنطقة — {zone}', detail: 'توقيع الطالب {requester} والمعتمد {approver} — {site}' },
+  // --- incident ---
+  { type: 'incident', tone: 'serious', sourceId: 'biltix-pm', title: 'تحديث التحقيق: اكتمال تحليل الأسباب (5 لماذا) — {site}', detail: 'الانتقال إلى الإجراءات التصحيحية — {incident}' },
+  { type: 'incident', tone: 'good',    sourceId: 'biltix-pm', title: 'إغلاق إجراء تصحيحي بعد التحقق من فعاليته — {zone}', detail: '{site} — {incident}' },
+  { type: 'incident', tone: 'warning', sourceId: 'biltix-pm', title: 'بلاغ إسعافات أولية — {zone}', detail: 'إصابة طفيفة عولجت في عيادة الموقع وعاد العامل بمهام خفيفة — {site}' },
+  { type: 'incident', tone: 'serious', sourceId: 'biltix-pm', title: 'مقابلات الشهود للحادث المفتوح — {site}', detail: '{n} مقابلات موثقة — {incident}' },
+  // --- nearmiss ---
+  { type: 'nearmiss', tone: 'warning', sourceId: 'biltix-pm', weight: 2, title: 'بلاغ حادث وشيك: سقوط مواد قرب العمال — {zone}', detail: 'لا إصابات؛ إغلاق المنطقة أسفل العمل — {site}' },
+  { type: 'nearmiss', tone: 'warning', sourceId: 'biltix-pm', title: 'حادث وشيك: مركبة ترجع للخلف دون منظم حركة — {zone}', detail: 'إيقاف المركبة وفتح بلاغ — {site}' },
+  { type: 'nearmiss', tone: 'warning', sourceId: 'biltix-pm', title: 'حادث وشيك: حمولة معلقة فوق مسار مشاة — {zone}', detail: 'إغلاق المنطقة أسفل الرفع وإعادة توجيه المشاة — {site}' },
+  { type: 'nearmiss', tone: 'warning', sourceId: 'biltix-pm', title: 'بلاغ عبر تطبيق بلتكس: فتحة أرضية غير مغطاة — {zone}', detail: 'تركيب غطاء مؤقت خلال 15 دقيقة — {site}' },
+  // --- inspection ---
+  { type: 'inspection', tone: 'good',    sourceId: 'biltix-dms', weight: 2, title: 'اعتماد {inspectionType} — {site}', detail: 'المفتش {inspector}؛ {checklist} بنداً مكتملاً — {inspection}' },
+  { type: 'inspection', tone: 'warning', sourceId: 'biltix-pm',  title: 'ملاحظة جديدة من {inspectionType} — {zone}', detail: 'ملاحظة متوسطة الخطورة بانتظار الإغلاق في {site} — {inspection}' },
+  { type: 'inspection', tone: 'warning', sourceId: 'biltix-pm',  title: 'تذكير: {inspectionType} مستحق خلال {days} يوماً — {site}', detail: 'المفتش {inspector}؛ تجهيز سجلات المعدات وبطاقات الفحص' },
+  { type: 'inspection', tone: 'accent',  sourceId: 'biltix-pm',  title: 'بدء {inspectionType} في {zone}', detail: 'المفتش {inspector}؛ قائمة تحقق من {checklist} بنداً — {site}' },
+  // --- training ---
+  { type: 'training', tone: 'accent',  sourceId: 'hrms', title: 'اكتمال دورة «{course}» لـ {n2} عاملاً — {site}', detail: 'تحديث مصفوفة التدريب عبر نظام الموارد البشرية' },
+  { type: 'training', tone: 'warning', sourceId: 'hrms', title: 'شهادات تنتهي خلال {days} يوماً — {site}', detail: 'إشعار المشرفين بجدولة التجديد؛ العامل {worker} ضمن القائمة' },
+  { type: 'training', tone: 'good',    sourceId: 'hrms', title: 'مزامنة سجل التدريب من نظام الموارد البشرية', detail: '{n2} شهادة محدثة — {site}' },
+  { type: 'training', tone: 'warning', sourceId: 'access-control', title: 'منع دخول عامل بشهادة إلزامية منتهية — {zone}', detail: '{site}؛ إحالة إلى التدريب' },
+  // --- integration ---
+  { type: 'integration', tone: 'good',    sourceId: 'biltix-pm', title: 'فحص صحة التكامل {integration}: ناجح', detail: 'زمن الاستجابة {latency} مللي ثانية' },
+  { type: 'integration', tone: 'warning', sourceId: 'biltix-pm', title: 'تباطؤ مؤقت في التكامل {integration}', detail: 'زمن الاستجابة {latencyHigh} مللي ثانية — إعادة المحاولة تلقائياً' },
+  { type: 'integration', tone: 'accent',  sourceId: 'biltix-pm', title: 'مزامنة مكتملة مع {integration}', detail: '{n2} سجلاً محدثاً' },
+  { type: 'integration', tone: 'accent',  sourceId: 'biltix-pm', title: 'تجديد رمز الوصول للتكامل {integration}', detail: 'المصادقة سارية لمدة 24 ساعة' },
+  // --- ppe ---
+  { type: 'ppe', tone: 'warning', sourceId: 'cctv-ai', weight: 2, title: 'كاميرا ذكية: رصد عامل بدون خوذة — {zone}', detail: '{site}؛ إشعار المشرف المباشر' },
+  { type: 'ppe', tone: 'warning', sourceId: 'cctv-ai', title: 'كاميرا ذكية: رصد عامل بدون سترة عاكسة قرب الطريق الداخلي — {zone}', detail: '{site}' },
+  { type: 'ppe', tone: 'serious', sourceId: 'cctv-ai', title: 'كاميرا ذكية: عامل على ارتفاع دون حزام أمان مربوط — {zone}', detail: '{site}؛ إيقاف العمل فوراً' },
+  { type: 'ppe', tone: 'good',    sourceId: 'cctv-ai', weight: 2, title: 'كاميرا ذكية: التزام كامل بمعدات الوقاية خلال آخر ساعة — {zone}', detail: 'فحص {n2} عاملاً دون مخالفات — {site}' },
+  // --- weather ---
+  { type: 'weather', tone: 'warning', sourceId: 'weather-ncm', title: 'المركز الوطني للأرصاد: إنذار رياح نشطة {windHigh} كم/س — {site}', detail: 'تعليق أعمال الرفع والعمل على الارتفاعات حتى إشعار آخر' },
+  { type: 'weather', tone: 'warning', sourceId: 'weather-ncm', title: 'إنذار أمطار وسيول متوقعة — {site}', detail: 'إخلاء الخنادق وفحص المنحدرات قبل استئناف العمل' },
+  { type: 'weather', tone: 'accent',  sourceId: 'weather-ncm', weight: 2, title: 'تحديث الأرصاد: الحرارة {temp}°م والرطوبة {humidity}% — {site}', detail: 'تفعيل حظر العمل تحت الشمس 12:00–15:00 عند تجاوز الحدود والترطيب كل 20 دقيقة' },
+  { type: 'weather', tone: 'accent',  sourceId: 'weather-ncm', title: 'نشرة الطقس: غبار عالق — {site}', detail: 'توزيع كمامات FFP2 وتخفيض سرعة المركبات إلى 20 كم/س' },
+  // --- alert ---
+  { type: 'alert', tone: 'serious', sourceId: 'wearables',      title: 'جهاز قابل للارتداء: تنبيه إجهاد حراري للعامل {worker}', detail: 'توجيه فوري إلى منطقة الراحة المكيفة — {zone}' },
+  { type: 'alert', tone: 'serious', sourceId: 'access-control', title: 'عدد الأشخاص في {zone} تجاوز الحد المسموح ({n2})', detail: '{site} — إيقاف الدخول مؤقتاً' },
+  { type: 'alert', tone: 'warning', sourceId: 'access-control', title: 'محاولة دخول بشارة منتهية الصلاحية — {zone}', detail: 'رُفض الدخول وتم إشعار المشرف — {site}' },
+  { type: 'alert', tone: 'accent',  sourceId: 'iot-gateway',    title: 'اختبار دوري لنظام إنذار الحريق — {zone}', detail: 'استجابة غرفة التحكم خلال {n} ثوانٍ — {site}' },
+];
+
+// ------------------------------------------------------------------
+// 14. كائن التهيئة الافتراضي
+// ------------------------------------------------------------------
+
+const seed = {
+  meta: { version: 1, anchorDate: ANCHOR_DATE, anchorNow: ANCHOR_NOW, timezone: 'Asia/Riyadh' },
+  company,
+  sites,
+  risks,
+  incidents,
+  permits,
+  inspections,
+  courses,
+  workers,
+  isoClauses,
+  legalRegister,
+  integrations,
+  sensors,
+  feedTemplates,
+};
+
+export { company, sites, risks, incidents, permits, inspections, courses, workers, isoClauses, legalRegister, integrations, sensors, feedTemplates };
+export default seed;

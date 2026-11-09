@@ -15,6 +15,14 @@
  *     always comes from the current seed so deployments never show stale reference data.
  *   • CRUD helpers generate ids/codes (R-1049, INC-2026-032, PTW-5543), stamp
  *     createdAt/updatedAt, push a feed event and emit `store:change`.
+ *   • Part B (§B5): `state.platform` holds the AI Risk Platform entities from
+ *     platform-seed.js (saved copy wins, every date re-anchored by the same day delta),
+ *     `settings.platform` carries weights/thresholds/channels, and the platform methods
+ *     (addAiRisk, acceptRecommendation, overrideRecommendation, escalateRisk, dismissAiRisk,
+ *     addTask, updateTask, addAlert, ackAlert, updateValidation, updatePipeline,
+ *     updateConnector, pushAudit, resolveQuarantine, retryWriteback) persist, emit
+ *     `store:change`, append audit entries, generate AIR-#### / MT-#### / AL-#### codes and
+ *     simulate the write-back to Biltix PM (pending → synced after 1.5 s + feed event).
  *
  * Side effects on import are limited to reading localStorage once to build `state`.
  */
@@ -23,11 +31,28 @@ import seed, { RISK_STATUS, CONTROL_TYPES, INCIDENT_TYPES, INCIDENT_STATUS, PERM
 import { bus } from './bus.js';
 import { sel } from './selectors.js';
 
+/**
+ * Part B — platform seed (ARCHITECTURE.md §B3/§B5). Loaded through an awaited dynamic
+ * import so it behaves like a static import inside the module graph, yet a missing or
+ * broken `platform-seed.js` degrades to empty collections instead of taking the whole
+ * application down with it (the HSE pillar must keep booting on its own).
+ */
+let platformSeed = null;
+try {
+  const mod = await import('../data/platform-seed.js');
+  platformSeed = (mod && (mod.default || mod.platformSeed)) || null;
+  if (!isPlainObject(platformSeed)) platformSeed = null;
+} catch (error) {
+  console.warn('[biltix] platform-seed.js غير متاح بعد — تعمل المنصة بمجموعات فارغة.', error && error.message ? error.message : error);
+}
+
 export const STORAGE_KEY = 'biltix-hse:v1';
 export const STATE_VERSION = 1;
 export const SEED_ANCHOR_DATE = '2026-11-09';
 export const FEED_CAP = 200;
+export const AUDIT_CAP = 500;
 const PERSIST_DEBOUNCE_MS = 300;
+const WRITEBACK_MS = 1500;
 const DAY_MS = 86_400_000;
 
 export const DEFAULT_SETTINGS = deepFreeze({
@@ -38,7 +63,56 @@ export const DEFAULT_SETTINGS = deepFreeze({
   feedPaused: false,
   dataSource: { type: 'simulation', url: '', apiKey: '', table: '' },
   alertWebhook: '',
+  // Part B (§B5): classification weights, alert thresholds, escalation channels, roadmap payment split.
+  platform: {
+    weights: { contract: 0.2, bom: 0.2, schedule: 0.25, site: 0.2, cost: 0.15 },
+    alertThreshold: 60,
+    criticalThreshold: 85,
+    channels: { email: true, slack: true, teams: false, whatsapp: false },
+    paymentPct: { M0: null, M1: null, M2: null, M3: null, M4: null },
+    writebackEnabled: true,
+  },
 });
+
+/* ── Part B enums (single definition for the store's validation; psel mirrors the labels) ── */
+export const AI_CATEGORIES = ['contract', 'bom', 'schedule', 'site', 'cost'];
+export const AI_TYPES = ['Financial', 'Safety', 'Delay', 'Conflict'];
+export const AI_PIPELINES = ['contract-nlp', 'bom-forecast', 'schedule-model', 'site-ai', 'cost-forecast'];
+export const AI_RISK_STATUS = ['مكتشف', 'تنبيه', 'مهمة مُسندة', 'قيد المعالجة', 'مغلق', 'مُتجاوز'];
+export const TASK_STATUS = ['جديدة', 'قيد التنفيذ', 'متأخرة', 'مغلقة'];
+export const TASK_SOURCES = ['ai-accepted', 'ai-edited', 'manual'];
+export const QUARANTINE_STATUS = ['معلّق', 'مُصحح', 'مرفوض'];
+export const AUDIT_ACTIONS = ['override', 'accept', 'escalate', 'writeback', 'model-update', 'validation', 'login', 'config', 'close'];
+const CATEGORY_PIPELINE = { contract: 'contract-nlp', bom: 'bom-forecast', schedule: 'schedule-model', site: 'site-ai', cost: 'cost-forecast' };
+const CATEGORY_TYPE = { contract: 'Conflict', bom: 'Financial', schedule: 'Delay', site: 'Safety', cost: 'Financial' };
+const PIPELINE_LABEL = { 'contract-nlp': 'محرك العقود NLP', 'bom-forecast': 'محرك توقعات المواد', 'schedule-model': 'نموذج الجدول الزمني', 'site-ai': 'ذكاء الموقع والصور', 'cost-forecast': 'محرك توقعات التكلفة' };
+const RATING_LABEL = { red: 'أحمر', yellow: 'أصفر', green: 'أخضر' };
+const RATING_TONE = { red: 'critical', yellow: 'warning', green: 'good' };
+const AI_ENGINE_ACTOR = 'محرك الذكاء الاصطناعي';
+const SYSTEM_ACTOR = 'النظام';
+
+/** Array collections of state.platform (§B3) — empty arrays when the seed is missing. */
+const PLATFORM_COLLECTIONS = [
+  'projects', 'contracts', 'suppliers', 'commodities', 'boqItems', 'scheduleTasks', 'resources', 'approvals',
+  'subcontractors', 'costLines', 'changeOrders', 'currencies', 'labourIndex', 'aiRisks', 'tasks', 'alerts',
+  'pipelines', 'connectors', 'auditLog',
+];
+
+/** Platform date fields shifted by `reanchorPlatform()` (§B5 list, exhaustively). */
+const PLATFORM_DATE_FIELDS = {
+  projects: { own: ['startDate', 'plannedFinish', 'forecastFinish'] },
+  contracts: { own: ['signedAt', 'endsAt'], children: { obligations: ['due'] } },
+  boqItems: { own: ['requiredBy', 'orderBy'] },
+  scheduleTasks: { own: ['start', 'finish', 'baselineFinish'] },
+  approvals: { own: ['submittedAt'] },
+  changeOrders: { own: ['submittedAt'] },
+  aiRisks: { own: ['detectedAt', 'updatedAt', 'dueDate'], children: { history: ['at'], overrides: ['at'] } },
+  tasks: { own: ['dueDate', 'createdAt', 'closedAt'], nested: { writeback: ['at'] } },
+  alerts: { own: ['sentAt', 'ackAt'] },
+  pipelines: { own: ['lastRun'] },
+  connectors: { own: ['lastSync'] },
+  auditLog: { own: ['at'] },
+};
 
 export const DEFAULT_FILTERS = deepFreeze({ siteId: 'all', range: 30, search: '' });
 
@@ -181,9 +255,136 @@ export function reanchor(state, nowDate = new Date()) {
         }
       }
     }
+    if (isPlainObject(state.platform)) reanchorPlatform(state.platform, delta);
   }
   meta.anchorDate = today;
   return delta;
+}
+
+/* ────────────────────────────── Part B: platform helpers ────────────────────────────── */
+
+/** Empty platform skeleton — the store boots on this when platform-seed.js is absent. */
+function emptyPlatform() {
+  const out = {};
+  for (const key of PLATFORM_COLLECTIONS) out[key] = [];
+  out.monteCarlo = {};
+  out.weather = {};
+  out.validation = { sources: [], rules: [], quarantine: [] };
+  out.roadmap = { scopeItems: [], assumptions: [], outOfScope: [], milestones: [], paymentNote: '' };
+  return out;
+}
+
+/** Deep-clone `src` onto the empty skeleton so every collection/object exists with the right type. */
+function normalizePlatform(src) {
+  const out = emptyPlatform();
+  if (!isPlainObject(src)) return out;
+  const copy = clone(src);
+  for (const [key, value] of Object.entries(copy)) {
+    if (PLATFORM_COLLECTIONS.includes(key)) { if (Array.isArray(value)) out[key] = value; continue; }
+    if (key === 'validation') {
+      if (isPlainObject(value)) {
+        out.validation = {
+          ...value,
+          sources: Array.isArray(value.sources) ? value.sources : [],
+          rules: Array.isArray(value.rules) ? value.rules : [],
+          quarantine: Array.isArray(value.quarantine) ? value.quarantine : [],
+        };
+      }
+      continue;
+    }
+    if (key === 'roadmap') {
+      if (isPlainObject(value)) {
+        out.roadmap = {
+          ...value,
+          scopeItems: Array.isArray(value.scopeItems) ? value.scopeItems : [],
+          assumptions: Array.isArray(value.assumptions) ? value.assumptions : [],
+          outOfScope: Array.isArray(value.outOfScope) ? value.outOfScope : [],
+          milestones: Array.isArray(value.milestones) ? value.milestones : [],
+          paymentNote: text(value.paymentNote),
+        };
+      }
+      continue;
+    }
+    if (key === 'monteCarlo' || key === 'weather') { if (isPlainObject(value)) out[key] = value; continue; }
+    out[key] = value; // unknown extra keys pass through untouched
+  }
+  return out;
+}
+
+/** Shift every platform date (§B5 list) by `days`; tolerant of missing arrays/objects. */
+export function reanchorPlatform(platform, days) {
+  if (!isPlainObject(platform) || !days) return;
+  for (const [collection, spec] of Object.entries(PLATFORM_DATE_FIELDS)) {
+    const items = platform[collection];
+    if (!Array.isArray(items)) continue;
+    for (const item of items) {
+      if (!isPlainObject(item)) continue;
+      if (spec.own) shiftFields(item, spec.own, days);
+      if (spec.children) {
+        for (const [childKey, childFields] of Object.entries(spec.children)) {
+          const children = item[childKey];
+          if (Array.isArray(children)) children.forEach((child) => shiftFields(child, childFields, days));
+        }
+      }
+      if (spec.nested) {
+        for (const [childKey, childFields] of Object.entries(spec.nested)) shiftFields(item[childKey], childFields, days);
+      }
+    }
+  }
+  if (isPlainObject(platform.monteCarlo)) {
+    for (const mc of Object.values(platform.monteCarlo)) shiftFields(mc, ['p50', 'p80', 'p90'], days);
+  }
+  if (isPlainObject(platform.weather)) {
+    for (const w of Object.values(platform.weather)) {
+      if (isPlainObject(w) && Array.isArray(w.next7)) w.next7.forEach((d) => shiftFields(d, ['date'], days));
+    }
+  }
+  const v = platform.validation;
+  if (isPlainObject(v)) {
+    if (Array.isArray(v.sources)) v.sources.forEach((s) => shiftFields(s, ['lastBatch'], days));
+    if (Array.isArray(v.quarantine)) v.quarantine.forEach((q) => shiftFields(q, ['at', 'resolvedAt'], days));
+  }
+}
+
+/** Saved platform wins key by key (collections, keyed objects and the validation/roadmap blocks). */
+function mergePlatform(base, saved) {
+  if (!isPlainObject(saved)) return base;
+  const out = { ...base };
+  for (const [key, value] of Object.entries(saved)) {
+    if (PLATFORM_COLLECTIONS.includes(key)) { if (Array.isArray(value)) out[key] = value; continue; }
+    if (key === 'validation' || key === 'roadmap') {
+      if (isPlainObject(value)) out[key] = normalizePlatform({ [key]: value })[key];
+      continue;
+    }
+    if (key === 'monteCarlo' || key === 'weather') { if (isPlainObject(value)) out[key] = value; continue; }
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
+function ratingOf(score) {
+  const n = Number(score) || 0;
+  return n >= 70 ? 'red' : n >= 40 ? 'yellow' : 'green';
+}
+
+function clampNum(value, min, max, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+/** Enabled channels from a boolean map, an array, or the settings default. */
+function normalizeChannels(input) {
+  const all = ['email', 'slack', 'teams', 'whatsapp'];
+  if (Array.isArray(input)) return input.map((c) => text(c)).filter((c) => all.includes(c));
+  if (isPlainObject(input)) return all.filter((c) => Boolean(input[c]));
+  const fromSettings = getPath(state, 'settings.platform.channels');
+  return isPlainObject(fromSettings) ? all.filter((c) => Boolean(fromSettings[c])) : ['email', 'slack'];
+}
+
+function nextPlatformCode(items, prefix, min = 0, width = 4) {
+  const re = new RegExp(`^${prefix}-(\\d+)$`);
+  return `${prefix}-${pad(Math.max(min, maxCaptured(items, re)) + 1, width)}`;
 }
 
 /** Feed items re-anchored into the future read oddly ("خلال 3 ساعات"); clamp them to now. */
@@ -232,6 +433,7 @@ function readSaved() {
 function buildFreshState(nowDate) {
   const base = clone(seed);
   base.feed = [];
+  base.platform = normalizePlatform(platformSeed);
   base.settings = clone(DEFAULT_SETTINGS);
   base.filters = { ...DEFAULT_FILTERS };
   base.meta = {
@@ -252,6 +454,8 @@ function overlaySnapshot(base, snapshot, nowDate) {
   for (const key of MUTABLE_COLLECTIONS) {
     if (Array.isArray(saved[key])) base[key] = saved[key];
   }
+  if (isPlainObject(saved.platform)) base.platform = mergePlatform(base.platform, saved.platform);
+  if (Array.isArray(base.platform.auditLog) && base.platform.auditLog.length > AUDIT_CAP) base.platform.auditLog.length = AUDIT_CAP;
   if (Array.isArray(base.feed) && base.feed.length > FEED_CAP) base.feed.length = FEED_CAP;
   clampFutureFeed(base.feed, nowDate);
   if (isPlainObject(saved.settings)) base.settings = deepMerge(clone(DEFAULT_SETTINGS), saved.settings);
@@ -427,6 +631,135 @@ function normalizeActions(list, nowDate) {
     .filter((a) => a && a.text);
 }
 
+/* ────────────────────────────── Part B: platform internals ────────────────────────────── */
+
+function platform() {
+  if (!isPlainObject(state.platform)) state.platform = emptyPlatform();
+  return state.platform;
+}
+
+function platformList(key) {
+  const p = platform();
+  if (!Array.isArray(p[key])) p[key] = [];
+  return p[key];
+}
+
+function findPlatform(key, id) {
+  return platformList(key).find((item) => item && item.id === id) || null;
+}
+
+function patchPlatformItem(key, id, patch, { stamp = false } = {}) {
+  const item = findPlatform(key, id);
+  if (!item || !isPlainObject(patch)) return null;
+  for (const [k, value] of Object.entries(patch)) {
+    if (value === undefined || k === 'id') continue;
+    item[k] = isPlainObject(value) && isPlainObject(item[k]) ? deepMerge(item[k], value) : value;
+  }
+  if (stamp) item.updatedAt = localISO(store.now());
+  changed(`platform.${key}.${id}`);
+  return item;
+}
+
+function projectName(projectId) {
+  return siteName(projectId);
+}
+
+function pipelineLabel(id) {
+  const p = findPlatform('pipelines', id);
+  return (p && (p.nameAr || p.name)) || PIPELINE_LABEL[id] || 'محرك المخاطر';
+}
+
+function riskHistory(risk, by, textValue) {
+  if (!Array.isArray(risk.history)) risk.history = [];
+  risk.history.push({ at: localISO(store.now()), by: text(by) || SYSTEM_ACTOR, text: textValue });
+}
+
+/** Thresholds (§B2): > alertThreshold → standard alert; ≥ criticalThreshold → immediate escalation. */
+function alertLevelFor(score) {
+  const s = isPlainObject(getPath(state, 'settings.platform')) ? state.settings.platform : DEFAULT_SETTINGS.platform;
+  const alertAt = clampNum(s.alertThreshold, 0, 100, DEFAULT_SETTINGS.platform.alertThreshold);
+  const criticalAt = clampNum(s.criticalThreshold, 0, 100, DEFAULT_SETTINGS.platform.criticalThreshold);
+  const n = Number(score) || 0;
+  if (n >= criticalAt) return 'immediate';
+  if (n > alertAt) return 'standard';
+  return null;
+}
+
+const writebackTimers = new Set();
+
+/** Simulated write-back to Biltix PM: pending → synced after 1.5 s, with feed + audit entries. */
+function scheduleWriteback(taskId) {
+  const enabled = getPath(state, 'settings.platform.writebackEnabled') !== false;
+  if (!enabled || typeof setTimeout !== 'function') return;
+  const timer = setTimeout(() => {
+    writebackTimers.delete(timer);
+    const task = findPlatform('tasks', taskId);
+    if (!task || !isPlainObject(task.writeback) || task.writeback.status !== 'pending') return;
+    task.writeback.status = 'synced';
+    task.writeback.at = localISO(store.now());
+    task.writeback.target = task.writeback.target || 'Biltix PM';
+    changed(`platform.tasks.${task.id}`);
+    store.pushAudit({ actor: SYSTEM_ACTOR, action: 'writeback', target: task.code, detail: `تمت الكتابة العكسية إلى ${task.writeback.target}: علم المخاطرة والدرجة ومهمة المعالجة ${task.code}` });
+    emitFeed({
+      type: 'writeback', tone: 'good', siteId: task.projectId,
+      title: `تمت الكتابة العكسية إلى ${task.writeback.target} — ${task.code}`,
+      detail: [task.title, projectName(task.projectId)].filter(Boolean).join(' · '),
+      sourceId: 'biltix-pm', refId: task.id,
+    });
+  }, WRITEBACK_MS);
+  writebackTimers.add(timer);
+}
+
+function clearWritebackTimers() {
+  for (const t of writebackTimers) clearTimeout(t);
+  writebackTimers.clear();
+}
+
+/** Internal task factory shared by addTask / acceptRecommendation / overrideRecommendation. */
+function createTask(obj = {}, { silent = false, by = '' } = {}) {
+  const now = store.now();
+  const tasks = platformList('tasks');
+  const risk = obj.riskId ? findPlatform('aiRisks', obj.riskId) : null;
+  const projectId = text(obj.projectId) || (risk && risk.projectId) || (state.sites && state.sites[0] ? state.sites[0].id : 'S1');
+  const task = {
+    ...obj,
+    id: nextId(tasks, 'MT'),
+    code: text(obj.code) || nextPlatformCode(tasks, 'MT', 0),
+    riskId: risk ? risk.id : (obj.riskId == null ? null : text(obj.riskId)),
+    projectId,
+    title: text(obj.title) || (risk && risk.recommendation && text(risk.recommendation.action)) || (risk && risk.title) || 'مهمة معالجة',
+    owner: text(obj.owner) || (risk && text(risk.owner)) || 'مدير المشروع',
+    dueDate: typeof obj.dueDate === 'string' && obj.dueDate ? obj.dueDate : todayISO(addMs(now, 14 * DAY_MS)),
+    status: pickEnum(obj.status, TASK_STATUS, 'جديدة'),
+    source: pickEnum(obj.source, TASK_SOURCES, 'manual'),
+    writeback: isPlainObject(obj.writeback)
+      ? { target: 'Biltix PM', status: 'pending', at: null, ...obj.writeback }
+      : { target: 'Biltix PM', status: 'pending', at: null },
+    createdAt: localISO(now),
+    closedAt: null,
+    outcome: text(obj.outcome),
+  };
+  tasks.unshift(task);
+  if (risk) {
+    risk.taskId = task.id;
+    if (!text(risk.owner)) risk.owner = task.owner;
+    if (!risk.dueDate) risk.dueDate = task.dueDate;
+    if (['مكتشف', 'تنبيه'].includes(risk.status)) risk.status = 'مهمة مُسندة';
+    risk.updatedAt = localISO(now);
+  }
+  changed(`platform.tasks.${task.id}`);
+  if (!silent) {
+    emitFeed({
+      type: 'task', tone: 'accent', siteId: task.projectId,
+      title: `مهمة معالجة جديدة ${task.code}${risk ? ` — ${risk.code}` : ''}`,
+      detail: [task.title, `المسؤول: ${task.owner}`].filter(Boolean).join(' · '),
+      sourceId: 'biltix-pm', refId: task.id,
+    });
+  }
+  if (task.writeback.status === 'pending') scheduleWriteback(task.id);
+  return task;
+}
+
 /* ────────────────────────────── the store ────────────────────────────── */
 
 export const store = {
@@ -472,6 +805,7 @@ export const store = {
       clearTimeout(persistTimer);
       persistTimer = null;
     }
+    clearWritebackTimers();
     if (storage) {
       try { storage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
     }
@@ -491,9 +825,10 @@ export const store = {
    */
   importState(snapshot) {
     if (!isPlainObject(snapshot)) return false;
-    const hasData = MUTABLE_COLLECTIONS.some((key) => Array.isArray(snapshot[key])) || isPlainObject(snapshot.settings);
+    const hasData = MUTABLE_COLLECTIONS.some((key) => Array.isArray(snapshot[key])) || isPlainObject(snapshot.settings) || isPlainObject(snapshot.platform);
     if (!hasData) return false;
     const now = store.now();
+    clearWritebackTimers();
     const fresh = overlaySnapshot(buildFreshState(now), snapshot, now);
     for (const key of Object.keys(state)) delete state[key];
     Object.assign(state, fresh);
@@ -769,11 +1104,430 @@ export const store = {
     merged.numerals = merged.numerals === 'arab' ? 'arab' : 'latn';
     merged.brand = deepMerge(clone(DEFAULT_SETTINGS.brand), merged.brand);
     merged.dataSource = deepMerge(clone(DEFAULT_SETTINGS.dataSource), merged.dataSource);
+    // Part B: keep the platform block complete and its thresholds sane (critical ≥ alert).
+    const platform = deepMerge(clone(DEFAULT_SETTINGS.platform), merged.platform);
+    platform.alertThreshold = Math.round(clampNum(platform.alertThreshold, 0, 100, DEFAULT_SETTINGS.platform.alertThreshold));
+    platform.criticalThreshold = Math.round(clampNum(platform.criticalThreshold, platform.alertThreshold, 100, Math.max(platform.alertThreshold, DEFAULT_SETTINGS.platform.criticalThreshold)));
+    platform.writebackEnabled = platform.writebackEnabled !== false;
+    merged.platform = platform;
     state.settings = merged;
     changed('settings');
     bus.emit('settings:change', { settings: state.settings });
     if (merged.theme !== prevTheme) bus.emit('theme:change', { theme: merged.theme });
     return state.settings;
+  },
+
+  /* ══════════════════════════ Part B — AI Risk Platform (§B5) ══════════════════════════ */
+
+  /** state.platform accessor — never undefined (empty collections when the seed is missing). */
+  get platform() {
+    return platform();
+  },
+
+  /** True when platform-seed.js loaded (used by the shell to hide platform-only chrome). */
+  hasPlatformData() {
+    return platformList('aiRisks').length > 0 || platformList('pipelines').length > 0;
+  },
+
+  /* ── AI risks ── */
+
+  /**
+   * Register a newly detected AI risk. Normalises every §B3 field, generates AIR-#### codes,
+   * applies the alert thresholds (autoAlert) and pushes an 'ai' feed event. Returns the risk.
+   */
+  addAiRisk(obj = {}, { autoAlert = true, by = AI_ENGINE_ACTOR } = {}) {
+    const now = store.now();
+    const list = platformList('aiRisks');
+    const category = pickEnum(obj.category, AI_CATEGORIES, 'site');
+    const pipeline = pickEnum(obj.pipeline, AI_PIPELINES, CATEGORY_PIPELINE[category]);
+    const score = Math.round(clampNum(obj.score, 0, 100, 50));
+    const rec = isPlainObject(obj.recommendation) ? obj.recommendation : {};
+    const risk = {
+      ...obj,
+      id: nextId(list, 'AIR'),
+      code: text(obj.code) || nextPlatformCode(list, 'AIR', 1000),
+      projectId: text(obj.projectId) || text(obj.siteId) || (state.sites && state.sites[0] ? state.sites[0].id : 'S1'),
+      category,
+      type: pickEnum(obj.type, AI_TYPES, CATEGORY_TYPE[category]),
+      score,
+      title: text(obj.title) || 'مخاطرة مكتشفة بواسطة المحرك',
+      driverExplanation: text(obj.driverExplanation),
+      evidence: isPlainObject(obj.evidence) ? { ...obj.evidence } : null,
+      recommendation: {
+        action: text(rec.action), rationale: text(rec.rationale),
+        effort: pickEnum(rec.effort, ['منخفض', 'متوسط', 'عالٍ'], 'متوسط'),
+        impact: text(rec.impact), alternatives: Array.isArray(rec.alternatives) ? rec.alternatives.slice(0, 2) : [],
+      },
+      pipeline,
+      modelVersion: text(obj.modelVersion) || 'v2.3.1',
+      confidence: clampNum(obj.confidence, 0, 1, 0.8),
+      detectedAt: typeof obj.detectedAt === 'string' && obj.detectedAt ? obj.detectedAt : localISO(now),
+      updatedAt: localISO(now),
+      status: pickEnum(obj.status, AI_RISK_STATUS, 'مكتشف'),
+      owner: text(obj.owner),
+      dueDate: typeof obj.dueDate === 'string' && obj.dueDate ? obj.dueDate : todayISO(addMs(now, 14 * DAY_MS)),
+      taskId: obj.taskId == null ? null : text(obj.taskId),
+      escalated: Boolean(obj.escalated),
+      stakeholders: Array.isArray(obj.stakeholders) ? obj.stakeholders.map((s) => text(s)).filter(Boolean) : ['PM'],
+      responseParams: isPlainObject(obj.responseParams) ? obj.responseParams : {},
+      overrides: Array.isArray(obj.overrides) ? obj.overrides : [],
+      history: Array.isArray(obj.history) && obj.history.length
+        ? obj.history
+        : [{ at: localISO(now), by, text: `اكتشاف المخاطرة بواسطة ${pipelineLabel(pipeline)} — الدرجة ${score}` }],
+    };
+    delete risk.siteId;
+    list.unshift(risk);
+    changed(`platform.aiRisks.${risk.id}`);
+
+    const rating = ratingOf(score);
+    emitFeed({
+      type: 'ai', tone: RATING_TONE[rating], siteId: risk.projectId,
+      title: `${pipelineLabel(pipeline)}: ${risk.title} — الدرجة ${score} (${RATING_LABEL[rating]})`,
+      detail: risk.driverExplanation || (risk.evidence && risk.evidence.excerpt) || projectName(risk.projectId),
+      sourceId: pipeline, refId: risk.id,
+    });
+
+    if (autoAlert) {
+      const level = alertLevelFor(score);
+      if (level) {
+        risk.status = risk.status === 'مكتشف' ? 'تنبيه' : risk.status;
+        if (level === 'immediate') risk.escalated = true;
+        store.addAlert({
+          riskId: risk.id, projectId: risk.projectId,
+          severity: level === 'immediate' ? 'critical' : 'routine',
+          queue: level,
+          title: `${level === 'immediate' ? 'تصعيد فوري' : 'تنبيه'}: ${risk.code} — ${risk.title}`,
+        });
+      }
+    }
+    return risk;
+  },
+
+  /** Patch an AI risk; `note`/`by` become a history entry; status validated against §B3. */
+  updateAiRisk(id, patch = {}) {
+    const risk = findPlatform('aiRisks', id);
+    if (!risk || !isPlainObject(patch)) return null;
+    const { by, note, ...rest } = patch;
+    const prevStatus = risk.status;
+    if (rest.status !== undefined) rest.status = pickEnum(rest.status, AI_RISK_STATUS, risk.status);
+    if (rest.score !== undefined) rest.score = Math.round(clampNum(rest.score, 0, 100, risk.score));
+    if (rest.confidence !== undefined) rest.confidence = clampNum(rest.confidence, 0, 1, risk.confidence);
+    if (rest.category !== undefined) rest.category = pickEnum(rest.category, AI_CATEGORIES, risk.category);
+    if (rest.type !== undefined) rest.type = pickEnum(rest.type, AI_TYPES, risk.type);
+    if (rest.status && rest.status !== prevStatus) riskHistory(risk, by, `تغيير الحالة من «${prevStatus}» إلى «${rest.status}»`);
+    if (typeof note === 'string' && note.trim()) riskHistory(risk, by, note.trim());
+    return patchPlatformItem('aiRisks', id, rest, { stamp: true });
+  },
+
+  /**
+   * One-click acceptance of the engine's recommendation: creates the mitigation task
+   * (source 'ai-accepted', write-back pending → synced), assigns the risk, logs 'accept'.
+   * Returns the created task (task.riskId links back to the risk).
+   */
+  acceptRecommendation(riskId, { owner = '', dueDate = '', escalate = false, by = '' } = {}) {
+    const risk = findPlatform('aiRisks', riskId);
+    if (!risk) return null;
+    const actor = text(by) || text(owner) || 'مدير المشروع';
+    const task = createTask({
+      riskId: risk.id, projectId: risk.projectId,
+      title: (risk.recommendation && text(risk.recommendation.action)) || risk.title,
+      owner: text(owner) || risk.owner, dueDate, source: 'ai-accepted',
+    }, { silent: true });
+    risk.status = 'مهمة مُسندة';
+    risk.owner = task.owner;
+    risk.dueDate = task.dueDate;
+    risk.taskId = task.id;
+    risk.updatedAt = localISO(store.now());
+    riskHistory(risk, actor, `قبول توصية المحرك وإنشاء مهمة المعالجة ${task.code} — المسؤول: ${task.owner}`);
+    const pipe = findPlatform('pipelines', risk.pipeline);
+    if (pipe && Number.isFinite(Number(pipe.acceptedLast30d))) pipe.acceptedLast30d = Number(pipe.acceptedLast30d) + 1;
+    changed(`platform.aiRisks.${risk.id}`);
+    store.pushAudit({ actor, action: 'accept', target: risk.code, detail: `قبول التوصية «${task.title}» → ${task.code} (${task.owner}، يستحق ${task.dueDate})` });
+    emitFeed({
+      type: 'task', tone: 'good', siteId: risk.projectId,
+      title: `قبول توصية المحرك — ${risk.code} ← مهمة ${task.code}`,
+      detail: `${task.title} · المسؤول: ${task.owner}`,
+      sourceId: 'biltix-pm', refId: task.id,
+    });
+    if (escalate) store.escalateRisk(risk.id, undefined, actor);
+    return task;
+  },
+
+  /**
+   * Human-in-the-loop override: logs {fromAction → toAction, reason} on the risk, creates an
+   * 'ai-edited' task, feeds the override back to the pipeline counters, logs 'override'.
+   * Returns the created task.
+   */
+  overrideRecommendation(riskId, { action = '', reason = '', owner = '', dueDate = '', escalate = false, by = '' } = {}) {
+    const risk = findPlatform('aiRisks', riskId);
+    if (!risk) return null;
+    const actor = text(by) || text(owner) || 'مدير المشروع';
+    const fromAction = (risk.recommendation && text(risk.recommendation.action)) || '';
+    const toAction = text(action) || fromAction || risk.title;
+    const why = text(reason) || 'دون سبب مُسجَّل';
+    if (!Array.isArray(risk.overrides)) risk.overrides = [];
+    risk.overrides.push({ at: localISO(store.now()), by: actor, fromAction, toAction, reason: why });
+    const task = createTask({
+      riskId: risk.id, projectId: risk.projectId, title: toAction,
+      owner: text(owner) || risk.owner, dueDate, source: 'ai-edited',
+    }, { silent: true });
+    risk.status = 'مهمة مُسندة';
+    risk.owner = task.owner;
+    risk.dueDate = task.dueDate;
+    risk.taskId = task.id;
+    risk.updatedAt = localISO(store.now());
+    riskHistory(risk, actor, `تعديل توصية المحرك إلى «${toAction}» — السبب: ${why}`);
+    const pipe = findPlatform('pipelines', risk.pipeline);
+    if (pipe && Number.isFinite(Number(pipe.overridesLast30d))) pipe.overridesLast30d = Number(pipe.overridesLast30d) + 1;
+    changed(`platform.aiRisks.${risk.id}`);
+    store.pushAudit({ actor, action: 'override', target: risk.code, detail: `تجاوز التوصية: من «${fromAction || '—'}» إلى «${toAction}» — السبب: ${why} → ${task.code}` });
+    emitFeed({
+      type: 'task', tone: 'warning', siteId: risk.projectId,
+      title: `تعديل توصية المحرك — ${risk.code} ← مهمة ${task.code}`,
+      detail: `${toAction} · السبب: ${why}`,
+      sourceId: 'biltix-pm', refId: task.id,
+    });
+    if (escalate) store.escalateRisk(risk.id, undefined, actor);
+    return task;
+  },
+
+  /** Immediate escalation: critical alert in the immediate queue + bus 'alert' + audit. Returns the alert. */
+  escalateRisk(riskId, channels, by = '') {
+    const risk = findPlatform('aiRisks', riskId);
+    if (!risk) return null;
+    const actor = text(by) || 'مدير المشروع';
+    const list = normalizeChannels(channels);
+    risk.escalated = true;
+    if (['مكتشف'].includes(risk.status)) risk.status = 'تنبيه';
+    risk.updatedAt = localISO(store.now());
+    riskHistory(risk, actor, `تصعيد فوري عبر: ${list.join('، ') || 'القنوات الافتراضية'}`);
+    changed(`platform.aiRisks.${risk.id}`);
+    const alert = store.addAlert({
+      riskId: risk.id, projectId: risk.projectId, severity: 'critical', queue: 'immediate', channels: list,
+      title: `تصعيد فوري: ${risk.code} — ${risk.title}`,
+    });
+    store.pushAudit({ actor, action: 'escalate', target: risk.code, detail: `تصعيد فوري (الدرجة ${risk.score}) عبر ${list.join('، ') || '—'}` });
+    return alert;
+  },
+
+  /** Dismiss (مُتجاوز) with a mandatory reason; logged as an override for model recalibration. */
+  dismissAiRisk(riskId, reason = '', by = '') {
+    const risk = findPlatform('aiRisks', riskId);
+    if (!risk) return null;
+    const actor = text(by) || 'مدير المشروع';
+    const why = text(reason) || 'دون سبب مُسجَّل';
+    const prev = risk.status;
+    risk.status = 'مُتجاوز';
+    risk.updatedAt = localISO(store.now());
+    if (!Array.isArray(risk.overrides)) risk.overrides = [];
+    risk.overrides.push({ at: localISO(store.now()), by: actor, fromAction: (risk.recommendation && text(risk.recommendation.action)) || '', toAction: 'تجاهل المخاطرة', reason: why });
+    riskHistory(risk, actor, `تجاهل المخاطرة (كانت «${prev}») — السبب: ${why}`);
+    const pipe = findPlatform('pipelines', risk.pipeline);
+    if (pipe && Number.isFinite(Number(pipe.overridesLast30d))) pipe.overridesLast30d = Number(pipe.overridesLast30d) + 1;
+    changed(`platform.aiRisks.${risk.id}`);
+    store.pushAudit({ actor, action: 'override', target: risk.code, detail: `تجاهل المخاطرة — السبب: ${why}` });
+    emitFeed({ type: 'ai', tone: 'neutral', siteId: risk.projectId, title: `تجاهل مخاطرة ${risk.code} بقرار بشري`, detail: why, sourceId: risk.pipeline, refId: risk.id });
+    return risk;
+  },
+
+  /* ── mitigation tasks ── */
+
+  /** Manual (or programmatic) task; links to its risk when riskId is given. Returns the task. */
+  addTask(obj = {}) {
+    return createTask(obj, { silent: false });
+  },
+
+  /**
+   * Patch a task. Closing it ('مغلقة') stamps closedAt, stores the outcome, closes the linked
+   * risk (status 'مغلق' + history) and logs audit 'close' — the outcome feeds recalibration.
+   */
+  updateTask(id, patch = {}) {
+    const task = findPlatform('tasks', id);
+    if (!task || !isPlainObject(patch)) return null;
+    const { by, ...rest } = patch;
+    const actor = text(by) || task.owner || SYSTEM_ACTOR;
+    const now = localISO(store.now());
+    const prevStatus = task.status;
+    if (rest.status !== undefined) rest.status = pickEnum(rest.status, TASK_STATUS, task.status);
+    if (rest.source !== undefined) rest.source = pickEnum(rest.source, TASK_SOURCES, task.source);
+    if (rest.outcome !== undefined) rest.outcome = text(rest.outcome);
+    const closing = rest.status === 'مغلقة' && prevStatus !== 'مغلقة';
+    const reopening = prevStatus === 'مغلقة' && rest.status && rest.status !== 'مغلقة';
+    if (closing) rest.closedAt = now;
+    if (reopening) rest.closedAt = null;
+    const updated = patchPlatformItem('tasks', id, rest);
+    const risk = updated.riskId ? findPlatform('aiRisks', updated.riskId) : null;
+    if (closing) {
+      const outcome = updated.outcome || 'أُغلقت المهمة';
+      if (risk) {
+        risk.status = 'مغلق';
+        risk.updatedAt = now;
+        riskHistory(risk, actor, `إغلاق مهمة المعالجة ${updated.code} — النتيجة: ${outcome}`);
+        changed(`platform.aiRisks.${risk.id}`);
+      }
+      store.pushAudit({ actor, action: 'close', target: risk ? risk.code : updated.code, detail: `إغلاق ${updated.code}${risk ? ` وإغلاق ${risk.code}` : ''} — النتيجة: ${outcome} (تغذية راجعة لإعادة معايرة النموذج)` });
+      emitFeed({ type: 'task', tone: 'good', siteId: updated.projectId, title: `إغلاق مهمة المعالجة ${updated.code}${risk ? ` — ${risk.code}` : ''}`, detail: outcome, sourceId: 'biltix-pm', refId: updated.id });
+    } else if (reopening && risk) {
+      risk.status = 'قيد المعالجة';
+      risk.updatedAt = now;
+      riskHistory(risk, actor, `إعادة فتح مهمة المعالجة ${updated.code}`);
+      changed(`platform.aiRisks.${risk.id}`);
+    } else if (rest.status && rest.status !== prevStatus) {
+      if (risk && rest.status === 'قيد التنفيذ' && ['مهمة مُسندة', 'تنبيه', 'مكتشف'].includes(risk.status)) {
+        risk.status = 'قيد المعالجة';
+        risk.updatedAt = now;
+        changed(`platform.aiRisks.${risk.id}`);
+      }
+      emitFeed({ type: 'task', tone: rest.status === 'متأخرة' ? 'serious' : 'accent', siteId: updated.projectId, title: `المهمة ${updated.code}: ${prevStatus} ← ${rest.status}`, detail: updated.title, sourceId: 'biltix-pm', refId: updated.id });
+    }
+    return updated;
+  },
+
+  /** Re-queue a failed/pending write-back (tasks kanban "إعادة المزامنة"). */
+  retryWriteback(taskId) {
+    const task = findPlatform('tasks', taskId);
+    if (!task) return null;
+    task.writeback = { target: 'Biltix PM', ...(isPlainObject(task.writeback) ? task.writeback : {}), status: 'pending', at: null };
+    changed(`platform.tasks.${task.id}`);
+    emitFeed({ type: 'writeback', tone: 'accent', siteId: task.projectId, title: `إعادة محاولة الكتابة العكسية — ${task.code}`, detail: task.title, sourceId: 'biltix-pm', refId: task.id });
+    scheduleWriteback(task.id);
+    return task;
+  },
+
+  /* ── alerts ── */
+
+  /** Add an alert (AL-#### code); critical ones emit bus 'alert' so the shell banner/toast show. */
+  addAlert(obj = {}) {
+    const list = platformList('alerts');
+    const risk = obj.riskId ? findPlatform('aiRisks', obj.riskId) : null;
+    const severity = obj.severity === 'critical' ? 'critical' : 'routine';
+    const alert = {
+      ...obj,
+      id: nextId(list, 'AL'),
+      code: text(obj.code) || nextPlatformCode(list, 'AL', 0),
+      riskId: risk ? risk.id : (obj.riskId == null ? null : text(obj.riskId)),
+      projectId: text(obj.projectId) || (risk && risk.projectId) || null,
+      severity,
+      queue: obj.queue === 'immediate' || (obj.queue === undefined && severity === 'critical') ? 'immediate' : 'standard',
+      channels: normalizeChannels(obj.channels),
+      sentAt: typeof obj.sentAt === 'string' && obj.sentAt ? obj.sentAt : localISO(store.now()),
+      acknowledged: Boolean(obj.acknowledged),
+      ackBy: text(obj.ackBy) || null,
+      ackAt: typeof obj.ackAt === 'string' ? obj.ackAt : null,
+      title: text(obj.title) || (risk ? `تنبيه: ${risk.code} — ${risk.title}` : 'تنبيه من منصة المخاطر'),
+    };
+    list.unshift(alert);
+    changed(`platform.alerts.${alert.id}`);
+    const detail = risk ? `${risk.driverExplanation || risk.title} · الدرجة ${risk.score}` : '';
+    emitFeed({
+      type: 'alert', tone: severity === 'critical' ? 'critical' : 'warning', siteId: alert.projectId,
+      title: alert.title, detail: `${detail}${alert.channels.length ? `${detail ? ' · ' : ''}القنوات: ${alert.channels.join('، ')}` : ''}`,
+      sourceId: risk ? risk.pipeline : null, refId: alert.id,
+    });
+    if (severity === 'critical') {
+      bus.emit('alert', {
+        severity: 'critical', tone: 'critical', title: alert.title, detail: detail || alert.title,
+        siteId: alert.projectId, riskId: alert.riskId, alertId: alert.id, source: 'platform', ts: alert.sentAt,
+      });
+    }
+    return alert;
+  },
+
+  ackAlert(id, by = '') {
+    const alert = findPlatform('alerts', id);
+    if (!alert) return null;
+    alert.acknowledged = true;
+    alert.ackBy = text(by) || 'مدير المشروع';
+    alert.ackAt = localISO(store.now());
+    changed(`platform.alerts.${id}`);
+    return alert;
+  },
+
+  /* ── validation layer, pipelines, connectors, audit ── */
+
+  /** Deep-merge a patch into platform.validation (arrays replace; plain objects merge). */
+  updateValidation(patch = {}) {
+    if (!isPlainObject(patch)) return platform().validation;
+    const p = platform();
+    const current = isPlainObject(p.validation) ? p.validation : emptyPlatform().validation;
+    p.validation = normalizePlatform({ validation: deepMerge(current, patch) }).validation;
+    changed('platform.validation');
+    return p.validation;
+  },
+
+  /** Convenience: patch one validation source / rule by id (counters, enabled toggles). */
+  updateValidationSource(id, patch = {}) {
+    const v = platform().validation;
+    const item = isPlainObject(v) && Array.isArray(v.sources) ? v.sources.find((s) => s && s.id === id) : null;
+    if (!item || !isPlainObject(patch)) return null;
+    Object.assign(item, patch);
+    changed('platform.validation.sources');
+    return item;
+  },
+
+  updateValidationRule(id, patch = {}) {
+    const v = platform().validation;
+    const item = isPlainObject(v) && Array.isArray(v.rules) ? v.rules.find((r) => r && r.id === id) : null;
+    if (!item || !isPlainObject(patch)) return null;
+    Object.assign(item, patch);
+    changed('platform.validation.rules');
+    if (patch.enabled !== undefined) {
+      store.pushAudit({ actor: 'مدير المشروع', action: 'config', target: item.name || item.id, detail: patch.enabled ? 'تفعيل قاعدة التحقق' : 'تعطيل قاعدة التحقق' });
+    }
+    return item;
+  },
+
+  /** Resolve a quarantined record: 'مُصحح' | 'مرفوض' (or back to 'معلّق'); logged as 'validation'. */
+  resolveQuarantine(id, status, by = '') {
+    const v = platform().validation;
+    const item = isPlainObject(v) && Array.isArray(v.quarantine) ? v.quarantine.find((q) => q && q.id === id) : null;
+    if (!item) return null;
+    const next = pickEnum(status, QUARANTINE_STATUS, 'مُصحح');
+    item.status = next;
+    item.resolvedAt = next === 'معلّق' ? null : localISO(store.now());
+    item.resolvedBy = next === 'معلّق' ? null : (text(by) || 'مسؤول جودة البيانات');
+    changed('platform.validation.quarantine');
+    store.pushAudit({ actor: item.resolvedBy || 'مسؤول جودة البيانات', action: 'validation', target: item.recordRef || item.id, detail: `${next === 'مُصحح' ? 'تصحيح' : next === 'مرفوض' ? 'رفض' : 'إعادة تعليق'} سجل محجور — ${item.reason || ''}`.trim() });
+    return item;
+  },
+
+  updatePipeline(id, patch = {}) {
+    const pipe = findPlatform('pipelines', id);
+    if (!pipe || !isPlainObject(patch)) return null;
+    const rest = { ...patch };
+    if (rest.status !== undefined) rest.status = pickEnum(rest.status, ['running', 'idle', 'training', 'degraded'], pipe.status);
+    const prevStatus = pipe.status;
+    const updated = patchPlatformItem('pipelines', id, rest);
+    if (rest.status && rest.status !== prevStatus) {
+      store.pushAudit({ actor: text(patch.by) || 'مهندس النماذج', action: 'model-update', target: pipe.nameAr || pipe.name || id, detail: `تغيير حالة المحرك: ${prevStatus} ← ${rest.status}${rest.version ? ` (الإصدار ${rest.version})` : ''}` });
+    }
+    return updated;
+  },
+
+  updateConnector(id, patch = {}) {
+    const conn = findPlatform('connectors', id);
+    if (!conn || !isPlainObject(patch)) return null;
+    const rest = { ...patch };
+    if (rest.status !== undefined) rest.status = pickEnum(rest.status, ['connected', 'degraded', 'disconnected', 'configurable'], conn.status);
+    return patchPlatformItem('connectors', id, rest);
+  },
+
+  /** Prepend an audit entry {id, at, actor, action, target, detail}; capped at 500. */
+  pushAudit(entry = {}) {
+    if (!isPlainObject(entry)) return null;
+    const list = platformList('auditLog');
+    const item = {
+      id: text(entry.id) || `AUD-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`,
+      at: typeof entry.at === 'string' && entry.at ? entry.at : localISO(store.now()),
+      actor: text(entry.actor) || SYSTEM_ACTOR,
+      action: pickEnum(entry.action, AUDIT_ACTIONS, 'config'),
+      target: text(entry.target),
+      detail: text(entry.detail),
+    };
+    list.unshift(item);
+    if (list.length > AUDIT_CAP) list.length = AUDIT_CAP;
+    changed('platform.auditLog');
+    return item;
   },
 };
 

@@ -94,14 +94,17 @@ body.app {
    the rail and the feed becomes a drawer.
    -------------------------------------------------------------------------- */
 
+/* The alert banner owns an auto row that collapses to 0 while [hidden], so a
+   critical alert pushes the filters/main down instead of covering them. */
 body.app {
   display: grid;
   grid-template-areas:
     "appbar appbar appbar"
+    "banner banner banner"
     "rail   filters feed"
     "rail   main    feed";
   grid-template-columns: var(--rail-current) minmax(0, 1fr) var(--feed-w);
-  grid-template-rows: var(--appbar-h) auto minmax(0, 1fr);
+  grid-template-rows: var(--appbar-h) auto auto minmax(0, 1fr);
   block-size: 100vh;
   block-size: 100dvh;
   overflow: hidden;
@@ -394,9 +397,8 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
    Tone comes from .tone-* (critical by default). */
 .alert-banner {
   --tone: var(--critical);
-  position: fixed;
-  inset-block-start: var(--appbar-h);
-  inset-inline: 0;
+  grid-area: banner;
+  position: relative;
   z-index: var(--z-banner);
   display: flex;
   align-items: center;
@@ -408,9 +410,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   background: color-mix(in srgb, var(--tone) 20%, var(--bg-1));
   border-block-end: 1px solid color-mix(in srgb, var(--tone) 45%, transparent);
   box-shadow: var(--shadow-1), inset 0 1px 0 color-mix(in srgb, var(--tone) 35%, transparent);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-  transform: translateY(-100%);
+  transform: translateY(-8px);
   opacity: 0;
   transition: transform var(--dur-2) var(--ease), opacity var(--dur-2) var(--ease);
 }
@@ -548,7 +548,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
 .rail-icon svg, .rail-item > svg { inline-size: 20px; block-size: 20px; }
 .rail-label { overflow: hidden; text-overflow: ellipsis; }
 .rail-code {
-  font-family: var(--font-mono);
+  font-family: var(--font-mono-mixed);
   font-size: 10px;
   letter-spacing: .06em;
   color: var(--ink-3);
@@ -625,8 +625,8 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
 .filters-group { display: flex; align-items: center; gap: var(--space-2); min-inline-size: 0; }
 .filters-label { font-size: var(--fs-xs); font-weight: 500; color: var(--ink-3); white-space: nowrap; }
 .filters .field-control { block-size: 34px; }
-.filters-site { min-inline-size: 180px; }
-.filters-search { flex: 1 1 180px; max-inline-size: 380px; }
+.filters-site { min-inline-size: 180px; max-inline-size: 240px; }   /* long site names ellipsize natively */
+.filters-search { flex: 1 1 140px; max-inline-size: 380px; }
 .filters-search .field-control { inline-size: 100%; }
 .filters-feed { margin-inline-start: auto; }
 .filters .feed-open { display: none; }
@@ -676,7 +676,9 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
 }
 .view-head > div:first-child, .view-head-text { min-inline-size: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .view-head h1 { font-size: var(--fs-2xl); border-radius: 4px; }
-.view-head h1:focus-visible { outline-offset: 6px; }
+/* The router focuses the heading programmatically on every navigation; keep the
+   ring present for keyboard users but quieter than a control's ring. */
+.view-head h1:focus-visible { outline-offset: 6px; outline-color: color-mix(in srgb, var(--accent) 55%, transparent); }
 .view-head p, .view-lead { color: var(--ink-2); max-inline-size: 76ch; font-size: var(--fs-md); }
 .view-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 
@@ -686,7 +688,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   align-self: flex-start;
   gap: 6px;
   padding: 2px 8px;
-  font-family: var(--font-mono);
+  font-family: var(--font-mono-mixed);
   font-size: 11px;
   font-weight: 500;
   letter-spacing: .08em;
@@ -712,7 +714,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
 .view-error__detail {
   max-inline-size: 60ch;
   padding: var(--space-3) var(--space-4);
-  font-family: var(--font-mono);
+  font-family: var(--font-mono-mixed);
   font-size: var(--fs-xs);
   color: var(--ink-2);
   background: var(--bg-2);
@@ -1046,7 +1048,7 @@ body.is-feed-paused .feed-status::before,
 .cmdk-item-text { min-inline-size: 0; display: flex; flex-direction: column; line-height: 1.35; }
 .cmdk-item-sub { font-size: 11px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmdk-meta, .cmdk-item-kbd, .cmdk-item-code {
-  font-family: var(--font-mono);
+  font-family: var(--font-mono-mixed);
   font-size: 10px;
   letter-spacing: .06em;
   color: var(--ink-3);
@@ -1154,6 +1156,7 @@ body.is-feed-paused .feed-status::before,
   body.app {
     grid-template-areas:
       "appbar appbar"
+      "banner banner"
       "rail   filters"
       "rail   main";
     grid-template-columns: var(--rail-current) minmax(0, 1fr);
@@ -1208,10 +1211,11 @@ body.is-feed-paused .feed-status::before,
     display: grid;
     grid-template-areas:
       "appbar"
+      "banner"
       "filters"
       "main";
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: var(--appbar-h) auto minmax(0, 1fr);
+    grid-template-rows: var(--appbar-h) auto auto minmax(0, 1fr);
     block-size: auto;
     min-block-size: 100vh;
     min-block-size: 100dvh;

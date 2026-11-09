@@ -53,6 +53,10 @@
 :root {
   --ink-on-dark: #F5F8FD;   /* text on solid brand / status fills */
   --ink-on-light: #0E1726;  /* text on warning / accent / gold fills */
+  /* IBM Plex Mono has no Arabic glyphs: mixed strings such as "5س 12د" or "قبل 3 دقائق"
+     keep Latin/digits in Plex Mono and let Arabic letters fall to Plex Sans Arabic instead
+     of the system monospace. Used by every mono context in the stylesheets. */
+  --font-mono-mixed: "IBM Plex Mono", "IBM Plex Sans Arabic", ui-monospace, SFMono-Regular, Menlo, monospace;
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23AAB6CC' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 }
 :root[data-theme="light"] {
@@ -111,7 +115,7 @@ a {
 a:hover { text-decoration: underline; }
 
 code, kbd, samp, pre {
-  font-family: var(--font-mono);
+  font-family: var(--font-mono-mixed);
   font-size: 0.93em;
   font-variant-numeric: tabular-nums;
 }
@@ -127,7 +131,7 @@ pre {
 
 /* Codes (R-1042, PTW-5521, ISO 45001) and every numeric column use these. */
 .mono {
-  font-family: var(--font-mono);
+  font-family: var(--font-mono-mixed);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
 }

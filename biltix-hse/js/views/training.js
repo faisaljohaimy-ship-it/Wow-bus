@@ -44,7 +44,7 @@ export default {
 
     /* ───────────────────────── helpers ───────────────────────── */
 
-    const mono = (text, extra = '') => h('span', { class: ['num', extra], style: { fontFamily: 'var(--font-mono)' } }, String(text ?? ''));
+    const mono = (text, extra = '') => h('span', { class: ['num', ...String(extra).split(/\s+/).filter(Boolean)], style: { fontFamily: 'var(--font-mono)' } }, String(text ?? ''));
 
     function makeChart(name, opts) {
       if (!charts || typeof charts[name] !== 'function') return null;
@@ -359,7 +359,6 @@ export default {
         ),
       });
       el.dataset.section = 'expiring';
-      el.classList.add('card-body-flush-table');
       return el;
     }
 
@@ -412,14 +411,16 @@ export default {
                 h('span', { class: 'tile-icon', 'aria-hidden': 'true' }, svgIcon(c.icon || 'graduation', 16)),
                 h('div', { class: 'stack gap-1 grow' },
                   h('span', { class: 'semibold' }, c.name),
-                  mono(c.id, 'text-xs muted'),
+                  mono(c.code || c.id, 'text-xs muted'),
                 ),
               ),
               badge(c.mandatory ? 'إلزامية' : 'اختيارية', c.mandatory ? 'brand' : 'neutral'),
             ),
+            c.description ? h('p', { class: 'text-sm ink-2', style: { lineHeight: '1.55' } }, c.description) : null,
             h('div', { class: 'row wrap gap-3 text-xs muted' },
               h('span', { class: 'row gap-1' }, glyph('clock', 12), h('span', {}, `${fmt.num(c.hours || 0)} ساعات تدريبية`)),
               h('span', {}, `الصلاحية ${fmt.num(c.validityMonths || 0)} شهراً`),
+              c.provider ? h('span', {}, `المزوّد: ${c.provider}`) : null,
             ),
             h('div', { class: 'progress-row' }, bar, h('span', { class: 'progress-value' }, fmt.pct(pct))),
             h('p', { class: 'text-xs muted' }, `${fmt.num(comp.holders || 0)} من ${fmt.num(comp.workers || data.workers.length)} عاملاً يحملون شهادة سارية`),

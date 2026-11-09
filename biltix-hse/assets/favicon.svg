@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 48 48" role="img" aria-label="Biltix HSE">
+  <title>Biltix HSE</title>
+  <!-- Standalone favicon version of the Biltix HSE emblem (js/ui/art.js logoMark): hard-coded colours on a transparent background. -->
+  <defs>
+    <mask id="notch" maskUnits="userSpaceOnUse" x="0" y="0" width="48" height="48">
+      <rect width="48" height="48" fill="#FFFFFF"/>
+      <g transform="translate(37.2 36.2)">
+        <path d="M0-4.8l4 1.7v2.9c0 2.7-1.7 4.8-4 5.6-2.3-.8-4-2.9-4-5.6v-2.9z" fill="#000000" stroke="#000000" stroke-width="3.2" stroke-linejoin="round"/>
+      </g>
+    </mask>
+  </defs>
+  <!-- hexagon frame (gold) with a translucent plate; the shield notch is cut out of the frame -->
+  <g mask="url(#notch)">
+    <path d="M24 3L42.19 13.5L42.19 34.5L24 45L5.81 34.5L5.81 13.5z" fill="#0B1322" fill-opacity=".5"/>
+    <path d="M24 3L42.19 13.5L42.19 34.5L24 45L5.81 34.5L5.81 13.5z" fill="none" stroke="#D4A017" stroke-width="1.5" stroke-linejoin="round"/>
+  </g>
+  <!-- isometric stepped structure: base wing + tower -->
+  <g fill="#2F6FED">
+    <polygon points="14.47,23.5 24,29 24,36 14.47,30.5"/>
+    <polygon points="33.53,23.5 24,29 24,36 33.53,30.5"/>
+    <polygon points="24,18 33.53,23.5 24,29 14.47,23.5"/>
+    <polygon points="21.4,15.5 27.46,19 27.46,27 21.4,23.5"/>
+    <polygon points="33.53,15.5 27.46,19 27.46,27 33.53,23.5"/>
+    <polygon points="27.46,12 33.53,15.5 27.46,19 21.4,15.5"/>
+  </g>
+  <!-- shading: left faces darker, right faces slightly lit, top faces lit -->
+  <g fill="#070D18" opacity=".34">
+    <polygon points="14.47,23.5 24,29 24,36 14.47,30.5"/>
+    <polygon points="21.4,15.5 27.46,19 27.46,27 21.4,23.5"/>
+  </g>
+  <g fill="#FFFFFF" opacity=".14">
+    <polygon points="33.53,23.5 24,29 24,36 33.53,30.5"/>
+    <polygon points="33.53,15.5 27.46,19 27.46,27 33.53,23.5"/>
+  </g>
+  <g fill="#FFFFFF" opacity=".46">
+    <polygon points="24,18 33.53,23.5 24,29 14.47,23.5"/>
+    <polygon points="27.46,12 33.53,15.5 27.46,19 21.4,15.5"/>
+  </g>
+  <path d="M14.47 23.5L24 29l3.46-2M21.4 15.5l6.06 3.5 6.07-3.5" fill="none" stroke="#FFFFFF" stroke-opacity=".55" stroke-width=".6" stroke-linejoin="round"/>
+  <!-- accent shield notch -->
+  <g transform="translate(37.2 36.2)">
+    <path d="M0-4.8l4 1.7v2.9c0 2.7-1.7 4.8-4 5.6-2.3-.8-4-2.9-4-5.6v-2.9z" fill="#19C6E6"/>
+    <path d="M-1.9-.2l1.3 1.3L2-1.6" fill="none" stroke="#070D18" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
