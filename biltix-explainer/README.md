@@ -28,13 +28,17 @@ writes into the app are the web exports in `../biltix-hse/assets/video/`.
 | 01 Data source | Validation sources ranked by records, ingestion hub, records captured today |
 | 02 Validation | Exact proportional bar (passed / duplicates / rejected) with a ×4 magnifier, pass rate, completeness, consistency, quarantine |
 | 03 Risk analysis | Consolidated portfolio gauge (B2 thresholds), five category scores, rating split, **5×5 likelihood × impact matrix of the open AI risks** |
-| 04 Explanation | Story risk `AIR-1020`: score = likelihood × impact × 4, plain-language explanation, model drivers (site-AI feature weights), sensor evidence (weekly rate vs limit, cumulative), schematic section |
+| 04 Explanation | Story risk `AIR-1020`: score = likelihood × impact × 4, plain-language explanation, confidence (tagged **Illustrative / توضيحي**), model drivers (site-AI feature weights, tagged **Illustrative weights / أوزان توضيحية**), sensor evidence (weekly rate vs limit, cumulative), schematic section |
 | 05 Human approval | Model recommendation, rationale, expected impact, reviewer, real decision timestamps |
 | 06 Mitigation | Task `MT-0214`, owner, due date, PM impact, controls (done/ongoing from the risk history), exclusion zone, write-back to Biltix PM |
 | 07 Verified closure | The risk's real audit trail, then a verified-closure seal |
 
 Honesty notes:
 - Every frame carries the **بيانات توضيحية / Demo data** label.
+- No model-accuracy figures are shown. The dataset marks pipeline precision, recall,
+  calibration and drift as not measured, so they are never extracted. The per-risk confidence
+  (in the risk card and the audit-trail detection line) and the driver weights are tagged as
+  illustrative, the same way the app tags demo metrics.
 - In the dataset, `AIR-1020` is still being treated, so the closure row and the seal are
   flagged on screen as **حالة ختامية توضيحية / Illustrative end state**. The target score
   shown (`~30`) is the recommendation's own "expected impact" text.

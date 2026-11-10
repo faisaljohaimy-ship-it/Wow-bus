@@ -247,7 +247,10 @@ const DRIVER_EN = {
   'عدد العمال المعرضين': 'Workers exposed',
   'الظروف الجوية المتوقعة': 'Forecast weather',
 };
-const drivers = pipeline.featureImportance
+// Pipeline accuracy metrics (precision / recall / calibrationError / driftScore) are NOT
+// extracted: the dataset marks them as not measured (null) and the video must not show
+// model-accuracy figures. Only the feature weights are used, tagged "Illustrative weights".
+const drivers = (pipeline.featureImportance || [])
   .filter((f) => driverValues[f.feature])
   .map((f) => ({ key: driverValues[f.feature].key, labelAr: f.feature.replace(/ \(.*\)$/, ''), labelEn: DRIVER_EN[f.feature], weight: f.weight, valueAr: driverValues[f.feature].ar, valueEn: driverValues[f.feature].en }))
   .sort((a, b) => b.weight - a.weight);
