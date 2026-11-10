@@ -1,31 +1,32 @@
 /**
- * Biltix HSE — view SEC-05: تصاريح العمل (js/views/permits.js)
+ * BILTIX Risk AI — HSE pillar — SEC-05 Permits to work (js/views/permits.js). Owner: B-HSE2 (v3 Precision).
  *
- * Contract: docs/ARCHITECTURE.md §8.5. Owner: VIEWS-B.
+ *   • Four executive metrics (.metric-grid): active, awaiting approval, expiring within the hour, suspended
+ *   • "Expiring within 60 minutes" priority list with live countdowns (only when there is something to act on)
+ *   • Permit board card: type filter bar + components.kanban across PERMIT_STATUS; drag or "Move to" →
+ *     store.updatePermit(id, { status }) with guards (closed is final, an expired permit cannot be activated)
+ *   • Detail drawer with tabs (Overview / Hazards & controls / Gas test) and status actions
+ *   • "New permit" modal with inline, translated validation → store.addPermit
  *
- *   • Top strip: count per status + a live list of active permits expiring within
- *     60 minutes (components.countdown, warning/expired states)
- *   • Type filter chips (site / range / search come from the global filter row)
- *   • components.kanban across PERMIT_STATUS; permit cards carry type icon, mono code,
- *     site, location, requester, workers, a live countdown for active permits and gas
- *     test chips when a test exists. Drag or «نقل إلى» → store.updatePermit(id,{status})
- *   • Detail drawer with hazards / controls lists and actions اعتماد / تعليق / إغلاق
- *   • «تصريح جديد» modal → store.addPermit
- *
- * Every countdown started by the view is tracked and stopped on repaint and on cleanup.
- * Re-renders on store:change (permits.*), filters:change and settings:change.
+ * Bilingual (CONTRACT §4): every string from the 'permits' dictionary (js/i18n/permits.js); enum values via
+ * i18n.label('permitType'|'permitStatus'); record text via i18n.L(…, 'permits'); people via i18n.term().
+ * Times are shown in Asia/Riyadh (the sites' time zone, same as the app-bar clock). Live updates patch in
+ * place (no entrance replay) and flash the changed card; motion.enter runs on first render only.
  */
 
+import { i18n, t, tn } from '../core/i18n.js';
+import dict from '../i18n/permits.js';
 import * as SEED from '../data/seed.js';
 import {
   h, clear, glyph, svgIcon, card, badge, button, modal, drawer, toast, kanban, countdown,
-  formField, readForm, emptyState, kv,
+  formField, emptyState, kv, filterBar, motion,
 } from '../ui/components.js';
 
-/* ────────────────────────────── enums (contract §3, with fallbacks) ────────────────────────────── */
+i18n.register('permits', dict);
+
+/* ────────────────────────────── enums (stored values stay Arabic) ────────────────────────────── */
 
 const list = (value, fallback) => (Array.isArray(value) && value.length ? value : fallback);
-
 const PERMIT_TYPES = list(SEED.PERMIT_TYPES, ['أعمال ساخنة', 'أماكن مغلقة', 'العمل على ارتفاع', 'عزل كهربائي', 'حفريات', 'رفع ثقيل', 'أعمال ليلية']);
 const PERMIT_STATUS = list(SEED.PERMIT_STATUS, ['مسودة', 'بانتظار الاعتماد', 'نشط', 'معلق', 'مغلق']);
 
@@ -34,64 +35,68 @@ const PENDING = 'بانتظار الاعتماد';
 const ACTIVE = 'نشط';
 const SUSPENDED = 'معلق';
 const CLOSED = 'مغلق';
+const STATUS_KEY = { [DRAFT]: 'draft', [PENDING]: 'pending', [ACTIVE]: 'active', [SUSPENDED]: 'suspended', [CLOSED]: 'closed' };
 
-/** Column / badge tones. Active permits are "live" (accent), suspended need attention. */
+/** Permit lifecycle tones (not risk states): pending needs attention, suspended is serious. */
 const STATUS_TONE = { [DRAFT]: 'neutral', [PENDING]: 'warning', [ACTIVE]: 'accent', [SUSPENDED]: 'serious', [CLOSED]: 'neutral' };
 const COLUMN_TONE = { [PENDING]: 'warning', [ACTIVE]: 'accent', [SUSPENDED]: 'serious' };
-
-/** Permit type → art icon (category icons are part of the contract; 'clock' has a local glyph). */
 const TYPE_ICON = {
   'أعمال ساخنة': 'flame', 'أماكن مغلقة': 'confined', 'العمل على ارتفاع': 'height', 'عزل كهربائي': 'bolt',
   'حفريات': 'excavation', 'رفع ثقيل': 'crane', 'أعمال ليلية': 'clock',
 };
 
-/** Gas test thresholds (confined-space practice: O₂ 19.5–23.5 %, H₂S 10 ppm, CO 35 ppm). */
+/** Gas test limits (confined-space practice: O₂ 19.5–23.5 %, LEL < 10 %, H₂S < 10 ppm, CO < 35 ppm). */
 const GAS = [
-  { key: 'o2', label: 'O₂', unit: '%', digits: 1, tone: (v) => (v < 19.5 || v > 23.5 ? 'critical' : 'good') },
-  { key: 'lel', label: 'LEL', unit: '%', digits: 0, tone: (v) => (v >= 10 ? 'critical' : v > 0 ? 'warning' : 'good') },
-  { key: 'h2s', label: 'H₂S', unit: 'ppm', digits: 1, tone: (v) => (v >= 10 ? 'critical' : v >= 5 ? 'warning' : 'good') },
-  { key: 'co', label: 'CO', unit: 'ppm', digits: 0, tone: (v) => (v >= 35 ? 'critical' : v >= 25 ? 'warning' : 'good') },
+  { key: 'o2', label: 'O₂', unit: '%', digits: 1, min: 0, max: 100, tone: (v) => (v < 19.5 || v > 23.5 ? 'critical' : 'good') },
+  { key: 'lel', label: 'LEL', unit: '%', digits: 0, min: 0, max: 100, tone: (v) => (v >= 10 ? 'critical' : v > 0 ? 'warning' : 'good') },
+  { key: 'h2s', label: 'H₂S', unit: 'ppm', digits: 1, min: 0, max: 1000, tone: (v) => (v >= 10 ? 'critical' : v >= 5 ? 'warning' : 'good') },
+  { key: 'co', label: 'CO', unit: 'ppm', digits: 0, min: 0, max: 5000, tone: (v) => (v >= 35 ? 'critical' : v >= 25 ? 'warning' : 'good') },
 ];
+const GAS_TEXT = { good: 'permits.gas.ok', warning: 'permits.gas.warn', critical: 'permits.gas.alarm' };
 
 const EXPIRING_MINUTES = 60;
-const HOUR_MS = 3_600_000;
+const MINUTE = 60_000;
+const HOUR = 3_600_000;
+const MAX_HOURS = 12;
+const WORKERS_MIN = 1;
+const WORKERS_MAX = 500;
+
+/* ────────────────────────────── Riyadh time (fixed UTC+3, no DST) ────────────────────────────── */
+
+const TZ = 'Asia/Riyadh';
+const TZ_OFFSET_MS = 3 * HOUR;
+const zCache = new Map();
+function zoned(fmt, value, opts) {
+  const d = fmt.toDate(value);
+  if (!d) return null;
+  const loc = fmt.locale();
+  const key = `${loc}|${JSON.stringify(opts)}`;
+  if (!zCache.has(key)) { let f = null; try { f = new Intl.DateTimeFormat(loc, { ...opts, timeZone: TZ }); } catch { f = null; } zCache.set(key, f); }
+  const f = zCache.get(key);
+  try { return f ? f.format(d) : null; } catch { return null; }
+}
+const zTime = (fmt, v) => zoned(fmt, v, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) || fmt.time(v);
+const zDate = (fmt, v, style = 'medium') => zoned(fmt, v, style === 'short' ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'long', year: 'numeric' }) || fmt.date(v, { style });
+const zDateTime = (fmt, v) => (fmt.toDate(v) ? `${zDate(fmt, v)}${i18n.lang() === 'ar' ? '،' : ','} ${zTime(fmt, v)}` : '—');
+const zDayKey = (v) => { const t0 = Date.parse(v); return Number.isFinite(t0) ? new Date(t0 + TZ_OFFSET_MS).toISOString().slice(0, 10) : ''; };
+/** 'YYYY-MM-DDTHH:mm' in Riyadh time for a datetime-local input. */
+const toRiyadhInput = (msValue) => new Date(msValue + TZ_OFFSET_MS).toISOString().slice(0, 16);
+/** datetime-local value read as Riyadh time → ISO with +03:00, or null. */
+function fromRiyadhInput(value) {
+  const v = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)) return null;
+  const iso = `${v}:00+03:00`;
+  return Number.isFinite(Date.parse(iso)) ? iso : null;
+}
 
 /* ────────────────────────────── pure helpers ────────────────────────────── */
 
-const pad2 = (n) => String(n).padStart(2, '0');
-
-function localISO(d) {
-  const offset = -d.getTimezoneOffset();
-  const sign = offset >= 0 ? '+' : '-';
-  const abs = Math.abs(offset);
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}${sign}${pad2(Math.floor(abs / 60))}:${pad2(abs % 60)}`;
-}
-
-function toDatetimeLocal(d) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
-
-function fromDatetimeLocal(value) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(value || ''));
-  if (!m) return null;
-  const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], 0, 0);
-  return Number.isNaN(d.getTime()) ? null : localISO(d);
-}
-
-function roundToQuarter(d) {
-  const out = new Date(d.getTime());
-  out.setSeconds(0, 0);
-  out.setMinutes(Math.ceil(out.getMinutes() / 15) * 15);
-  return out;
-}
-
-const statusTone = (status) => STATUS_TONE[status] || 'neutral';
+const ms = (iso) => { const v = Date.parse(iso); return Number.isFinite(v) ? v : NaN; };
 const typeIcon = (type) => TYPE_ICON[type] || 'file-check';
-
-function siteName(state, siteId) {
-  const site = (state.sites || []).find((s) => s && s.id === siteId);
-  return site ? site.name : '—';
-}
+const statusTone = (s) => STATUS_TONE[s] || 'neutral';
+const typeLabel = (type) => i18n.label('permitType', type);
+const statusLabel = (s) => i18n.label('permitStatus', s);
+const lines = (value) => String(value || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
 
 function touches(path, prefix) {
   if (!path || path === '*') return true;
@@ -99,64 +104,10 @@ function touches(path, prefix) {
   return p === prefix || p.startsWith(`${prefix}.`);
 }
 
-/** Id of the focused element inside `root` (so a repaint can hand focus back to its twin). */
-function focusedIdWithin(root) {
-  const a = document.activeElement;
-  return a && root && root.contains(a) && a.id ? a.id : null;
-}
-
-/**
- * After a drawer repaint, keep keyboard focus inside the dialog so Esc / Tab keep working:
- * the same control by id, else the first visible footer action, else the dialog itself.
- */
-function restoreFocus(api, id) {
-  if (!api || typeof api.isOpen !== 'function' || !api.isOpen()) return;
-  const root = api.el;
-  const a = document.activeElement;
-  if (a && a !== document.body && root.contains(a) && !a.hidden && a.getClientRects().length) return;
-  let target = null;
-  if (id) { try { target = root.querySelector(`#${CSS.escape(id)}`); } catch { target = null; } }
-  if (!target) target = root.querySelector('.drawer-foot button:not([hidden])') || root;
-  try { target.focus({ preventScroll: true }); } catch { /* ignore */ }
-}
-
-const ms = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) ? t : NaN; };
-
-function sameDay(a, b) {
-  const da = new Date(a); const db = new Date(b);
-  return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
-}
-
-/** Split a textarea into trimmed, non-empty lines. */
-const lines = (value) => String(value || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-
-function chipGroup({ options, value, onChange, ariaLabel, fmt }) {
-  // `chips is-scroll`: horizontal snap scroller on phones instead of a tall wrapped block.
-  const el = h('div', { class: 'chip-group chips is-scroll', role: 'group', 'aria-label': ariaLabel });
-  const buttons = new Map();
-  let current = value;
-  const paint = () => { for (const [v, b] of buttons) b.setAttribute('aria-pressed', String(v) === String(current) ? 'true' : 'false'); };
-  options.forEach((o) => {
-    const count = h('span', { class: 'chip-count', hidden: true }, '');
-    const b = h('button', { type: 'button', class: 'chip', 'aria-pressed': 'false', onClick: () => { if (String(current) === String(o.value)) return; current = o.value; paint(); onChange(o.value); } });
-    if (o.icon) b.appendChild(svgIcon(o.icon, 14));
-    b.appendChild(h('span', {}, o.label));
-    b.appendChild(count);
-    b.countEl = count;
-    buttons.set(o.value, b);
-    el.appendChild(b);
-  });
-  paint();
-  return {
-    el,
-    setCounts(counts) {
-      for (const [v, b] of buttons) {
-        const n = counts[v];
-        b.countEl.hidden = n === undefined || n === null;
-        b.countEl.textContent = n === undefined || n === null ? '' : fmt.num(n);
-      }
-    },
-  };
+/** Permit id from a store path such as 'permits.P3' (null when the path is broader). */
+function idFromPath(path) {
+  const m = /^permits\.([^.]+)/.exec(String(path || ''));
+  return m ? m[1] : null;
 }
 
 /* ────────────────────────────── the view ────────────────────────────── */
@@ -164,7 +115,7 @@ function chipGroup({ options, value, onChange, ariaLabel, fmt }) {
 export const permitsView = {
   id: 'permits',
   code: 'SEC-05',
-  title: 'تصاريح العمل',
+  get title() { return t('core.nav.permits.title'); },
   icon: 'file-check',
 
   render(container, ctx) {
@@ -173,17 +124,12 @@ export const permitsView = {
     let alive = true;
     let activeDrawer = null;
     let activeModal = null;
-    let typeFilter = 'all';
+    let typeFilter = [];
 
-    /* countdown registries — one per region so repaints only stop what they replace */
     const timers = { strip: new Set(), board: new Set(), drawer: new Set() };
     const track = (region, cd) => { if (cd) timers[region].add(cd); return cd; };
     const stopRegion = (region) => { timers[region].forEach((cd) => { try { cd.stop(); } catch { /* ignore */ } }); timers[region].clear(); };
-    /**
-     * Countdown whose natural expiry refreshes the strip. The handler is armed only after
-     * construction: countdown() ticks synchronously, so an already-expired permit would
-     * otherwise fire onExpire during every repaint and loop the strip forever.
-     */
+    /** Countdown whose natural expiry refreshes the metrics and the expiring list (armed after construction). */
     const liveCountdown = (region, iso) => {
       let armed = false;
       const cd = track(region, countdown(iso, { onExpire: () => { if (armed) schedule(1); } }));
@@ -192,158 +138,212 @@ export const permitsView = {
     };
 
     const state = () => store.state;
+    const now = () => (typeof store.now === 'function' ? store.now().getTime() : Date.now());
     const globalFilters = () => ({ ...(store.filters || state().filters || {}) });
-    const boardFilters = () => ({ ...globalFilters(), type: typeFilter === 'all' ? undefined : typeFilter });
     const findPermit = (id) => (state().permits || []).find((p) => p && p.id === id) || null;
+    const siteOf = (siteId) => (state().sites || []).find((s) => s && s.id === siteId) || null;
+    const siteName = (siteId) => { const s = siteOf(siteId); return s ? i18n.L(s, 'name', 'sites') : '—'; };
+    const loc = (p) => i18n.L(p, 'location', 'permits') || '—';
+    const person = (v) => (v ? i18n.term(v) : '—');
+    const inSite = (p, gf) => !gf.siteId || gf.siteId === 'all' || p.siteId === gf.siteId;
 
-    /** Active permits expiring within the hour — uses the core selector when present, else a local twin. */
-    function expiringSoon(st, gf, now) {
+    function expiringSoon(st, gf, at) {
       if (typeof sel.permitsExpiringSoon === 'function') {
-        try { return sel.permitsExpiringSoon(st, EXPIRING_MINUTES, gf); } catch { /* fall through to the local twin */ }
+        try { return sel.permitsExpiringSoon(st, EXPIRING_MINUTES, gf, new Date(at)); } catch { /* local twin below */ }
       }
-      const horizon = now + EXPIRING_MINUTES * 60_000;
-      return (st.permits || [])
-        .filter((p) => p && p.status === ACTIVE && (gf.siteId === 'all' || !gf.siteId || p.siteId === gf.siteId) && ms(p.expiresAt) > now && ms(p.expiresAt) <= horizon)
+      const horizon = at + EXPIRING_MINUTES * MINUTE;
+      return (st.permits || []).filter((p) => p && p.status === ACTIVE && inSite(p, gf) && ms(p.expiresAt) > at && ms(p.expiresAt) <= horizon)
         .sort((a, b) => ms(a.expiresAt) - ms(b.expiresAt));
     }
+    const expiredActive = (st, gf, at) => (st.permits || []).filter((p) => p && p.status === ACTIVE && inSite(p, gf) && ms(p.expiresAt) <= at);
 
-    /* ── skeleton ── */
+    /* ── page skeleton ── */
     const root = h('section', { class: 'view view-permits', 'aria-labelledby': 'permits-title' });
     root.appendChild(h('header', { class: 'view-head' },
       h('div', { class: 'view-head-text' },
         h('span', { class: 'code-tag' }, permitsView.code),
-        h('h1', { id: 'permits-title', tabindex: '-1' }, permitsView.title),
-        h('p', { class: 'view-lead' }, 'لوحة تصاريح العمل الخطرة من المسودة حتى الإغلاق: اعتماد، تعليق، عدّ تنازلي حي لانتهاء الصلاحية، وقراءات فحص الغازات للأماكن المغلقة والأعمال الساخنة.')),
-      h('div', { class: 'view-actions' }, button('تصريح جديد', { variant: 'primary', icon: 'file-check', onClick: () => openNewPermitModal() }))));
+        h('h1', { id: 'permits-title', class: 't-page', tabindex: '-1' }, t('core.nav.permits.title')),
+        h('p', { class: 'view-lead' }, t('permits.lead'))),
+      h('div', { class: 'view-actions' },
+        h('span', { class: 't-helper' }, t('permits.tz')),
+        button(t('permits.newPermit'), { variant: 'primary', icon: 'file-check', onClick: () => openNewPermitModal() }))));
 
-    /* six cells (five statuses + "expiring within the hour") must share one row on desktop */
-    const stripHost = h('div', { class: 'summary-strip', role: 'group', 'aria-label': 'ملخص التصاريح حسب الحالة', style: { gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))' } });
+    const metricsHost = h('div', { class: 'metric-grid', role: 'group', 'aria-label': t('permits.metrics.label') });
     const expiringHost = h('div', { class: 'stack' });
-    const toolbar = h('div', { class: 'toolbar' });
-    const boardHost = h('div', { class: 'stack' });
-    root.append(stripHost, expiringHost, toolbar, boardHost);
-
-    const typeChips = chipGroup({
-      fmt,
-      ariaLabel: 'تصفية حسب نوع التصريح',
-      value: 'all',
-      options: [{ value: 'all', label: 'جميع الأنواع' }, ...PERMIT_TYPES.map((t) => ({ value: t, label: t, icon: typeIcon(t) }))],
-      onChange: (v) => { typeFilter = v; paintBoard(); },
+    const filterHost = h('div');
+    const boardHost = h('div', { class: 'stack gap-3' });
+    const boardEmpty = emptyState({ icon: 'file-check', title: t('permits.board.emptyTitle'), text: t('permits.board.emptyText') });
+    boardEmpty.hidden = true;
+    boardHost.appendChild(boardEmpty);
+    const boardCard = card({
+      code: 'SEC-05.B', title: t('permits.board.title'), subtitle: t('permits.board.sub'),
+      body: h('div', { class: 'stack gap-4' }, filterHost, boardHost),
     });
-    toolbar.appendChild(typeChips.el);
-    toolbar.appendChild(h('span', { class: 'toolbar-spacer' }));
-    toolbar.appendChild(h('p', { class: 'text-xs muted' }, 'اسحب البطاقة إلى عمود آخر أو استخدم زر «نقل إلى» لتغيير الحالة'));
-
+    root.append(metricsHost, expiringHost, boardCard);
     container.appendChild(root);
 
-    /* ── summary strip ── */
-    function paintStrip() {
-      stopRegion('strip');
-      clear(stripHost); clear(expiringHost);
+    /* ── metrics (built once, patched in place) ── */
+    const tiles = {};
+    function metricTile(key, { label, icon }) {
+      const value = h('span', { class: 't-metric' }, '—');
+      const helper = h('span', { class: 'metric-helper' }, '');
+      const icn = h('span', { class: 'metric-icon', 'aria-hidden': 'true' }, svgIcon(icon, 16));
+      const el = h('div', { class: 'metric-tile', 'data-metric': key },
+        h('div', { class: 'metric-head' }, h('span', { class: 'metric-label' }, label), icn),
+        h('div', { class: 'metric-value' }, value),
+        h('div', { class: 'metric-foot' }, helper));
+      tiles[key] = { el, value, helper, last: null, tone: null };
+      return el;
+    }
+    metricsHost.append(
+      metricTile('active', { label: t('permits.metrics.active'), icon: 'file-check' }),
+      metricTile('pending', { label: t('permits.metrics.pending'), icon: 'clipboard' }),
+      metricTile('expiring', { label: t('permits.metrics.expiring'), icon: 'clock' }),
+      metricTile('suspended', { label: t('permits.metrics.suspended'), icon: 'alert-circle' }),
+    );
+    function setTile(key, { value, helper, tone }) {
+      const tile = tiles[key];
+      const text = fmt.num(value);
+      const changed = tile.last !== null && tile.last !== text;
+      tile.value.textContent = text;
+      tile.helper.textContent = helper || '';
+      if (tile.tone !== tone) {
+        if (tile.tone) tile.el.classList.remove(`tone-${tile.tone}`);
+        if (tone) tile.el.classList.add(`tone-${tone}`);
+        tile.tone = tone;
+      }
+      if (changed) motion.flash(tile.el);
+      tile.last = text;
+    }
+
+    function paintMetrics() {
       const st = state();
       const gf = globalFilters();
-      const now = Date.now();
-      const byStatus = sel.permitsByStatus(st, gf);
-      const expiring = expiringSoon(st, gf, now);
-      const overdue = (st.permits || []).filter((p) => p && p.status === ACTIVE && (gf.siteId === 'all' || !gf.siteId || p.siteId === gf.siteId) && ms(p.expiresAt) <= now);
+      const at = now();
+      const all = sel.filteredPermits(st, gf);
+      const count = (s) => all.filter((p) => p.status === s).length;
+      const active = all.filter((p) => p.status === ACTIVE);
+      const workers = active.reduce((n, p) => n + (Number(p.workers) || 0), 0);
+      const soon = expiringSoon(st, gf, at);
+      const expired = expiredActive(st, gf, at);
+      setTile('active', { value: active.length, helper: tn('permits.metrics.activeHelper', workers), tone: null });
+      setTile('pending', { value: count(PENDING), helper: tn('permits.metrics.pendingHelper', count(DRAFT)), tone: count(PENDING) ? 'warning' : null });
+      const nextP = soon[0];
+      const expHelper = [nextP ? t('permits.metrics.expiringHelperNext', { code: nextP.code, time: zTime(fmt, nextP.expiresAt) }) : t('permits.metrics.expiringHelperNone'), expired.length ? tn('permits.metrics.expiredActive', expired.length) : ''].filter(Boolean).join(' · ');
+      setTile('expiring', { value: soon.length, helper: expHelper, tone: expired.length ? 'critical' : (soon.length ? 'warning' : 'good') });
+      setTile('suspended', { value: count(SUSPENDED), helper: tn('permits.metrics.suspendedHelper', count(CLOSED)), tone: count(SUSPENDED) ? 'serious' : null });
+    }
 
-      byStatus.forEach((s) => {
-        const tone = statusTone(s.label);
-        const cell = h('div', { class: ['summary-cell', `tone-${tone}`] });
-        const label = h('span', { class: 'summary-label' });
-        const ic = glyph(tone, 14); ic.style.color = 'var(--tone-ink)';
-        label.append(ic, h('span', {}, s.label));
-        cell.append(label, h('span', { class: 'summary-value' }, fmt.num(s.value)));
-        stripHost.appendChild(cell);
-      });
-      const soonCell = h('div', { class: ['summary-cell', expiring.length || overdue.length ? 'tone-warning' : 'tone-neutral'] });
-      const soonLabel = h('span', { class: 'summary-label' });
-      const soonIc = glyph(expiring.length || overdue.length ? 'warning' : 'neutral', 14); soonIc.style.color = 'var(--tone-ink)';
-      soonLabel.append(soonIc, h('span', {}, 'تنتهي خلال ساعة'));
-      const soonValue = h('span', { class: 'summary-value' }, fmt.num(expiring.length));
-      if (overdue.length) soonValue.appendChild(h('small', {}, `و${fmt.num(overdue.length)} منتهية لم تُغلق`));
-      soonCell.append(soonLabel, soonValue);
-      stripHost.appendChild(soonCell);
-
-      /* expiring list */
-      const urgent = [...overdue, ...expiring];
+    /* ── expiring within the hour (priority list) ── */
+    function paintExpiring() {
+      stopRegion('strip');
+      clear(expiringHost);
+      const st = state();
+      const gf = globalFilters();
+      const at = now();
+      const urgent = [...expiredActive(st, gf, at), ...expiringSoon(st, gf, at)];
       if (!urgent.length) {
-        expiringHost.appendChild(h('p', { class: 'note tone-good' }, 'لا توجد تصاريح نشطة تنتهي خلال الساعة القادمة.'));
+        expiringHost.appendChild(h('p', { class: 'note tone-good row gap-2' }, glyph('good', 16), h('span', {}, t('permits.expiring.none'))));
         return;
       }
-      const ul = h('ul', { class: 'urgent-list' });
+      const ol = h('ol', { class: 'priority-list' });
       urgent.forEach((p) => {
-        const expired = ms(p.expiresAt) <= now;
+        const expired = ms(p.expiresAt) <= at;
+        const tone = expired ? 'critical' : 'warning';
         const cd = liveCountdown('strip', p.expiresAt);
-        const item = h('button', { type: 'button', class: ['urgent-item', expired ? 'tone-critical' : 'tone-warning', expired ? 'is-overdue' : null], onClick: () => openDrawer(p.id) },
-          h('span', { class: 'urgent-icon', 'aria-hidden': 'true' }, svgIcon(typeIcon(p.type), 15)),
-          h('span', { class: 'urgent-text' },
-            h('span', { class: 'row wrap gap-2' }, h('span', { class: 'mono code nowrap', dir: 'ltr' }, p.code), h('span', {}, p.type), badge(expired ? 'منتهٍ وما زال نشطاً' : 'يقترب من الانتهاء', expired ? 'critical' : 'warning')),
-            h('span', { class: 'urgent-sub' }, `${siteName(st, p.siteId)} · ${p.location || '—'}`)),
-          h('span', { class: 'urgent-due' }, cd.el, h('span', {}, fmt.time(p.expiresAt))));
-        ul.appendChild(h('li', {}, item));
+        const open = () => openDrawer(p.id);
+        ol.appendChild(h('li', { class: ['priority-item', 'is-clickable', `tone-${tone}`, expired ? 'is-overdue' : null], 'data-id': p.id, onClick: open },
+          h('span', { class: 'priority-rank', 'aria-hidden': 'true' }, svgIcon(typeIcon(p.type), 15)),
+          h('div', { class: 'priority-main' },
+            h('div', { class: 'priority-title row wrap gap-2' }, h('span', { class: 'code' }, p.code), h('span', {}, typeLabel(p.type))),
+            h('div', { class: 'priority-meta' }, h('span', {}, siteName(p.siteId)), h('span', {}, loc(p)))),
+          h('div', { class: 'priority-side' },
+            badge(expired ? t('permits.expiring.expired') : t('permits.expiring.soon'), tone),
+            h('span', { class: ['priority-due', expired ? 'is-overdue' : null] }, cd.el, ' ', h('span', { class: 'num' }, t('permits.expiring.until', { time: zTime(fmt, p.expiresAt) })))),
+          h('div', { class: 'priority-action' }, button(t('permits.card.view'), { variant: 'ghost', size: 'sm', attrs: { 'aria-label': t('permits.expiring.open', { code: p.code }) }, onClick: (e) => { e.stopPropagation(); open(); } }))));
       });
-      // Nested inside the strip region → plain (unframed) card so the page keeps one framing level.
       expiringHost.appendChild(card({
-        code: 'SEC-05.A', title: `تنتهي خلال ${fmt.num(EXPIRING_MINUTES)} دقيقة`, subtitle: 'تصاريح نشطة تحتاج إلى تمديد أو إغلاق قبل انتهاء صلاحيتها',
-        body: ul, framed: false, className: 'is-plain',
+        code: 'SEC-05.A', title: t('permits.expiring.title', { minutes: fmt.num(EXPIRING_MINUTES) }), subtitle: t('permits.expiring.sub'),
+        body: ol,
       }));
     }
 
-    /* ── permit card content (inside kanban card) ── */
+    /* ── type filter bar (rebuilt only when the counts change) ── */
+    let filterApi = null;
+    let filterSig = '';
+    function paintFilter() {
+      const all = sel.filteredPermits(state(), globalFilters());
+      const counts = PERMIT_TYPES.map((tp) => all.filter((p) => p.type === tp).length);
+      const sig = `${i18n.lang()}|${counts.join(',')}`;
+      if (filterApi && sig === filterSig) return;
+      filterSig = sig;
+      const value = { type: typeFilter.slice() };
+      filterApi = filterBar({
+        label: t('permits.board.filterLabel'),
+        filters: [{
+          id: 'type', type: 'chips', label: t('permits.board.typeFilter'),
+          options: PERMIT_TYPES.map((tp, i) => ({ value: tp, label: typeLabel(tp), icon: typeIcon(tp), count: counts[i] })),
+        }],
+        value,
+        onChange: (v) => { typeFilter = Array.isArray(v.type) ? v.type.slice() : []; schedule(2); },
+      });
+      filterApi.el.querySelectorAll('.chip-group').forEach((g) => g.classList.add('chips', 'is-scroll'));
+      clear(filterHost);
+      filterHost.appendChild(filterApi.el);
+    }
+
+    /* ── permit card content ── */
     function gasChips(gas) {
       if (!gas || typeof gas !== 'object') return null;
-      const row = h('div', { class: 'row wrap gap-1', 'aria-label': 'قراءات فحص الغازات' });
+      const row = h('div', { class: 'row wrap gap-1', role: 'list', 'aria-label': t('permits.gas.aria') });
       GAS.forEach((g) => {
         const v = Number(gas[g.key]);
         if (!Number.isFinite(v)) return;
-        // fmt.pct localises the percent sign with the numerals; other units keep a space before the unit.
+        const tone = g.tone(v);
         const reading = g.unit === '%' ? fmt.pct(v, g.digits) : `${fmt.num(v, { maximumFractionDigits: g.digits })} ${g.unit}`;
-        row.appendChild(badge(`${g.label} ${reading}`, g.tone(v)));
+        const b = badge(`${g.label} ${reading}`, tone);
+        b.setAttribute('role', 'listitem');
+        b.title = t(GAS_TEXT[tone]);
+        b.appendChild(h('span', { class: 'sr-only' }, ` — ${t(GAS_TEXT[tone])}`));
+        row.appendChild(b);
       });
       return row.childNodes.length ? row : null;
     }
 
-    /**
-     * Permit window. Same-day ranges are an isolated LTR numeric run ("08:00–16:00") so the
-     * dash never flips in RTL text; multi-day windows are phrased "من … إلى …".
-     */
-    function timeLabel(p) {
-      const start = p.startsAt; const end = p.expiresAt;
-      if (!start || !end) return '—';
-      if (sameDay(start, end)) {
+    /** Permit window in Riyadh time: same-day ranges as one LTR numeric run ("06:00–18:00"). */
+    function windowLabel(p) {
+      if (!p.startsAt || !p.expiresAt) return '—';
+      if (zDayKey(p.startsAt) === zDayKey(p.expiresAt)) {
         return h('span', { class: 'row gap-1 wrap' },
-          h('span', {}, fmt.date(start, { style: 'short' })),
+          h('span', {}, zDate(fmt, p.startsAt, 'short')),
           h('span', { 'aria-hidden': 'true' }, '·'),
-          h('span', { class: 'num', dir: 'ltr' }, `${fmt.time(start)}–${fmt.time(end)}`));
+          h('span', { class: 'num', dir: 'ltr' }, `${zTime(fmt, p.startsAt)}–${zTime(fmt, p.expiresAt)}`));
       }
-      return h('span', { class: 'row gap-1 wrap' }, h('span', {}, `من ${fmt.dateTime(start)}`), h('span', {}, `إلى ${fmt.dateTime(end)}`));
+      return h('span', { class: 'row gap-1 wrap' }, h('span', {}, t('permits.card.from', { start: zDateTime(fmt, p.startsAt) })), h('span', {}, t('permits.card.to', { end: zDateTime(fmt, p.expiresAt) })));
     }
 
     function permitCardContent(p) {
-      const st = state();
       const wrap = h('div', { class: 'stack gap-2' });
       wrap.appendChild(h('div', { class: 'row between gap-2' },
-        badge(p.type, 'neutral', { icon: typeIcon(p.type) }),
-        h('span', { class: 'mono text-xs muted nowrap' }, p.code)));
-      wrap.appendChild(h('p', { class: 'kanban-card-title' }, p.location || '—'));
+        badge(typeLabel(p.type), 'neutral', { icon: typeIcon(p.type) }),
+        h('span', { class: 'code text-xs muted' }, p.code)));
+      wrap.appendChild(h('p', { class: 'kanban-card-title' }, loc(p)));
       wrap.appendChild(h('div', { class: 'kanban-card-meta' },
-        h('span', {}, siteName(st, p.siteId)),
-        h('span', {}, p.requester || '—'),
-        h('span', { class: 'nowrap' }, `${fmt.num(Number(p.workers) || 0)} ${Number(p.workers) === 1 ? 'عامل' : 'عمال'}`)));
+        h('span', {}, siteName(p.siteId)),
+        h('span', {}, person(p.requester)),
+        h('span', { class: 'nowrap' }, tn('permits.card.workers', Number(p.workers) || 0))));
       const gas = gasChips(p.gasTest);
       if (gas) wrap.appendChild(gas);
-
       const foot = h('div', { class: 'kanban-card-foot' });
       if (p.status === ACTIVE) {
         const cd = liveCountdown('board', p.expiresAt);
-        foot.appendChild(h('span', { class: 'row gap-1 text-xs muted' }, cd.el, h('span', { class: 'nowrap' }, `حتى ${fmt.time(p.expiresAt)}`)));
+        foot.appendChild(h('span', { class: 'row gap-1 text-xs muted' }, cd.el, h('span', { class: 'nowrap num' }, t('permits.card.until', { time: zTime(fmt, p.expiresAt) }))));
       } else if (p.status === CLOSED) {
-        foot.appendChild(h('span', { class: 'text-xs muted nowrap' }, `أُغلق ${fmt.relative(p.updatedAt || p.expiresAt)}`));
+        foot.appendChild(h('span', { class: 'text-xs muted nowrap' }, t('permits.card.closed', { when: fmt.relative(p.closedAt || p.updatedAt || p.expiresAt, now()) })));
       } else {
-        foot.appendChild(h('span', { class: 'text-xs muted mono' }, timeLabel(p)));
+        foot.appendChild(h('span', { class: 'text-xs muted' }, windowLabel(p)));
       }
-      foot.appendChild(button('عرض', { variant: 'ghost', size: 'sm', onClick: (e) => { e.stopPropagation(); openDrawer(p.id); } }));
+      foot.appendChild(button(t('permits.card.view'), { variant: 'ghost', size: 'sm', attrs: { 'aria-label': t('permits.card.viewAria', { code: p.code }) }, onClick: (e) => { e.stopPropagation(); openDrawer(p.id); } }));
       wrap.appendChild(foot);
       return wrap;
     }
@@ -351,189 +351,277 @@ export const permitsView = {
     /* ── kanban board ── */
     let board = null;
     function boardItems() {
-      const rows = sel.filteredPermits(state(), boardFilters()).slice().sort((a, b) => (ms(a.expiresAt) || 0) - (ms(b.expiresAt) || 0));
-      return rows.map((p) => ({ id: p.id, columnId: p.status, render: () => permitCardContent(p) }));
+      const types = new Set(typeFilter);
+      return sel.filteredPermits(state(), globalFilters())
+        .filter((p) => !types.size || types.has(p.type))
+        .sort((a, b) => (ms(a.expiresAt) || 0) - (ms(b.expiresAt) || 0))
+        .map((p) => ({ id: p.id, columnId: p.status, code: p.code, title: `${typeLabel(p.type)} — ${loc(p)}`, render: () => permitCardContent(p) }));
     }
 
-    function paintBoard() {
+    function paintBoard(changedIds = []) {
       stopRegion('board');
-      const st = state();
-      const gf = globalFilters();
-      const all = sel.filteredPermits(st, gf);
-      const counts = { all: all.length };
-      PERMIT_TYPES.forEach((t) => { counts[t] = all.filter((p) => p.type === t).length; });
-      typeChips.setCounts(counts);
-
+      paintFilter();
       const items = boardItems();
       if (!board) {
         board = kanban({
-          columns: PERMIT_STATUS.map((s) => ({ id: s, label: s, tone: COLUMN_TONE[s] || null })),
+          columns: PERMIT_STATUS.map((s) => ({ id: s, label: statusLabel(s), tone: COLUMN_TONE[s] || null })),
           items,
-          onMove: (id, toColumnId) => movePermit(id, toColumnId),
+          onMove: (id, to) => movePermit(id, to),
+          ariaLabel: t('permits.board.aria'),
         });
-        // The board is the scroll container for its columns; it must also be the containing block of the
-        // absolutely-positioned .sr-only labels inside the column heads, or those boxes (static position
-        // far to the inline-end of the off-screen columns) widen the whole page on phones in RTL.
-        board.el.style.position = 'relative';
         boardHost.appendChild(board.el);
       } else {
         board.update(items);
+        changedIds.forEach((id) => {
+          const el = board.el.querySelector(`.kanban-card[data-id="${CSS.escape(String(id))}"]`);
+          if (el) motion.flash(el);
+        });
       }
+      board.el.hidden = items.length === 0;
+      boardEmpty.hidden = items.length !== 0;
     }
 
     function movePermit(id, toStatus) {
       const p = findPermit(id);
       if (!p || !PERMIT_STATUS.includes(toStatus) || p.status === toStatus) return false;
-      if (p.status === CLOSED) {
-        toast(`التصريح ${p.code} مغلق ولا يمكن إعادة فتحه — أنشئ تصريحاً جديداً بدلاً من ذلك`, { tone: 'warning' });
-        return false;
-      }
-      if (toStatus === ACTIVE && ms(p.expiresAt) <= Date.now()) {
-        toast(`انتهت صلاحية ${p.code} — عدّل وقت الانتهاء قبل التفعيل`, { tone: 'warning' });
-        return false;
-      }
-      store.updatePermit(id, { status: toStatus });
-      const tone = toStatus === ACTIVE ? 'good' : toStatus === SUSPENDED ? 'serious' : toStatus === CLOSED ? 'neutral' : 'brand';
-      const verb = toStatus === ACTIVE ? 'تم اعتماد وتفعيل' : toStatus === SUSPENDED ? 'تم تعليق' : toStatus === CLOSED ? 'تم إغلاق' : toStatus === PENDING ? 'أُرسل للاعتماد' : 'أُعيد إلى المسودة';
-      toast(`${verb} التصريح ${p.code} — «${toStatus}»`, { tone });
+      if (p.status === CLOSED) { toast(t('permits.move.closedFinal', { code: p.code }), { tone: 'warning' }); return false; }
+      if (toStatus === ACTIVE && ms(p.expiresAt) <= now()) { toast(t('permits.move.expired', { code: p.code }), { tone: 'warning' }); return false; }
+      const updated = store.updatePermit(id, { status: toStatus });
+      if (!updated) { toast(t('permits.move.failed', { code: p.code }), { tone: 'critical' }); return false; }
+      const key = STATUS_KEY[toStatus] || 'draft';
+      const tone = toStatus === ACTIVE ? 'good' : toStatus === SUSPENDED ? 'serious' : 'neutral';
+      toast(t(`permits.move.done.${key}`, { code: p.code, status: statusLabel(toStatus) }), { tone });
       return true;
     }
 
     /* ── drawer ── */
-    function openDrawer(id) {
-      const first = findPermit(id);
-      if (!first) { toast('تعذر العثور على التصريح المطلوب', { tone: 'warning' }); return; }
-      if (activeDrawer) { activeDrawer.close(); activeDrawer = null; }
-
-      const body = h('div', { class: 'stack' });
-      const approveBtn = button('اعتماد', { variant: 'primary', icon: 'file-check', onClick: () => movePermit(id, ACTIVE) });
-      const submitBtn = button('إرسال للاعتماد', { variant: 'outline', onClick: () => movePermit(id, PENDING) });
-      const suspendBtn = button('تعليق', { variant: 'outline', onClick: () => movePermit(id, SUSPENDED) });
-      const closeBtn = button('إغلاق التصريح', { variant: 'danger', onClick: () => movePermit(id, CLOSED) });
-      let unsub = () => {};
-      const api = drawer({
-        title: first.code, subtitle: `${first.type} · ${siteName(state(), first.siteId)}`, size: 'lg', body,
-        actions: [approveBtn, submitBtn, suspendBtn, closeBtn, { label: 'إغلاق', variant: 'ghost' }],
-        onClose: () => { unsub(); stopRegion('drawer'); if (activeDrawer === api) activeDrawer = null; },
-      });
-      activeDrawer = api;
-
-      const paint = () => {
-        stopRegion('drawer');
-        const p = findPermit(id);
-        const focusId = focusedIdWithin(api.el);
-        clear(body);
-        if (!p) { body.appendChild(emptyState({ title: 'تم حذف هذا التصريح' })); [approveBtn, submitBtn, suspendBtn, closeBtn].forEach((b) => { b.hidden = true; }); return; }
-        const st = state();
-        const now = Date.now();
-        const expired = ms(p.expiresAt) <= now;
-
-        approveBtn.hidden = !(p.status === DRAFT || p.status === PENDING || p.status === SUSPENDED);
-        approveBtn.querySelector('.btn-label').textContent = p.status === SUSPENDED ? 'استئناف التصريح' : 'اعتماد وتفعيل';
-        submitBtn.hidden = p.status !== DRAFT;
-        suspendBtn.hidden = p.status !== ACTIVE;
-        closeBtn.hidden = p.status === CLOSED;
-
-        const badges = h('div', { class: 'row wrap gap-2' }, badge(p.status, statusTone(p.status)), badge(p.type, 'neutral', { icon: typeIcon(p.type) }));
-        if (p.status === ACTIVE && expired) badges.appendChild(badge('انتهت الصلاحية', 'critical'));
-        else if (p.status === ACTIVE && ms(p.expiresAt) - now <= EXPIRING_MINUTES * 60_000) badges.appendChild(badge('يقترب من الانتهاء', 'warning'));
-
-        const expiryCell = h('span', { class: 'row wrap gap-2' }, h('span', {}, fmt.dateTime(p.expiresAt)));
-        if (p.status === ACTIVE) expiryCell.appendChild(liveCountdown('drawer', p.expiresAt).el);
-
-        body.appendChild(section('بيانات التصريح', badges, kv([
-          ['الموقع', siteName(st, p.siteId)],
-          ['المكان', p.location],
-          ['مقدّم الطلب', p.requester],
-          ['المعتمِد', p.approver],
-          ['يبدأ', fmt.dateTime(p.startsAt)],
-          ['ينتهي', expiryCell],
-          ['المدة', fmt.duration(Math.max(0, ms(p.expiresAt) - ms(p.startsAt)))],
-          ['عدد العمال', fmt.num(Number(p.workers) || 0)],
-          p.approvedAt ? ['تاريخ الاعتماد', fmt.dateTime(p.approvedAt)] : null,
-          p.createdAt ? ['أُنشئ', fmt.relative(p.createdAt)] : null,
-        ])));
-
-        const gas = gasChips(p.gasTest);
-        body.appendChild(section('فحص الغازات', gas || h('p', { class: 'note' }, 'لا يتطلب هذا التصريح فحص غازات، أو لم تُسجل قراءات بعد.')));
-
-        const hazards = Array.isArray(p.hazards) ? p.hazards : [];
-        body.appendChild(section(`المخاطر (${fmt.num(hazards.length)})`, hazards.length
-          ? h('ul', { class: 'list-reset stack gap-2' }, hazards.map((t) => h('li', { class: 'controls-item tone-warning' }, h('span', { class: 'controls-type' }, 'خطر'), h('span', {}, t))))
-          : h('p', { class: 'note' }, 'لم تُسجل مخاطر لهذا التصريح.')));
-
-        const controls = Array.isArray(p.controls) ? p.controls : [];
-        body.appendChild(section(`الضوابط والاحتياطات (${fmt.num(controls.length)})`, controls.length
-          ? h('ol', { class: 'controls-list' }, controls.map((t, i) => h('li', { class: 'controls-item tone-good' }, h('span', { class: 'controls-type mono' }, fmt.num(i + 1)), h('span', {}, typeof t === 'string' ? t : (t && t.text) || '—'))))
-          : h('p', { class: 'note' }, 'لم تُسجل ضوابط لهذا التصريح.')));
-        restoreFocus(api, focusId);
-      };
-
-      paint();
-      unsub = bus.on('store:change', (p) => { if (touches(p && p.path, 'permits')) paint(); });
-      api.open();
-    }
-
     function section(title, ...children) {
       return h('section', { class: 'drawer-section' }, h('h3', { class: 'drawer-section-title' }, title), h('div', { class: 'stack gap-3' }, children));
     }
 
+    function openDrawer(id) {
+      const first = findPermit(id);
+      if (!first) { toast(t('permits.move.notFound'), { tone: 'warning' }); return; }
+      if (activeDrawer) { activeDrawer.close(); activeDrawer = null; }
+
+      const approveBtn = button(t('permits.drawer.approve'), { variant: 'primary', icon: 'file-check', onClick: () => movePermit(id, ACTIVE) });
+      const submitBtn = button(t('permits.drawer.submit'), { variant: 'outline', onClick: () => movePermit(id, PENDING) });
+      const suspendBtn = button(t('permits.drawer.suspend'), { variant: 'outline', onClick: () => movePermit(id, SUSPENDED) });
+      const closeBtn = button(t('permits.drawer.close'), { variant: 'danger', onClick: () => movePermit(id, CLOSED) });
+      const actionBtns = [approveBtn, submitBtn, suspendBtn, closeBtn];
+
+      const overview = () => {
+        stopRegion('drawer');
+        const p = findPermit(id);
+        if (!p) return emptyState({ title: t('permits.drawer.deleted') });
+        const at = now();
+        const expired = ms(p.expiresAt) <= at;
+        const badges = h('div', { class: 'row wrap gap-2' }, badge(statusLabel(p.status), statusTone(p.status)), badge(typeLabel(p.type), 'neutral', { icon: typeIcon(p.type) }));
+        if (p.status === ACTIVE && expired) badges.appendChild(badge(t('permits.drawer.expiredBadge'), 'critical'));
+        else if (p.status === ACTIVE && ms(p.expiresAt) - at <= EXPIRING_MINUTES * MINUTE) badges.appendChild(badge(t('permits.drawer.soonBadge'), 'warning'));
+        const expiry = h('span', { class: 'row wrap gap-2' }, h('span', {}, zDateTime(fmt, p.expiresAt)));
+        if (p.status === ACTIVE) expiry.appendChild(liveCountdown('drawer', p.expiresAt).el);
+        return h('div', { class: 'stack gap-4' },
+          section(t('permits.drawer.details'), badges, kv([
+            [t('permits.drawer.site'), siteName(p.siteId)],
+            [t('permits.drawer.location'), loc(p)],
+            [t('permits.drawer.requester'), person(p.requester)],
+            [t('permits.drawer.approver'), person(p.approver)],
+            [t('permits.drawer.starts'), zDateTime(fmt, p.startsAt)],
+            [t('permits.drawer.expires'), expiry],
+            [t('permits.drawer.duration'), fmt.duration(Math.max(0, ms(p.expiresAt) - ms(p.startsAt)), { style: 'long' })],
+            [t('permits.drawer.workers'), tn('permits.card.workers', Number(p.workers) || 0)],
+            p.approvedAt ? [t('permits.drawer.approvedAt'), zDateTime(fmt, p.approvedAt)] : null,
+            p.createdAt ? [t('permits.drawer.created'), fmt.relative(p.createdAt, at)] : null,
+          ])),
+          h('p', { class: 'note is-demo t-helper' }, t('permits.drawer.localNote')));
+      };
+      const controlsTab = () => {
+        const p = findPermit(id);
+        if (!p) return emptyState({ title: t('permits.drawer.deleted') });
+        const hazards = Array.isArray(p.hazards) ? i18n.L(p, 'hazards', 'permits') : [];
+        const controls = Array.isArray(p.controls) ? i18n.L(p, 'controls', 'permits') : [];
+        return h('div', { class: 'stack gap-4' },
+          section(`${t('permits.drawer.hazards')} (${fmt.num(hazards.length)})`, hazards.length
+            ? h('ul', { class: 'controls-list' }, hazards.map((x) => h('li', { class: 'controls-item tone-warning' }, h('span', { class: 'controls-type' }, t('permits.drawer.hazard')), h('span', {}, String(x)))))
+            : h('p', { class: 'note' }, t('permits.drawer.noHazards'))),
+          section(`${t('permits.drawer.controls')} (${fmt.num(controls.length)})`, controls.length
+            ? h('ol', { class: 'controls-list' }, controls.map((x, i) => h('li', { class: 'controls-item tone-good' }, h('span', { class: 'controls-type num' }, fmt.num(i + 1)), h('span', {}, typeof x === 'string' ? x : (x && x.text) || '—'))))
+            : h('p', { class: 'note' }, t('permits.drawer.noControls'))));
+      };
+      const gasTab = () => {
+        const p = findPermit(id);
+        if (!p) return emptyState({ title: t('permits.drawer.deleted') });
+        const chips = gasChips(p.gasTest);
+        const limits = t('permits.gas.limits', { o2min: fmt.pct(19.5, 1), o2max: fmt.pct(23.5, 1), lel: fmt.pct(10), h2s: fmt.num(10), co: fmt.num(35) });
+        return h('div', { class: 'stack gap-4' },
+          section(t('permits.drawer.tabs.gas'), chips || h('p', { class: 'note' }, t('permits.gas.none'))),
+          h('p', { class: 't-helper' }, limits));
+      };
+
+      const countOf = (p) => (Array.isArray(p.hazards) ? p.hazards.length : 0) + (Array.isArray(p.controls) ? p.controls.length : 0);
+      const api = drawer({
+        title: first.code, subtitle: `${typeLabel(first.type)} · ${siteName(first.siteId)}`, size: 'lg',
+        tabs: [
+          { id: 'overview', label: t('permits.drawer.tabs.overview'), render: overview },
+          { id: 'controls', label: t('permits.drawer.tabs.controls'), count: countOf(first), render: controlsTab },
+          { id: 'gas', label: t('permits.drawer.tabs.gas'), render: gasTab },
+        ],
+        kind: 'permit',
+        actions: [...actionBtns, { label: t('permits.drawer.dismiss'), variant: 'ghost' }],
+        onClose: () => { unsub(); stopRegion('drawer'); if (activeDrawer === api) activeDrawer = null; },
+      });
+      activeDrawer = api;
+
+      const paintActions = () => {
+        const p = findPermit(id);
+        if (!p) { actionBtns.forEach((b) => { b.hidden = true; }); return; }
+        approveBtn.hidden = !(p.status === DRAFT || p.status === PENDING || p.status === SUSPENDED);
+        const lab = approveBtn.querySelector('.btn-label');
+        if (lab) lab.textContent = p.status === SUSPENDED ? t('permits.drawer.resume') : t('permits.drawer.approve');
+        submitBtn.hidden = p.status !== DRAFT;
+        suspendBtn.hidden = p.status !== ACTIVE;
+        closeBtn.hidden = p.status === CLOSED;
+        api.setTabCount('controls', countOf(p));
+        api.setSubtitle(`${typeLabel(p.type)} · ${siteName(p.siteId)}`);
+      };
+      paintActions();
+      const unsub = bus.on('store:change', (payload) => {
+        const path = payload && payload.path;
+        if (!touches(path, 'permits')) return;
+        const pid = idFromPath(path);
+        if (pid && pid !== id) return;
+        const focusedInside = api.el.contains(document.activeElement) ? document.activeElement : null;
+        paintActions();
+        api.refreshTab();
+        if (focusedInside && !focusedInside.isConnected) {
+          const fallback = api.el.querySelector('.drawer-foot button:not([hidden])') || api.el;
+          try { fallback.focus({ preventScroll: true }); } catch { /* ignore */ }
+        }
+      });
+      api.open();
+    }
+
     /* ── new permit modal ── */
+    function fieldOf(form, name) { return form.querySelector(`.field[data-name="${name}"]`); }
+    function setError(form, name, message) {
+      const wrap = fieldOf(form, name);
+      if (!wrap) return;
+      const control = wrap.querySelector('.field-control');
+      let err = wrap.querySelector('.field-error');
+      if (!message) {
+        wrap.classList.remove('is-invalid');
+        if (control) control.removeAttribute('aria-invalid');
+        if (err) err.remove();
+        if (control && control.dataset.describedby !== undefined) {
+          if (control.dataset.describedby) control.setAttribute('aria-describedby', control.dataset.describedby); else control.removeAttribute('aria-describedby');
+        }
+        return;
+      }
+      if (!err) {
+        err = h('p', { class: 'field-error', id: `${control ? control.id : name}-err` });
+        wrap.appendChild(err);
+      }
+      clear(err);
+      err.append(glyph('critical', 14), h('span', {}, message));
+      wrap.classList.add('is-invalid');
+      if (control) {
+        if (control.dataset.describedby === undefined) control.dataset.describedby = control.getAttribute('aria-describedby') || '';
+        control.setAttribute('aria-invalid', 'true');
+        control.setAttribute('aria-describedby', [control.dataset.describedby, err.id].filter(Boolean).join(' '));
+      }
+    }
+
     function openNewPermitModal() {
       if (activeModal) { activeModal.close(); activeModal = null; }
       const st = state();
-      const sites = (st.sites || []).map((s) => ({ value: s.id, label: `${s.name} (${s.code})` }));
+      const sites = (st.sites || []).map((s) => ({ value: s.id, label: `${i18n.L(s, 'name', 'sites')} (${s.code})` }));
       const gf = globalFilters();
       const defaultSite = gf.siteId && gf.siteId !== 'all' ? gf.siteId : (sites[0] ? sites[0].value : 'S1');
-      const start = roundToQuarter(new Date());
-      const end = new Date(start.getTime() + 8 * HOUR_MS);
+      const startMs = Math.ceil(now() / (15 * MINUTE)) * 15 * MINUTE;
+      const endMs = startMs + 8 * HOUR;
 
-      const form = h('form', { class: 'form-grid', 'aria-label': 'نموذج تصريح عمل جديد' });
+      const summary = h('p', { class: 'form-error-summary is-full', role: 'alert', hidden: true });
+      const form = h('form', { class: 'form-grid', 'aria-label': t('permits.form.aria'), novalidate: true });
       form.append(
-        h('h3', { class: 'form-section-title' }, 'نوع التصريح ومكانه'),
-        formField({ label: 'نوع التصريح', name: 'type', type: 'select', value: PERMIT_TYPES[0], options: PERMIT_TYPES, required: true }),
-        formField({ label: 'الحالة الأولية', name: 'status', type: 'select', value: PENDING, options: [DRAFT, PENDING], hint: 'يُفعَّل التصريح من اللوحة بعد اعتماده' }),
-        formField({ label: 'الموقع', name: 'siteId', type: 'select', value: defaultSite, options: sites, required: true }),
-        formField({ label: 'المكان داخل الموقع', name: 'location', required: true, placeholder: `مثال: المنطقة ج — المستوى ${fmt.num(12)}` }),
-        formField({ label: 'مقدّم الطلب', name: 'requester', required: true, placeholder: 'الاسم والصفة' }),
-        formField({ label: 'المعتمِد', name: 'approver', required: true, placeholder: 'مهندس السلامة المسؤول' }),
-        h('h3', { class: 'form-section-title' }, 'الفترة والطاقم'),
-        formField({ label: 'بداية التصريح', name: 'startsAt', type: 'datetime-local', value: toDatetimeLocal(start), required: true }),
-        formField({ label: 'انتهاء التصريح', name: 'expiresAt', type: 'datetime-local', value: toDatetimeLocal(end), required: true, hint: `الحد الأقصى المعتاد ${fmt.num(12)} ساعة لكل وردية` }),
-        formField({ label: 'عدد العمال', name: 'workers', type: 'number', value: 4, min: 1, max: 500, step: 1, required: true }),
-        h('h3', { class: 'form-section-title' }, 'المخاطر والضوابط'),
-        formField({ label: 'المخاطر المحددة', name: 'hazards', type: 'textarea', rows: 3, required: true, placeholder: 'خطر واحد في كل سطر', hint: 'سطر لكل خطر' }),
-        formField({ label: 'الضوابط والاحتياطات', name: 'controls', type: 'textarea', rows: 3, required: true, placeholder: 'ضابط واحد في كل سطر', hint: 'سطر لكل ضابط' }),
-        h('h3', { class: 'form-section-title' }, 'قراءات فحص الغازات (اختياري — للأماكن المغلقة والأعمال الساخنة)'),
-        formField({ label: 'الأكسجين O₂ (%)', name: 'o2', type: 'number', min: 0, max: 100, step: 0.1, placeholder: '20.9' }),
-        formField({ label: 'الغازات القابلة للاشتعال LEL (%)', name: 'lel', type: 'number', min: 0, max: 100, step: 1, placeholder: '0' }),
-        formField({ label: 'كبريتيد الهيدروجين H₂S (ppm)', name: 'h2s', type: 'number', min: 0, max: 1000, step: 0.1, placeholder: '0' }),
-        formField({ label: 'أول أكسيد الكربون CO (ppm)', name: 'co', type: 'number', min: 0, max: 5000, step: 1, placeholder: '0' }),
+        summary,
+        h('h3', { class: 'form-section-title' }, t('permits.form.sectionWhat')),
+        formField({ label: t('permits.form.type'), name: 'type', type: 'select', value: PERMIT_TYPES[0], options: PERMIT_TYPES.map((tp) => ({ value: tp, label: typeLabel(tp) })), required: true }),
+        formField({ label: t('permits.form.status'), name: 'status', type: 'select', value: PENDING, options: [DRAFT, PENDING].map((s) => ({ value: s, label: statusLabel(s) })), hint: t('permits.form.statusHint') }),
+        formField({ label: t('permits.form.site'), name: 'siteId', type: 'select', value: defaultSite, options: sites, required: true }),
+        formField({ label: t('permits.form.location'), name: 'location', required: true, placeholder: t('permits.form.locationPh', { n: fmt.num(12) }) }),
+        formField({ label: t('permits.form.requester'), name: 'requester', required: true, placeholder: t('permits.form.requesterPh') }),
+        formField({ label: t('permits.form.approver'), name: 'approver', required: true, placeholder: t('permits.form.approverPh') }),
+        h('h3', { class: 'form-section-title' }, t('permits.form.sectionWhen')),
+        formField({ label: t('permits.form.start'), name: 'startsAt', type: 'datetime-local', value: toRiyadhInput(startMs), required: true, hint: t('permits.tz') }),
+        formField({ label: t('permits.form.end'), name: 'expiresAt', type: 'datetime-local', value: toRiyadhInput(endMs), required: true, hint: t('permits.form.endHint', { hours: fmt.num(MAX_HOURS) }) }),
+        formField({ label: t('permits.form.workers'), name: 'workers', type: 'number', value: 4, min: WORKERS_MIN, max: WORKERS_MAX, step: 1, required: true }),
+        h('h3', { class: 'form-section-title' }, t('permits.form.sectionRisk')),
+        formField({ label: t('permits.form.hazards'), name: 'hazards', type: 'textarea', rows: 3, required: true, placeholder: t('permits.form.hazardsPh'), hint: t('permits.form.lineHint') }),
+        formField({ label: t('permits.form.controls'), name: 'controls', type: 'textarea', rows: 3, required: true, placeholder: t('permits.form.controlsPh'), hint: t('permits.form.lineHint') }),
+        h('h3', { class: 'form-section-title' }, t('permits.form.sectionGas')),
+        ...GAS.map((g) => formField({ label: t(`permits.form.${g.key}`), name: g.key, type: 'number', min: g.min, max: g.max, step: g.digits ? 0.1 : 1 })),
       );
+      // Section titles and the summary span the whole grid.
+      form.querySelectorAll('.form-section-title').forEach((n) => n.classList.add('is-full'));
+      form.addEventListener('input', (e) => { const f = e.target && e.target.closest('.field'); if (f && f.classList.contains('is-invalid')) setError(form, f.dataset.name, ''); });
+
+      const valueOf = (name) => { const c = form.elements.namedItem(name); return c && 'value' in c ? String(c.value).trim() : ''; };
+      function validate() {
+        const errors = {};
+        ['type', 'siteId', 'location', 'requester', 'approver', 'startsAt', 'expiresAt', 'workers', 'hazards', 'controls'].forEach((n) => { if (!valueOf(n)) errors[n] = t('permits.form.errors.required'); });
+        const startsAt = fromRiyadhInput(valueOf('startsAt'));
+        const expiresAt = fromRiyadhInput(valueOf('expiresAt'));
+        if (valueOf('startsAt') && !startsAt) errors.startsAt = t('permits.form.errors.date');
+        if (valueOf('expiresAt') && !expiresAt) errors.expiresAt = t('permits.form.errors.date');
+        if (startsAt && expiresAt && !errors.expiresAt) {
+          if (ms(expiresAt) <= ms(startsAt)) errors.expiresAt = t('permits.form.errors.order');
+          else if (ms(expiresAt) <= now()) errors.expiresAt = t('permits.form.errors.past');
+          else if (ms(expiresAt) - ms(startsAt) > MAX_HOURS * HOUR) errors.expiresAt = t('permits.form.errors.long', { hours: fmt.num(MAX_HOURS) });
+        }
+        const w = Number(valueOf('workers'));
+        if (valueOf('workers') && (!Number.isInteger(w) || w < WORKERS_MIN || w > WORKERS_MAX)) errors.workers = t('permits.form.errors.workers', { min: fmt.num(WORKERS_MIN), max: fmt.num(WORKERS_MAX) });
+        if (valueOf('hazards') && !lines(valueOf('hazards')).length) errors.hazards = t('permits.form.errors.required');
+        if (valueOf('controls') && !lines(valueOf('controls')).length) errors.controls = t('permits.form.errors.required');
+        GAS.forEach((g) => {
+          const raw = valueOf(g.key);
+          if (!raw) return;
+          const v = Number(raw);
+          if (!Number.isFinite(v) || v < g.min || v > g.max) errors[g.key] = t('permits.form.errors.range', { min: fmt.num(g.min), max: fmt.num(g.max) });
+        });
+        return { errors, startsAt, expiresAt };
+      }
 
       const submit = () => {
-        if (!form.reportValidity()) return false;
-        const data = readForm(form);
-        const startsAt = fromDatetimeLocal(data.startsAt);
-        const expiresAt = fromDatetimeLocal(data.expiresAt);
-        if (!startsAt || !expiresAt) { toast('صيغة التاريخ غير صالحة', { tone: 'warning' }); return false; }
-        if (ms(expiresAt) <= ms(startsAt)) { toast('يجب أن يكون وقت الانتهاء بعد وقت البداية', { tone: 'warning' }); return false; }
-        const gasEntries = GAS.map((g) => [g.key, data[g.key]]).filter(([, v]) => v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v)));
-        const gasTest = gasEntries.length ? Object.fromEntries(gasEntries.map(([k, v]) => [k, Number(v)])) : null;
+        const { errors, startsAt, expiresAt } = validate();
+        const names = ['type', 'siteId', 'location', 'requester', 'approver', 'startsAt', 'expiresAt', 'workers', 'hazards', 'controls', ...GAS.map((g) => g.key)];
+        names.forEach((n) => setError(form, n, errors[n] || ''));
+        const bad = names.filter((n) => errors[n]);
+        if (bad.length) {
+          summary.textContent = t('permits.form.errors.summary');
+          summary.hidden = false;
+          const firstBad = form.elements.namedItem(bad[0]);
+          if (firstBad && typeof firstBad.focus === 'function') firstBad.focus();
+          return false;
+        }
+        summary.hidden = true;
+        const gasEntries = GAS.map((g) => [g.key, valueOf(g.key)]).filter(([, v]) => v !== '' && Number.isFinite(Number(v)));
         const permit = store.addPermit({
-          type: data.type, status: data.status, siteId: data.siteId, location: data.location, requester: data.requester, approver: data.approver,
-          startsAt, expiresAt, workers: Number(data.workers) || 1, hazards: lines(data.hazards), controls: lines(data.controls), gasTest,
+          type: valueOf('type'), status: valueOf('status') || PENDING, siteId: valueOf('siteId'), location: valueOf('location'),
+          requester: valueOf('requester'), approver: valueOf('approver'), startsAt, expiresAt,
+          workers: Number(valueOf('workers')) || 1, hazards: lines(valueOf('hazards')), controls: lines(valueOf('controls')),
+          gasTest: gasEntries.length ? Object.fromEntries(gasEntries.map(([k, v]) => [k, Number(v)])) : null,
         });
-        if (!permit) { toast('تعذر حفظ التصريح', { tone: 'critical' }); return false; }
-        toast(`تم إنشاء التصريح ${permit.code} بحالة «${permit.status}»`, { tone: 'good', title: 'تم الحفظ', action: { label: 'عرض', onClick: () => openDrawer(permit.id) } });
-        typeFilter = 'all';
+        if (!permit) { toast(t('permits.form.failed'), { tone: 'critical' }); return false; }
+        toast(t('permits.form.saved', { code: permit.code, status: statusLabel(permit.status) }), { tone: 'good', title: t('permits.form.savedTitle'), action: { label: t('permits.form.view'), onClick: () => openDrawer(permit.id) } });
+        if (typeFilter.length && !typeFilter.includes(permit.type)) { typeFilter = []; filterSig = ''; }
         return true;
       };
       form.addEventListener('submit', (e) => { e.preventDefault(); if (submit()) api.close('action'); });
 
       const api = modal({
-        title: 'تصريح عمل جديد', subtitle: 'يُسجَّل التصريح ويظهر في اللوحة فوراً', size: 'lg', body: form,
-        actions: [{ label: 'إلغاء', variant: 'ghost' }, { label: 'حفظ التصريح', variant: 'primary', onClick: () => submit() }],
+        title: t('permits.form.title'), subtitle: t('permits.form.sub'), size: 'lg', body: form,
+        actions: [{ label: t('permits.form.cancel'), variant: 'ghost' }, { label: t('permits.form.save'), variant: 'primary', onClick: () => submit() }],
         onClose: () => { if (activeModal === api) activeModal = null; },
       });
       activeModal = api;
@@ -541,29 +629,37 @@ export const permitsView = {
     }
 
     /* ── repaint orchestration ── */
-    let pending = 0; // 1 strip, 2 board
+    let pending = 0; // 1 metrics + expiring, 2 board
+    let pendingIds = new Set();
     let raf = 0;
-    const schedule = (mask) => {
+    const schedule = (mask, ids = []) => {
       pending |= mask;
+      ids.forEach((id) => pendingIds.add(id));
       if (raf) return;
       raf = requestAnimationFrame(() => {
         raf = 0;
         if (!alive) return;
         const m = pending; pending = 0;
+        const changed = Array.from(pendingIds); pendingIds = new Set();
         try {
-          if (m & 1) paintStrip();
-          if (m & 2) paintBoard();
-        } catch (err) { console.error('[biltix-hse] permits: repaint failed', err); }
+          if (m & 1) { paintMetrics(); paintExpiring(); }
+          if (m & 2) paintBoard(changed);
+        } catch (err) { console.warn('[biltix] permits: repaint failed', err); }
       });
     };
 
-    paintStrip(); paintBoard();
+    paintMetrics(); paintExpiring(); paintBoard();
+    motion.enter(metricsHost.children, { y: 8 });
+    motion.enter([expiringHost, boardCard], { y: 10, delay: 0.08 });
 
-    subs.push(bus.on('store:change', (p) => { const path = p && p.path; if (touches(path, 'permits') || touches(path, 'sites')) schedule(3); }));
+    subs.push(bus.on('store:change', (p) => {
+      const path = p && p.path;
+      if (touches(path, 'permits') || touches(path, 'sites')) { const pid = idFromPath(path); schedule(3, pid ? [pid] : []); }
+    }));
     subs.push(bus.on('filters:change', () => schedule(3)));
     subs.push(bus.on('settings:change', () => schedule(3)));
 
-    /* a minute-level refresh keeps the "expiring soon" strip honest even without store writes */
+    /* minute refresh keeps "expiring soon" honest without store writes */
     const minuteTimer = setInterval(() => { if (alive && !document.hidden) schedule(1); }, 60_000);
 
     /* deep links: ?id=P3 opens the drawer, ?new=1 opens the modal */
@@ -580,6 +676,7 @@ export const permitsView = {
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
       subs.splice(0).forEach((u) => { try { u(); } catch { /* ignore */ } });
       stopRegion('strip'); stopRegion('board'); stopRegion('drawer');
+      if (board && typeof board.destroy === 'function') { try { board.destroy(); } catch { /* ignore */ } }
       if (activeDrawer) { try { activeDrawer.close(); } catch { /* ignore */ } activeDrawer = null; }
       if (activeModal) { try { activeModal.close(); } catch { /* ignore */ } activeModal = null; }
     };

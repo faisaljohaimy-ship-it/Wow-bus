@@ -1635,48 +1635,108 @@ export default {
     },
   },
   tasks: {
-    MT1: { title: 'Negotiate a 10% cap on delay damages and convert them to 0.1% per day — CT-2026-014 §8.7' },
-    MT2: { title: 'Amend the payment term to 30 days + arrange a payment certificate financing facility (SAR 150 million)' },
-    MT3: { title: 'Stop pouring on Floor 23 until edge protection is installed on all three sides and the inspection is documented' },
-    MT4: { title: 'Re-plan general overheads and lock the steel price for Floors 28–30 with a forward supply contract' },
+    MT1: {
+      title: 'Negotiate a 10% cap on delay damages and convert them to 0.1% per day — CT-2026-014 §8.7',
+      writeback: { target: 'BILTIX PM' },
+    },
+    MT2: {
+      title: 'Amend the payment term to 30 days + arrange a payment certificate financing facility (SAR 150 million)',
+      writeback: { target: 'BILTIX PM' },
+    },
+    MT3: {
+      title: 'Stop pouring on Floor 23 until edge protection is installed on all three sides and the inspection is documented',
+      writeback: { target: 'BILTIX PM' },
+    },
+    MT4: {
+      title: 'Re-plan general overheads and lock the steel price for Floors 28–30 with a forward supply contract',
+      writeback: { target: 'BILTIX PM' },
+    },
     MT5: {
       title: 'Escalate the Building C permanent power application with the Saudi Electricity Company and send an extension of time notice',
+      writeback: { target: 'BILTIX PM' },
     },
-    MT6: { title: 'Transfer 8 lift technicians from the Financial Gateway Tower project for 5 weeks' },
+    MT6: { title: 'Transfer 8 lift technicians from the Financial Gateway Tower project for 5 weeks', writeback: { target: 'BILTIX PM' } },
     MT7: {
       title: 'Resident inspection team at the transformer factory + tie payment to the FAT milestone + standby contract for an alternative transformer',
+      writeback: { target: 'BILTIX PM' },
     },
     MT8: {
       title: 'Extension of time notice for the late grid connection agreement and negotiation of an "adjusted commercial operation date"',
+      writeback: { target: 'BILTIX PM' },
     },
-    MT9: { title: 'Freeze changes in WBS 3.4, submit CO-052 and fix the price formula for shipments 5–8' },
-    MT10: { title: 'Interpretative addendum on the performance ratio test methodology (IEC 61724-1) — §9.4' },
-    MT11: { title: 'Close gate G2, divert port trucks and post a gate marshal during lifting' },
-    MT12: { title: 'Send the notice of claim for unforeseeable geotechnical conditions before the deadline lapses (§20.1)' },
-    MT13: { title: 'Tender a second excavation front with a second blasting contractor and resequence backfill on completed sections' },
-    MT14: { title: 'Evacuate 25 m below the north face, stop blasting within 100 m and design slope stabilisation' },
-    MT15: { title: 'PPE checkpoint at the blasting area entrance and link violations to the deduction clause' },
-    MT16: { title: 'Contract 5 certified medical gas technicians and transfer medical copper pipes from the Jeddah project' },
-    MT17: { title: 'Structural review of wall W-L25, approve the repair method and inspect the Floor 26 formwork' },
-    MT18: { title: 'Endorse the subcontractor onto the CAR policy and require a SAR 20 million professional indemnity policy' },
-    MT19: { title: 'Reject tile batch 4 and replace it at the supplier\'s cost + a local supplier for 30% of the remainder' },
-    MT20: { title: 'Move 40 technicians from the North sector to the South sector for 3 weeks' },
-    MT21: { title: 'Activate the dust suppression plan and submit the Q3 quarterly environmental report' },
-    MT22: { title: 'Addendum adjusting the steel price threshold to 10% in both the main contract and the subcontract' },
+    MT9: {
+      title: 'Freeze changes in WBS 3.4, submit CO-052 and fix the price formula for shipments 5–8',
+      writeback: { target: 'BILTIX PM' },
+    },
+    MT10: {
+      title: 'Interpretative addendum on the performance ratio test methodology (IEC 61724-1) — §9.4',
+      writeback: { target: 'BILTIX PM' },
+    },
+    MT11: { title: 'Close gate G2, divert port trucks and post a gate marshal during lifting', writeback: { target: 'BILTIX PM' } },
+    MT12: {
+      title: 'Send the notice of claim for unforeseeable geotechnical conditions before the deadline lapses (§20.1)',
+      writeback: { target: 'BILTIX PM' },
+    },
+    MT13: {
+      title: 'Tender a second excavation front with a second blasting contractor and resequence backfill on completed sections',
+      writeback: { target: 'BILTIX PM' },
+    },
+    MT14: {
+      title: 'Evacuate 25 m below the north face, stop blasting within 100 m and design slope stabilisation',
+      writeback: { target: 'BILTIX PM' },
+    },
+    MT15: {
+      title: 'PPE checkpoint at the blasting area entrance and link violations to the deduction clause',
+      writeback: { target: 'BILTIX PM' },
+    },
+    MT16: {
+      title: 'Contract 5 certified medical gas technicians and transfer medical copper pipes from the Jeddah project',
+      writeback: { target: 'BILTIX PM' },
+    },
+    MT17: {
+      title: 'Structural review of wall W-L25, approve the repair method and inspect the Floor 26 formwork',
+      writeback: { target: 'BILTIX PM' },
+    },
+    MT18: {
+      title: 'Endorse the subcontractor onto the CAR policy and require a SAR 20 million professional indemnity policy',
+      writeback: { target: 'BILTIX PM' },
+    },
+    MT19: {
+      title: 'Reject tile batch 4 and replace it at the supplier\'s cost + a local supplier for 30% of the remainder',
+      writeback: { target: 'BILTIX PM' },
+    },
+    MT20: { title: 'Move 40 technicians from the North sector to the South sector for 3 weeks', writeback: { target: 'BILTIX PM' } },
+    MT21: {
+      title: 'Activate the dust suppression plan and submit the Q3 quarterly environmental report',
+      writeback: { target: 'BILTIX PM' },
+    },
+    MT22: {
+      title: 'Addendum adjusting the steel price threshold to 10% in both the main contract and the subcontract',
+      writeback: { target: 'BILTIX PM' },
+    },
     MT23: {
       outcome: '18 workers retrained and a safety officer appointed; no observations in the following week\'s images. The model\'s recommendation was sufficient.',
       title: 'Retrain the roofing crew on lifelines and assign a safety officer on the roof',
+      writeback: { target: 'BILTIX PM' },
     },
-    MT24: { title: 'Repair the gaps in the south fence, raise it to 2.4 m and patrol before every blast' },
-    MT25: { title: 'Joint acceptance test protocol (HTM 02-01 + NFPA 99) as an addendum to Clause 9.1' },
-    MT26: { title: 'Agree the night shutdown schedule with hospital management and test the generators under full load' },
+    MT24: {
+      title: 'Repair the gaps in the south fence, raise it to 2.4 m and patrol before every blast',
+      writeback: { target: 'BILTIX PM' },
+    },
+    MT25: { title: 'Joint acceptance test protocol (HTM 02-01 + NFPA 99) as an addendum to Clause 9.1', writeback: { target: 'BILTIX PM' } },
+    MT26: {
+      title: 'Agree the night shutdown schedule with hospital management and test the generators under full load',
+      writeback: { target: 'BILTIX PM' },
+    },
     MT27: {
       outcome: 'Both generators received and inspected (GRN-2026-0912) 9 days before the need date.',
       title: 'Follow up standby generator shipping weekly until delivery',
+      writeback: { target: 'BILTIX PM' },
     },
     MT28: {
       outcome: 'Materials removed within 24 hours and a storage area designated; no recurrence in 7 subsequent reports.',
       title: 'Remove combustible materials from the Floor 2 corridor and designate a storage area',
+      writeback: { target: 'BILTIX PM' },
     },
   },
   alerts: {

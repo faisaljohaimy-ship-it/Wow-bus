@@ -40,6 +40,16 @@ export default {
         'منخفض': 'منخفض',
         'متوسط': 'متوسط',
         'عالٍ': 'عالٍ',
+        'غير محدد': 'غير محدد',
+      },
+      taskPriority: {
+        'high': 'عالية',
+        'medium': 'متوسطة',
+        'low': 'منخفضة',
+      },
+      aiRiskOrigin: {
+        'engine': 'محرك الذكاء الاصطناعي',
+        'manual': 'إدخال يدوي',
       },
       taskStatus: {
         'جديدة': 'جديدة',
@@ -252,6 +262,7 @@ export default {
         'تفتيش سقالات': 'تفتيش سقالات',
         'تقرير مقاول': 'تقرير مقاول',
         'حادث': 'حادث',
+        'إدخال يدوي': 'إدخال يدوي',
       },
       recordSource: {
         'المحاكاة الحية — تصريح بديل': 'المحاكاة الحية — تصريح بديل',
@@ -479,6 +490,9 @@ export default {
         'أسعار الصرف (ساما)': 'أسعار الصرف (ساما)',
         'Primavera P6 EPPM': 'Primavera P6 EPPM',
         'Autodesk APS (BIM)': 'Autodesk APS (BIM)',
+        'Biltix — التكلفة': 'بلتكس — التكلفة',
+        'إدخال يدوي': 'إدخال يدوي',
+        'بوابة الحساسات (MQTT)': 'بوابة الحساسات (MQTT)',
       },
       flowStage: {
         'مُلتقط': 'مُلتقط',
@@ -609,6 +623,16 @@ export default {
         'منخفض': 'Low',
         'متوسط': 'Medium',
         'عالٍ': 'High',
+        'غير محدد': 'Unspecified',
+      },
+      taskPriority: {
+        'high': 'High',
+        'medium': 'Medium',
+        'low': 'Low',
+      },
+      aiRiskOrigin: {
+        'engine': 'AI engine',
+        'manual': 'Manual entry',
       },
       taskStatus: {
         'جديدة': 'New',
@@ -821,6 +845,7 @@ export default {
         'تفتيش سقالات': 'Scaffold inspection',
         'تقرير مقاول': 'Contractor report',
         'حادث': 'Incident',
+        'إدخال يدوي': 'Manual entry',
       },
       recordSource: {
         'المحاكاة الحية — تصريح بديل': 'Live simulation — replacement permit',
@@ -1048,6 +1073,9 @@ export default {
         'أسعار الصرف (ساما)': 'Exchange rates (SAMA)',
         'Primavera P6 EPPM': 'Primavera P6 EPPM',
         'Autodesk APS (BIM)': 'Autodesk APS (BIM)',
+        'Biltix — التكلفة': 'BILTIX — Cost',
+        'إدخال يدوي': 'Manual entry',
+        'بوابة الحساسات (MQTT)': 'Sensor gateway (MQTT)',
       },
       flowStage: {
         'مُلتقط': 'Captured',

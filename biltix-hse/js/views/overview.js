@@ -1,113 +1,49 @@
 /**
- * Biltix HSE — SEC-01 نظرة عامة (js/views/overview.js)
+ * BILTIX Risk AI — HSE pillar · SEC-01 Safety overview (js/views/overview.js). Owner: B-HSE1.
  *
- * The command-center landing view. Four rows:
- *   1. Safety Index hero (gauge + LTI-free days / LTIFR / TRIR + formula hint)  |  live SweepRadar
- *   2. Eight KPI tiles with 8-week sparklines and deltas vs. the previous period
- *   3. 5×5 risk matrix (status tones by tier)  |  incidents trend  |  permits by status
- *   4. Sites performance table  |  urgent actions
+ * Reading order (one hierarchy):
+ *   A. Head — page title, lead, honest data status (status.js), scope, "add safety risk".
+ *   B. Four executive metrics — overdue risks (sel.overdueRisks: THE overdue definition shared with
+ *      the reports), open critical risks, open incidents, near misses (30 days).
+ *   C. Safety index (gauge + lagging indicators + open risks by tier) | risk radar (simulated sweep).
+ *   D. Leading indicators — active permits, corrective-action closure, training compliance, inspections due.
+ *   E. Analysis — 5×5 matrix (cell → matching register records) | incident trend | permits by status.
+ *   F. Priority actions (ranked) | site performance table (row → site filter).
  *
- * Contract: docs/ARCHITECTURE.md §4–§8. Everything that comes from data reaches the DOM
- * through textContent / components.h. Re-renders are coalesced into one animation frame
- * and only fire for paths that change what this view shows (feed / sensor / integration
- * ticks are ignored). The radar is created once and reads live blips on every frame.
+ * Language: every string comes from the 'overview' (and shared 'risks') dictionaries; data text through
+ * i18n.L / label / term; numbers and dates through fmt. Live updates patch in place (metric values
+ * flash when they change, the sites table keeps its sort/page and flashes changed rows); motion.enter
+ * runs on the first render only. Data reaches the DOM through textContent / h() only.
  */
 
+import { i18n } from '../core/i18n.js';
 import * as seedMod from '../data/seed.js';
 import * as selectorsMod from '../core/selectors.js';
+import dict from '../i18n/overview.js';
+import risksDict from '../i18n/risks.js';
+
+i18n.register('risks', risksDict);
+i18n.register('overview', dict);
 
 const DAY_MS = 86_400_000;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const CLOSED = 'مغلق';
-
-/* Contract enums (fallbacks keep the view alive while seed.js is being rebuilt). */
-const FALLBACK_CATEGORIES = [
-  { id: 'height', name: 'العمل على ارتفاعات', icon: 'height' },
-  { id: 'excavation', name: 'الحفريات والخنادق', icon: 'excavation' },
-  { id: 'lifting', name: 'الرافعات وعمليات الرفع', icon: 'crane' },
-  { id: 'electrical', name: 'الكهرباء', icon: 'bolt' },
-  { id: 'confined', name: 'الأماكن المغلقة', icon: 'confined' },
-  { id: 'hotwork', name: 'الأعمال الساخنة', icon: 'flame' },
-  { id: 'heat', name: 'الإجهاد الحراري', icon: 'sun' },
-  { id: 'chemical', name: 'المواد الكيميائية والغبار', icon: 'flask' },
-  { id: 'traffic', name: 'المركبات وحركة المرور', icon: 'truck' },
-  { id: 'scaffold', name: 'السقالات والأعمال المؤقتة', icon: 'scaffold' },
-  { id: 'structural', name: 'الانهيارات الإنشائية', icon: 'structure' },
-  { id: 'ergonomic', name: 'المناولة اليدوية والإرجونوميكس', icon: 'body' },
-];
-/** Short rim labels for the sweep radar sectors (full names live in the tooltip). */
-const SHORT_CATEGORY = {
-  height: 'ارتفاعات', excavation: 'حفريات', lifting: 'رفع', electrical: 'كهرباء', confined: 'أماكن مغلقة',
-  hotwork: 'أعمال ساخنة', heat: 'إجهاد حراري', chemical: 'كيميائيات', traffic: 'مركبات', scaffold: 'سقالات',
-  structural: 'إنشائي', ergonomic: 'مناولة',
-};
+/** Stored tier values (Arabic enum values — display goes through i18n.label('tier', …)). */
 const TIERS = [
   { tier: 'حرج', tone: 'critical' },
   { tier: 'عالٍ', tone: 'serious' },
   { tier: 'متوسط', tone: 'warning' },
   { tier: 'منخفض', tone: 'good' },
 ];
-const LIKELIHOOD_LABELS = ['نادر', 'غير محتمل', 'محتمل', 'مرجّح', 'شبه مؤكد'];
-const SEVERITY_LABELS = ['طفيف', 'بسيط', 'متوسط', 'جسيم', 'كارثي'];
-const KIND_META = {
-  risk: { label: 'مخاطرة', icon: 'risk' },
-  incident: { label: 'حادث', icon: 'incident' },
-  permit: { label: 'تصريح عمل', icon: 'permit' },
-  inspection: { label: 'تفتيش', icon: 'inspection' },
-  cert: { label: 'شهادة تدريب', icon: 'training' },
-};
-const TONE_LABEL = { critical: 'حرج', serious: 'عالٍ', warning: 'تنبيه', good: 'مستقر', neutral: 'عادي', accent: 'مباشر', brand: 'مباشر' };
+const TONE_RANK = { critical: 0, serious: 1, warning: 2, good: 3, accent: 4, neutral: 5 };
+const KIND_ICON = { risk: 'shield-alert', incident: 'incident', permit: 'permit', inspection: 'inspection', cert: 'training' };
+const FALLBACK_CATEGORY_IDS = ['height', 'excavation', 'lifting', 'electrical', 'confined', 'hotwork', 'heat', 'chemical', 'traffic', 'scaffold', 'structural', 'ergonomic'];
 const DEFAULT_WEIGHTS = { base: 100, criticalOpen: 2.5, highOpen: 1, overdueOpen: 0.5, lti90: 4, mtc90: 1.5, nearMiss30: 0.5, trainingPct: 0.1 };
 
-/** Local glyphs used when art.js has no icon of that name (24×24 stroke paths; "c:" = circle). */
-const ICONS = {
-  info: ['c:12,12,9', 'M12 11v5', 'M12 8h.01'],
-  plus: ['M12 5v14', 'M5 12h14'],
-  external: ['M14 4h6v6', 'M20 4l-9 9', 'M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5'],
-  clock: ['c:12,12,9', 'M12 7v5l3 2'],
-  check: ['M5 12.5l4.5 4.5L19 7.5'],
-  site: ['M4 20h16', 'M6 20V8l6-4 6 4v12', 'M10 20v-5h4v5'],
-  risk: ['M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z', 'M12 8v5', 'M12 16h.01'],
-  incident: ['M12 3.5l9 16H3l9-16z', 'M12 10v4', 'M12 17.2h.01'],
-  nearmiss: ['c:12,12,9', 'M8 12h8', 'M12 8v8'],
-  permit: ['M7 3h8l4 4v14H7z', 'M15 3v4h4', 'M10 13h5M10 17h5'],
-  inspection: ['M9 4h6v3H9z', 'M6 6h12v15H6z', 'M9 13l2 2 4-4'],
-  training: ['M3 9l9-4 9 4-9 4-9-4z', 'M7 11v5c0 1.5 2.5 3 5 3s5-1.5 5-3v-5', 'M21 9v6'],
-  trend: ['M3 17l6-6 4 4 8-8', 'M14 7h7v7'],
-  radar: ['c:12,12,9', 'c:12,12,5', 'M12 12l6-6', 'M12 3v2'],
-  grid: ['M4 4h7v7H4z', 'M13 4h7v7h-7z', 'M4 13h7v7H4z', 'M13 13h7v7h-7z'],
-};
-
-function localIcon(name, size) {
-  const spec = ICONS[name];
-  if (!spec) return null;
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('width', String(size));
-  svg.setAttribute('height', String(size));
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
-  svg.setAttribute('stroke-width', '2');
-  svg.setAttribute('stroke-linecap', 'round');
-  svg.setAttribute('stroke-linejoin', 'round');
-  spec.forEach((d) => {
-    if (d.startsWith('c:')) {
-      const [cx, cy, r] = d.slice(2).split(',').map(Number);
-      const c = document.createElementNS(SVG_NS, 'circle');
-      c.setAttribute('cx', String(cx)); c.setAttribute('cy', String(cy)); c.setAttribute('r', String(r));
-      svg.appendChild(c);
-    } else {
-      const p = document.createElementNS(SVG_NS, 'path');
-      p.setAttribute('d', d);
-      svg.appendChild(p);
-    }
-  });
-  return svg;
-}
-
 const arr = (v) => (Array.isArray(v) ? v : []);
-const categories = () => (Array.isArray(seedMod.CATEGORIES) && seedMod.CATEGORIES.length ? seedMod.CATEGORIES : FALLBACK_CATEGORIES);
-const categoryName = (id) => { const c = categories().find((x) => x.id === id); return c ? c.name : '—'; };
+const categories = () => (Array.isArray(seedMod.CATEGORIES) && seedMod.CATEGORIES.length
+  ? seedMod.CATEGORIES
+  : FALLBACK_CATEGORY_IDS.map((id) => ({ id, icon: 'hazard' })));
 const scoreTone = (score) => (score >= 85 ? 'good' : score >= 70 ? 'warning' : score >= 55 ? 'serious' : 'critical');
 
 function parseMs(value) {
@@ -119,10 +55,27 @@ function parseMs(value) {
   return d.getTime();
 }
 
+function arrowSvg(direction) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '12');
+  svg.setAttribute('height', '12');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2.4');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  const p = document.createElementNS(SVG_NS, 'path');
+  p.setAttribute('d', direction === 'up' ? 'M12 19V5M5 12l7-7 7 7' : direction === 'down' ? 'M12 5v14M5 12l7 7 7-7' : 'M5 12h14');
+  svg.appendChild(p);
+  return svg;
+}
+
 export default {
   id: 'overview',
   code: 'SEC-01',
-  title: 'نظرة عامة',
+  get title() { return i18n.has('core.nav.overview.page') ? i18n.t('core.nav.overview.page') : i18n.t('overview.title'); },
   icon: 'grid',
 
   render(container, ctx) {
@@ -130,8 +83,16 @@ export default {
     const C = ctx.components || {};
     const { h } = C;
     const R = ctx.radar || {};
+    const I = ctx.i18n || i18n;
+    const t = (key, params) => I.t(key, params);
+    const tn = (key, count, params) => I.tn(key, count, params);
+    const L = (record, field, ns) => (record ? I.L(record, field, ns) : '');
+    const label = (ns, value) => I.label(ns, value);
+    const term = (s) => (typeof I.term === 'function' ? I.term(s) : s);
+    const statusApi = ctx.status || null;
+    const motion = ctx.motion || C.motion || null;
 
-    /* ───────────── local helpers ───────────── */
+    /* ───────────── helpers ───────────── */
     const warned = new Set();
     const warn = (where, err) => {
       const key = `${where}:${err && err.message}`;
@@ -144,62 +105,65 @@ export default {
     };
     const ico = (name, size = 16) => {
       let node = null;
-      try { node = art && typeof art.icon === 'function' ? art.icon(name, size) : null; } catch { node = null; }
-      if (!(node instanceof Node)) node = localIcon(name, size) || C.glyph('neutral', size);
-      node.setAttribute('width', String(size));
-      node.setAttribute('height', String(size));
+      try { node = typeof C.svgIcon === 'function' ? C.svgIcon(name, size) : (art && art.icon ? art.icon(name, size) : null); } catch { node = null; }
+      if (!(node instanceof Node)) node = C.glyph('neutral', size);
       node.setAttribute('aria-hidden', 'true');
       node.setAttribute('focusable', 'false');
-      node.classList.add('icon');
       return node;
     };
-    /** Build a chart; return its element or null (never throws into the view). */
-    const tryEl = (fn, label) => {
-      try {
-        const r = fn();
-        const el = r instanceof Node ? r : r && r.el;
-        return el instanceof Node ? el : null;
-      } catch (err) { warn(`chart:${label}`, err); return null; }
+    const tryEl = (fn, where) => {
+      try { const r = fn(); const el = r instanceof Node ? r : r && r.el; return el instanceof Node ? el : null; } catch (err) { warn(`chart:${where}`, err); return null; }
     };
-    const chartOrEmpty = (fn, label) => tryEl(fn, label) || C.emptyState({ title: 'تعذر رسم المخطط', text: label });
+    /** A section that failed to build shows an error state with a retry instead of breaking the view. */
+    const guard = (host, where, build) => {
+      try { build(); } catch (err) {
+        warn(where, err);
+        host.replaceChildren(C.errorState({ title: t('overview.errors.sectionTitle'), text: t('overview.errors.sectionText'), retry: () => schedule() }));
+      }
+    };
     const state = () => store.state || {};
     const filters = () => ({ siteId: 'all', range: 30, search: '', ...(store.filters || (store.state && store.state.filters) || {}) });
-    const siteById = (id) => arr(state().sites).find((s) => s.id === id) || null;
-    const siteName = (id) => { const s = siteById(id); return s ? s.name : ''; };
+    const siteById = (id) => arr(state().sites).find((s) => s && s.id === id) || null;
+    const siteName = (id) => { const s = siteById(id); return s ? L(s, 'name', 'sites') : ''; };
     const now = () => (typeof store.now === 'function' ? store.now() : new Date());
-    const periodLabel = (f) => `آخر ${fmt.num(f.range)} ${f.range <= 10 ? 'أيام' : 'يوماً'}`;
-    const scopeLabel = (f) => (f.siteId === 'all' ? 'جميع المواقع' : siteName(f.siteId) || 'موقع محدد');
-    const pairs = (count) => `${fmt.num(count)} مخاطرة`;
-    /** Route digit runs inside selector-made labels ("أسبوع 36") through the numerals setting. */
-    const digits = (s) => String(s ?? '').replace(/\d+(?:\.\d+)?/g, (m) => fmt.num(Number(m), { maximumFractionDigits: 2 }));
-    /** Re-set a card subtitle (static copy carries numbers that must follow the numerals setting). */
-    const setSub = (cardEl, text) => { const el = cardEl.querySelector('.card-sub'); if (el && el.textContent !== text) el.textContent = text; };
+    const tierLabel = (tier) => label('tier', tier);
+    const tierBadge = (tier) => C.badge(tierLabel(tier), safe(() => sel.tierTone(tier), 'neutral', 'tierTone'));
+    const categoryLabel = (id) => label('hseCategory', id) || '—';
+    const periodText = (f) => tn('overview.period.days', Number(f.range) || 30);
+    const scopeText = (f) => (f.siteId === 'all' ? t('overview.scope.all') : (siteName(f.siteId) || t('overview.scope.one')));
+    const riyadh = (iso, opts) => {
+      const d = fmt.toDate ? fmt.toDate(iso) : new Date(iso);
+      if (!d || Number.isNaN(d.getTime())) return '—';
+      try { return new Intl.DateTimeFormat(fmt.locale(), { timeZone: 'Asia/Riyadh', ...opts }).format(d); } catch { return fmt.time(d); }
+    };
+    const riyadhTime = (iso) => riyadh(iso, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    const sourceStatus = () => {
+      try {
+        if (statusApi && typeof statusApi.source === 'function') return statusApi.source(state()).status || 'demo';
+        if (statusApi && typeof statusApi.mode === 'function') return statusApi.mode(state());
+      } catch (err) { warn('status', err); }
+      return 'demo';
+    };
+    const statusLabel = (s) => { try { return statusApi ? statusApi.label(s) : t(`status.${s}`); } catch { return s; } };
+    const statusDesc = (s) => { try { return statusApi ? statusApi.desc(s) : ''; } catch { return ''; } };
+    const statusBadge = (s, opts = {}) => (typeof C.statusBadge === 'function' ? C.statusBadge(s, opts) : C.badge(statusLabel(s), 'accent'));
 
-    /** Plain table twin builder (headers + rows; `numeric` marks mono/end-aligned columns). */
+    /** Plain table twin (headers + rows; `numeric` marks end-aligned columns). */
     function simpleTable(caption, headers, rows, numeric = []) {
       const table = h('table', { class: 'chart-table' });
       table.appendChild(h('caption', {}, caption));
-      table.appendChild(h('thead', {}, h('tr', {}, headers.map((label, i) => h('th', { scope: 'col', class: numeric[i] ? 'num' : null }, label)))));
+      table.appendChild(h('thead', {}, h('tr', {}, headers.map((text, i) => h('th', { scope: 'col', class: numeric[i] ? 'num' : null }, text)))));
       table.appendChild(h('tbody', {}, rows.length
         ? rows.map((r) => h('tr', {}, r.map((cell, i) => h('td', { class: numeric[i] ? 'num' : null }, cell))))
-        : h('tr', {}, h('td', { colspan: String(headers.length), class: 'muted' }, 'لا توجد بيانات'))));
+        : h('tr', {}, h('td', { colspan: String(headers.length), class: 'muted' }, t('overview.common.noData')))));
       return table;
     }
-
-    /** Tone legend: icon + swatch + label (status is never colour-alone). */
-    function toneLegend(items, cls = 'tone-legend') {
-      return h('ul', { class: cls, role: 'list', 'aria-label': 'دليل الألوان' }, items.map((it) => h('li', { class: [`${cls}-item`, `tone-${it.tone}`] },
+    /** Tone legend: icon + swatch + word (status is never colour-alone). */
+    function toneLegend(items, cls) {
+      return h('ul', { class: cls, role: 'list', 'aria-label': t('overview.common.legend') }, items.map((it) => h('li', { class: [`${cls}-item`, `tone-${it.tone}`] },
         C.glyph(it.tone, 12),
         h('span', { class: 'legend-key' }),
-        h('span', {}, it.count === undefined ? it.label : `${it.label} · ${fmt.num(it.count)}`))));
-    }
-
-    /** Make a card body stretch so hero content can distribute vertical space. */
-    function fillBody(cardEl) {
-      const body = cardEl.querySelector('.card-body');
-      const view = cardEl.querySelector('.card-view-chart');
-      if (body) { body.style.display = 'flex'; body.style.flexDirection = 'column'; }
-      if (view) { view.style.flex = '1'; view.style.display = 'flex'; view.style.flexDirection = 'column'; }
+        h('span', {}, it.count === undefined ? it.label : t('overview.common.legendCount', { label: it.label, count: fmt.num(it.count) })))));
     }
 
     /* ───────────── lifecycle registers ───────────── */
@@ -211,156 +175,210 @@ export default {
     let overlay = null;
     let lastChangeAt = Date.now();
     let sitesTable = null;
+    let gaugeApi = null;
+    let firstPaint = true;
 
-    /* ───────────── view head ───────────── */
+    /* ═════════════ A. head ═════════════ */
     const root = h('section', { class: 'view view-overview' });
-    const scopeBadge = h('span', { class: 'badge tone-neutral', 'data-tone': 'neutral' }, ico('building', 14), h('span', { class: 'badge-text' }, ''));
-    root.appendChild(h('div', { class: 'view-head' },
+    const statusHost = h('span', { class: 'row gap-2' });
+    const scopeBadge = C.badge('', 'neutral', { icon: ico('building', 14) });
+    const head = h('div', { class: 'view-head' },
       h('div', { class: 'view-head-text' },
-        h('span', { class: 'code-tag' }, 'SEC-01'),
-        h('h1', { tabindex: '-1' }, 'نظرة عامة'),
-        h('p', { class: 'view-lead' }, 'صورة لحظية لأداء السلامة والصحة المهنية عبر مواقع بلتكس: مؤشر السلامة، معدلات الإصابات، رادار المخاطر الحي، والإجراءات التي تحتاج تدخلاً اليوم.')),
+        h('span', { class: 'code-tag', translate: 'no' }, 'SEC-01'),
+        h('h1', { tabindex: '-1' }, i18n.has('core.nav.overview.page') ? t('core.nav.overview.page') : t('overview.title')),
+        h('p', { class: 'view-lead' }, t('overview.lead'))),
       h('div', { class: 'view-actions' },
+        statusHost,
         scopeBadge,
-        C.button('إضافة مخاطرة', { variant: 'outline', size: 'sm', icon: ico('plus', 14), onClick: () => router.navigate('risks', { new: 1 }) }))));
+        C.button(t('overview.actions.addRisk'), { variant: 'outline', size: 'sm', icon: ico('plus', 14), onClick: () => router.navigate('risks', { new: 1 }) })));
+    root.appendChild(head);
 
-    /* ───────────── row 1: hero + radar ───────────── */
+    /* ═════════════ B. executive metrics ═════════════ */
+    const metricGrid = h('div', { class: 'metric-grid', role: 'group', 'aria-label': t('overview.metrics.aria') });
+    root.appendChild(metricGrid);
+
+    /** Executive metric tile (.metric-tile markup from css/components.css); patched in place. */
+    function metricTile({ id, icon, onClick }) {
+      const labelEl = h('span', { class: 'metric-label' });
+      const valueEl = h('span', { class: 't-metric' });
+      const unitEl = h('span', { class: 'metric-unit' });
+      const sparkEl = h('span', { class: 'metric-spark', 'aria-hidden': 'true' });
+      const footEl = h('div', { class: 'metric-foot' });
+      const el = h(onClick ? 'button' : 'div', { class: 'metric-tile', type: onClick ? 'button' : undefined, 'data-metric': id, onClick: onClick || undefined },
+        h('div', { class: 'metric-head' }, labelEl, h('span', { class: 'metric-icon', 'aria-hidden': 'true' }, ico(icon, 16))),
+        h('div', { class: 'metric-value' }, valueEl, unitEl),
+        sparkEl,
+        footEl);
+      let last = null;
+      return {
+        el,
+        set({ title, value, valueText, unit = '', tone = null, delta = null, goodWhen = 'down', helper = '', spark = null, aria = '' }) {
+          labelEl.textContent = title;
+          const text = valueText ?? (Number.isFinite(value) ? fmt.num(value) : '—');
+          if (valueEl.textContent !== text) valueEl.textContent = text;
+          unitEl.textContent = unit;
+          unitEl.hidden = !unit;
+          ['critical', 'serious', 'warning', 'good', 'accent', 'neutral', 'brand'].forEach((tn0) => el.classList.toggle(`tone-${tn0}`, tn0 === tone));
+          sparkEl.replaceChildren(...(spark ? [spark] : []));
+          sparkEl.hidden = !spark;
+          const foot = [];
+          if (Number.isFinite(delta)) {
+            const d = safe(() => sel.describeDelta(delta, goodWhen), { direction: delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat', good: true, neutral: delta === 0 }, 'describeDelta');
+            const digits = Number.isInteger(delta) ? 0 : 2;
+            const signed = String(fmt.signed(delta, digits)).replace(/[‎‏؜‪-‮⁦-⁩]/g, '');
+            const cls = d.direction === 'flat' ? 'is-flat' : (d.neutral ? 'is-flat' : (d.good ? 'is-good' : 'is-bad'));
+            foot.push(h('span', { class: ['delta', cls], 'data-direction': d.direction },
+              arrowSvg(d.direction),
+              h('span', { class: 'sr-only' }, t('ui.delta.sr')),
+              h('bdi', { dir: 'ltr' }, signed),
+              h('span', { class: 'sr-only' }, d.direction === 'flat' ? t('ui.delta.flat') : (d.good ? t('ui.delta.better') : t('ui.delta.worse')))));
+          }
+          if (helper) foot.push(h('span', { class: 'metric-helper' }, helper));
+          footEl.replaceChildren(...foot);
+          el.setAttribute('aria-label', aria || `${title}: ${text}${unit ? ` ${unit}` : ''}`);
+          if (onClick) el.setAttribute('title', aria || title);
+          if (last !== null && last !== text && motion && typeof motion.flash === 'function') motion.flash(el);
+          last = text;
+        },
+      };
+    }
+
+    const metrics = {
+      overdue: metricTile({ id: 'overdue', icon: 'clock', onClick: () => router.navigate('risks', { due: 'overdue' }) }),
+      critical: metricTile({ id: 'critical', icon: 'shield-alert', onClick: () => router.navigate('risks', { tier: 'حرج' }) }),
+      incidents: metricTile({ id: 'incidents', icon: 'incident', onClick: () => router.navigate('incidents', { status: 'open' }) }),
+      nearMiss: metricTile({ id: 'nearMiss', icon: 'nearmiss', onClick: () => router.navigate('incidents', { type: 'nearmiss' }) }),
+    };
+    metricGrid.append(metrics.overdue.el, metrics.critical.el, metrics.incidents.el, metrics.nearMiss.el);
+
+    /* ═════════════ C. safety index | radar ═════════════ */
     const gaugeHost = h('div', { style: { display: 'grid', placeItems: 'center' } });
-    const deltaHost = h('div', { class: 'row wrap', style: { justifyContent: 'center' } });
-    // Facts stack as label/value rows: the hero card is narrow (4 of 12 columns) but tall next to the radar.
+    const deltaHost = h('div', { class: 'row wrap gap-2', style: { justifyContent: 'center' } });
     const factsHost = h('div', { class: 'hero-facts', style: { gridTemplateColumns: 'minmax(0, 1fr)' } });
     const tierHost = h('div', { class: 'stack gap-2' });
     const heroBody = h('div', { class: 'stack', style: { gap: '14px', blockSize: '100%' } }, gaugeHost, deltaHost, factsHost, h('div', { class: 'grow' }), tierHost);
     const infoBtn = C.button('', {
-      variant: 'ghost', size: 'sm', icon: ico('info', 16), onClick: openFormulaModal,
-      attrs: { 'aria-label': 'كيف يُحسب مؤشر السلامة؟', title: 'كيف يُحسب مؤشر السلامة؟' },
+      variant: 'ghost', size: 'sm', icon: ico('info', 16), onClick: () => openFormulaModal(),
+      attrs: { 'aria-label': t('overview.hero.formulaAria'), title: t('overview.hero.formulaAria') },
     });
     const heroCard = C.card({
-      code: 'KPI-00', title: 'مؤشر السلامة', subtitle: 'مؤشر مركّب من المخاطر المفتوحة والحوادث الحديثة والامتثال التدريبي',
-      hero: true, actions: [infoBtn], body: heroBody, className: 'col-span-4',
+      code: 'KPI-00', title: t('overview.hero.title'), subtitle: t('overview.hero.subtitle'),
+      hero: true, actions: [infoBtn], body: heroBody,
     });
     heroCard.classList.add('is-fill');
-    fillBody(heroCard);
+    const heroBodyEl = heroCard.querySelector('.card-body');
+    const heroView = heroCard.querySelector('.card-view-chart');
+    if (heroBodyEl) Object.assign(heroBodyEl.style, { display: 'flex', flexDirection: 'column' });
+    if (heroView) Object.assign(heroView.style, { flex: '1', display: 'flex', flexDirection: 'column' });
 
-    const canvas = h('canvas', { class: 'radar-canvas', role: 'img', 'aria-label': 'رادار المخاطر الحي' });
-    const frame = h('div', { class: 'radar-frame is-wide' },
-      canvas,
-      h('span', { class: 'radar-status' }, C.liveDot('accent'), 'مباشر'));
-    const tip = h('div', { class: 'tooltip radar-tip', hidden: true, style: { position: 'absolute', insetBlockStart: '0', insetInlineStart: '0', pointerEvents: 'none', zIndex: '2' } });
+    const canvas = h('canvas', { class: 'radar-canvas', role: 'img', 'aria-label': t('overview.radar.title') });
+    const radarStatus = h('span', { class: 'radar-status' });
+    const frame = h('div', { class: 'radar-frame is-wide' }, canvas, radarStatus);
+    const tip = h('div', { class: 'tooltip radar-tip', hidden: true, role: 'tooltip', style: { position: 'absolute', insetBlockStart: '0', insetInlineStart: '0', pointerEvents: 'none', zIndex: '2' } });
     const radarWrap = h('div', { style: { position: 'relative', maxInlineSize: '560px', marginInline: 'auto', inlineSize: '100%' } }, frame, tip);
     const radarLegendHost = h('div');
-    const blipCount = h('span', { class: 'text-sm ink-2' });
+    const blipCount = h('span', { class: 't-helper' });
     const updatedText = h('span', {});
     const radarCard = C.card({
-      code: 'RDR-01', title: 'رادار المخاطر الحي', subtitle: `${fmt.num(12)} قطاعاً بحسب فئة الخطر — المخاطر الأشد تقترب من المركز`,
-      body: h('div', { class: 'stack gap-3' }, radarWrap, h('div', { class: 'row between wrap' }, radarLegendHost, blipCount)),
+      code: 'RDR-01', title: t('overview.radar.title'), subtitle: t('overview.radar.subtitle', { n: fmt.num(12) }),
+      body: h('div', { class: 'stack gap-3' }, radarWrap, h('div', { class: 'row between wrap gap-2' }, radarLegendHost, blipCount)),
       tableView: blipTable,
       footer: [
         h('span', { class: 'tele-updated' }, ico('clock', 13), updatedText),
-        C.button('فتح الرادار الكامل', { variant: 'outline', size: 'sm', icon: ico('external', 14), onClick: () => router.navigate('radar') }),
+        C.button(t('overview.radar.openFull'), { variant: 'outline', size: 'sm', icon: ico('external', 14), onClick: () => router.navigate('radar') }),
       ],
-      className: 'col-span-8',
     });
-    root.appendChild(h('div', { class: 'grid-12' }, heroCard, radarCard));
+    const row1 = h('div', { class: 'grid-12' }, heroCard, radarCard);
+    root.appendChild(row1);
 
-    /* ───────────── row 2: KPI tiles ───────────── */
-    const kpiRow = h('div', { class: 'kpi-row', role: 'list', 'aria-label': 'مؤشرات الأداء الرئيسية' });
-    root.appendChild(kpiRow);
+    /* ═════════════ D. leading indicators ═════════════ */
+    const leadingRow = h('div', { class: 'kpi-row', role: 'list', 'aria-labelledby': 'ov-leading-title' });
+    root.appendChild(h('section', { class: 'view-section', 'aria-labelledby': 'ov-leading-title' },
+      h('div', { class: 'view-section-head' },
+        h('div', { class: 'stack gap-1' },
+          h('h2', { class: 't-section', id: 'ov-leading-title' }, t('overview.leading.title')),
+          h('p', { class: 't-helper' }, t('overview.leading.subtitle')))),
+      leadingRow));
 
-    /* ───────────── row 3: matrix / trend / permits ───────────── */
+    /* ═════════════ E. analysis ═════════════ */
     const matrixHost = h('div');
     const matrixLegendHost = h('div');
     const trendHost = h('div');
     const permitsHost = h('div');
     const permitsListHost = h('div');
     const matrixCard = C.card({
-      code: 'RSK-5X5', title: 'مصفوفة المخاطر', subtitle: 'المخاطر المفتوحة حسب الاحتمالية والشدة — انقر خلية لفتح السجل',
-      body: h('div', { class: 'stack gap-3' }, matrixHost, matrixLegendHost), tableView: matrixTable, className: 'col-span-4',
+      code: 'RSK-5X5', title: t('overview.matrix.title'), subtitle: t('overview.matrix.subtitle'),
+      body: h('div', { class: 'stack gap-3' }, matrixHost, matrixLegendHost), tableView: matrixTable,
     });
     const trendCard = C.card({
-      code: 'INC-TRD', title: 'اتجاه الحوادث', subtitle: `آخر ${fmt.num(12)} أسبوعاً — الحوادث مقابل الحوادث الوشيكة`,
-      body: trendHost, tableView: trendTable, className: 'col-span-4',
+      code: 'INC-TRD', title: t('overview.trend.title'), subtitle: t('overview.trend.subtitle', { n: fmt.num(12) }),
+      body: trendHost, tableView: trendTable,
     });
     const permitsCard = C.card({
-      code: 'PTW-STS', title: 'تصاريح العمل حسب الحالة', subtitle: 'توزيع التصاريح ضمن النطاق المحدد',
-      body: h('div', { class: 'stack gap-3' }, permitsHost, permitsListHost), tableView: permitsTable, className: 'col-span-4',
+      code: 'PTW-STS', title: t('overview.permits.title'), subtitle: t('overview.permits.subtitle'),
+      body: h('div', { class: 'stack gap-3' }, permitsHost, permitsListHost), tableView: permitsTable,
     });
     const row3 = h('div', { class: 'grid-12' }, matrixCard, trendCard, permitsCard);
     root.appendChild(row3);
 
-    /* ───────────── row 4: sites + urgent ───────────── */
+    /* ═════════════ F. priority actions | sites ═════════════ */
+    const actionsHost = h('div');
+    const actionsCount = h('span', { class: 't-helper' });
     const sitesHost = h('div');
-    const urgentHost = h('div');
-    const urgentCount = h('span', { class: 'text-sm ink-2' });
+    const actionsCard = C.card({
+      code: 'ACT-NOW', title: t('overview.actions.title'), subtitle: t('overview.actions.subtitle'),
+      body: actionsHost,
+      footer: [actionsCount, C.button(t('overview.actions.openRegister'), { variant: 'ghost', size: 'sm', icon: ico('shield-alert', 14), onClick: () => router.navigate('risks') })],
+    });
     const sitesCard = C.card({
-      code: 'SITES', title: 'أداء المواقع', subtitle: `مؤشر السلامة لكل موقع مع اتجاه ${fmt.num(12)} أسبوعاً — انقر موقعاً لتصفية اللوحة عليه`,
-      body: sitesHost, className: 'col-span-8',
+      code: 'SITES', title: t('overview.sites.title'), subtitle: t('overview.sites.subtitle', { n: fmt.num(12) }),
+      body: sitesHost,
     });
-    const urgentCard = C.card({
-      code: 'ACT-NOW', title: 'إجراءات عاجلة', subtitle: 'مخاطر متأخرة، حوادث عالية الخطورة، تصاريح تنتهي، تفتيشات متأخرة، شهادات تنتهي',
-      body: urgentHost,
-      footer: [urgentCount, C.button('سجل المخاطر', { variant: 'ghost', size: 'sm', icon: ico('risk', 14), onClick: () => router.navigate('risks') })],
-      className: 'col-span-4',
-    });
-    root.appendChild(h('div', { class: 'grid-12' }, sitesCard, urgentCard));
+    const row4 = h('div', { class: 'grid-12' }, actionsCard, sitesCard);
+    root.appendChild(row4);
 
     container.appendChild(root);
 
-    /* ───────────── width-aware layout (rows 3–4) ─────────────
-       With the live feed open the main column is ~840px at 1440px. Below 1100px three cards per
-       row squeeze chart titles into four lines and hide the sites table's trailing columns, so the
-       trend chart and the sites table take the full row and the urgent list goes two-up. */
-    let narrowLayout = false;
-    const setSpan = (el, n) => {
-      ['col-span-4', 'col-span-6', 'col-span-8', 'col-span-12'].forEach((c) => el.classList.remove(c));
-      el.classList.add(`col-span-${n}`);
-    };
-    const styleUrgentList = (list) => {
-      if (!list) return;
-      if (narrowLayout && root.getBoundingClientRect().width >= 640) {
-        list.style.display = 'grid';
-        list.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
-        list.style.alignItems = 'start';
-      } else {
-        list.style.display = '';
-        list.style.gridTemplateColumns = '';
-        list.style.alignItems = '';
-      }
-    };
+    /* ───────────── width-aware layout (inline grid-column wins over the viewport media rules) ───────────── */
+    const span = (el, n) => { el.style.gridColumn = `span ${n}`; };
+    let layoutMode = '';
     const applyLayout = (w) => {
-      const narrow = w < 1100;
-      if (narrow === narrowLayout && row3.dataset.layout) return;
-      narrowLayout = narrow;
-      row3.dataset.layout = narrow ? 'narrow' : 'wide';
-      if (narrow) {
-        setSpan(matrixCard, 6); setSpan(permitsCard, 6); setSpan(trendCard, 12);
-        row3.append(matrixCard, permitsCard, trendCard);
-        setSpan(sitesCard, 12); setSpan(urgentCard, 12);
-      } else {
-        setSpan(matrixCard, 4); setSpan(trendCard, 4); setSpan(permitsCard, 4);
+      const mode = w >= 1100 ? 'wide' : w >= 720 ? 'mid' : 'narrow';
+      if (mode === layoutMode) return;
+      layoutMode = mode;
+      root.dataset.layout = mode;
+      if (mode === 'wide') {
+        span(heroCard, 4); span(radarCard, 8);
+        span(matrixCard, 4); span(trendCard, 4); span(permitsCard, 4);
         row3.append(matrixCard, trendCard, permitsCard);
-        setSpan(sitesCard, 8); setSpan(urgentCard, 4);
+        span(actionsCard, 5); span(sitesCard, 7);
+      } else if (mode === 'mid') {
+        span(heroCard, 5); span(radarCard, 7);
+        span(matrixCard, 6); span(permitsCard, 6); span(trendCard, 12);
+        row3.append(matrixCard, permitsCard, trendCard);
+        span(actionsCard, 12); span(sitesCard, 12);
+      } else {
+        [heroCard, radarCard, matrixCard, trendCard, permitsCard, actionsCard, sitesCard].forEach((el) => span(el, 12));
+        row3.append(matrixCard, trendCard, permitsCard);
       }
-      styleUrgentList(urgentHost.querySelector('.urgent-list'));
     };
-    // Width-only, deferred to the next frame: mutating layout inside the observer callback would
-    // re-trigger it in the same frame ("ResizeObserver loop completed with undelivered notifications").
     let layoutObserver = null;
     let lastLayoutWidth = -1;
     let layoutRaf = 0;
-    const onRootResize = (w) => {
-      const width = Math.round(w);
-      if (width === lastLayoutWidth || width === 0) return;
-      lastLayoutWidth = width;
-      if (layoutRaf) cancelAnimationFrame(layoutRaf);
-      layoutRaf = requestAnimationFrame(() => { layoutRaf = 0; if (!destroyed) applyLayout(width); });
-    };
     if (typeof ResizeObserver === 'function') {
-      layoutObserver = new ResizeObserver((entries) => { for (const e of entries) onRootResize(e.contentRect.width); });
+      // Width-only, deferred a frame: mutating layout inside the callback would re-enter the observer.
+      layoutObserver = new ResizeObserver((entries) => {
+        for (const e of entries) {
+          const width = Math.round(e.contentRect.width);
+          if (width === lastLayoutWidth || width === 0) continue;
+          lastLayoutWidth = width;
+          if (layoutRaf) cancelAnimationFrame(layoutRaf);
+          layoutRaf = requestAnimationFrame(() => { layoutRaf = 0; if (!destroyed) applyLayout(width); });
+        }
+      });
       layoutObserver.observe(root);
-    } else {
-      applyLayout(root.getBoundingClientRect().width || 1200);
     }
+    applyLayout(root.getBoundingClientRect().width || 1200);
 
     /* ───────────── data helpers ───────────── */
     function openRisks(st, f) {
@@ -374,6 +392,7 @@ export default {
       });
       return counts;
     }
+    const findRisk = (id) => arr(state().risks).find((r) => r && r.id === id) || null;
     function currentBlips() {
       const f = filters();
       let blips = null;
@@ -382,112 +401,144 @@ export default {
       if (f.siteId && f.siteId !== 'all') blips = blips.filter((b) => b && (!b.siteId || b.siteId === f.siteId));
       return blips.filter(Boolean);
     }
+    /** Blip text in the active language (register risks through their mirror; simulated detections carry labelEn). */
+    function blipLabel(b) {
+      if (!b) return '';
+      if (b.transient) return I.lang() === 'en' ? (b.labelEn || b.code || '') : (b.label || '');
+      const r = findRisk(b.id);
+      return r ? (L(r, 'hazard', 'risks') || r.code) : (b.label || b.code || '');
+    }
     function kpiHistory(st, f, current) {
       const base = now().getTime();
       const points = [];
-      for (let i = 7; i >= 1; i -= 1) {
-        points.push(safe(() => sel.kpis(st, f, new Date(base - i * 7 * DAY_MS)), null, 'kpis.history'));
-      }
+      for (let i = 7; i >= 1; i -= 1) points.push(safe(() => sel.kpis(st, f, new Date(base - i * 7 * DAY_MS)), null, 'kpis.history'));
       points.push(current);
       return points;
     }
-    function cellArgs(args) {
-      const a = args[0];
-      if (a && typeof a === 'object' && !(a instanceof Event)) {
-        return { value: a.value, ri: Number(a.ri ?? a.row ?? a.r ?? 0), ci: Number(a.ci ?? a.col ?? a.c ?? 0) };
-      }
-      return { value: a, ri: Number(args[1]) || 0, ci: Number(args[2]) || 0 };
-    }
+    const sparkOf = (hist, key) => tryEl(() => charts.sparkline({ values: hist.map((p) => (p && Number.isFinite(p[key]) ? p[key] : 0)), width: 84, height: 26 }), 'sparkline');
     const tierOfCell = (ri, ci) => safe(() => sel.riskTier((ri + 1) * (ci + 1)), 'منخفض', 'riskTier');
     const toneOfCell = (ri, ci) => safe(() => sel.tierTone(tierOfCell(ri, ci)), 'good', 'tierTone');
+    const scaleLabel = (axis, n) => t('overview.matrix.axisItem', { n: fmt.num(n), label: t(`risks.scale.${axis}.${n}`) });
 
     /* ───────────── table twins ───────────── */
     function blipTable() {
-      const blips = currentBlips();
-      return simpleTable('المخاطر الظاهرة على الرادار', ['الكود', 'الخطر', 'الموقع', 'الفئة', 'الدرجة', 'المستوى'],
-        blips.map((b) => [String(b.code || ''), String(b.label || ''), siteName(b.siteId) || '—', categoryName(b.categoryId), fmt.num(Number(b.score) || 0), String(b.tier || '')]),
-        [true, false, false, false, true, false]);
+      return simpleTable(t('overview.radar.tableCaption'),
+        [t('overview.radar.cols.code'), t('overview.radar.cols.hazard'), t('overview.radar.cols.site'), t('overview.radar.cols.category'), t('overview.radar.cols.score'), t('overview.radar.cols.tier')],
+        currentBlips().map((b) => [h('span', { class: 'code mono', dir: 'ltr', translate: 'no' }, String(b.code || '')), blipLabel(b), siteName(b.siteId) || '—', categoryLabel(b.categoryId), Number.isFinite(Number(b.score)) ? fmt.num(Number(b.score)) : '—', b.tier ? tierLabel(b.tier) : '—']),
+        [false, false, false, false, true, false]);
     }
     function matrixTable() {
       const m = safe(() => sel.riskMatrix(state(), filters()), [], 'riskMatrix');
-      const header = ['الشدة ↓ / الاحتمالية →', ...LIKELIHOOD_LABELS.map((l, i) => `${fmt.num(i + 1)} ${l}`)];
-      const rows = SEVERITY_LABELS.map((l, ri) => [`${fmt.num(ri + 1)} ${l}`, ...LIKELIHOOD_LABELS.map((_, ci) => fmt.num(Number(m[ri] && m[ri][ci]) || 0))]);
-      return simpleTable(`مصفوفة المخاطر ${fmt.num(5)}×${fmt.num(5)} — عدد المخاطر المفتوحة`, header, rows, [false, true, true, true, true, true]);
+      const header = [t('overview.matrix.corner'), ...[1, 2, 3, 4, 5].map((n) => scaleLabel('likelihood', n))];
+      const rows = [1, 2, 3, 4, 5].map((n, ri) => [scaleLabel('severity', n), ...[0, 1, 2, 3, 4].map((ci) => fmt.num(Number(m[ri] && m[ri][ci]) || 0))]);
+      return simpleTable(t('overview.matrix.tableCaption'), header, rows, [false, true, true, true, true, true]);
     }
+    function trendRows() { return safe(() => sel.incidentTrend(state(), 12, filters()), [], 'incidentTrend'); }
+    const weekLabel = (w) => t('overview.trend.week', { n: fmt.num(Number(w.week) || 0) });
     function trendTable() {
-      const t = safe(() => sel.incidentTrend(state(), 12, filters()), [], 'incidentTrend');
-      return simpleTable('اتجاه الحوادث الأسبوعي', ['الأسبوع', 'الحوادث', 'الحوادث الوشيكة'],
-        t.map((w) => [digits(w.label || ''), fmt.num(Number(w.incidents) || 0), fmt.num(Number(w.nearMisses) || 0)]), [false, true, true]);
+      return simpleTable(t('overview.trend.tableCaption'), [t('overview.trend.cols.week'), t('overview.trend.incidents'), t('overview.trend.nearMisses')],
+        trendRows().map((w) => [weekLabel(w), fmt.num(Number(w.incidents) || 0), fmt.num(Number(w.nearMisses) || 0)]), [false, true, true]);
     }
     function permitsTable() {
       const parts = safe(() => sel.permitsByStatus(state(), filters()), [], 'permitsByStatus');
-      return simpleTable('تصاريح العمل حسب الحالة', ['الحالة', 'العدد'], parts.map((p) => [String(p.label), fmt.num(Number(p.value) || 0)]), [false, true]);
+      return simpleTable(t('overview.permits.title'), [t('overview.permits.cols.status'), t('overview.permits.cols.count')],
+        parts.map((p) => [label('permitStatus', p.label), fmt.num(Number(p.value) || 0)]), [false, true]);
     }
 
     /* ───────────── renderers ───────────── */
-    function renderScope(f) {
-      scopeBadge.querySelector('.badge-text').textContent = `${scopeLabel(f)} · ${periodLabel(f)}`;
+    function renderHead(f) {
+      const s = sourceStatus();
+      statusHost.replaceChildren(statusBadge(s, { size: 'sm' }));
+      scopeBadge.querySelector('.badge-text').textContent = t('overview.scope.badge', { scope: scopeText(f), period: periodText(f) });
+    }
+
+    function renderMetrics(k, st, f, hist) {
+      const overdue = safe(() => sel.overdueRisks(st, f, now()), [], 'overdueRisks');
+      const worst = overdue[0];
+      metrics.overdue.set({
+        title: t('overview.metrics.overdue'), value: overdue.length, tone: overdue.length ? (worst && worst.tone === 'critical' ? 'critical' : 'serious') : 'good',
+        delta: k && k.deltas ? k.deltas.overdueRisks : null, goodWhen: 'down', spark: sparkOf(hist, 'overdueRisks'),
+        helper: t('overview.metrics.vsPrevious', { period: periodText(f) }),
+        aria: t('overview.metrics.overdueAria', { count: fmt.num(overdue.length) }),
+      });
+      const critical = k ? k.criticalRisks : 0;
+      metrics.critical.set({
+        title: t('overview.metrics.critical'), value: critical, tone: critical ? 'critical' : 'good',
+        delta: k && k.deltas ? k.deltas.criticalRisks : null, goodWhen: 'down', spark: sparkOf(hist, 'criticalRisks'),
+        helper: t('overview.metrics.criticalHelper', { min: fmt.num(16) }),
+        aria: t('overview.metrics.criticalAria', { count: fmt.num(critical) }),
+      });
+      const open = k ? k.openIncidents : 0;
+      metrics.incidents.set({
+        title: t('overview.metrics.incidents'), value: open, tone: open ? 'serious' : 'good',
+        delta: k && k.deltas ? k.deltas.openIncidents : null, goodWhen: 'down', spark: sparkOf(hist, 'openIncidents'),
+        helper: t('overview.metrics.vsPrevious', { period: periodText(f) }),
+        aria: t('overview.metrics.incidentsAria', { count: fmt.num(open) }),
+      });
+      const nm = k ? k.nearMisses30d : 0;
+      metrics.nearMiss.set({
+        title: t('overview.metrics.nearMiss', { days: fmt.num(30) }), value: nm, tone: null,
+        delta: k && k.deltas ? k.deltas.nearMisses30d : null, goodWhen: 'none', spark: sparkOf(hist, 'nearMisses30d'),
+        helper: t('overview.metrics.nearMissHelper'),
+        aria: t('overview.metrics.nearMissAria', { count: fmt.num(nm), days: fmt.num(30) }),
+      });
     }
 
     function renderHero(k, st, f) {
       const si = k && Number.isFinite(k.safetyIndex) ? k.safetyIndex : 0;
-      gaugeHost.replaceChildren(chartOrEmpty(() => charts.gauge({ value: si, max: 100, size: 200, label: 'مؤشر السلامة', sublabel: periodLabel(f) }), 'مؤشر السلامة'));
-
+      if (gaugeApi && typeof gaugeApi.update === 'function') {
+        try { gaugeApi.update({ value: si, max: 100, label: t('overview.hero.gaugeLabel'), sublabel: periodText(f) }); } catch (err) { warn('gauge.update', err); gaugeApi = null; }
+      }
+      if (!gaugeApi) {
+        try { gaugeApi = charts.gauge({ value: si, max: 100, size: 188, label: t('overview.hero.gaugeLabel'), sublabel: periodText(f) }); } catch (err) { warn('gauge', err); gaugeApi = null; }
+        gaugeHost.replaceChildren(gaugeApi && gaugeApi.el ? gaugeApi.el : h('p', { class: 't-metric is-hero' }, h('bdi', { dir: 'ltr' }, `${fmt.num(si)}/${fmt.num(100)}`)));
+      }
+      gaugeHost.setAttribute('aria-label', t('overview.hero.gaugeAria', { value: fmt.num(si), max: fmt.num(100) }));
       const d = k && k.deltas && Number.isFinite(k.deltas.safetyIndex) ? k.deltas.safetyIndex : 0;
-      const tone = d > 0 ? 'good' : d < 0 ? 'critical' : 'neutral';
+      const dd = safe(() => sel.describeDelta(d, 'up'), { direction: 'flat', good: true }, 'describeDelta');
       deltaHost.replaceChildren(
-        C.badge(`${fmt.signed(d)} نقطة`, tone),
-        h('span', { class: 'text-xs muted' }, 'مقارنة بالفترة السابقة'));
+        C.badge(t('overview.hero.deltaPoints', { delta: String(fmt.signed(d)).replace(/[‎‏؜]/g, '') }), dd.direction === 'flat' ? 'neutral' : (dd.good ? 'good' : 'critical'),
+          { icon: dd.direction === 'up' ? 'arrow-up' : dd.direction === 'down' ? 'arrow-down' : null }),
+        h('span', { class: 't-helper' }, t('overview.hero.vsPrevious', { period: periodText(f) })));
 
-      const fact = (label, value, unit) => h('div', { class: 'fact', style: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: '12px' } },
-        h('span', { class: 'fact-label' }, label),
-        h('span', { class: 'fact-value nowrap' }, value, unit ? h('small', {}, unit) : null));
+      const fact = (text, value, unit) => h('div', { class: 'fact', style: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: '12px' } },
+        h('span', { class: 'fact-label' }, text),
+        h('span', { class: 'fact-value nowrap' }, h('bdi', {}, value), unit ? h('small', {}, ` ${unit}`) : null));
+      const days = k ? k.daysSinceLTI : 0;
       factsHost.replaceChildren(
-        fact('أيام بدون إصابة مضيعة للوقت', fmt.num(k ? k.daysSinceLTI : 0), 'يوم'),
-        fact('LTIFR — الإصابات المضيعة للوقت', fmt.num(k ? k.ltifr : 0, { maximumFractionDigits: 2 }), '/مليون ساعة'),
-        fact('TRIR — الإصابات المسجلة', fmt.num(k ? k.trir : 0, { maximumFractionDigits: 2 }), `/${fmt.num(200)} ألف ساعة`));
+        fact(t('overview.hero.ltiFree'), fmt.num(days), tn('overview.hero.daysUnit', days)),
+        fact(t('overview.hero.ltifr'), fmt.num(k ? k.ltifr : 0, { maximumFractionDigits: 2 }), t('overview.hero.ltifrUnit')),
+        fact(t('overview.hero.trir'), fmt.num(k ? k.trir : 0, { maximumFractionDigits: 2 }), t('overview.hero.trirUnit')));
 
       const counts = tierCounts(st, f);
       const total = Object.values(counts).reduce((a, b) => a + b, 0);
       const bar = tryEl(() => charts.segmentedBar({
-        parts: TIERS.map((t) => ({ id: t.tone, label: t.tier, value: counts[t.tone], color: `var(--${t.tone})` })),
-        tall: false, valueFormat: fmt.num, ariaLabel: 'المخاطر المفتوحة حسب الدرجة',
+        parts: TIERS.map((x) => ({ id: x.tone, label: tierLabel(x.tier), value: counts[x.tone], color: `var(--${x.tone})` })),
+        tall: false, valueFormat: fmt.num, ariaLabel: t('overview.hero.tiersAria'),
       }), 'segmentedBar');
       tierHost.replaceChildren(
-        h('div', { class: 'row between' },
-          h('span', { class: 'radar-side-title' }, 'المخاطر المفتوحة حسب الدرجة'),
-          h('span', { class: 'text-xs muted mono' }, pairs(total))),
-        bar || toneLegend(TIERS.map((t) => ({ tone: t.tone, label: t.tier, count: counts[t.tone] }))));
+        h('div', { class: 'row between gap-2' },
+          h('span', { class: 'radar-side-title' }, t('overview.hero.tiersTitle')),
+          h('span', { class: 't-helper' }, tn('overview.common.risks', total))),
+        bar || h('span'),
+        toneLegend(TIERS.map((x) => ({ tone: x.tone, label: tierLabel(x.tier), count: counts[x.tone] })), 'matrix-legend'));
     }
 
-    /* Labels/hints are functions: their numbers follow the numerals setting on every refresh.
-       Order is fixed (8 tiles → 4×2 on wide screens): incidents, near misses, permits, critical,
-       CAPA %, training %, inspections due, TRIR. */
-    const TILES = [
-      { key: 'openIncidents', label: () => 'الحوادث المفتوحة', icon: 'incident', goodWhen: 'down', hint: () => 'حوادث لم تُغلق بعد ضمن النطاق', tone: (v) => (v > 0 ? 'serious' : null), route: { id: 'incidents' } },
-      { key: 'nearMisses30d', label: () => `الحوادث الوشيكة (${fmt.num(30)} يوماً)`, icon: 'nearmiss', goodWhen: 'down', hint: () => `بلاغات الحوادث الوشيكة خلال آخر ${fmt.num(30)} يوماً`, route: { id: 'incidents' } },
-      { key: 'activePermits', label: () => 'التصاريح النشطة', icon: 'permit', goodWhen: 'up', hint: () => 'تصاريح عمل سارية الآن', route: { id: 'permits' } },
-      { key: 'criticalRisks', label: () => 'المخاطر الحرجة', icon: 'risk', goodWhen: 'down', hint: () => `مخاطر مفتوحة بدرجة ${fmt.num(16)} فأكثر`, tone: (v) => (v > 0 ? 'critical' : null), route: { id: 'risks', params: { tier: 'حرج' } } },
-      { key: 'capaClosure', label: () => 'إغلاق الإجراءات التصحيحية', icon: 'check', unit: '%', goodWhen: 'up', hint: () => 'نسبة الإجراءات التصحيحية المنجزة', route: { id: 'incidents' } },
-      { key: 'trainingCompliance', label: () => 'الامتثال التدريبي', icon: 'training', unit: '%', goodWhen: 'up', hint: () => 'شهادات سارية للدورات الإلزامية', route: { id: 'training' } },
-      { key: 'inspectionsDue', label: () => 'تفتيشات مستحقة', icon: 'inspection', goodWhen: 'down', hint: () => `متأخرة أو مستحقة خلال ${fmt.num(7)} أيام`, tone: (v) => (v > 0 ? 'warning' : null), route: { id: 'inspections' } },
-      { key: 'trir', label: () => 'معدل الحوادث المسجلة TRIR', icon: 'trend', goodWhen: 'down', digits: 2, hint: () => `الإصابات المسجلة لكل ${fmt.num(200)} ألف ساعة عمل`, route: { id: 'reports' } },
+    const LEADING = [
+      { key: 'activePermits', label: () => t('overview.leading.permits'), icon: 'permit', goodWhen: 'none', hint: () => t('overview.leading.permitsHint'), route: ['permits', {}] },
+      { key: 'capaClosure', label: () => t('overview.leading.capa'), icon: 'check', unit: '%', goodWhen: 'up', hint: () => t('overview.leading.capaHint'), route: ['incidents', {}] },
+      { key: 'trainingCompliance', label: () => t('overview.leading.training'), icon: 'training', unit: '%', goodWhen: 'up', hint: () => t('overview.leading.trainingHint'), route: ['training', {}] },
+      { key: 'inspectionsDue', label: () => t('overview.leading.inspections'), icon: 'inspection', goodWhen: 'down', hint: () => t('overview.leading.inspectionsHint', { days: fmt.num(7) }), tone: (v) => (v > 0 ? 'warning' : null), route: ['inspections', {}] },
     ];
-
-    function renderTiles(k, st, f) {
-      const hist = kpiHistory(st, f, k);
-      kpiRow.replaceChildren(...TILES.map((t) => {
-        const raw = k && Number.isFinite(k[t.key]) ? k[t.key] : null;
-        const value = raw === null ? null : (t.digits ? fmt.num(raw, { maximumFractionDigits: t.digits }) : raw);
-        const d = k && k.deltas && Number.isFinite(k.deltas[t.key]) ? k.deltas[t.key] : null;
-        // Always a number: the tile formats it (a pre-formatted fmt.signed string carries bidi marks → NaN → wrong arrow).
-        const delta = d === null ? null : (t.digits ? Number(d.toFixed(t.digits)) : d);
-        const values = hist.map((p) => (p && Number.isFinite(p[t.key]) ? p[t.key] : 0));
-        const spark = tryEl(() => charts.sparkline({ values, width: 84, height: 26 }), 'sparkline');
+    function renderLeading(k, hist) {
+      leadingRow.replaceChildren(...LEADING.map((x) => {
+        const raw = k && Number.isFinite(k[x.key]) ? k[x.key] : null;
+        const d = k && k.deltas && Number.isFinite(k.deltas[x.key]) ? k.deltas[x.key] : null;
         const tile = C.statTile({
-          label: t.label(), value, unit: t.unit || '', delta, deltaGoodWhen: t.goodWhen, spark,
-          icon: ico(t.icon, 18), tone: t.tone ? t.tone(raw) : null, hint: t.hint(),
-          onClick: t.route ? () => router.navigate(t.route.id, t.route.params || {}) : null,
+          label: x.label(), value: raw === null ? null : (x.unit ? fmt.pct(raw) : raw), unit: '',
+          delta: x.goodWhen === 'none' ? null : d, deltaGoodWhen: x.goodWhen === 'up' ? 'up' : 'down',
+          spark: sparkOf(hist, x.key), icon: ico(x.icon, 18), tone: x.tone ? x.tone(raw) : null, hint: x.hint(),
+          onClick: () => router.navigate(x.route[0], x.route[1]),
         });
         tile.setAttribute('role', 'listitem');
         return tile;
@@ -496,53 +547,144 @@ export default {
 
     function renderMatrix(st, f) {
       const m = safe(() => sel.riskMatrix(st, f), Array.from({ length: 5 }, () => Array(5).fill(0)), 'riskMatrix');
-      matrixHost.replaceChildren(chartOrEmpty(() => charts.heatmap({
-        rows: SEVERITY_LABELS.map((l, i) => `${fmt.num(i + 1)} ${l}`),
-        cols: LIKELIHOOD_LABELS.map((l, i) => `${fmt.num(i + 1)} ${l}`),
+      const chart = tryEl(() => charts.heatmap({
+        rows: [1, 2, 3, 4, 5].map((n) => scaleLabel('severity', n)),
+        cols: [1, 2, 3, 4, 5].map((n) => scaleLabel('likelihood', n)),
         cells: m,
         colorFor: (value, ri, ci) => `var(--${toneOfCell(Number(ri) || 0, Number(ci) || 0)})`,
         labelFor: (value) => (value ? fmt.num(value) : ''),
-        onCellClick: (...args) => { const c = cellArgs(args); router.navigate('risks', { tier: tierOfCell(c.ri, c.ci) }); },
-        cellSize: 'auto', ariaLabel: `مصفوفة المخاطر ${fmt.num(5)}×${fmt.num(5)}`, rowTitle: 'الشدة', colTitle: 'الاحتمالية',
-      }), 'مصفوفة المخاطر'));
+        onCellClick: (info) => {
+          const ri = Number(info && info.ri) || 0;
+          const ci = Number(info && info.ci) || 0;
+          router.navigate('risks', { l: ci + 1, s: ri + 1 });
+        },
+        cellSize: 'auto', ariaLabel: t('overview.matrix.aria'), rowTitle: t('overview.matrix.rowTitle'), colTitle: t('overview.matrix.colTitle'),
+      }), 'heatmap');
+      matrixHost.replaceChildren(chart || C.emptyState({ title: t('overview.errors.chart') }));
       const counts = tierCounts(st, f);
-      matrixLegendHost.replaceChildren(toneLegend(TIERS.map((t) => ({ tone: t.tone, label: t.tier, count: counts[t.tone] })), 'matrix-legend'));
+      matrixLegendHost.replaceChildren(toneLegend(TIERS.map((x) => ({ tone: x.tone, label: tierLabel(x.tier), count: counts[x.tone] })), 'matrix-legend'));
     }
 
-    function renderTrend(st, f) {
-      const t = safe(() => sel.incidentTrend(st, 12, f), [], 'incidentTrend');
-      trendHost.replaceChildren(chartOrEmpty(() => charts.lineChart({
+    function renderTrend() {
+      const rows = trendRows();
+      const total = rows.reduce((a, w) => a + (Number(w.incidents) || 0) + (Number(w.nearMisses) || 0), 0);
+      if (!total) {
+        trendHost.replaceChildren(C.emptyState({ icon: ico('check-circle', 28), title: t('overview.trend.emptyTitle'), text: t('overview.trend.emptyText') }));
+        return;
+      }
+      const chart = tryEl(() => charts.lineChart({
         series: [
-          { id: 'incidents', label: 'الحوادث', color: 'var(--s1)', values: t.map((w) => Number(w.incidents) || 0) },
-          { id: 'nearMisses', label: 'الحوادث الوشيكة', color: 'var(--s2)', values: t.map((w) => Number(w.nearMisses) || 0) },
+          { id: 'incidents', label: t('overview.trend.incidents'), color: 'var(--s1)', values: rows.map((w) => Number(w.incidents) || 0) },
+          { id: 'nearMisses', label: t('overview.trend.nearMisses'), color: 'var(--s2)', values: rows.map((w) => Number(w.nearMisses) || 0) },
         ],
-        labels: t.map((w) => digits(w.label || '')), height: 220, yFormat: fmt.num, ariaLabel: 'اتجاه الحوادث الأسبوعي',
-      }), 'اتجاه الحوادث'));
+        labels: rows.map(weekLabel), height: 220, yFormat: fmt.num, ariaLabel: t('overview.trend.aria', { n: fmt.num(12) }), xLabel: t('overview.trend.cols.week'),
+      }), 'lineChart');
+      trendHost.replaceChildren(chart || C.emptyState({ title: t('overview.errors.chart') }));
     }
 
     function renderPermits(st, f) {
       const parts = safe(() => sel.permitsByStatus(st, f), [], 'permitsByStatus');
-      const colored = parts.map((p, i) => ({ id: String(p.id || i), label: String(p.label), value: Number(p.value) || 0, color: safe(() => charts.paletteFor(i), `var(--s${(i % 8) + 1})`, 'paletteFor') }));
-      permitsHost.replaceChildren(chartOrEmpty(() => charts.segmentedBar({ parts: colored, tall: true, valueFormat: fmt.num, ariaLabel: 'تصاريح العمل حسب الحالة' }), 'تصاريح العمل'));
+      const colored = parts.map((p, i) => ({ id: String(p.id || i), label: label('permitStatus', p.label), value: Number(p.value) || 0, color: safe(() => charts.paletteFor(i), `var(--s${(i % 8) + 1})`, 'paletteFor') }));
       const total = colored.reduce((a, p) => a + p.value, 0);
+      if (!total) {
+        permitsHost.replaceChildren(C.emptyState({ icon: ico('permit', 28), title: t('overview.permits.emptyTitle'), text: t('overview.permits.emptyText') }));
+        permitsListHost.replaceChildren();
+        return;
+      }
+      const chart = tryEl(() => charts.segmentedBar({ parts: colored, tall: true, valueFormat: fmt.num, ariaLabel: t('overview.permits.title') }), 'segmentedBar');
+      permitsHost.replaceChildren(chart || h('span'));
       permitsListHost.replaceChildren(h('dl', { class: 'kv is-compact' },
         ...colored.map((p) => h('div', { class: 'kv-row' },
-          h('dt', {}, h('span', { class: 'row gap-2' }, h('span', { class: 'legend-key', style: { '--key': p.color } }), p.label)),
-          h('dd', { class: 'mono' }, total ? `${fmt.num(p.value)} · ${fmt.pct((p.value / total) * 100)}` : fmt.num(p.value))))));
+          h('dt', {}, h('span', { class: 'row gap-2' }, h('span', { class: 'legend-key', style: { '--key': p.color, background: p.color } }), p.label)),
+          h('dd', { class: 'mono' }, h('bdi', {}, t('overview.permits.share', { count: fmt.num(p.value), pct: fmt.pct((p.value / total) * 100) })))))));
     }
 
-    /* Column `priority` lets the table hide low/medium columns in narrow containers (dataTable
-       container query); the first (name) column stays sticky. Site names wrap instead of truncating. */
+    /* Priority actions: overdue risks (sel.overdueRisks — the shared definition) + the other urgent kinds. */
+    function priorityItems(st, f) {
+      const at = now();
+      const todayStart = new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime();
+      const items = [];
+      for (const r of safe(() => sel.overdueRisks(st, f, at), [], 'overdueRisks')) {
+        items.push({
+          key: `risk:${r.id}`, kind: 'risk', tone: r.tone === 'critical' ? 'critical' : r.tone === 'serious' ? 'serious' : 'warning',
+          due: r.dueDate, code: r.code, siteId: r.siteId, title: L(r, 'hazard', 'risks') || r.code,
+          badge: tierLabel(r.tier), dueText: tn('overview.actions.overdueDays', r.daysOverdue), overdue: true,
+          href: `#/risks?id=${encodeURIComponent(r.id)}`,
+        });
+      }
+      const urgent = safe(() => sel.urgentActions(st, at, { siteId: f.siteId }), [], 'urgentActions');
+      for (const a of urgent) {
+        if (!a || a.kind === 'risk') continue;
+        const dueMs = parseMs(a.due);
+        if (a.kind === 'incident') {
+          const inc = arr(st.incidents).find((x) => x && x.id === a.id);
+          items.push({ key: `incident:${a.id}`, kind: 'incident', tone: a.tone, due: a.due, code: a.code, siteId: a.siteId,
+            title: inc ? (L(inc, 'title', 'incidents') || a.code) : a.code,
+            badge: inc ? label('incidentStatus', inc.status) : '', dueText: t('overview.actions.reportedOn', { date: fmt.date(a.due, { style: 'short' }) }),
+            note: t('overview.actions.incidentNote', { severity: fmt.num(Number(inc && inc.severity) || 0) }), href: a.href });
+        } else if (a.kind === 'permit') {
+          const pm = arr(st.permits).find((x) => x && x.id === a.id);
+          const expired = Number.isFinite(dueMs) && dueMs <= at.getTime();
+          items.push({ key: `permit:${a.id}`, kind: 'permit', tone: a.tone, due: a.due, code: a.code, siteId: a.siteId,
+            title: pm ? t('overview.actions.permitTitle', { type: label('permitType', pm.type), location: L(pm, 'location', 'permits') || '' }) : a.code,
+            badge: expired ? t('overview.actions.permitExpired') : t('overview.actions.permitExpiring'),
+            dueText: t('overview.actions.atTime', { time: riyadhTime(a.due) }), overdue: expired, href: a.href });
+        } else if (a.kind === 'inspection') {
+          const ins = arr(st.inspections).find((x) => x && x.id === a.id);
+          items.push({ key: `inspection:${a.id}`, kind: 'inspection', tone: a.tone, due: a.due, code: a.code, siteId: a.siteId,
+            title: ins ? t('overview.actions.inspectionTitle', { type: label('inspectionType', ins.type) }) : a.code,
+            badge: label('inspectionStatus', 'متأخر'), dueText: t('overview.actions.dueOn', { date: fmt.date(a.due, { style: 'short' }) }),
+            overdue: Number.isFinite(dueMs) && dueMs < todayStart, href: a.href });
+        } else if (a.kind === 'cert') {
+          const worker = arr(st.workers).find((x) => x && x.id === a.id);
+          const course = arr(st.courses).find((x) => x && x.id === a.code);
+          items.push({ key: `cert:${a.id}:${a.code}`, kind: 'cert', tone: a.tone, due: a.due, code: null, siteId: a.siteId,
+            title: t('overview.actions.certTitle', { course: course ? (L(course, 'name', 'courses') || label('course', course.id)) : a.code, worker: worker ? (L(worker, 'name', 'workers') || '') : '' }),
+            badge: t('overview.actions.certExpiring'), dueText: t('overview.actions.expiresOn', { date: fmt.date(a.due, { style: 'short' }) }), href: a.href });
+        }
+      }
+      items.sort((a, b) => ((TONE_RANK[a.tone] ?? 9) - (TONE_RANK[b.tone] ?? 9)) || ((parseMs(a.due) || 0) - (parseMs(b.due) || 0)));
+      return items;
+    }
+
+    function renderActions(st, f) {
+      const all = priorityItems(st, f);
+      const items = all.slice(0, 8);
+      actionsCount.textContent = all.length ? tn('overview.actions.count', all.length) : t('overview.actions.none');
+      if (!items.length) {
+        actionsHost.replaceChildren(C.emptyState({ icon: ico('check-circle', 30), title: t('overview.actions.emptyTitle'), text: t('overview.actions.emptyText') }));
+        return;
+      }
+      const list = h('ol', { class: 'priority-list', 'aria-label': t('overview.actions.title') }, items.map((a) => h('li', {},
+        h('a', { class: ['priority-item', `tone-${a.tone || 'warning'}`, a.overdue ? 'is-overdue' : null], href: a.href || '#/overview', 'data-key': a.key },
+          h('span', { class: 'priority-rank', 'aria-hidden': 'true' }),
+          h('span', { class: 'priority-main' },
+            h('span', { class: 'priority-title' }, a.title),
+            h('span', { class: 'priority-meta' },
+              h('span', {}, ico(KIND_ICON[a.kind] || 'alert', 12), t(`overview.actions.kinds.${a.kind}`)),
+              a.code ? h('span', { class: 'code mono', dir: 'ltr', translate: 'no' }, a.code) : null,
+              a.siteId ? h('span', {}, siteName(a.siteId)) : null,
+              a.note ? h('span', {}, a.note) : null)),
+          h('span', { class: 'priority-side' },
+            a.badge ? C.badge(a.badge, a.tone || 'warning') : null,
+            h('span', { class: ['priority-due', a.overdue ? 'is-overdue' : null] }, a.dueText))))));
+      actionsHost.replaceChildren(list);
+    }
+
     function siteColumns() {
       return [
-        { key: 'name', label: 'الموقع', priority: 'high', sortValue: (r) => r.site.name, render: (r) => h('div', { class: 'stack gap-1', style: { minInlineSize: '120px' } }, h('strong', { style: { whiteSpace: 'normal' } }, r.site.name), h('span', { class: 'muted text-xs mono code nowrap', dir: 'ltr' }, String(r.site.code || ''))) },
-        { key: 'city', label: 'المدينة', priority: 'low', sortValue: (r) => r.site.city, render: (r) => String(r.site.city || '') },
-        { key: 'phase', label: 'المرحلة', priority: 'low', sortValue: (r) => r.site.phase, render: (r) => h('span', { style: { display: 'inline-block', maxInlineSize: '170px', verticalAlign: 'middle', whiteSpace: 'normal' }, title: String(r.site.phase || '') }, String(r.site.phase || '')) },
-        { key: 'workers', label: 'العمال', priority: 'medium', align: 'end', sortValue: (r) => Number(r.site.workers) || 0, render: (r) => fmt.num(Number(r.site.workers) || 0) },
-        { key: 'score', label: 'مؤشر السلامة', priority: 'high', width: 160, sortValue: (r) => r.score, render: (r) => h('div', { class: 'progress-row' }, C.progress({ value: r.score, max: 100, tone: scoreTone(r.score), label: `مؤشر السلامة ${fmt.num(r.score)}` }), h('span', { class: 'progress-value' }, fmt.num(r.score))) },
-        { key: 'trend', label: 'الاتجاه', priority: 'low', sortable: false, render: (r) => tryEl(() => charts.sparkline({ values: arr(r.trend), width: 80, height: 24 }), 'sparkline') || '—' },
-        { key: 'openRisks', label: 'مخاطر مفتوحة', priority: 'high', align: 'end', sortValue: (r) => r.openRisks, render: (r) => (r.criticalRisks > 0 ? h('span', { class: 'row gap-2', style: { justifyContent: 'flex-end' } }, C.badge(`${fmt.num(r.criticalRisks)} حرج`, 'critical'), fmt.num(r.openRisks)) : fmt.num(r.openRisks)) },
-        { key: 'openIncidents', label: 'حوادث مفتوحة', priority: 'medium', align: 'end', sortValue: (r) => r.openIncidents, render: (r) => fmt.num(r.openIncidents) },
+        { key: 'name', label: t('overview.sites.cols.site'), priority: 'high', sortValue: (r) => L(r.site, 'name', 'sites'),
+          render: (r) => h('div', { class: 'stack gap-1', style: { minInlineSize: '120px' } }, h('span', { class: 'cell-title', style: { whiteSpace: 'normal' } }, L(r.site, 'name', 'sites')), h('span', { class: 'cell-sub code mono nowrap', dir: 'ltr', translate: 'no' }, String(r.site.code || ''))) },
+        { key: 'city', label: t('overview.sites.cols.city'), priority: 'low', sortValue: (r) => L(r.site, 'city', 'sites'), render: (r) => L(r.site, 'city', 'sites') || '—' },
+        { key: 'phase', label: t('overview.sites.cols.phase'), priority: 'low', sortValue: (r) => L(r.site, 'phase', 'sites'),
+          render: (r) => h('span', { style: { display: 'inline-block', maxInlineSize: '170px', whiteSpace: 'normal' } }, L(r.site, 'phase', 'sites') || '—') },
+        { key: 'workers', label: t('overview.sites.cols.workers'), priority: 'medium', align: 'end', sortValue: (r) => Number(r.site.workers) || 0, render: (r) => fmt.num(Number(r.site.workers) || 0) },
+        { key: 'score', label: t('overview.sites.cols.score'), priority: 'high', width: 150, sortValue: (r) => r.score,
+          render: (r) => h('div', { class: 'progress-row' }, C.progress({ value: r.score, max: 100, tone: scoreTone(r.score), label: t('overview.sites.scoreAria', { value: fmt.num(r.score) }) }), h('span', { class: 'progress-value' }, fmt.num(r.score))) },
+        { key: 'trend', label: t('overview.sites.cols.trend'), priority: 'low', sortable: false, render: (r) => tryEl(() => charts.sparkline({ values: arr(r.trend), width: 80, height: 24 }), 'sparkline') || '—' },
+        { key: 'openRisks', label: t('overview.sites.cols.risks'), priority: 'high', align: 'end', sortValue: (r) => r.openRisks,
+          render: (r) => (r.criticalRisks > 0 ? h('span', { class: 'row gap-2', style: { justifyContent: 'flex-end' } }, C.badge(t('overview.sites.criticalBadge', { count: fmt.num(r.criticalRisks) }), 'critical'), fmt.num(r.openRisks)) : fmt.num(r.openRisks)) },
+        { key: 'openIncidents', label: t('overview.sites.cols.incidents'), priority: 'medium', align: 'end', sortValue: (r) => r.openIncidents, render: (r) => fmt.num(r.openIncidents) },
       ];
     }
 
@@ -550,79 +692,45 @@ export default {
       const rows = safe(() => sel.siteScores(st), [], 'siteScores').filter((r) => r && r.site).map((r) => ({ id: r.site.id, ...r }));
       if (!sitesTable) {
         sitesTable = C.dataTable({
-          columns: siteColumns(), rows, rowKey: 'id', pageSize: 6, dense: true, caption: 'أداء المواقع', stickyFirst: true,
-          initialSort: { key: 'score', dir: 'asc' }, emptyText: 'لا توجد مواقع مسجلة',
+          columns: siteColumns(), rows, rowKey: 'id', pageSize: 6, dense: true, caption: t('overview.sites.title'), stickyFirst: true,
+          initialSort: { key: 'score', dir: 'asc' }, emptyText: t('overview.sites.empty'),
+          rowLabel: (row) => L(row.site, 'name', 'sites'),
           onRowClick: (row) => {
             const previous = filters().siteId;
             store.setFilter('siteId', row.id);
-            C.toast(`تم تطبيق فلتر الموقع: ${row.site.name}`, { tone: 'accent', action: { label: 'تراجع', onClick: () => store.setFilter('siteId', previous || 'all') } });
+            C.toast(t('overview.sites.filtered', { site: L(row.site, 'name', 'sites') }), { tone: 'accent', action: { label: t('overview.sites.undo'), onClick: () => store.setFilter('siteId', previous || 'all') } });
           },
         });
         sitesHost.replaceChildren(sitesTable.el);
       } else {
-        sitesTable.update(rows);
+        sitesTable.update(rows, { preserve: true, flash: true });
       }
     }
 
-    function renderUrgent(st, f) {
-      const all = safe(() => sel.urgentActions(st), [], 'urgentActions').filter((a) => a && (f.siteId === 'all' || !a.siteId || a.siteId === f.siteId));
-      const items = all.slice(0, 8);
-      const todayStart = new Date(now().getFullYear(), now().getMonth(), now().getDate()).getTime();
-      urgentCount.textContent = all.length ? `${fmt.num(all.length)} إجراء بانتظار التدخل` : 'لا توجد إجراءات متأخرة';
-      if (!items.length) {
-        urgentHost.replaceChildren(C.emptyState({ icon: ico('check', 32), title: 'كل شيء ضمن المواعيد', text: 'لا توجد مخاطر متأخرة أو تصاريح على وشك الانتهاء أو تفتيشات متأخرة في هذا النطاق.' }));
-        return;
-      }
-      const list = h('ul', { class: 'urgent-list', role: 'list' }, items.map((a) => {
-        const meta = KIND_META[a.kind] || { label: 'إجراء', icon: 'alert' };
-        const tone = a.tone || 'warning';
-        const dueMs = parseMs(a.due);
-        const overdue = Number.isFinite(dueMs) && dueMs < todayStart;
-        return h('li', {}, h('a', { class: ['urgent-item', `tone-${tone}`, overdue ? 'is-overdue' : null], href: a.href || '#/overview' },
-          h('span', { class: 'urgent-icon' }, ico(meta.icon, 15)),
-          h('span', { class: 'urgent-text' },
-            h('span', {}, String(a.text || '')),
-            h('span', { class: 'urgent-sub' }, [meta.label, siteName(a.siteId)].filter(Boolean).join(' · '))),
-          h('span', { class: 'urgent-due' },
-            C.badge(TONE_LABEL[tone] || tone, tone),
-            h('span', {}, Number.isFinite(dueMs) ? (overdue ? `منذ ${fmt.date(a.due, { style: 'short' })}` : fmt.date(a.due, { style: 'short' })) : '—'))));
-      }));
-      styleUrgentList(list);
-      urgentHost.replaceChildren(list);
-    }
-
-    function renderRadarMeta(st, f) {
+    function renderRadarMeta(f) {
+      const s = sourceStatus();
+      radarStatus.dataset.status = s;
+      radarStatus.title = statusDesc(s);
+      radarStatus.replaceChildren(ico(s === 'demo' ? 'flask' : (s === 'live' ? 'check-circle' : 'alert-circle'), 12), h('span', {}, s === 'demo' ? t('overview.radar.simulated') : statusLabel(s)));
       const blips = currentBlips();
       const counts = { critical: 0, serious: 0, warning: 0, good: 0 };
       blips.forEach((b) => { if (b.tone in counts) counts[b.tone] += 1; });
-      radarLegendHost.replaceChildren(toneLegend(TIERS.map((t) => ({ tone: t.tone, label: t.tier, count: counts[t.tone] })), 'radar-legend'));
-      blipCount.textContent = `${pairs(blips.length)} مفتوحة على الرادار · ${scopeLabel(f)}`;
-      canvas.setAttribute('aria-label', `رادار المخاطر الحي: ${pairs(blips.length)} مفتوحة، منها ${fmt.num(counts.critical)} حرجة`);
+      radarLegendHost.replaceChildren(toneLegend(TIERS.map((x) => ({ tone: x.tone, label: tierLabel(x.tier), count: counts[x.tone] })), 'radar-legend'));
+      blipCount.textContent = t('overview.radar.count', { count: tn('overview.common.risks', blips.length), scope: scopeText(f) });
+      canvas.setAttribute('aria-label', t('overview.radar.aria', { count: tn('overview.common.risks', blips.length), critical: fmt.num(counts.critical) }));
     }
 
     /* ───────────── radar hover tooltip ───────────── */
     function placeTip(pt) {
-      // Radar hover info (§6 engine): {x, y} = {localX, localY} canvas-local CSS px; {clientX, clientY} viewport.
       const rect = radarWrap.getBoundingClientRect();
       const c = canvas.getBoundingClientRect();
-      let x;
-      let y;
-      if (pt && Number.isFinite(pt.localX) && Number.isFinite(pt.localY)) {
-        x = pt.localX + (c.left - rect.left);
-        y = pt.localY + (c.top - rect.top);
-      } else if (pt && Number.isFinite(pt.clientX) && Number.isFinite(pt.clientY)) {
-        x = pt.clientX - rect.left;
-        y = pt.clientY - rect.top;
-      } else if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) {
-        x = pt.x + (c.left - rect.left);
-        y = pt.y + (c.top - rect.top);
-      } else {
-        x = rect.width / 2;
-        y = 16;
-      }
+      let x; let y;
+      if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) { x = pt.x + (c.left - rect.left); y = pt.y + (c.top - rect.top); }
+      else if (pt && Number.isFinite(pt.clientX) && Number.isFinite(pt.clientY)) { x = pt.clientX - rect.left; y = pt.clientY - rect.top; }
+      else { x = rect.width / 2; y = 16; }
       const tw = tip.offsetWidth || 200;
       const th = tip.offsetHeight || 80;
-      const rtl = getComputedStyle(document.documentElement).direction !== 'ltr';
+      const rtl = I.dir() === 'rtl';
       const anchorStart = rtl ? rect.width - x : x;
       let start = anchorStart + 14;
       let top = y + 14;
@@ -633,36 +741,40 @@ export default {
     }
     function showTip(blip, pt) {
       if (!blip) { tip.hidden = true; return; }
-      const row = (label, value) => h('div', { class: 'tooltip-row' }, h('span', {}, label), h('strong', {}, value));
-      const tierBadge = blip.tier ? C.tierBadge(blip.tier) : null;
+      const row = (k, v) => h('div', { class: 'tooltip-row' }, h('span', {}, k), h('strong', {}, v));
       tip.replaceChildren(
-        h('div', { class: 'tooltip-title' }, h('span', { class: 'blip-code' }, String(blip.code || '')), ' ', String(blip.label || '')),
+        h('div', { class: 'tooltip-title' }, h('span', { class: 'blip-code code mono', dir: 'ltr', translate: 'no' }, String(blip.code || '')), ' ', blipLabel(blip)),
         h('div', { class: 'tooltip-rows' },
-          row('الموقع', siteName(blip.siteId) || '—'),
-          row('الفئة', categoryName(blip.categoryId)),
-          row('الدرجة', fmt.num(Number(blip.score) || 0))),
-        h('div', { class: 'row gap-2', style: { marginBlockStart: '6px' } }, tierBadge, h('span', { class: 'tooltip-kbd' }, 'انقر للانتقال إلى السجل')));
+          row(t('overview.radar.cols.site'), siteName(blip.siteId) || '—'),
+          row(t('overview.radar.cols.category'), categoryLabel(blip.categoryId)),
+          Number.isFinite(Number(blip.score)) ? row(t('overview.radar.cols.score'), fmt.num(Number(blip.score))) : null),
+        h('div', { class: 'row gap-2', style: { marginBlockStart: '6px' } },
+          blip.tier ? tierBadge(blip.tier) : null,
+          blip.transient ? C.badge(t('overview.radar.simulatedDetection'), 'accent') : h('span', { class: 'tooltip-kbd' }, t('overview.radar.clickHint'))));
       tip.hidden = false;
       placeTip(pt);
     }
+    function onBlipClick(blip) {
+      if (!blip) return;
+      if (blip.transient) router.navigate('radar');
+      else router.navigate('risks', { id: blip.id });
+    }
     frame.addEventListener('pointerleave', () => { tip.hidden = true; });
-    frame.addEventListener('click', () => { if (!tip.hidden) router.navigate('risks'); });
 
-    /* ───────────── sweep radar ───────────── */
     function startRadar() {
-      if (typeof R.SweepRadar !== 'function') { warn('radar', new Error('SweepRadar غير متاح')); return; }
+      if (typeof R.SweepRadar !== 'function') { warn('radar', new Error('SweepRadar unavailable')); return; }
       try {
         sweep = new R.SweepRadar(canvas, {
           rings: 4,
           sectors: 12,
-          sectorLabels: categories().map((c) => SHORT_CATEGORY[c.id] || c.name),
+          sectorLabels: categories().map((c) => (I.has(`risks.categoryShort.${c.id}`) ? t(`risks.categoryShort.${c.id}`) : categoryLabel(c.id))),
           sweepDegPerSec: 22,
           getBlips: currentBlips,
           onHover: showTip,
+          onClick: onBlipClick,
           showLabels: true,
         });
-        if (typeof sweep.setHoverHandler === 'function') sweep.setHoverHandler(showTip);
-        if (typeof sweep.start === 'function') sweep.start(); // start() registers with the shared radarLoop
+        if (typeof sweep.start === 'function') sweep.start();
       } catch (err) { warn('radar.start', err); sweep = null; }
     }
 
@@ -673,21 +785,23 @@ export default {
       const trirBase = Number(selectorsMod.TRIR_BASE_HOURS) || 200_000;
       const hoursDay = Number(selectorsMod.HOURS_PER_WORKER_DAY) || 9;
       const minus = (n) => `−${fmt.num(n, { maximumFractionDigits: 1 })}`;
+      const pts = (n) => h('bdi', { dir: 'ltr' }, n);
       const body = h('div', { class: 'stack gap-3' },
-        h('p', {}, `يبدأ المؤشر من ${fmt.num(W.base)} نقطة، وتُخصم منه أوزان ثابتة لكل عامل خطر مفتوح أو حدث حديث، ويُضاف إليه جزء من نسبة الامتثال التدريبي، ثم تُحصر النتيجة بين ${fmt.num(0)} و${fmt.num(100)}.`),
+        h('p', { class: 't-body' }, t('overview.formula.lead', { base: fmt.num(W.base), min: fmt.num(0), max: fmt.num(100) })),
         C.kv([
-          ['مخاطرة حرجة مفتوحة', `${minus(W.criticalOpen)} نقطة لكل مخاطرة`],
-          ['مخاطرة عالية مفتوحة', `${minus(W.highOpen)} نقطة لكل مخاطرة`],
-          ['مخاطرة تجاوزت موعد المعالجة', `${minus(W.overdueOpen)} نقطة لكل مخاطرة`],
-          [`إصابة مضيعة للوقت (آخر ${fmt.num(90)} يوماً)`, `${minus(W.lti90)} نقطة لكل إصابة`],
-          [`إصابة تطلبت علاجاً طبياً (آخر ${fmt.num(90)} يوماً)`, `${minus(W.mtc90)} نقطة لكل إصابة`],
-          [`حادث وشيك (آخر ${fmt.num(30)} يوماً)`, `${minus(W.nearMiss30)} نقطة لكل حادث`],
-          ['الامتثال التدريبي', `+${fmt.num(W.trainingPct, { maximumFractionDigits: 1 })} نقطة لكل ${fmt.pct(1)}`],
+          [t('overview.formula.critical'), h('span', {}, pts(minus(W.criticalOpen)), ' ', t('overview.formula.perRisk'))],
+          [t('overview.formula.high'), h('span', {}, pts(minus(W.highOpen)), ' ', t('overview.formula.perRisk'))],
+          [t('overview.formula.overdue'), h('span', {}, pts(minus(W.overdueOpen)), ' ', t('overview.formula.perRisk'))],
+          [t('overview.formula.lti', { days: fmt.num(90) }), h('span', {}, pts(minus(W.lti90)), ' ', t('overview.formula.perInjury'))],
+          [t('overview.formula.mtc', { days: fmt.num(90) }), h('span', {}, pts(minus(W.mtc90)), ' ', t('overview.formula.perInjury'))],
+          [t('overview.formula.nearMiss', { days: fmt.num(30) }), h('span', {}, pts(minus(W.nearMiss30)), ' ', t('overview.formula.perEvent'))],
+          [t('overview.formula.training'), h('span', {}, pts(`+${fmt.num(W.trainingPct, { maximumFractionDigits: 1 })}`), ' ', t('overview.formula.perPoint', { pct: fmt.pct(1) }))],
         ]),
         h('div', { class: 'note' },
-          h('strong', {}, 'LTIFR'), ` = (الإصابات المضيعة للوقت × ${fmt.num(ltiBase)}) ÷ ساعات العمل · `,
-          h('strong', {}, 'TRIR'), ` = (الإصابات المسجلة × ${fmt.num(trirBase)}) ÷ ساعات العمل، بافتراض ${fmt.num(hoursDay)} ساعات لكل عامل يومياً ضمن الفترة المحددة.`));
-      overlay = C.modal({ title: 'كيف يُحسب مؤشر السلامة؟', subtitle: 'الصيغة المعتمدة في قمرة القيادة', body, actions: [{ label: 'حسناً', variant: 'primary' }], size: 'md', onClose: () => { overlay = null; } });
+          h('p', {}, h('strong', { translate: 'no' }, 'LTIFR'), ' ', t('overview.formula.ltifr', { base: fmt.num(ltiBase) })),
+          h('p', {}, h('strong', { translate: 'no' }, 'TRIR'), ' ', t('overview.formula.trir', { base: fmt.num(trirBase), hours: fmt.num(hoursDay) }))),
+        h('p', { class: 't-helper' }, t('overview.formula.overdueDefinition')));
+      overlay = C.modal({ title: t('overview.formula.title'), subtitle: t('overview.formula.subtitle'), body, actions: [{ label: t('core.common.ok'), variant: 'primary' }], size: 'md', onClose: () => { overlay = null; } });
       overlay.open();
     }
 
@@ -697,28 +811,35 @@ export default {
       const st = state();
       const f = filters();
       const k = safe(() => sel.kpis(st, f), null, 'kpis');
-      renderScope(f);
-      // Static subtitles carry numbers → re-set so a numerals change is honoured everywhere.
-      setSub(radarCard, `${fmt.num(12)} قطاعاً بحسب فئة الخطر — المخاطر الأشد تقترب من المركز`);
-      setSub(trendCard, `آخر ${fmt.num(12)} أسبوعاً — الحوادث مقابل الحوادث الوشيكة`);
-      setSub(sitesCard, `مؤشر السلامة لكل موقع مع اتجاه ${fmt.num(12)} أسبوعاً — انقر موقعاً لتصفية اللوحة عليه`);
-      renderHero(k, st, f);
-      renderTiles(k, st, f);
-      renderMatrix(st, f);
-      renderTrend(st, f);
-      renderPermits(st, f);
-      renderSites(st);
-      renderUrgent(st, f);
-      renderRadarMeta(st, f);
+      const hist = kpiHistory(st, f, k);
+      guard(statusHost, 'head', () => renderHead(f));
+      guard(metricGrid, 'metrics', () => renderMetrics(k, st, f, hist));
+      guard(heroBody, 'hero', () => renderHero(k, st, f));
+      guard(leadingRow, 'leading', () => renderLeading(k, hist));
+      guard(matrixHost, 'matrix', () => renderMatrix(st, f));
+      guard(trendHost, 'trend', () => renderTrend());
+      guard(permitsHost, 'permits', () => renderPermits(st, f));
+      guard(actionsHost, 'actions', () => renderActions(st, f));
+      guard(sitesHost, 'sites', () => renderSites(st));
+      guard(radarLegendHost, 'radarMeta', () => renderRadarMeta(f));
+      if (firstPaint) {
+        firstPaint = false;
+        if (motion && typeof motion.enter === 'function') {
+          motion.enter(Array.from(metricGrid.children), { y: 8 });
+          motion.enter([heroCard, radarCard], { y: 10, delay: 0.06 });
+          motion.enter(Array.from(leadingRow.children), { y: 6, delay: 0.1 });
+          motion.enter([matrixCard, trendCard, permitsCard, actionsCard, sitesCard], { y: 10, delay: 0.14 });
+        }
+      }
     }
     function schedule() {
       if (destroyed || raf) return;
       raf = requestAnimationFrame(() => { raf = 0; refresh(); });
     }
     function tickClock() {
-      // Paused while the tab is hidden (no DOM writes nobody can see); resumes on visibilitychange.
-      if (document.hidden) return;
-      updatedText.textContent = `آخر تحديث ${fmt.relative(lastChangeAt)}`;
+      if (document.hidden || destroyed) return;
+      const text = t('overview.radar.updated', { time: fmt.relative(lastChangeAt) });
+      if (updatedText.textContent !== text) updatedText.textContent = text;
     }
     const onVisibility = () => { if (!destroyed && !document.hidden) tickClock(); };
     document.addEventListener('visibilitychange', onVisibility);
@@ -730,7 +851,7 @@ export default {
     subs.push(bus.on('store:change', (p) => {
       lastChangeAt = Date.now();
       const path = String((p && p.path) || '*');
-      if (/^(feed|sensors|integrations|platform\.(?!aiRisks|tasks|alerts))/.test(path)) return;
+      if (/^(feed|sensors|integrations|platform)/.test(path)) return;
       schedule();
     }));
     subs.push(bus.on('filters:change', schedule));
@@ -742,16 +863,17 @@ export default {
       destroyed = true;
       document.removeEventListener('visibilitychange', onVisibility);
       subs.splice(0).forEach((off) => { try { off(); } catch { /* ignore */ } });
-      timers.splice(0).forEach((t) => { clearInterval(t); clearTimeout(t); });
+      timers.splice(0).forEach((x) => { clearInterval(x); clearTimeout(x); });
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
       if (layoutObserver) { try { layoutObserver.disconnect(); } catch { /* ignore */ } layoutObserver = null; }
       if (layoutRaf) { cancelAnimationFrame(layoutRaf); layoutRaf = 0; }
       if (sweep) {
-        try { if (typeof sweep.stop === 'function') sweep.stop(); } catch { /* ignore */ }
+        try { if (typeof sweep.destroy === 'function') sweep.destroy(); else if (typeof sweep.stop === 'function') sweep.stop(); } catch { /* ignore */ }
         try { if (R.radarLoop && typeof R.radarLoop.remove === 'function') R.radarLoop.remove(sweep); } catch { /* ignore */ }
-        try { if (typeof sweep.destroy === 'function') sweep.destroy(); } catch { /* ignore */ }
         sweep = null;
       }
+      if (gaugeApi && typeof gaugeApi.destroy === 'function') { try { gaugeApi.destroy(); } catch { /* ignore */ } }
+      if (sitesTable && typeof sitesTable.destroy === 'function') { try { sitesTable.destroy(); } catch { /* ignore */ } }
       if (overlay) { try { overlay.close(); } catch { /* ignore */ } overlay = null; }
       try { if (charts && charts.tooltip && typeof charts.tooltip.hide === 'function') charts.tooltip.hide(); } catch { /* ignore */ }
       tip.hidden = true;

@@ -10,7 +10,7 @@
 export default {
   product: {
     _: {
-      name: 'Biltix AI Risk Management Platform',
+      name: 'BILTIX Risk AI — AI risk management platform',
       brandShort: 'BILTIX Risk AI',
       tagline: 'Risk cockpit — five domains, real-time classification, tracked treatment',
     },
@@ -92,7 +92,7 @@ export default {
         'Specification compliance matching with natural language processing',
       ],
       inputs: [
-        'Biltix — BoQ/BoM',
+        'BILTIX — BoQ/BoM',
         'Autodesk APS (model quantities)',
         'Oracle ERP (purchase orders, suppliers)',
         'Commodity indices',
@@ -317,6 +317,7 @@ export default {
   },
   validationSources: {
     VS1: { name: 'BILTIX — Contracts' },
+    VS2: { name: 'BILTIX — BoQ/BoM' },
     VS3: { name: 'BILTIX — Schedule' },
     VS4: { name: 'BILTIX — Site reports' },
     VS5: { name: 'BILTIX — Cost and budget' },
@@ -391,6 +392,8 @@ export default {
     hubspot: { entities: ['Companies', 'Deals'], description: 'Configurable alternative for customers using HubSpot.' },
     'biltix-contracts': {
       name: 'BILTIX — Contracts module',
+      vendor: 'BILTIX',
+      api: 'BILTIX REST v1 + Webhooks',
       entities: ['Contracts', 'Clauses', 'Obligations', 'Correspondence'],
       writeback: ['Clause flags and scores', 'Alternative wording', 'Legal review tasks'],
       description: 'The primary source for contracts; clause flags and alternative wording are written back to the contract record.',
@@ -398,6 +401,8 @@ export default {
     },
     'biltix-boq': {
       name: 'BILTIX — Bill of quantities BoQ/BoM',
+      vendor: 'BILTIX',
+      api: 'BILTIX REST v1',
       entities: ['BoQ items', 'Specifications', 'Suppliers'],
       writeback: ['Item risk scores', 'Order date alerts'],
       description: 'Reads BoQ items and specifications, and writes back risk scores and order alerts.',
@@ -405,6 +410,8 @@ export default {
     },
     'biltix-schedule': {
       name: 'BILTIX — Schedule',
+      vendor: 'BILTIX',
+      api: 'BILTIX REST v1',
       entities: ['Tasks', 'Milestones', 'Dependencies'],
       writeback: ['Critical path slippage flags', 'Treatment tasks'],
       description: 'The project schedule inside BILTIX (synced with P6), with slippage flags written back.',
@@ -412,6 +419,8 @@ export default {
     },
     'biltix-site-reports': {
       name: 'BILTIX — Site reports',
+      vendor: 'BILTIX',
+      api: 'BILTIX REST v1 + Webhooks',
       entities: ['Daily reports', 'Observations', 'Inspections', 'Attendance'],
       writeback: ['Safety flags on reports', 'Site treatment tasks'],
       description: 'Daily reports and inspections; safety flags and site tasks are written back.',
@@ -419,6 +428,8 @@ export default {
     },
     'biltix-cost': {
       name: 'BILTIX — Cost and budget',
+      vendor: 'BILTIX',
+      api: 'BILTIX REST v1',
       entities: ['Cost items', 'Change orders', 'Payment certificates'],
       writeback: ['Budget overrun flags', 'Change order alerts'],
       description: 'Cost data inside BILTIX (synced with ERP), with overrun flags written back.',
@@ -426,6 +437,8 @@ export default {
     },
     'biltix-images': {
       name: 'BILTIX — Images and media',
+      vendor: 'BILTIX',
+      api: 'BILTIX Media API (S3-compatible)',
       entities: ['Site photos', 'Video', 'Surveys'],
       description: 'Image and media store; degraded performance due to the size of uncompressed images.',
       configFields: [{ label: 'Store URL' }, {}, {}, {}],
@@ -462,9 +475,9 @@ export default {
     },
   },
   auditLog: {
-    AU1: { detail: 'Write-back failed: response timeout (30 s) — will be resent automatically' },
+    AU1: { target: 'MT-0224 → BILTIX PM', detail: 'Write-back failed: response timeout (30 s) — will be resent automatically' },
     AU2: { detail: 'Recommendation accepted and task MT-0224 created (south fence repair)' },
-    AU3: { detail: 'Task sent to BILTIX PM — awaiting confirmation' },
+    AU3: { target: 'MT-0211 → BILTIX PM', detail: 'Task sent to BILTIX PM — awaiting confirmation' },
     AU4: { detail: 'Recommendation accepted and task MT-0211 created (close gate G2)' },
     AU5: { detail: 'Immediate escalation confirmed; geotechnical engineer on site' },
     AU6: { detail: 'Scheduled run: 32 critical activities scored, Monte Carlo 6 projects × 5,000 iterations' },
@@ -478,7 +491,7 @@ export default {
     },
     AU10: { detail: 'Record ERP-PO-2026-0512-L3 quarantined: currency inconsistency (rule VR8)' },
     AU11: { detail: 'Recommendation accepted and task MT-0203 created (edge protection — Floor 23)' },
-    AU12: { detail: 'Simulated write-back to BILTIX PM (demo external ID PM-TSK-88412)' },
+    AU12: { target: 'MT-0203 → BILTIX PM', detail: 'Simulated write-back to BILTIX PM (demo external ID PM-TSK-88412)' },
     AU13: { target: 'Cockpit', detail: 'Signed in — role: Legal' },
     AU14: { detail: 'Recommendation accepted and task MT-0214 created (north slope evacuation) with escalation' },
     AU15: { detail: 'Automatic immediate escalation — score 100 ≥ critical threshold (email, Slack, WhatsApp)' },
@@ -665,5 +678,6 @@ export default {
     'مهمة معالجة': 'Treatment task',
     'مخاطرة مكتشفة بواسطة المحرك': 'Risk detected by the engine',
     'دون سبب مُسجَّل': 'No reason recorded',
+    'إدخال يدوي': 'Manual entry',
   },
 };

@@ -10,8 +10,8 @@
 export default {
   company: {
     _: {
-      name: 'Biltix',
-      product: 'Biltix Risk AI',
+      name: 'BILTIX',
+      product: 'BILTIX Risk AI',
       hseProduct: 'BILTIX HSE',
       pillar: 'Health, Safety & Environment (HSE) pillar',
       tagline: 'Health, Safety & Environment (HSE) command centre',
@@ -1680,21 +1680,25 @@ export default {
   integrations: {
     'biltix-pm': {
       name: 'BILTIX Project Management Platform',
+      vendor: 'BILTIX',
       description: 'Syncs projects, phases, schedules and workers from the BILTIX platform; maps safety observations onto schedule activities.',
       configFields: [{ label: 'API URL' }, { label: 'API key' }, { label: 'Project IDs (comma-separated)' }],
     },
     'biltix-dms': {
       name: 'BILTIX DMS — Document Management',
+      vendor: 'BILTIX',
       description: 'Archives permits to work, inspection reports and risk assessments as controlled documents with version and signature tracking.',
       configFields: [{ label: 'API URL' }, { label: 'API key' }, { label: 'HSE documents root folder' }],
     },
     'iot-gateway': {
       name: 'Sensor gateway (MQTT)',
+      vendor: 'BILTIX IoT',
       description: 'Receives gas, noise, WBGT, dust and wind readings from 14 sensors over MQTT, with threshold exceedance alerts.',
       configFields: [{ label: 'MQTT broker URL' }, { label: 'Topic' }, { label: 'Username' }, { label: 'Password' }],
     },
     'cctv-ai': {
       name: 'Smart cameras — PPE detection',
+      vendor: 'BILTIX Vision',
       description: 'Analyses feeds from 48 cameras to detect work without a hard hat, vest or harness, and approaches to exclusion zones. Degraded performance: frame processing delayed at NEOM-03 due to a weak connection.',
       configFields: [{ label: 'Analysis server URL' }, { label: 'API key' }, { label: 'Detection confidence threshold (0–1)' }],
     },
@@ -1724,6 +1728,7 @@ export default {
     },
     hrms: {
       name: 'HR system',
+      vendor: 'BILTIX HR',
       description: 'Syncs worker and contractor data, training certificates and their expiry dates to feed the training matrix.',
       configFields: [{ label: 'API URL' }, { label: 'API key' }, { label: 'Sync interval (minutes)' }],
     },
@@ -1746,6 +1751,7 @@ export default {
     },
     'email-smtp': {
       name: 'Email (SMTP)',
+      vendor: 'BILTIX Mail',
       description: 'Daily report at 06:30, the monthly report on the first working day, and certificate expiry notices for supervisors.',
       configFields: [
         { label: 'SMTP server' },
@@ -2180,6 +2186,7 @@ export default {
     'منظم الحركة': 'Traffic marshal',
     'مراقب السلامة': 'Safety officer',
     'مشرف الوردية': 'Shift supervisor',
+    'مسؤول السلامة': 'HSE officer',
     // Units written in Arabic
     'كم/س': 'km/h',
     '°م': '°C',

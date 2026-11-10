@@ -1,40 +1,41 @@
 /**
- * Biltix HSE — view SEC-06: التفتيش والتدقيق (js/views/inspections.js)
+ * BILTIX Risk AI — HSE pillar — SEC-06 Inspections & audits (js/views/inspections.js). Owner: B-HSE2 (v3).
  *
- * Contract: docs/ARCHITECTURE.md §8.6. Owner: VIEWS-B.
+ *   • Four executive metrics: due or overdue (sel.kpis.inspectionsDue — the same definition the overview and
+ *     the reports use; the "overdue" part uses the urgent-actions rule), completed in window, open findings,
+ *     mean score
+ *   • Filter bar (status segmented + type select) directly above the schedule table (components.dataTable,
+ *     updated in place: { resetPage } on filter changes, { preserve, flash } on live data changes)
+ *   • Completion by project (ranked bars) and findings (segmented bar + facts), upcoming audits
+ *   • Detail drawer (Overview / Findings tabs) with finding close / reopen → store.updateInspection, and
+ *     "Record as completed" modal with inline, translated validation
  *
- *   • Summary strip (scheduled / completed / overdue / open findings / mean score)
- *   • Schedule table (components.dataTable) of recent and upcoming inspections within
- *     ±range days (global range, default ±30): code, type, site, inspector, date,
- *     status badge, score, checklist progress (components.progress)
- *   • Completion by site (charts.barChart) and findings open vs closed (charts.segmentedBar)
- *   • Upcoming audit cards
- *   • Detail drawer: findings list with close / reopen toggles → store.updateInspection,
- *     and «تسجيل كمنجز» which asks for a score in a modal →
- *     store.updateInspection(id, {status:'منجز', score, checklistDone})
- *
- * Re-renders on store:change (inspections.*), filters:change and settings:change and
- * returns a cleanup that unsubscribes and closes any open overlay.
+ * Bilingual (CONTRACT §4): strings from 'inspections' (js/i18n/inspections.js); enums via i18n.label; finding
+ * text via i18n.L(…, 'inspections'); inspectors via i18n.term(). Dates are calendar dates (no zone shift);
+ * "today" is the Riyadh calendar day.
  */
 
+import { i18n, t, tn } from '../core/i18n.js';
+import dict from '../i18n/inspections.js';
 import * as SEED from '../data/seed.js';
 import {
-  h, clear, glyph, svgIcon, card, badge, button, segmented, dataTable, modal, drawer, toast,
-  formField, readForm, emptyState, progress, kv,
+  h, clear, glyph, svgIcon, card, badge, button, dataTable, modal, drawer, toast,
+  formField, emptyState, progress, kv, filterBar, motion,
 } from '../ui/components.js';
 
-/* ────────────────────────────── enums (contract §3, with fallbacks) ────────────────────────────── */
+i18n.register('inspections', dict);
+
+/* ────────────────────────────── enums ────────────────────────────── */
 
 const list = (value, fallback) => (Array.isArray(value) && value.length ? value : fallback);
-
 const INSPECTION_TYPES = list(SEED.INSPECTION_TYPES, ['جولة سلامة', 'تفتيش معدات', 'تدقيق داخلي', 'تفتيش سقالات', 'فحص رافعات', 'تفتيش كهرباء']);
 const INSPECTION_STATUS = list(SEED.INSPECTION_STATUS, ['مجدول', 'منجز', 'متأخر']);
-
 const SCHEDULED = 'مجدول';
 const DONE = 'منجز';
 const OVERDUE = 'متأخر';
 const FINDING_OPEN = 'مفتوح';
 const FINDING_CLOSED = 'مغلق';
+const SEVERITIES = ['عالٍ', 'متوسط', 'منخفض'];
 
 const STATUS_TONE = { [SCHEDULED]: 'brand', [DONE]: 'good', [OVERDUE]: 'critical' };
 const SEVERITY_TONE = { 'منخفض': 'good', 'متوسط': 'warning', 'عالٍ': 'serious' };
@@ -44,13 +45,19 @@ const TYPE_ICON = {
 };
 
 const DAY_MS = 86_400_000;
+const DUE_DAYS = 7;          // sel.INSPECTION_DUE_DAYS
 const UPCOMING_LIMIT = 6;
+const TZ_OFFSET_MS = 3 * 3_600_000; // Asia/Riyadh, fixed UTC+3
 
-/* ────────────────────────────── pure helpers ────────────────────────────── */
+/* ────────────────────────────── helpers ────────────────────────────── */
 
-const statusTone = (status) => STATUS_TONE[status] || 'neutral';
-const severityTone = (sev) => SEVERITY_TONE[sev] || 'neutral';
+const statusTone = (s) => STATUS_TONE[s] || 'neutral';
+const severityTone = (s) => SEVERITY_TONE[s] || 'neutral';
 const typeIcon = (type) => TYPE_ICON[type] || 'clipboard';
+const typeLabel = (type) => i18n.label('inspectionType', type);
+const statusLabel = (s) => i18n.label('inspectionStatus', s);
+const severityLabel = (s) => (s ? i18n.label('findingSeverity', s) : t('inspections.drawer.unspecified'));
+const findingStatusLabel = (s) => i18n.label('findingStatus', s);
 
 function scoreTone(score) {
   const n = Number(score);
@@ -61,68 +68,40 @@ function scoreTone(score) {
   return 'critical';
 }
 
-function siteName(state, siteId) {
-  const site = (state.sites || []).find((s) => s && s.id === siteId);
-  return site ? site.name : '—';
-}
-
 function touches(path, prefix) {
   if (!path || path === '*') return true;
   const p = String(path);
   return p === prefix || p.startsWith(`${prefix}.`);
 }
+const idFromPath = (path) => { const m = /^inspections\.([^.]+)/.exec(String(path || '')); return m ? m[1] : null; };
 
-/** Id of the focused element inside `root` (so a repaint can hand focus back to its twin). */
-function focusedIdWithin(root) {
-  const a = document.activeElement;
-  return a && root && root.contains(a) && a.id ? a.id : null;
+/** Calendar key 'YYYY-MM-DD' of a date-only string, or of an instant in Riyadh time. */
+function dayKey(value) {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const ms = value instanceof Date ? value.getTime() : Date.parse(value);
+  return Number.isFinite(ms) ? new Date(ms + TZ_OFFSET_MS).toISOString().slice(0, 10) : '';
 }
-
-/**
- * After a drawer repaint, keep keyboard focus inside the dialog so Esc / Tab keep working:
- * the same control by id, else the first visible footer action, else the dialog itself.
- */
-function restoreFocus(api, id) {
-  if (!api || typeof api.isOpen !== 'function' || !api.isOpen()) return;
-  const root = api.el;
-  const a = document.activeElement;
-  if (a && a !== document.body && root.contains(a) && !a.hidden && a.getClientRects().length) return;
-  let target = null;
-  if (id) { try { target = root.querySelector(`#${CSS.escape(id)}`); } catch { target = null; } }
-  if (!target) target = root.querySelector('.drawer-foot button:not([hidden])') || root;
-  try { target.focus({ preventScroll: true }); } catch { /* ignore */ }
+const keyMs = (key) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : NaN; };
+/** Whole calendar days from today (Riyadh) to `date` (negative = past). */
+function daysFromToday(date, nowMs) {
+  const a = keyMs(dayKey(date)); const b = keyMs(dayKey(new Date(nowMs)));
+  return Number.isFinite(a) && Number.isFinite(b) ? Math.round((a - b) / DAY_MS) : NaN;
 }
-
-function parseDate(value) {
-  if (!value) return NaN;
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value));
-  return m ? new Date(+m[1], +m[2] - 1, +m[3]).getTime() : Date.parse(value);
-}
-
-function startOfDay(ms) { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); }
-
-/** Whole days from today to `iso` (negative = past). */
-function daysFromToday(iso, now = Date.now()) {
-  const t = parseDate(iso);
-  if (!Number.isFinite(t)) return NaN;
-  return Math.round((startOfDay(t) - startOfDay(now)) / DAY_MS);
-}
-
-/** Arabic relative-day phrase with correct dual/plural agreement. */
+const rtfCache = new Map();
+/** "today" / "in 3 days" / "2 days ago" in the UI language (numerals follow fmt). */
 function dayPhrase(n, fmt) {
   if (!Number.isFinite(n)) return '—';
-  if (n === 0) return 'اليوم';
-  if (n === 1) return 'غداً';
-  if (n === -1) return 'أمس';
-  const abs = Math.abs(n);
-  const unit = abs === 2 ? 'يومين' : abs <= 10 ? `${fmt.num(abs)} أيام` : `${fmt.num(abs)} يوماً`;
-  return n > 0 ? `خلال ${unit}` : `قبل ${unit}`;
+  const loc = fmt.locale().replace(/-ca-gregory$/, '');
+  if (!rtfCache.has(loc)) { let f = null; try { f = new Intl.RelativeTimeFormat(loc, { numeric: 'auto' }); } catch { f = null; } rtfCache.set(loc, f); }
+  const f = rtfCache.get(loc);
+  try { return f ? f.format(n, 'day') : String(n); } catch { return String(n); }
 }
+const isOverdueIns = (ins, todayKey) => ins.status === OVERDUE || (ins.status === SCHEDULED && dayKey(ins.date) < todayKey);
 
 function simpleTable(caption, headers, rows) {
   const table = h('table', { class: 'table is-dense' });
   table.appendChild(h('caption', { class: 'sr-only' }, caption));
-  table.appendChild(h('thead', {}, h('tr', {}, headers.map((t) => h('th', { scope: 'col' }, t)))));
+  table.appendChild(h('thead', {}, h('tr', {}, headers.map((x, i) => h('th', { scope: 'col', class: i > 0 ? 'align-end' : null }, x)))));
   table.appendChild(h('tbody', {}, rows.map((r) => h('tr', {}, r.map((c, i) => h('td', { class: i > 0 ? 'num align-end' : null }, c))))));
   return table;
 }
@@ -133,17 +112,11 @@ function safeChart(charts, name, opts, fallbackTable) {
     if (typeof fn === 'function') {
       const chart = fn(opts);
       if (chart && chart.el instanceof Node) {
-        const table = () => {
-          try { const t = chart.table && chart.table(); if (t instanceof Node) return t; } catch { /* fall through */ }
-          return fallbackTable();
-        };
-        return { el: chart.el, table, native: true };
+        return { el: chart.el, table: () => { try { const tb = chart.table && chart.table(); if (tb instanceof Node) return tb; } catch { /* fall through */ } return fallbackTable(); } };
       }
     }
-  } catch (err) {
-    console.warn(`[biltix-hse] inspections: charts.${name} unavailable, showing table instead`, err);
-  }
-  return { el: h('div', { class: 'table-wrap' }, fallbackTable()), table: fallbackTable, native: false };
+  } catch { /* fall back to the table */ }
+  return { el: h('div', { class: 'table-wrap' }, fallbackTable()), table: fallbackTable };
 }
 
 /* ────────────────────────────── the view ────────────────────────────── */
@@ -151,7 +124,7 @@ function safeChart(charts, name, opts, fallbackTable) {
 export const inspectionsView = {
   id: 'inspections',
   code: 'SEC-06',
-  title: 'التفتيش والتدقيق',
+  get title() { return t('core.nav.inspections.title'); },
   icon: 'clipboard',
 
   render(container, ctx) {
@@ -164,383 +137,433 @@ export const inspectionsView = {
     let typeFilter = 'all';
 
     const state = () => store.state;
+    const nowMs = () => (typeof store.now === 'function' ? store.now().getTime() : Date.now());
     const globalFilters = () => ({ ...(store.filters || state().filters || {}) });
-    const tableFilters = () => ({ ...globalFilters(), status: statusFilter === 'all' ? undefined : statusFilter, type: typeFilter === 'all' ? undefined : typeFilter });
+    const rangeDays = () => Number(globalFilters().range) || 30;
+    const typed = () => ({ ...globalFilters(), type: typeFilter === 'all' ? undefined : typeFilter });
+    const tableFilters = () => ({ ...typed(), status: statusFilter === 'all' ? undefined : statusFilter });
     const findInspection = (id) => (state().inspections || []).find((i) => i && i.id === id) || null;
+    const siteOf = (id) => (state().sites || []).find((s) => s && s.id === id) || null;
+    const siteName = (id) => { const s = siteOf(id); return s ? i18n.L(s, 'name', 'sites') : '—'; };
+    const shortSite = (name) => String(name || '').split(/\s+[—–]\s+/)[0];
+    const person = (v) => (v ? i18n.term(v) : '—');
+    const findingsOf = (ins) => {
+      const raw = Array.isArray(ins.findings) ? ins.findings : [];
+      const loc = i18n.L(ins, 'findings', 'inspections');
+      return raw.map((f, i) => ({ ...f, text: (Array.isArray(loc) && loc[i] && loc[i].text) || (f && f.text) || '—' }));
+    };
 
-    /** Completion % per site — core selector when present, else a local twin over the filtered rows. */
-    function completionBySite(st, f) {
-      if (typeof sel.inspectionCompletionBySite === 'function') {
-        try { return sel.inspectionCompletionBySite(st, f); } catch { /* fall through */ }
-      }
-      const rows = sel.filteredInspections(st, f);
-      return (st.sites || []).map((site) => {
-        const mine = rows.filter((r) => r.siteId === site.id);
-        const done = mine.filter((r) => r.status === DONE).length;
-        return { id: site.id, label: site.name, value: mine.length ? Math.round((done / mine.length) * 100) : 0, done, total: mine.length };
-      });
-    }
-
-    /** Open vs closed findings (+ by severity) — core selector when present, else a local twin. */
-    function findingsSummary(st, f) {
-      if (typeof sel.findingsSummary === 'function') {
-        try { return sel.findingsSummary(st, f); } catch { /* fall through */ }
-      }
-      let open = 0; let closed = 0; const bySeverity = {};
-      for (const ins of sel.filteredInspections(st, f)) {
-        for (const fd of (Array.isArray(ins.findings) ? ins.findings : [])) {
-          if (!fd) continue;
-          if (fd.status === FINDING_OPEN) open += 1; else closed += 1;
-          const s = fd.severity || 'غير محدد';
-          bySeverity[s] = (bySeverity[s] || 0) + 1;
-        }
-      }
-      return { open, closed, total: open + closed, bySeverity };
-    }
-
-    /* ── skeleton ── */
+    /* ── page skeleton ── */
     const root = h('section', { class: 'view view-inspections', 'aria-labelledby': 'inspections-title' });
-    const typeSelect = h('select', { class: 'field-control', 'aria-label': 'تصفية حسب نوع التفتيش', onChange: () => { typeFilter = typeSelect.value; schedule(7); } },
-      h('option', { value: 'all' }, 'جميع أنواع التفتيش'),
-      INSPECTION_TYPES.map((t) => h('option', { value: t }, t)));
     root.appendChild(h('header', { class: 'view-head' },
       h('div', { class: 'view-head-text' },
         h('span', { class: 'code-tag' }, inspectionsView.code),
-        h('h1', { id: 'inspections-title', tabindex: '-1' }, inspectionsView.title),
-        h('p', { class: 'view-lead' }, 'جدول جولات السلامة والتفتيشات الفنية والتدقيقات الداخلية، مع نسب الإنجاز حسب الموقع، وملاحظات التفتيش المفتوحة والمغلقة، وتسجيل النتائج فور اكتمال الجولة.')),
-      h('div', { class: 'view-actions' }, typeSelect)));
+        h('h1', { id: 'inspections-title', class: 't-page', tabindex: '-1' }, t('core.nav.inspections.title')),
+        h('p', { class: 'view-lead' }, t('inspections.lead')))));
 
-    const stripHost = h('div', { class: 'summary-strip', role: 'group', 'aria-label': 'ملخص التفتيش' });
-    const gridHost = h('div', { class: 'grid-12' });
-    const upcomingSection = h('section', { class: 'stack gap-3', 'aria-labelledby': 'upcoming-title' });
-    root.append(stripHost, gridHost, upcomingSection);
+    const metricsHost = h('div', { class: 'metric-grid', role: 'group', 'aria-label': t('inspections.metrics.label') });
+    const completionHost = h('div', { class: 'col-span-6' });
+    const findingsHost = h('div', { class: 'col-span-6' });
+    const upcomingHost = h('div', { class: 'cards-grid', role: 'list', 'aria-label': t('inspections.upcoming.aria') });
 
-    /* schedule table (built once, updated in place) */
-    const statusSeg = segmented({
-      ariaLabel: 'تصفية حسب حالة التفتيش',
-      value: 'all',
-      options: [{ value: 'all', label: 'الكل' }, ...INSPECTION_STATUS.map((s) => ({ value: s, label: s }))],
-      onChange: (v) => { statusFilter = v; schedule(2); },
+    /* filter bar directly above the table it filters */
+    const filters = filterBar({
+      label: t('inspections.filters.label'),
+      className: 'is-plain',
+      filters: [
+        { id: 'status', type: 'segmented', label: t('inspections.filters.status'), options: [{ value: 'all', label: t('core.common.all') }, ...INSPECTION_STATUS.map((s) => ({ value: s, label: statusLabel(s) }))], defaultValue: 'all' },
+        { id: 'type', type: 'select', label: t('inspections.filters.type'), options: INSPECTION_TYPES.map((tp) => ({ value: tp, label: typeLabel(tp) })) },
+      ],
+      value: { status: statusFilter, type: typeFilter },
+      onChange: (v) => {
+        const typeChanged = v.type !== typeFilter;
+        statusFilter = v.status || 'all';
+        typeFilter = v.type || 'all';
+        schedule(typeChanged ? 15 : 2, { resetPage: true });
+      },
     });
-    statusSeg.el.classList.add('seg-sm');
 
     const table = dataTable({
-      caption: 'جدول التفتيش والتدقيق',
+      caption: t('inspections.table.caption'),
       pageSize: 10,
       dense: true,
       initialSort: { key: 'date', dir: 'asc' },
-      emptyText: 'لا توجد تفتيشات ضمن النافذة الزمنية والموقع المحددين',
+      emptyText: t('inspections.table.empty'),
       onRowClick: (row) => openDrawer(row.id),
+      rowLabel: (row) => t('inspections.table.open', { code: row.code }),
       stickyFirst: true,
-      /* `priority` drives container-width column hiding (low → medium → never high); the code column stays sticky. */
       columns: [
-        { key: 'code', label: 'الرمز', priority: 'high', mono: true, width: 92, render: (r) => h('span', { class: 'mono code nowrap', dir: 'ltr' }, r.code) },
-        { key: 'type', label: 'النوع', priority: 'high', render: (r) => h('span', { class: 'row gap-1' }, svgIcon(typeIcon(r.type), 14), r.type) },
+        { key: 'code', label: t('inspections.table.code'), priority: 'high', width: 96, render: (r) => h('span', { class: 'code' }, r.code) },
+        { key: 'type', label: t('inspections.table.type'), priority: 'high', sortValue: (r) => typeLabel(r.type), render: (r) => h('span', { class: 'row gap-1 nowrap' }, svgIcon(typeIcon(r.type), 14), typeLabel(r.type)) },
         {
-          key: 'siteId', label: 'الموقع', priority: 'high', sortValue: (r) => siteName(state(), r.siteId),
+          key: 'siteId', label: t('inspections.table.site'), priority: 'high', sortValue: (r) => siteName(r.siteId),
           render: (r) => {
-            const site = (state().sites || []).find((s) => s && s.id === r.siteId);
-            // Site names wrap on two lines (no ellipsis) with the mono code beneath.
-            return h('span', { class: 'stack gap-1', style: { minInlineSize: '11ch', maxInlineSize: '18ch' } },
-              h('span', { style: { whiteSpace: 'normal', lineHeight: '1.35' } }, site ? site.name : '—'),
-              site ? h('span', { class: 'mono code nowrap text-xs muted', dir: 'ltr' }, site.code) : null);
+            const site = siteOf(r.siteId);
+            return h('span', { class: 'stack gap-1', style: { minInlineSize: '12ch', maxInlineSize: '22ch' } },
+              h('span', { class: 'cell-title', style: { whiteSpace: 'normal', lineHeight: '1.35' } }, site ? i18n.L(site, 'name', 'sites') : '—'),
+              site ? h('span', { class: 'code cell-sub' }, site.code) : null);
           },
         },
-        { key: 'inspector', label: 'المفتش', priority: 'low', render: (r) => h('span', { class: 'truncate', style: { maxInlineSize: '14ch', display: 'inline-block', verticalAlign: 'middle' }, title: r.inspector || '' }, r.inspector || '—') },
+        { key: 'inspector', label: t('inspections.table.inspector'), priority: 'low', sortValue: (r) => person(r.inspector), render: (r) => h('span', { style: { whiteSpace: 'normal', display: 'inline-block', maxInlineSize: '18ch' } }, person(r.inspector)) },
         {
-          key: 'date', label: 'التاريخ', priority: 'high', sortValue: (r) => parseDate(r.date),
+          key: 'date', label: t('inspections.table.date'), priority: 'high', sortValue: (r) => keyMs(dayKey(r.date)),
           render: (r) => {
-            const n = daysFromToday(r.date);
+            const n = daysFromToday(r.date, nowMs());
+            const late = r.status !== DONE && n < 0;
             return h('span', { class: 'stack gap-1' },
               h('span', { class: 'nowrap' }, fmt.date(r.date, { style: 'short' })),
-              h('span', { class: ['text-xs', 'nowrap', r.status !== DONE && n < 0 ? 'is-overdue' : 'muted'] }, dayPhrase(n, fmt)));
+              h('span', { class: ['cell-sub', 'nowrap', late ? 'tone-text-critical' : null] }, dayPhrase(n, fmt)));
           },
         },
-        { key: 'status', label: 'الحالة', priority: 'high', render: (r) => badge(r.status, statusTone(r.status)) },
+        { key: 'status', label: t('inspections.table.status'), priority: 'high', sortValue: (r) => statusLabel(r.status), render: (r) => badge(statusLabel(r.status), statusTone(r.status)) },
         {
-          key: 'score', label: 'الدرجة', priority: 'medium', align: 'end', sortValue: (r) => (r.score === null || r.score === undefined ? null : Number(r.score)),
+          key: 'score', label: t('inspections.table.score'), priority: 'medium', align: 'end', sortValue: (r) => (r.score === null || r.score === undefined ? null : Number(r.score)),
           render: (r) => {
             if (r.score === null || r.score === undefined) return h('span', { class: 'muted' }, '—');
-            const row = h('span', { class: 'progress-row', style: { minInlineSize: '88px' } });
-            row.appendChild(progress({ value: Number(r.score), max: 100, tone: scoreTone(r.score), label: `الدرجة ${fmt.pct(Number(r.score))}` }));
-            row.appendChild(h('span', { class: 'progress-value' }, fmt.pct(Number(r.score))));
-            return row;
+            return h('span', { class: 'progress-row', style: { minInlineSize: '96px' } },
+              progress({ value: Number(r.score), max: 100, tone: scoreTone(r.score), label: t('inspections.table.scoreAria', { value: fmt.pct(Number(r.score)) }) }),
+              h('span', { class: 'progress-value num' }, fmt.pct(Number(r.score))));
           },
         },
         {
-          key: 'checklistDone', label: 'قائمة التحقق', priority: 'low', sortValue: (r) => (Number(r.checklistTotal) ? (Number(r.checklistDone) || 0) / Number(r.checklistTotal) : 0),
+          key: 'checklistDone', label: t('inspections.table.checklist'), priority: 'low', sortValue: (r) => (Number(r.checklistTotal) ? (Number(r.checklistDone) || 0) / Number(r.checklistTotal) : 0),
           render: (r) => {
             const total = Number(r.checklistTotal) || 0; const done = Number(r.checklistDone) || 0;
-            const row = h('span', { class: 'progress-row', style: { minInlineSize: '96px' } });
-            row.appendChild(progress({ value: done, max: Math.max(total, 1), tone: total && done >= total ? 'good' : null, label: `بنود قائمة التحقق المنجزة ${fmt.num(done)} من ${fmt.num(total)}` }));
-            row.appendChild(h('span', { class: 'progress-value' }, `${fmt.num(done)}/${fmt.num(total)}`));
-            return row;
+            return h('span', { class: 'progress-row', style: { minInlineSize: '104px' } },
+              progress({ value: done, max: Math.max(total, 1), tone: total && done >= total ? 'good' : null, label: t('inspections.table.checklistAria', { done: fmt.num(done), total: fmt.num(total) }) }),
+              h('span', { class: 'progress-value num', dir: 'ltr' }, `${fmt.num(done)}/${fmt.num(total)}`));
           },
         },
       ],
       rows: [],
     });
-    const tableCount = h('span', { class: 'badge tone-neutral mono' }, '');
+    const tableCount = h('span', { class: 'badge tone-neutral' }, '');
+    const tableSub = h('p', { class: 'card-sub' }, '');
     const tableCard = card({
-      code: 'SEC-06.A', title: 'جدول التفتيش', subtitle: 'الجولات المنجزة والمتأخرة والمجدولة ضمن النافذة الزمنية المحددة (± الفترة)',
-      actions: [tableCount, statusSeg.el], body: table.el,
+      code: 'SEC-06.A', title: t('inspections.table.title'), subtitle: ' ', actions: [tableCount],
+      body: h('div', { class: 'stack gap-3' }, h('div', { class: 'card-pad' }, filters.el), table.el),
     });
-    tableCard.querySelector('.card-body').classList.add('is-flush');
-    const completionHost = h('div', { class: 'col-span-6' });
-    const findingsHost = h('div', { class: 'col-span-6' });
-    // Partner cards (SEC-06.B / SEC-06.C) align to the row start instead of stretching into a void.
-    gridHost.style.alignItems = 'start';
-    gridHost.append(h('div', { class: 'col-span-12' }, tableCard), completionHost, findingsHost);
+    const sub = tableCard.querySelector('.card-sub');
+    if (sub) sub.replaceWith(tableSub);
 
-    const upcomingHost = h('div', { class: 'cards-grid', role: 'list', 'aria-label': 'التدقيقات القادمة' });
-    upcomingSection.append(
-      h('div', { class: 'row gap-2' },
-        h('span', { class: 'code-tag', 'aria-hidden': 'true' }, 'SEC-06.D'),
-        h('h2', { id: 'upcoming-title', class: 'card-title' }, 'التدقيقات القادمة'),
-        h('span', { class: 'text-xs muted' }, 'أقرب الجولات المجدولة في الموقع المحدد')),
+    const upcomingSection = h('section', { class: 'view-section', 'aria-labelledby': 'ins-upcoming-title' },
+      h('div', { class: 'view-section-head' },
+        h('div', { class: 'card-titles' },
+          h('span', { class: 'card-code', 'aria-hidden': 'true' }, 'SEC-06.D'),
+          h('div', { class: 'card-title-wrap' },
+            h('h2', { class: 't-section', id: 'ins-upcoming-title' }, t('inspections.upcoming.title')),
+            h('p', { class: 'card-sub' }, t('inspections.upcoming.sub'))))),
       upcomingHost);
 
+    const grid = h('div', { class: 'grid-12', style: { alignItems: 'start' } }, completionHost, findingsHost);
+    root.append(metricsHost, tableCard, grid, upcomingSection);
     container.appendChild(root);
 
-    /* ── summary strip ── */
-    function paintStrip() {
-      clear(stripHost);
+    /* ── metrics (patched in place) ── */
+    const tiles = {};
+    function metricTile(key, label, icon) {
+      const value = h('span', { class: 't-metric' }, '—');
+      const unit = h('span', { class: 'metric-unit' }, '');
+      const helper = h('span', { class: 'metric-helper' }, '');
+      const el = h('div', { class: 'metric-tile', 'data-metric': key },
+        h('div', { class: 'metric-head' }, h('span', { class: 'metric-label' }, label), h('span', { class: 'metric-icon', 'aria-hidden': 'true' }, svgIcon(icon, 16))),
+        h('div', { class: 'metric-value' }, value, unit),
+        h('div', { class: 'metric-foot' }, helper));
+      tiles[key] = { el, value, unit, helper, last: null, tone: null };
+      return el;
+    }
+    metricsHost.append(
+      metricTile('due', t('inspections.metrics.due'), 'clock'),
+      metricTile('done', t('inspections.metrics.done'), 'check-circle'),
+      metricTile('findings', t('inspections.metrics.findings'), 'alert-circle'),
+      metricTile('score', t('inspections.metrics.score'), 'clipboard'),
+    );
+    function setTile(key, { text, unit = '', helper = '', tone = null }) {
+      const tile = tiles[key];
+      const changed = tile.last !== null && tile.last !== text;
+      tile.value.textContent = text;
+      tile.unit.textContent = unit;
+      tile.helper.textContent = helper;
+      if (tile.tone !== tone) { if (tile.tone) tile.el.classList.remove(`tone-${tile.tone}`); if (tone) tile.el.classList.add(`tone-${tone}`); tile.tone = tone; }
+      if (changed) motion.flash(tile.el);
+      tile.last = text;
+    }
+
+    function paintMetrics() {
       const st = state();
       const gf = globalFilters();
+      const at = nowMs();
+      const todayKey = dayKey(new Date(at));
+      const kpis = (() => { try { return sel.kpis(st, gf, new Date(at)); } catch { return null; } })();
+      // Overdue = the urgent-actions rule (same list the overview and the reports' recommendations use).
+      const overdue = (() => {
+        try { return sel.urgentActions(st, new Date(at), { siteId: gf.siteId || 'all' }).filter((u) => u.kind === 'inspection').length; } catch { /* local twin */ }
+        return (st.inspections || []).filter((ins) => ins && (!gf.siteId || gf.siteId === 'all' || ins.siteId === gf.siteId) && isOverdueIns(ins, todayKey)).length;
+      })();
+      const due = kpis && Number.isFinite(kpis.inspectionsDue) ? kpis.inspectionsDue : overdue;
+      setTile('due', { text: fmt.num(due), helper: tn('inspections.metrics.dueHelper', overdue, { days: fmt.num(DUE_DAYS) }), tone: overdue ? 'critical' : (due ? 'warning' : 'good') });
+
       const rows = sel.filteredInspections(st, gf);
-      const scheduled = rows.filter((r) => r.status === SCHEDULED).length;
       const done = rows.filter((r) => r.status === DONE);
-      const overdue = rows.filter((r) => r.status === OVERDUE).length;
-      const findings = findingsSummary(st, gf);
+      setTile('done', { text: fmt.num(done.length), helper: t('inspections.metrics.doneHelper', { total: fmt.num(rows.length), range: fmt.num(rangeDays()) }), tone: null });
+
+      const f = sel.findingsSummary(st, gf);
+      const closurePct = f.total ? Math.round((f.closed / f.total) * 100) : 100;
+      setTile('findings', { text: fmt.num(f.open), helper: t('inspections.metrics.findingsHelper', { pct: fmt.pct(closurePct), total: fmt.num(f.total) }), tone: f.open ? 'serious' : 'good' });
+
       const scores = done.map((r) => Number(r.score)).filter(Number.isFinite);
       const mean = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
-
-      const cell = (label, value, tone, small) => {
-        const c = h('div', { class: ['summary-cell', tone ? `tone-${tone}` : null] });
-        const lab = h('span', { class: 'summary-label' });
-        if (tone) { const ic = glyph(tone, 14); ic.style.color = 'var(--tone-ink)'; lab.appendChild(ic); }
-        lab.appendChild(h('span', {}, label));
-        const val = h('span', { class: 'summary-value' }, value);
-        if (small) val.appendChild(h('small', {}, small));
-        c.append(lab, val);
-        return c;
-      };
-      stripHost.append(
-        cell('مجدولة', fmt.num(scheduled), 'brand'),
-        cell('منجزة', fmt.num(done.length), 'good', `من ${fmt.num(rows.length)}`),
-        cell('متأخرة', fmt.num(overdue), overdue ? 'critical' : 'neutral'),
-        cell('ملاحظات مفتوحة', fmt.num(findings.open), findings.open ? 'serious' : 'good', `من ${fmt.num(findings.total)}`),
-        cell('متوسط الدرجة', mean === null ? '—' : fmt.pct(mean), scoreTone(mean), scores.length ? `عبر ${fmt.num(scores.length)} تفتيشاً` : ''),
-      );
+      setTile('score', { text: mean === null ? '—' : fmt.num(mean), unit: mean === null ? '' : (fmt.getNumerals() === 'arab' ? '٪' : '%'), helper: tn('inspections.metrics.scoreHelper', scores.length), tone: scoreTone(mean) });
     }
 
     /* ── schedule table ── */
-    function paintTable() {
+    function paintTable(opts = {}) {
       const rows = sel.filteredInspections(state(), tableFilters()).slice();
-      table.update(rows);
-      tableCount.textContent = fmt.num(rows.length);
+      table.update(rows, opts.resetPage ? { resetPage: true } : { preserve: true, flash: Boolean(opts.flash) });
+      tableCount.textContent = tn('inspections.table.count', rows.length);
+      tableSub.textContent = t('inspections.table.sub', { range: fmt.num(rangeDays()) });
     }
 
-    /* ── side charts ── */
+    /* ── completion + findings ── */
     function paintCharts() {
       clear(completionHost); clear(findingsHost);
       const st = state();
-      const gf = { ...globalFilters(), type: typeFilter === 'all' ? undefined : typeFilter };
-
-      const completion = completionBySite(st, gf).slice().sort((a, b) => b.value - a.value || b.total - a.total);
+      const gf = typed();
+      const completion = sel.inspectionCompletionBySite(st, gf).map((c) => ({ ...c, name: siteName(c.id) }))
+        .sort((a, b) => b.value - a.value || b.total - a.total);
       const withData = completion.filter((c) => c.total > 0);
-      const completionTable = () => simpleTable('نسبة إنجاز التفتيش حسب الموقع', ['الموقع', 'المنجز', 'الإجمالي', 'النسبة'], completion.map((c) => [c.label, fmt.num(c.done), fmt.num(c.total), fmt.pct(c.value)]));
+      const completionTable = () => simpleTable(t('inspections.completion.caption'),
+        [t('inspections.completion.site'), t('inspections.completion.done'), t('inspections.completion.total'), t('inspections.completion.pct')],
+        completion.map((c) => [c.name, fmt.num(c.done), fmt.num(c.total), fmt.pct(c.value)]));
       const completionChart = withData.length
         ? safeChart(charts, 'barChart', {
-          // Bar labels use the short site name (first segment, ≤ 3 words) so none is ellipsised; the table twin keeps the full name.
-          items: withData.map((c) => ({ id: c.id, label: String(c.label || '').split(/\s+[—–]\s+/)[0].split(/\s+/).slice(0, 3).join(' '), value: c.value })),
-          // Capped so the bar card stays a close height partner of the findings card beside it.
+          items: withData.map((c) => ({ id: c.id, label: shortSite(c.name), value: c.value })),
           horizontal: true, height: Math.min(236, Math.max(160, 32 * withData.length + 24)), valueFormat: (v) => fmt.pct(v), color: 'var(--s1)', showValues: true, maxBars: 6,
-          ariaLabel: 'نسبة إنجاز التفتيش حسب الموقع',
+          ariaLabel: t('inspections.completion.aria'),
         }, completionTable)
-        : { el: emptyState({ title: 'لا توجد تفتيشات ضمن النافذة الزمنية', text: 'وسّع الفترة أو غيّر الموقع لعرض نسب الإنجاز.' }), table: completionTable };
-      completionHost.appendChild(card({
-        code: 'SEC-06.B', title: 'نسبة الإنجاز حسب الموقع', subtitle: 'التفتيشات المنجزة من إجمالي المجدولة في النافذة',
-        body: completionChart.el, tableView: completionChart.table,
-      }));
+        : { el: emptyState({ title: t('inspections.completion.emptyTitle'), text: t('inspections.completion.emptyText') }), table: completionTable };
+      completionHost.appendChild(card({ code: 'SEC-06.B', title: t('inspections.completion.title'), subtitle: t('inspections.completion.sub'), body: completionChart.el, tableView: completionChart.table }));
 
-      const f = findingsSummary(st, gf);
-      const findingsTable = () => simpleTable('ملاحظات التفتيش', ['الحالة', 'العدد'], [['مفتوحة', fmt.num(f.open)], ['مغلقة', fmt.num(f.closed)]]);
+      const f = sel.findingsSummary(st, gf);
+      const openBySeverity = {};
+      for (const ins of sel.filteredInspections(st, gf)) for (const fd of (ins.findings || [])) if (fd && fd.status === FINDING_OPEN) openBySeverity[fd.severity] = (openBySeverity[fd.severity] || 0) + 1;
+      const findingsTable = () => simpleTable(t('inspections.findings.caption'), [t('inspections.findings.status'), t('inspections.findings.count')], [[t('inspections.findings.open'), fmt.num(f.open)], [t('inspections.findings.closed'), fmt.num(f.closed)]]);
       const findingsChart = f.total > 0
         ? safeChart(charts, 'segmentedBar', {
           parts: [
-            { id: 'open', label: 'مفتوحة', value: f.open, color: 'var(--serious)' },
-            { id: 'closed', label: 'مغلقة', value: f.closed, color: 'var(--good)' },
+            { id: 'open', label: t('inspections.findings.open'), value: f.open, color: 'var(--serious)' },
+            { id: 'closed', label: t('inspections.findings.closed'), value: f.closed, color: 'var(--good)' },
           ].filter((p) => p.value > 0),
-          tall: true, valueFormat: (v) => fmt.num(v), ariaLabel: 'ملاحظات التفتيش المفتوحة مقابل المغلقة',
+          tall: true, valueFormat: (v) => fmt.num(v), ariaLabel: t('inspections.findings.aria'),
         }, findingsTable)
-        : { el: emptyState({ title: 'لا توجد ملاحظات مسجلة', text: 'تظهر الملاحظات بعد إنجاز التفتيشات وتسجيل نتائجها.' }), table: findingsTable };
-      const sevRow = h('div', { class: 'row wrap gap-2', 'aria-label': 'الملاحظات حسب الخطورة' });
-      ['عالٍ', 'متوسط', 'منخفض'].forEach((sev) => { const n = f.bySeverity[sev] || 0; if (n) sevRow.appendChild(badge(`${sev}: ${fmt.num(n)}`, severityTone(sev))); });
-      // Three facts give this card a second block so it pairs evenly with the completion bars.
+        : { el: emptyState({ title: t('inspections.findings.emptyTitle'), text: t('inspections.findings.emptyText') }), table: findingsTable };
       const closurePct = f.total ? Math.round((f.closed / f.total) * 100) : 0;
-      const fact = (label, value, tone) => h('div', { class: ['fact', tone ? `tone-${tone}` : null] }, h('span', { class: 'fact-label' }, label), h('span', { class: 'fact-value' }, value));
-      const facts = h('div', { class: 'hero-facts' },
-        fact('مفتوحة', fmt.num(f.open), f.open ? 'serious' : 'good'),
-        fact('مغلقة', fmt.num(f.closed), 'good'),
-        fact('نسبة الإغلاق', fmt.pct(closurePct), closurePct >= 85 ? 'good' : closurePct >= 60 ? 'warning' : 'serious'));
+      const fact = (label, value, tone) => h('div', { class: ['fact', tone ? `tone-${tone}` : null] }, h('span', { class: 'fact-label' }, label), h('span', { class: 'fact-value num' }, value));
+      const sevRow = h('div', { class: 'stack gap-2' },
+        h('span', { class: 't-label' }, t('inspections.findings.bySeverity')),
+        h('div', { class: 'row wrap gap-2' }, SEVERITIES.filter((s) => openBySeverity[s]).map((s) => badge(`${severityLabel(s)} · ${fmt.num(openBySeverity[s])}`, severityTone(s)))));
       findingsHost.appendChild(card({
-        code: 'SEC-06.C', title: 'ملاحظات التفتيش', subtitle: `${fmt.num(f.open)} مفتوحة من أصل ${fmt.num(f.total)} — نسبة الإغلاق ${fmt.pct(closurePct)}`,
-        body: h('div', { class: 'stack gap-3' }, findingsChart.el, f.total ? facts : null, sevRow.childNodes.length ? sevRow : null), tableView: findingsChart.table,
+        code: 'SEC-06.C', title: t('inspections.findings.title'), subtitle: t('inspections.findings.sub', { open: fmt.num(f.open), total: fmt.num(f.total) }),
+        body: h('div', { class: 'stack gap-4' }, findingsChart.el,
+          f.total ? h('div', { class: 'hero-facts' },
+            fact(t('inspections.findings.open'), fmt.num(f.open), f.open ? 'serious' : 'good'),
+            fact(t('inspections.findings.closed'), fmt.num(f.closed), 'good'),
+            fact(t('inspections.findings.closure'), fmt.pct(closurePct), closurePct >= 85 ? 'good' : closurePct >= 60 ? 'warning' : 'serious')) : null,
+          Object.keys(openBySeverity).length ? sevRow : null),
+        tableView: findingsChart.table,
       }));
     }
 
     /* ── upcoming audits ── */
     function paintUpcoming() {
       clear(upcomingHost);
-      const st = state();
-      const gf = { ...globalFilters(), type: typeFilter === 'all' ? undefined : typeFilter };
-      const now = Date.now();
-      const upcoming = sel.filteredInspections(st, gf)
-        .filter((r) => r.status === SCHEDULED && daysFromToday(r.date, now) >= 0)
-        .sort((a, b) => parseDate(a.date) - parseDate(b.date))
+      const at = nowMs();
+      const upcoming = sel.filteredInspections(state(), typed())
+        .filter((r) => r.status === SCHEDULED && daysFromToday(r.date, at) >= 0)
+        .sort((a, b) => keyMs(dayKey(a.date)) - keyMs(dayKey(b.date)))
         .slice(0, UPCOMING_LIMIT);
       if (!upcoming.length) {
-        upcomingHost.appendChild(emptyState({ icon: 'clipboard', title: 'لا توجد تدقيقات مجدولة قادمة', text: 'ضمن النافذة الزمنية والموقع المحددين.' }));
+        upcomingHost.appendChild(emptyState({ icon: 'clipboard', title: t('inspections.upcoming.emptyTitle'), text: t('inspections.upcoming.emptyText') }));
         return;
       }
       upcoming.forEach((ins) => {
-        const n = daysFromToday(ins.date, now);
+        const n = daysFromToday(ins.date, at);
         const total = Number(ins.checklistTotal) || 0; const done = Number(ins.checklistDone) || 0;
         const titleId = `ins-${ins.id}-title`;
-        const prog = h('div', { class: 'progress-row' });
-        prog.appendChild(progress({ value: done, max: Math.max(total, 1), label: `بنود قائمة التحقق ${fmt.num(done)} من ${fmt.num(total)}` }));
-        prog.appendChild(h('span', { class: 'progress-value' }, `${fmt.num(done)}/${fmt.num(total)}`));
-        // Nested list cards are plain (no CAD frame) so only top-level cards carry the frame.
         upcomingHost.appendChild(h('article', { class: 'card is-plain', role: 'listitem', 'aria-labelledby': titleId },
           h('div', { class: 'card-body stack gap-3' },
-            h('div', { class: 'row between gap-2' }, badge(ins.type, 'neutral', { icon: typeIcon(ins.type) }), h('span', { class: 'mono code nowrap text-xs muted', dir: 'ltr' }, ins.code)),
-            h('h3', { class: 'card-title', id: titleId }, siteName(st, ins.siteId)),
-            h('div', { class: 'stack gap-1 text-sm ink-2' },
-              h('span', {}, ins.inspector || '—'),
-              h('span', { class: 'row gap-2' }, h('span', {}, fmt.date(ins.date, { style: 'long' })), badge(dayPhrase(n, fmt), n <= 2 ? 'warning' : 'brand'))),
-            prog,
-            h('div', { class: 'row end' }, button('عرض التفاصيل', { variant: 'outline', size: 'sm', onClick: () => openDrawer(ins.id) })))));
+            h('div', { class: 'row between gap-2' }, badge(typeLabel(ins.type), 'neutral', { icon: typeIcon(ins.type) }), h('span', { class: 'code text-xs muted' }, ins.code)),
+            h('h3', { class: 't-card', id: titleId }, siteName(ins.siteId)),
+            h('div', { class: 'stack gap-1 t-helper' },
+              h('span', {}, person(ins.inspector)),
+              h('span', { class: 'row wrap gap-2' }, h('span', {}, fmt.date(ins.date, { style: 'long' })), badge(dayPhrase(n, fmt), n <= 2 ? 'warning' : 'brand'))),
+            h('div', { class: 'progress-row' },
+              progress({ value: done, max: Math.max(total, 1), label: t('inspections.table.checklistAria', { done: fmt.num(done), total: fmt.num(total) }) }),
+              h('span', { class: 'progress-value num', dir: 'ltr' }, `${fmt.num(done)}/${fmt.num(total)}`)),
+            h('div', { class: 'row end' }, button(t('inspections.upcoming.details'), { variant: 'outline', size: 'sm', attrs: { 'aria-label': t('inspections.upcoming.detailsAria', { code: ins.code }) }, onClick: () => openDrawer(ins.id) })))));
       });
     }
 
     /* ── drawer ── */
+    function section(title, ...children) {
+      return h('section', { class: 'drawer-section' }, h('h3', { class: 'drawer-section-title' }, title), h('div', { class: 'stack gap-3' }, children));
+    }
+
     function openDrawer(id) {
       const first = findInspection(id);
-      if (!first) { toast('تعذر العثور على سجل التفتيش', { tone: 'warning' }); return; }
+      if (!first) { toast(t('inspections.drawer.notFound'), { tone: 'warning' }); return; }
       if (activeDrawer) { activeDrawer.close(); activeDrawer = null; }
+      const completeBtn = button(t('inspections.drawer.complete'), { variant: 'primary', icon: 'clipboard', onClick: () => openCompleteModal(id) });
 
-      const body = h('div', { class: 'stack' });
-      const completeBtn = button('تسجيل كمنجز', { variant: 'primary', icon: 'clipboard', onClick: () => openCompleteModal(id) });
-      let unsub = () => {};
-      const api = drawer({
-        title: `${first.code} — ${first.type}`, subtitle: `${siteName(state(), first.siteId)} · ${first.inspector || ''}`, size: 'lg', body,
-        actions: [completeBtn, { label: 'إغلاق', variant: 'ghost' }],
-        onClose: () => { unsub(); if (activeDrawer === api) activeDrawer = null; },
-      });
-      activeDrawer = api;
-
-      const paint = () => {
+      const overview = () => {
         const ins = findInspection(id);
-        const focusId = focusedIdWithin(api.el);
-        clear(body);
-        if (!ins) { body.appendChild(emptyState({ title: 'تم حذف هذا السجل' })); completeBtn.hidden = true; return; }
-        const st = state();
-        const n = daysFromToday(ins.date);
+        if (!ins) return emptyState({ title: t('inspections.drawer.deleted') });
+        const at = nowMs();
+        const n = daysFromToday(ins.date, at);
         const total = Number(ins.checklistTotal) || 0; const done = Number(ins.checklistDone) || 0;
-        const findings = Array.isArray(ins.findings) ? ins.findings : [];
-        const open = findings.filter((f) => f && f.status === FINDING_OPEN).length;
-        completeBtn.hidden = ins.status === DONE;
-
-        const badges = h('div', { class: 'row wrap gap-2' }, badge(ins.status, statusTone(ins.status)), badge(ins.type, 'neutral', { icon: typeIcon(ins.type) }));
+        const badges = h('div', { class: 'row wrap gap-2' }, badge(statusLabel(ins.status), statusTone(ins.status)), badge(typeLabel(ins.type), 'neutral', { icon: typeIcon(ins.type) }));
         if (ins.status !== DONE) badges.appendChild(badge(dayPhrase(n, fmt), n < 0 ? 'critical' : n <= 2 ? 'warning' : 'brand'));
-
         const scoreRow = ins.score === null || ins.score === undefined
-          ? h('span', { class: 'muted' }, 'لم تُسجل بعد')
-          : (() => { const r = h('span', { class: 'progress-row' }); r.appendChild(progress({ value: Number(ins.score), max: 100, tone: scoreTone(ins.score), label: 'الدرجة' })); r.appendChild(h('span', { class: 'progress-value' }, fmt.pct(Number(ins.score)))); return r; })();
-        const checklistRow = h('span', { class: 'progress-row' });
-        checklistRow.appendChild(progress({ value: done, max: Math.max(total, 1), tone: total && done >= total ? 'good' : null, label: 'بنود قائمة التحقق' }));
-        checklistRow.appendChild(h('span', { class: 'progress-value' }, `${fmt.num(done)}/${fmt.num(total)}`));
-
-        body.appendChild(section('بيانات التفتيش', badges, kv([
-          ['الموقع', siteName(st, ins.siteId)],
-          ['المفتش', ins.inspector],
-          ['التاريخ', `${fmt.date(ins.date, { style: 'long' })} — ${dayPhrase(n, fmt)}`],
-          ['الدرجة', scoreRow],
-          ['قائمة التحقق', checklistRow],
-          ins.updatedAt ? ['آخر تحديث', fmt.relative(ins.updatedAt)] : null,
-        ])));
-
-        const ul = h('ul', { class: 'list-reset stack gap-2' });
-        if (!findings.length) ul.appendChild(h('li', { class: 'note' }, ins.status === DONE ? 'أُنجز التفتيش دون ملاحظات.' : 'تُسجَّل الملاحظات بعد إنجاز التفتيش.'));
+          ? h('span', { class: 'muted' }, t('inspections.drawer.noScore'))
+          : h('span', { class: 'progress-row' }, progress({ value: Number(ins.score), max: 100, tone: scoreTone(ins.score), label: t('inspections.drawer.score') }), h('span', { class: 'progress-value num' }, fmt.pct(Number(ins.score))));
+        const checklistRow = h('span', { class: 'progress-row' },
+          progress({ value: done, max: Math.max(total, 1), tone: total && done >= total ? 'good' : null, label: t('inspections.drawer.checklist') }),
+          h('span', { class: 'progress-value num', dir: 'ltr' }, `${fmt.num(done)}/${fmt.num(total)}`));
+        return h('div', { class: 'stack gap-4' },
+          section(t('inspections.drawer.details'), badges, kv([
+            [t('inspections.drawer.site'), siteName(ins.siteId)],
+            [t('inspections.drawer.inspector'), person(ins.inspector)],
+            [t('inspections.drawer.date'), `${fmt.date(ins.date, { style: 'long' })} — ${dayPhrase(n, fmt)}`],
+            [t('inspections.drawer.score'), scoreRow],
+            [t('inspections.drawer.checklist'), checklistRow],
+            ins.updatedAt ? [t('inspections.drawer.updated'), fmt.relative(ins.updatedAt, at)] : null,
+          ])),
+          ins.status !== DONE ? h('p', { class: 'note tone-brand' }, t('inspections.drawer.completeNote')) : null,
+          h('p', { class: 'note is-demo t-helper' }, t('inspections.drawer.localNote')));
+      };
+      const findingsTab = () => {
+        const ins = findInspection(id);
+        if (!ins) return emptyState({ title: t('inspections.drawer.deleted') });
+        const findings = findingsOf(ins);
+        const open = findings.filter((f) => f.status === FINDING_OPEN).length;
+        const ul = h('ul', { class: 'controls-list' });
+        if (!findings.length) ul.appendChild(h('li', { class: 'note' }, ins.status === DONE ? t('inspections.drawer.noFindingsDone') : t('inspections.drawer.noFindingsYet')));
         findings.forEach((f) => {
           const isOpen = f.status === FINDING_OPEN;
           ul.appendChild(h('li', { class: ['controls-item', isOpen ? `tone-${severityTone(f.severity)}` : 'tone-good'] },
-            h('span', { class: 'controls-type' }, f.severity || 'غير محدد'),
-            h('div', { class: 'stack gap-1' },
-              h('span', { class: ['text-sm', isOpen ? null : 'muted'] }, f.text || '—'),
+            h('span', { class: 'controls-type' }, severityLabel(f.severity)),
+            h('div', { class: 'stack gap-2' },
+              h('span', { class: isOpen ? null : 'muted' }, f.text),
               h('div', { class: 'row wrap gap-2' },
-                badge(isOpen ? 'مفتوحة' : 'مغلقة', isOpen ? 'serious' : 'good'),
-                button(isOpen ? 'إغلاق الملاحظة' : 'إعادة فتح', { variant: 'ghost', size: 'sm', attrs: { id: `fnd-${ins.id}-${f.id}` }, onClick: () => toggleFinding(id, f.id) })))));
+                badge(findingStatusLabel(f.status), isOpen ? 'serious' : 'good'),
+                button(isOpen ? t('inspections.drawer.closeFinding') : t('inspections.drawer.reopen'), { variant: 'ghost', size: 'sm', attrs: { id: `fnd-${ins.id}-${f.id}` }, onClick: () => toggleFinding(id, f.id) })))));
         });
-        body.appendChild(section(`الملاحظات (${fmt.num(open)} مفتوحة من ${fmt.num(findings.length)})`, ul));
-
-        if (ins.status !== DONE) {
-          body.appendChild(section('الإنجاز', h('p', { class: 'note tone-brand' }, 'عند تسجيل التفتيش كمنجز يُطلب إدخال الدرجة النهائية وعدد بنود قائمة التحقق المنجزة، وتتحدث مؤشرات الإنجاز فوراً.')));
-        }
-        restoreFocus(api, focusId);
+        return section(t('inspections.drawer.findingsTitle', { open: fmt.num(open), total: fmt.num(findings.length) }), ul);
       };
+      const openCount = (ins) => (ins.findings || []).filter((f) => f && f.status === FINDING_OPEN).length;
 
-      paint();
-      unsub = bus.on('store:change', (p) => { if (touches(p && p.path, 'inspections')) paint(); });
+      const api = drawer({
+        title: `${first.code} — ${typeLabel(first.type)}`, subtitle: `${siteName(first.siteId)} · ${person(first.inspector)}`, size: 'lg',
+        kind: 'inspection',
+        tabs: [
+          { id: 'overview', label: t('inspections.drawer.tabs.overview'), render: overview },
+          { id: 'findings', label: t('inspections.drawer.tabs.findings'), count: openCount(first), render: findingsTab },
+        ],
+        actions: [completeBtn, { label: t('inspections.drawer.dismiss'), variant: 'ghost' }],
+        onClose: () => { unsub(); if (activeDrawer === api) activeDrawer = null; },
+      });
+      activeDrawer = api;
+      const paintActions = () => { const ins = findInspection(id); completeBtn.hidden = !ins || ins.status === DONE; if (ins) api.setTabCount('findings', openCount(ins)); };
+      paintActions();
+      const unsub = bus.on('store:change', (p) => {
+        const path = p && p.path;
+        if (!touches(path, 'inspections')) return;
+        const pid = idFromPath(path);
+        if (pid && pid !== id) return;
+        const focusId = api.el.contains(document.activeElement) && document.activeElement.id ? document.activeElement.id : null;
+        paintActions();
+        api.refreshTab();
+        const back = focusId ? api.el.querySelector(`#${CSS.escape(focusId)}`) : null;
+        if (back) { try { back.focus({ preventScroll: true }); } catch { /* ignore */ } }
+        else if (!api.el.contains(document.activeElement)) { const fb = api.el.querySelector('.drawer-tab[aria-selected="true"]') || api.el; try { fb.focus({ preventScroll: true }); } catch { /* ignore */ } }
+      });
       api.open();
-    }
-
-    function section(title, ...children) {
-      return h('section', { class: 'drawer-section' }, h('h3', { class: 'drawer-section-title' }, title), h('div', { class: 'stack gap-3' }, children));
     }
 
     function toggleFinding(inspectionId, findingId) {
       const ins = findInspection(inspectionId);
       if (!ins) return;
       const findings = (ins.findings || []).map((f) => (f && f.id === findingId ? { ...f, status: f.status === FINDING_OPEN ? FINDING_CLOSED : FINDING_OPEN } : f));
-      store.updateInspection(inspectionId, { findings });
+      const updated = store.updateInspection(inspectionId, { findings });
+      if (!updated) return;
       const target = findings.find((f) => f && f.id === findingId);
-      toast(target && target.status === FINDING_CLOSED ? 'تم إغلاق الملاحظة' : 'أُعيد فتح الملاحظة', { tone: target && target.status === FINDING_CLOSED ? 'good' : 'neutral', timeout: 2500 });
+      const closed = target && target.status === FINDING_CLOSED;
+      toast(closed ? t('inspections.drawer.closedToast') : t('inspections.drawer.reopenedToast'), { tone: closed ? 'good' : 'neutral', timeout: 2500 });
     }
 
-    /* ── complete modal ── */
+    /* ── complete modal (inline validation) ── */
+    function setError(form, name, message) {
+      const wrap = form.querySelector(`.field[data-name="${name}"]`);
+      if (!wrap) return;
+      const control = wrap.querySelector('.field-control');
+      let err = wrap.querySelector('.field-error');
+      if (control && control.dataset.describedby === undefined) control.dataset.describedby = control.getAttribute('aria-describedby') || '';
+      if (!message) {
+        wrap.classList.remove('is-invalid');
+        if (err) err.remove();
+        if (control) { control.removeAttribute('aria-invalid'); if (control.dataset.describedby) control.setAttribute('aria-describedby', control.dataset.describedby); else control.removeAttribute('aria-describedby'); }
+        return;
+      }
+      if (!err) { err = h('p', { class: 'field-error', id: `${control ? control.id : name}-err` }); wrap.appendChild(err); }
+      clear(err); err.append(glyph('critical', 14), h('span', {}, message));
+      wrap.classList.add('is-invalid');
+      if (control) { control.setAttribute('aria-invalid', 'true'); control.setAttribute('aria-describedby', [control.dataset.describedby, err.id].filter(Boolean).join(' ')); }
+    }
+
     function openCompleteModal(id) {
       const ins = findInspection(id);
       if (!ins) return;
       if (activeModal) { activeModal.close(); activeModal = null; }
       const total = Number(ins.checklistTotal) || 0;
+      const maxDone = total || 100000;
       const openFindings = (ins.findings || []).filter((f) => f && f.status === FINDING_OPEN).length;
-
-      const form = h('form', { class: 'form-grid', 'aria-label': 'نموذج تسجيل التفتيش كمنجز' });
+      const summary = h('p', { class: 'form-error-summary is-full', role: 'alert', hidden: true });
+      const form = h('form', { class: 'form-grid', 'aria-label': t('inspections.complete.aria'), novalidate: true });
       form.append(
-        h('p', { class: 'note is-full' }, `${ins.code} — ${ins.type} · ${siteName(state(), ins.siteId)} · ${fmt.date(ins.date)}`),
-        formField({ label: 'الدرجة النهائية (%)', name: 'score', type: 'number', min: 0, max: 100, step: 1, required: true, value: Number.isFinite(Number(ins.score)) ? Number(ins.score) : '', placeholder: '0 – 100', hint: 'نسبة الامتثال الإجمالية لبنود قائمة التحقق' }),
-        formField({ label: 'البنود المنجزة من قائمة التحقق', name: 'checklistDone', type: 'number', min: 0, max: total || 100000, step: 1, required: true, value: total, hint: total ? `من أصل ${fmt.num(total)} بنداً` : '' }),
+        summary,
+        h('p', { class: 'note is-full' }, h('span', { class: 'code' }, ins.code), ` — ${typeLabel(ins.type)} · ${siteName(ins.siteId)} · ${fmt.date(ins.date)}`),
+        formField({ label: t('inspections.complete.score'), name: 'score', type: 'number', min: 0, max: 100, step: 1, required: true, value: Number.isFinite(Number(ins.score)) && ins.score !== null ? Number(ins.score) : '', placeholder: `${fmt.num(0)} – ${fmt.num(100)}`, hint: t('inspections.complete.scoreHint') }),
+        formField({ label: t('inspections.complete.done'), name: 'checklistDone', type: 'number', min: 0, max: maxDone, step: 1, required: true, value: total, hint: total ? t('inspections.complete.doneHint', { total: fmt.num(total) }) : '' }),
       );
-      if (openFindings) form.appendChild(h('p', { class: 'note tone-warning is-full' }, `توجد ${fmt.num(openFindings)} ملاحظة مفتوحة؛ يمكن إنجاز التفتيش ومتابعة إغلاقها لاحقاً من سجل الملاحظات.`));
+      if (openFindings) form.appendChild(h('p', { class: 'note tone-warning is-full' }, tn('inspections.complete.openFindings', openFindings)));
+      form.addEventListener('input', (e) => { const f = e.target && e.target.closest('.field'); if (f && f.classList.contains('is-invalid')) setError(form, f.dataset.name, ''); });
 
       const submit = () => {
-        if (!form.reportValidity()) return false;
-        const data = readForm(form);
-        const score = Math.max(0, Math.min(100, Number(data.score)));
-        const checklistDone = Math.max(0, Math.min(total || Number.MAX_SAFE_INTEGER, Number(data.checklistDone) || 0));
-        if (!Number.isFinite(score)) { toast(`أدخل درجة صحيحة بين ${fmt.num(0)} و${fmt.num(100)}`, { tone: 'warning' }); return false; }
-        const updated = store.updateInspection(id, { status: DONE, score, checklistDone });
-        if (!updated) { toast('تعذر حفظ النتيجة', { tone: 'critical' }); return false; }
-        toast(`تم تسجيل ${ins.code} كمنجز بدرجة ${fmt.pct(score)}`, { tone: 'good', title: 'تم الحفظ' });
+        const raw = (n) => String((form.elements.namedItem(n) || {}).value || '').trim();
+        const errors = {};
+        const score = Number(raw('score'));
+        const done = Number(raw('checklistDone'));
+        if (!raw('score')) errors.score = t('inspections.complete.errors.required');
+        else if (!Number.isInteger(score) || score < 0 || score > 100) errors.score = t('inspections.complete.errors.range', { min: fmt.num(0), max: fmt.num(100) });
+        if (!raw('checklistDone')) errors.checklistDone = t('inspections.complete.errors.required');
+        else if (!Number.isInteger(done) || done < 0 || done > maxDone) errors.checklistDone = t('inspections.complete.errors.range', { min: fmt.num(0), max: fmt.num(maxDone) });
+        ['score', 'checklistDone'].forEach((n) => setError(form, n, errors[n] || ''));
+        const bad = Object.keys(errors);
+        if (bad.length) {
+          summary.textContent = t('inspections.complete.errors.summary');
+          summary.hidden = false;
+          const c = form.elements.namedItem(bad[0]); if (c && c.focus) c.focus();
+          return false;
+        }
+        const updated = store.updateInspection(id, { status: DONE, score, checklistDone: done });
+        if (!updated) { toast(t('inspections.complete.failed'), { tone: 'critical' }); return false; }
+        toast(t('inspections.complete.saved', { code: ins.code, score: fmt.pct(score) }), { tone: 'good', title: t('inspections.complete.savedTitle') });
         return true;
       };
       form.addEventListener('submit', (e) => { e.preventDefault(); if (submit()) api.close('action'); });
-
       const api = modal({
-        title: 'تسجيل التفتيش كمنجز', subtitle: 'تُحدَّث الحالة إلى «منجز» وتُحتسب الدرجة في نسب الإنجاز', size: 'md', body: form,
-        actions: [{ label: 'إلغاء', variant: 'ghost' }, { label: 'حفظ النتيجة', variant: 'primary', onClick: () => submit() }],
+        title: t('inspections.complete.title'), subtitle: t('inspections.complete.sub', { status: statusLabel(DONE) }), size: 'md', body: form,
+        actions: [{ label: t('inspections.complete.cancel'), variant: 'ghost' }, { label: t('inspections.complete.save'), variant: 'primary', onClick: () => submit() }],
         onClose: () => { if (activeModal === api) activeModal = null; },
       });
       activeModal = api;
@@ -548,31 +571,36 @@ export const inspectionsView = {
     }
 
     /* ── repaint orchestration ── */
-    let pending = 0; // 1 strip, 2 table, 4 charts + upcoming
+    let pending = 0; // 1 metrics, 2 table, 4 charts, 8 upcoming
+    let pendingOpts = {};
     let raf = 0;
-    const schedule = (mask) => {
+    const schedule = (mask, opts = {}) => {
       pending |= mask;
+      pendingOpts = { ...pendingOpts, ...opts };
       if (raf) return;
       raf = requestAnimationFrame(() => {
         raf = 0;
         if (!alive) return;
         const m = pending; pending = 0;
+        const o = pendingOpts; pendingOpts = {};
         try {
-          if (m & 1) paintStrip();
-          if (m & 2) paintTable();
-          if (m & 4) { paintCharts(); paintUpcoming(); }
-        } catch (err) { console.error('[biltix-hse] inspections: repaint failed', err); }
+          if (m & 1) paintMetrics();
+          if (m & 2) paintTable(o);
+          if (m & 4) paintCharts();
+          if (m & 8) paintUpcoming();
+        } catch (err) { console.warn('[biltix] inspections: repaint failed', err); }
       });
     };
 
-    paintStrip(); paintTable(); paintCharts(); paintUpcoming();
+    paintMetrics(); paintTable({ resetPage: true }); paintCharts(); paintUpcoming();
+    motion.enter(metricsHost.children, { y: 8 });
+    motion.enter([tableCard, grid, upcomingSection], { y: 10, delay: 0.08 });
 
-    subs.push(bus.on('store:change', (p) => { const path = p && p.path; if (touches(path, 'inspections') || touches(path, 'sites')) schedule(7); }));
-    subs.push(bus.on('filters:change', () => schedule(7)));
-    subs.push(bus.on('settings:change', () => schedule(7)));
+    subs.push(bus.on('store:change', (p) => { const path = p && p.path; if (touches(path, 'inspections') || touches(path, 'sites')) schedule(15, { flash: true }); }));
+    subs.push(bus.on('filters:change', () => schedule(15, { resetPage: true })));
+    subs.push(bus.on('settings:change', () => schedule(15)));
     subs.push(bus.on('theme:change', () => schedule(4)));
 
-    /* deep link: ?id=N13 opens the drawer */
     const params = (ctx && ctx.params) || {};
     if (params.id) requestAnimationFrame(() => { if (alive && findInspection(params.id)) openDrawer(params.id); });
 
