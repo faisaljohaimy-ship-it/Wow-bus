@@ -9,7 +9,8 @@
  *   Thresholds  read-only summary + live preview (psel.alertPreview) → editor in #/settings?section=thresholds
  *   Channels    routing toggles (settings.platform.channels) with honest status (Not connected: no delivery
  *               service); webhook "Not connected" until set, then a REAL test POST (sources.postWebhook) whose
- *               actual result is shown (2xx = delivered, opaque = unconfirmed, failure = error)
+ *               actual result is shown (2xx = delivered, opaque = unconfirmed, failure = error); set-up links go to
+ *               #/settings?section=notifications
  *   Write-back  audit log (action 'writeback') labelled simulated
  *
  * Live updates patch the sections in place (the queue keeps focus and expansion). Strings: t('alerts.*').
@@ -340,7 +341,10 @@ export default {
           h('span', { class: 'alr-ch-desc', role: 'status' }, webhookDesc)),
         testBtn));
       clear(chHost);
-      chHost.appendChild(card({ id: 'alerts-channels', code: 'ALR-04', title: t('alerts.ch.title'), subtitle: t('alerts.ch.sub'), body: h('ul', { class: 'alr-ch-list' }, rows) }));
+      chHost.appendChild(card({
+        id: 'alerts-channels', code: 'ALR-04', title: t('alerts.ch.title'), subtitle: t('alerts.ch.sub'), body: h('ul', { class: 'alr-ch-list' }, rows),
+        actions: [button(t('alerts.ch.settings'), { variant: 'ghost', size: 'sm', icon: 'sliders', attrs: { 'data-focus-key': 'ch-settings' }, onClick: () => navigate('settings', { section: 'notifications' }) })],
+      }));
       if (focusKey) { const tg = chHost.querySelector(`[data-focus-key="${cssEscape(focusKey)}"]`); if (tg) tg.focus({ preventScroll: true }); }
     }
 

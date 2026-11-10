@@ -190,6 +190,9 @@
   .report-section-title { font-size: 14pt; }
   .report-narrative p { font-size: 10.5pt; line-height: var(--lh-body); color: var(--ink-1); max-inline-size: none; }
   .report-voice-hint, .report-actions { display: none !important; }
+  /* Counter badges print with Arabic-Indic digits when numerals = arab; IBM Plex Mono has no
+     Arabic digits, so the mixed stack hands them to IBM Plex Sans Arabic instead of a system mono font. */
+  .priority-rank, .lifecycle-dot, .step-dot { font-family: var(--font-mono-mixed); }
   .logo-lockup { color: var(--ink-1); }
   .logo-lockup .logo-mark, .logo-lockup > svg { color: var(--gold); }
 
