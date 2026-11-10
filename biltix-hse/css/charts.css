@@ -613,7 +613,10 @@ button.legend-item:hover { color: var(--ink-1); }
   inline-size: var(--g-size);
   block-size: var(--g-size);
   direction: ltr;
-  pointer-events: none;
+  /* The root takes the pointer so its title (names the ring's ratio and the weekly bars) shows on hover;
+     its parts ignore it, and a click still reaches the clickable tile around it. */
+  pointer-events: auto;
+  cursor: inherit;
   user-select: none;
   -webkit-user-select: none;
   contain: layout style;
@@ -742,7 +745,8 @@ button.legend-item:hover { color: var(--ink-1); }
 :root[data-bg="static"] .ring-gauge .rg-sheen, :root[data-motion="reduce"] .ring-gauge .rg-sheen, :root[data-motion="reduced"] .ring-gauge .rg-sheen { display: none; }
 @media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .ring-gauge .rg-sheen { display: none; } }
 @media (forced-colors: active) {
-  .ring-gauge { forced-color-adjust: none; --rg-tone: Highlight; --rg-track: GrayText; --rg-slot: transparent; --rg-bar: CanvasText; --rg-glow: transparent; }
+  .ring-gauge, .ring-gauge[data-tone] { forced-color-adjust: none; --rg-tone: Highlight; --rg-track: GrayText; --rg-slot: transparent; --rg-bar: CanvasText; --rg-glow: transparent; }
+  .ring-gauge .rg-track { opacity: .55; }
   .ring-gauge .rg-face { background: Canvas; box-shadow: none; }
   .ring-gauge .rg-center { color: CanvasText; }
   .ring-gauge .rg-sheen { display: none; }

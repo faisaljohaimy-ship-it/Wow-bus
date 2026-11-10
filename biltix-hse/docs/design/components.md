@@ -58,17 +58,20 @@ columns hide below 720 / 520 px, lifecycle and priority list re-flow.
 ## Executive metrics — `.metric-grid` > `.metric-tile`
 
 `a|button.metric-tile.tone-*` > `.metric-head` (`.metric-label`, `.metric-icon` or `.metric-info`)
-+ `.metric-value` (`.t-metric` + `.metric-unit`) + optional `svg.metric-spark` + `.metric-foot`
-(`.delta.is-good|is-bad|is-flat` with arrow icon + `.metric-helper` comparison period) + optional
-`.metric-progress`. Four across ≥ 1080 px of content, 2 × 2 below (spark hidden < 560 px).
++ `.metric-value` (`.t-metric` + `.metric-unit`) + a caption naming the ring's ratio + `.ck-gauge`
+(ring gauge with radial weekly bars, see Charts) + `.metric-foot` (`.delta.is-good|is-bad|is-flat`
+with arrow icon + `.metric-helper` comparison period). Four across ≥ 1080 px of content, 2 × 2 below.
+(v3.1: the line `svg.metric-spark` and the completion tile's `.metric-progress` are no longer used by
+the cockpit; the ring shows the same ratio.)
 The tone sets the top accent bar and icon only — the number stays `--ink-1`.
 **Do** state the comparison period in `.metric-helper`. **Don't** colour the number.
 
 ## Domain cards — `.domain-grid` > `.domain-card[data-rating]`
 
 `.domain-head` (`.domain-icon`, `.domain-name`, `.rating`) + `.domain-score` (`.t-metric` +
-`.domain-scale` "/100", one LTR run) + `.domain-meta` (`strong` counts) + `.domain-spark` +
-optional `.domain-foot`. Five across at ≥ 1240 px content, 3 / 2 / 1 below. The rating sets the
+`.domain-scale` "/100", one LTR run, now centred in the dial) + `.ck-dial` (score/100 ring coloured
+by the rating, 12 radial weekly bars; see Charts) + `.domain-meta` (`strong` counts) + optional
+`.domain-foot`. Five across at ≥ 1240 px content, 3 / 2 / 1 below. The rating sets the
 inline-start stripe; the rating badge carries icon + word.
 
 ## Badges

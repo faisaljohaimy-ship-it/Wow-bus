@@ -252,6 +252,9 @@ tabular figures.
   and a CSS `offset-path` comet 85–260 ms/s, because both re-run style and paint on every frame.
 - **Off:** reduced motion (OS, unless Settings forces motion on, or Settings itself), the Static
   background, forced colours (system borders instead) and print.
+- **Ring gauges** (cockpit, `charts.ringGauge`): HTML half-rings and bars animated with Web Animations on
+  transform/opacity. Measured on `#/cockpit` (median of 5, same conditions): motion auto 9.65 → 11.93
+  ms/s, reduce 6.75 → 6.72, Static background 8.30 → 10.01.
 
 ## 4. Motion
 
