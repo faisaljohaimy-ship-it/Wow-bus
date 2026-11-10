@@ -438,7 +438,7 @@ export function card({ code = '', title = '', subtitle = '', actions = [], body 
   if (hasHead) {
     const head = h('header', { class: 'card-head' });
     const titles = h('div', { class: 'card-titles' });
-    if (code) titles.appendChild(h('span', { class: 'card-code', 'aria-hidden': 'true' }, String(code)));
+    if (code) titles.appendChild(h('span', { class: 'card-code', 'aria-hidden': 'true', dir: 'ltr', translate: 'no' }, String(code)));
     const titleWrap = h('div', { class: 'card-title-wrap' });
     if (title) titleWrap.appendChild(h('h2', { class: 'card-title', id: titleId }, String(title)));
     if (subtitle) titleWrap.appendChild(h('p', { class: 'card-sub' }, String(subtitle)));

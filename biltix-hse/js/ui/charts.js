@@ -1657,8 +1657,10 @@ export function dumbbell(opts = {}) {
     const clickable = typeof o.onItemClick === 'function';
     view.forEach((d, i) => {
       const cy = top + i * rowH + rowH / 2;
-      const aria = t('charts.dumbbell.rowAria', { label: d.label, fromLabel: fromLabel(), from: f(d.from), toLabel: toLabel(), to: f(d.to) })
+      const details = t('charts.dumbbell.rowAria', { label: d.label, fromLabel: fromLabel(), from: f(d.from), toLabel: toLabel(), to: f(d.to) })
         + (change(d) ? `${sep()}${t('charts.dumbbell.change')} ${change(d)}` : '');
+      // WCAG 2.5.3 (label in name): when values are drawn, the accessible name starts with the visible text in the same order.
+      const aria = o.showValues ? `${d.label} ${f(d.to)}${change(d) ? ` ${change(d)}` : ''}${sep()}${details}` : details;
       const g = svgEl('g', { class: ['mark', 'dumbbell-row', isNum(d.to) ? null : 'is-unassessed'], 'data-i': i, tabindex: -1, role: clickable ? 'button' : 'img', 'aria-label': aria }, marks);
       svgEl('rect', { x: 0, y: cy - rowH / 2, width: W, height: rowH, class: 'hit-area' }, g);
       svgEl('text', { x: rtl ? W - 2 : 2, y: cy + 4, 'text-anchor': rtl ? A.right : A.left, class: 'bar-label', text: fitText(d.label, labelMaxW, 12) }, g);
