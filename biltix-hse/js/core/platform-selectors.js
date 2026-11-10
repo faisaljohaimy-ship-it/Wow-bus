@@ -20,6 +20,7 @@
  */
 
 import { fmt } from './fmt.js';
+import { dataEn, personEn, enumEn } from '../data/vocab-en.js';
 import {
   PLATFORM_CATEGORIES, RISK_TYPES, RATINGS, TASK_STATUS, STAKEHOLDER_ROLES, FLOW_STAGES,
   PIPELINE_META, DEFAULT_WEIGHTS, deriveDataQuality,
@@ -403,9 +404,14 @@ function filteredAiRisks(state, filters, now) {
     if (!matchesEnum(r.pipeline, f.pipeline)) return false;
     // Closed / dismissed risks fade out of the register after the selected range; open ones always show.
     if (!isOpenRisk(r) && !within(r.updatedAt || r.detectedAt, fromMs, toMs)) return false;
+    // Bilingual search: the Arabic record plus its English mirror (empty until the English dictionaries
+    // are loaded, which happens in every English session) — an English query finds English titles and owners.
     return matchesSearch(
       [r.code, r.title, r.owner, r.status, r.driverExplanation, typeLabel(r.type), categoryLabel(r.category),
-        pipelineLabel(r.pipeline), siteNameOf(state, r.projectId), r.evidence && r.evidence.ref],
+        pipelineLabel(r.pipeline), siteNameOf(state, r.projectId), r.evidence && r.evidence.ref,
+        r.titleEn, dataEn('aiRisks', r.id, 'title'), dataEn('aiRisks', r.id, 'driverExplanation'), personEn(r.owner),
+        enumEn('aiRiskStatus', r.status, ''), enumEn('aiType', r.type, ''), enumEn('aiCategory', r.category, ''),
+        enumEn('pipeline', r.pipeline, '')],
       f.search,
     );
   });
