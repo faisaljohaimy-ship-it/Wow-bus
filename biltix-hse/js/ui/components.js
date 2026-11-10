@@ -5,12 +5,22 @@
  * setAttribute. innerHTML is never used. All glyphs are built with
  * createElementNS so no string markup carries data.
  *
- * Exports follow docs/ARCHITECTURE.md §4 (components.js) exactly.
+ * Exports follow docs/ARCHITECTURE.md §4 (components.js) plus the v3 additions of
+ * docs/specs/v3-precision/CONTRACT.md §7: drawer tabs, statusBadge, filterBar, loadingState /
+ * errorState / offlineState / skeleton, dataTable update(rows, { preserve }) + getState / setState.
+ *
+ * Language: every built-in string comes from t('ui.*') (dictionary js/i18n/ui.js). Direction is read
+ * at build time (html[dir]): keyboard arrows follow the reading direction and directional glyphs
+ * (chevrons, "move" arrows, pager) mirror in LTR. A language switch re-mounts the view, so nothing
+ * here caches a translated string at module level.
  */
 import { art } from './art.js';
 import { sel } from '../core/selectors.js';
 import { fmt } from '../core/fmt.js';
 import { bus } from '../core/bus.js';
+import { status as statusApi, STATUSES } from '../core/status.js';
+import { t, tn, isRtl, locale } from './i18n-bridge.js';
+import { motion } from './motion.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
@@ -19,9 +29,18 @@ const TONES = ['neutral', 'good', 'warning', 'serious', 'critical', 'brand', 'ac
 let uidCounter = 0;
 const uid = (prefix = 'bx') => `${prefix}-${(++uidCounter).toString(36)}`;
 
+/** Reduced motion: the settings override on <html data-motion> ('reduce' | 'full') wins over the OS query. */
 export const reducedMotion = () => {
-  try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
+  try {
+    const forced = document.documentElement.getAttribute('data-motion');
+    if (forced === 'reduce' || forced === 'reduced') return true;
+    if (forced === 'full') return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch { return false; }
 };
+
+/** Arrow keys that move forward / backward in the reading direction. */
+const inlineKeys = () => (isRtl() ? { next: 'ArrowLeft', prev: 'ArrowRight' } : { next: 'ArrowRight', prev: 'ArrowLeft' });
 
 /* ------------------------------------------------------------------ */
 /* h() — hyperscript                                                    */
@@ -134,7 +153,7 @@ const GLYPHS = {
   sort: (s) => { const g = svgEl(s); g.append(path('M8 9l4-4 4 4M8 15l4 4 4-4')); return g; },
   sortAsc: (s) => { const g = svgEl(s); g.append(path('M8 10l4-4 4 4'), path('M12 6v13')); return g; },
   sortDesc: (s) => { const g = svgEl(s); g.append(path('M8 14l4 4 4-4'), path('M12 5v13')); return g; },
-  move: (s) => { const g = svgEl(s); g.append(path('M5 12h14M12 5l7 7-7 7')); return g; },
+  move: (s) => { const g = svgEl(s); g.append(path('M19 12H5M12 5l-7 7 7 7')); return g; },   // forward in RTL (mirrored in LTR)
   grip: (s) => { const g = svgEl(s); g.append(circle(9, 6, 1.3, { fill: 'currentColor', stroke: 'none' }), circle(15, 6, 1.3, { fill: 'currentColor', stroke: 'none' }), circle(9, 12, 1.3, { fill: 'currentColor', stroke: 'none' }), circle(15, 12, 1.3, { fill: 'currentColor', stroke: 'none' }), circle(9, 18, 1.3, { fill: 'currentColor', stroke: 'none' }), circle(15, 18, 1.3, { fill: 'currentColor', stroke: 'none' })); return g; },
   empty: (s) => { const g = svgEl(s); g.append(path('M4 7h16v12H4z'), path('M4 11h16'), path('M9 7V4h6v3')); return g; },
   chart: (s) => { const g = svgEl(s); g.append(path('M4 19h16'), path('M7 16V10M12 16V6M17 16v-3')); return g; },
@@ -142,9 +161,20 @@ const GLYPHS = {
   clock: (s) => { const g = svgEl(s); g.append(circle(12, 12, 9), path('M12 7v5l3 2')); return g; },
 };
 
+/** Glyphs that point along the reading direction: drawn for RTL, mirrored in LTR. */
+const DIRECTIONAL_GLYPHS = new Set(['chevronStart', 'chevronEnd', 'move']);
+
 export function glyph(name, size = 16) {
   const make = GLYPHS[name] || GLYPHS.neutral;
-  return make(size);
+  const svg = make(size);
+  if (DIRECTIONAL_GLYPHS.has(name) && !isRtl()) {
+    const g = document.createElementNS(SVG_NS, 'g');
+    g.setAttribute('transform', 'matrix(-1 0 0 1 24 0)');
+    while (svg.firstChild) g.appendChild(svg.firstChild);
+    svg.appendChild(g);
+    svg.setAttribute('data-mirrored', 'true');
+  }
+  return svg;
 }
 
 /** Delegates to art.icon(name); falls back to a local glyph so the UI never breaks. */
@@ -176,9 +206,9 @@ const toneOf = (tone) => (TONES.includes(tone) ? tone : 'neutral');
 /* ------------------------------------------------------------------ */
 
 export function badge(text, tone = 'neutral', { icon = null } = {}) {
-  const t = toneOf(tone);
-  const el = h('span', { class: ['badge', `tone-${t}`], 'data-tone': t });
-  const ic = icon ? iconNode(icon, 14) : glyph(t, 14);
+  const tn0 = toneOf(tone);
+  const el = h('span', { class: ['badge', `tone-${tn0}`], 'data-tone': tn0 });
+  const ic = icon ? iconNode(icon, 14) : glyph(tn0, 14);
   if (ic) { ic.classList.add('badge-icon'); el.appendChild(ic); }
   el.appendChild(h('span', { class: 'badge-text' }, String(text ?? '')));
   return el;
@@ -192,6 +222,53 @@ export function tierBadge(tier) {
 
 export function liveDot(tone = 'accent') {
   return h('span', { class: ['live-dot', `tone-${toneOf(tone)}`], 'aria-hidden': 'true' });
+}
+
+/* Fallback presentation when js/core/status.js is unavailable (same mapping as status.meta). */
+const STATUS_FALLBACK = {
+  demo: { tone: 'accent', icon: 'flask' },
+  live: { tone: 'good', icon: 'check-circle' },
+  offline: { tone: 'warning', icon: 'alert-circle' },
+  stale: { tone: 'warning', icon: 'clock' },
+  error: { tone: 'critical', icon: 'alert-octagon' },
+  not_connected: { tone: 'neutral', icon: 'plug' },
+};
+const STATUS_KEYS = Array.isArray(STATUSES) && STATUSES.length ? STATUSES : Object.keys(STATUS_FALLBACK);
+
+/**
+ * Honest system-status badge (CONTRACT §5): icon + label, tone from status.meta(statusKey).
+ * Unknown keys render as 'not_connected' (never as a success). The one-line description becomes the
+ * tooltip and the accessible description.
+ * @param {'demo'|'live'|'offline'|'stale'|'error'|'not_connected'} statusKey
+ * @param {{label?:string, title?:string|false, size?:'sm'|'md'}} [opts]
+ */
+export function statusBadge(statusKey, { label = null, title = null, size = 'md' } = {}) {
+  const key = STATUS_KEYS.includes(statusKey) ? statusKey : 'not_connected';
+  let meta = null;
+  try { meta = statusApi && typeof statusApi.meta === 'function' ? statusApi.meta(key) : null; } catch { meta = null; }
+  const fb = STATUS_FALLBACK[key] || STATUS_FALLBACK.not_connected;
+  const tone = toneOf((meta && meta.tone) || fb.tone);
+  const iconName = (meta && meta.icon) || fb.icon;
+  let text = label;
+  if (text === null || text === undefined || text === '') {
+    try { text = statusApi && typeof statusApi.label === 'function' ? statusApi.label(key) : ''; } catch { text = ''; }
+    if (!text || text === `status.${key}`) text = t(`ui.status.${key}`);
+  }
+  let desc = title;
+  if (desc === null || desc === undefined) {
+    try { desc = statusApi && typeof statusApi.desc === 'function' ? statusApi.desc(key) : ''; } catch { desc = ''; }
+    if (desc === `status.${key}Desc`) desc = '';
+  }
+  const el = h('span', {
+    class: ['badge', 'status-badge', `status-${key.replace(/_/g, '-')}`, `tone-${tone}`, size === 'sm' ? 'is-sm' : null],
+    'data-status': key, 'data-tone': tone, title: desc || undefined,
+  });
+  const ic = svgIcon(iconName, size === 'sm' ? 12 : 14);
+  ic.classList.add('badge-icon');
+  el.appendChild(ic);
+  el.appendChild(h('span', { class: 'badge-text' }, String(text)));
+  if (desc) el.appendChild(h('span', { class: 'sr-only' }, ` — ${desc}`));
+  return el;
 }
 
 export function button(label, { variant = 'primary', icon = null, size = 'md', onClick = null, attrs = {} } = {}) {
@@ -260,9 +337,10 @@ export function segmented({ options = [], value = null, onChange = null, ariaLab
     if (!list.length) return;
     let idx = list.findIndex((b) => b === document.activeElement);
     if (idx < 0) idx = 0;
-    // RTL: ArrowLeft moves forward in reading order.
-    if (e.key === 'ArrowLeft') idx = (idx + 1) % list.length;
-    else if (e.key === 'ArrowRight') idx = (idx - 1 + list.length) % list.length;
+    // Forward follows the reading direction (ArrowLeft in RTL, ArrowRight in LTR).
+    const dirKeys = inlineKeys();
+    if (e.key === dirKeys.next) idx = (idx + 1) % list.length;
+    else if (e.key === dirKeys.prev) idx = (idx - 1 + list.length) % list.length;
     else if (e.key === 'Home') idx = 0;
     else idx = list.length - 1;
     e.preventDefault();
@@ -318,8 +396,9 @@ export function tabs({ items = [], active = null } = {}) {
     if (!keys.includes(e.key)) return;
     const arr = Array.from(map.keys());
     let idx = arr.indexOf(currentId);
-    if (e.key === 'ArrowLeft') idx = (idx + 1) % arr.length;
-    else if (e.key === 'ArrowRight') idx = (idx - 1 + arr.length) % arr.length;
+    const dirKeys = inlineKeys();
+    if (e.key === dirKeys.next) idx = (idx + 1) % arr.length;
+    else if (e.key === dirKeys.prev) idx = (idx - 1 + arr.length) % arr.length;
     else if (e.key === 'Home') idx = 0;
     else idx = arr.length - 1;
     e.preventDefault();
@@ -375,9 +454,9 @@ export function card({ code = '', title = '', subtitle = '', actions = [], body 
     const tableHost = h('div', { class: 'card-view card-view-table table-wrap', hidden: true });
     let tableBuilt = false;
     const toggle = segmented({
-      options: [{ value: 'chart', label: 'رسم', icon: glyph('chart', 14) }, { value: 'table', label: 'جدول', icon: glyph('table', 14) }],
+      options: [{ value: 'chart', label: t('ui.view.chart'), icon: glyph('chart', 14) }, { value: 'table', label: t('ui.view.table'), icon: glyph('table', 14) }],
       value: 'chart',
-      ariaLabel: 'طريقة العرض',
+      ariaLabel: t('ui.view.mode'),
       onChange: (v) => {
         const showTable = v === 'table';
         if (showTable && !tableBuilt) {
@@ -385,7 +464,7 @@ export function card({ code = '', title = '', subtitle = '', actions = [], body 
           let tbl = null;
           try { tbl = tableView(); } catch { tbl = null; }
           if (tbl instanceof Node) { tbl.classList && tbl.classList.add('table', 'is-dense'); tableHost.appendChild(tbl); }
-          else tableHost.appendChild(emptyState({ title: 'لا تتوفر بيانات جدولية' }));
+          else tableHost.appendChild(emptyState({ title: t('ui.view.noTable') }));
         }
         chartHost.hidden = showTable;
         tableHost.hidden = !showTable;
@@ -500,10 +579,10 @@ export function statTile({ label, value, unit = '', delta = null, deltaGoodWhen 
     const arrow = svgEl(12); arrow.classList.add('tile-delta-arrow');
     arrow.append(isZero || !known ? path('M5 12h14') : (isUp ? path('M12 19V5M5 12l7-7 7 7') : path('M12 5v14M5 12l7 7 7-7')));
     d.appendChild(arrow);
-    d.appendChild(h('span', { class: 'sr-only' }, 'التغير مقارنة بالفترة السابقة: '));
+    d.appendChild(h('span', { class: 'sr-only' }, t('ui.delta.sr')));
     d.appendChild(h('bdi', { class: 'tile-delta-text', dir: known ? 'ltr' : undefined }, text));
-    if (isZero) d.appendChild(h('span', { class: 'sr-only' }, ' (دون تغيير)'));
-    else if (good !== null) d.appendChild(h('span', { class: 'sr-only' }, good ? ' (تحسّن)' : ' (تراجع)'));
+    if (isZero) d.appendChild(h('span', { class: 'sr-only' }, t('ui.delta.flat')));
+    else if (good !== null) d.appendChild(h('span', { class: 'sr-only' }, good ? t('ui.delta.better') : t('ui.delta.worse')));
     bottom.appendChild(d);
   }
   const sp = iconNode(spark);
@@ -517,8 +596,16 @@ export function statTile({ label, value, unit = '', delta = null, deltaGoodWhen 
 /* Data table                                                          */
 /* ------------------------------------------------------------------ */
 
-const collator = new Intl.Collator('ar', { numeric: true, sensitivity: 'base' });
-function compareValues(a, b) {
+const collators = new Map();
+function collatorFor(loc) {
+  let c = collators.get(loc);
+  if (!c) {
+    try { c = new Intl.Collator(loc, { numeric: true, sensitivity: 'base' }); } catch { c = new Intl.Collator(undefined, { numeric: true }); }
+    collators.set(loc, c);
+  }
+  return c;
+}
+function compareValues(a, b, collator = collatorFor(locale())) {
   const an = a === null || a === undefined || a === '';
   const bn = b === null || b === undefined || b === '';
   if (an && bn) return 0; if (an) return 1; if (bn) return -1;
@@ -543,11 +630,19 @@ const INTERACTIVE = 'button,a[href],input,select,textarea,[tabindex],[role="butt
  *                       as max-block-size on the wrapper.
  *   rowLabel(row)       optional accessible name for the row-open button (default: first cell text).
  * Rows are plain <tr>; when onRowClick is given the first cell content becomes a
- * <button class="row-open"> named "فتح: <first cell text>" (RTL-8), the pointer click on the row stays.
+ * <button class="row-open"> named "Open: <first cell text>" (RTL-8), the pointer click on the row stays.
  * Wrapper classes: is-paged (pageSize > 0), has-pager (more than one page), is-overflowing
  * (scrollWidth > clientWidth), is-scroll-start / is-scroll-end (horizontal scroll position).
+ *
+ * update(rows, opts) keeps the sort and the page (clamped) by default. opts:
+ *   preserve: true   also keeps the wrapper scroll (both axes), the page's scroll position and the
+ *                    keyboard focus (same row key + column) — use it for live / background updates;
+ *   resetPage: true  back to page 1 (filter changes);
+ *   flash: true      motion.flash() rows whose key is new or whose content changed (live updates).
+ * getState() → { sortKey, sortDir, page, pageSize, scrollTop, scrollLeft }; setState(partial) restores it
+ * (e.g. after a drawer closed or the view re-mounted).
  */
-export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick = null, pageSize = 12, emptyText = 'لا توجد بيانات', dense = false, caption = '', initialSort = null, stickyFirst = true, autoPageSize = false, maxHeight = null, rowLabel = null } = {}) {
+export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick = null, pageSize = 12, emptyText = null, dense = false, caption = '', initialSort = null, stickyFirst = true, autoPageSize = false, maxHeight = null, rowLabel = null } = {}) {
   const wrap = h('div', { class: 'table-wrap' });
   const clickable = typeof onRowClick === 'function';
   const table = h('table', { class: ['table', dense ? 'is-dense' : null, stickyFirst !== false ? 'has-sticky-first' : null, clickable ? 'has-row-open' : null] });
@@ -555,11 +650,12 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
   const thead = h('thead'); const tbody = h('tbody');
   table.append(thead, tbody);
   wrap.appendChild(table);
-  const emptyEl = emptyState({ icon: glyph('empty', 28), title: emptyText });
+  const emptyEl = emptyState({ icon: glyph('empty', 28), title: emptyText || t('ui.table.empty') });
   emptyEl.hidden = true;
   wrap.appendChild(emptyEl);
-  const pager = h('nav', { class: 'pager', 'aria-label': 'ترقيم الصفحات', hidden: true });
+  const pager = h('nav', { class: 'pager', 'aria-label': t('ui.table.pagination'), hidden: true });
   wrap.appendChild(pager);
+  const collator = collatorFor(locale());
 
   const maxH = typeof maxHeight === 'number' && Number.isFinite(maxHeight) && maxHeight > 0 ? maxHeight : null;
   const autoFit = !!autoPageSize && maxH !== null;
@@ -593,7 +689,7 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     if (!sortKey) return data;
     const col = columns.find((c) => c.key === sortKey);
     const getter = col && typeof col.sortValue === 'function' ? col.sortValue : (r) => r[sortKey];
-    const arr = data.slice().sort((a, b) => compareValues(getter(a), getter(b)));
+    const arr = data.slice().sort((a, b) => compareValues(getter(a), getter(b), collator));
     return sortDir === 'desc' ? arr.reverse() : arr;
   }
 
@@ -626,7 +722,7 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     let name = '';
     if (typeof rowLabel === 'function') { try { name = String(rowLabel(row) ?? ''); } catch { name = ''; } }
     const text = (name || td.textContent || '').replace(/\s+/g, ' ').trim() || key || '';
-    const label = `فتح: ${text}`;
+    const label = t('ui.table.open', { name: text });
     const open = (e) => { e.stopPropagation(); onRowClick(row, e); };
     if (!td.querySelector(INTERACTIVE)) {
       const btn = h('button', { type: 'button', class: 'row-open', 'aria-label': label, onClick: open });

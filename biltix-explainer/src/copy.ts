@@ -28,7 +28,7 @@ export const COPY: Record<Lang, Copy> = {
       records: 'سجلاً مُلتقطاً اليوم',
       hub: 'الاستيعاب',
       lastBatch: 'آخر دفعة',
-      more: (n) => `+ ${n} مصادر أخرى`,
+      more: (n) => `و${n} مصادر أخرى`,
       recordsUnit: 'سجل',
     },
     validate: {
@@ -137,7 +137,7 @@ export const COPY: Record<Lang, Copy> = {
       records: 'records captured today',
       hub: 'Ingestion',
       lastBatch: 'Last batch',
-      more: (n) => `+ ${n} more sources`,
+      more: (n) => `and ${n} more sources`,
       recordsUnit: 'records',
     },
     validate: {

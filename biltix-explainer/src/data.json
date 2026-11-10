@@ -24,7 +24,7 @@
     "brandShort": "بلتكس Risk AI"
   },
   "consolidated": {
-    "score": 74,
+    "score": 79,
     "rating": "red",
     "labelAr": "أحمر",
     "labelEn": "Red",
@@ -32,18 +32,18 @@
     "hintEn": "Critical — act now",
     "delta": 6,
     "trend": [
-      53,
-      54,
       57,
-      59,
+      57,
       61,
       64,
-      65,
-      68,
+      66,
+      69,
       70,
-      72,
-      72,
-      74
+      73,
+      74,
+      77,
+      77,
+      79
     ]
   },
   "categories": [
@@ -51,7 +51,7 @@
       "id": "contract",
       "labelAr": "العقود",
       "labelEn": "Contracts",
-      "score": 81,
+      "score": 87,
       "rating": "red",
       "weight": 0.2,
       "open": 11,
@@ -63,8 +63,8 @@
       "id": "bom",
       "labelAr": "المواد والتوريد",
       "labelEn": "Materials & supply",
-      "score": 68,
-      "rating": "yellow",
+      "score": 70,
+      "rating": "red",
       "weight": 0.2,
       "open": 13,
       "red": 4,
@@ -75,7 +75,7 @@
       "id": "schedule",
       "labelAr": "الجدول الزمني",
       "labelEn": "Schedule",
-      "score": 75,
+      "score": 82,
       "rating": "red",
       "weight": 0.25,
       "open": 13,
@@ -87,7 +87,7 @@
       "id": "site",
       "labelAr": "الموقع والسلامة",
       "labelEn": "Site & safety",
-      "score": 74,
+      "score": 83,
       "rating": "red",
       "weight": 0.2,
       "open": 11,
@@ -99,7 +99,7 @@
       "id": "cost",
       "labelAr": "التكلفة",
       "labelEn": "Cost",
-      "score": 69,
+      "score": 68,
       "rating": "yellow",
       "weight": 0.15,
       "open": 10,
@@ -411,21 +411,30 @@
     ]
   },
   "validation": {
-    "sources": 12,
-    "recordsIn": 125748,
-    "passed": 120254,
-    "rejected": 1287,
+    "sources": 13,
+    "recordsIn": 212148,
+    "passed": 206344,
+    "rejected": 1597,
     "deduplicated": 4207,
-    "passRatePct": 95.6,
-    "completenessPct": 96.6,
-    "consistencyPct": 97.5,
+    "passRatePct": 97.3,
+    "completenessPct": 97.7,
+    "consistencyPct": 97.6,
     "quarantineOpen": 7,
     "quarantineTotal": 14,
     "rulesEnabled": 12,
     "rulesTotal": 12,
     "ruleHitsToday": 2215,
-    "lastBatch": "2026-11-09T11:00:00+03:00",
+    "lastBatch": "2026-11-09T12:35:00+03:00",
     "bySource": [
+      {
+        "id": "VS13",
+        "nameAr": "بوابة الحساسات (MQTT)",
+        "nameEn": "بوابة الحساسات (MQTT)",
+        "recordsIn": 86400,
+        "passed": 86090,
+        "passRatePct": 99.6,
+        "tone": "good"
+      },
       {
         "id": "VS8",
         "nameAr": "Autodesk APS (BIM)",
@@ -540,19 +549,19 @@
     {
       "stage": 0,
       "labelAr": "مُلتقط",
-      "value": 125748,
+      "value": 212148,
       "unit": ""
     },
     {
       "stage": 1,
       "labelAr": "مُتحقق",
-      "value": 95.6,
+      "value": 97.3,
       "unit": "%"
     },
     {
       "stage": 2,
       "labelAr": "في بحيرة البيانات",
-      "value": 120254,
+      "value": 206344,
       "unit": ""
     },
     {
@@ -589,7 +598,7 @@
   "story": {
     "code": "AIR-1020",
     "id": "AR20",
-    "score": 85,
+    "score": 100,
     "rating": "red",
     "ratingLabelAr": "أحمر",
     "ratingLabelEn": "Red",
@@ -684,6 +693,8 @@
       "actionAr": "إخلاء فوري لمنطقة 25 م أسفل الوجه الشمالي، وإيقاف التفجير ضمن 100 م، وتنفيذ تخفيف للمنحدر (Benching) وتثبيت بمسامير صخرية بتصميم المهندس الجيوتقني خلال 10 أيام، مع رصد يومي.",
       "actionEn": "Evacuate 25 m below the north face, stop blasting within 100 m, bench and rock-bolt the slope within 10 days.",
       "effortAr": "عالٍ",
+      "rationaleAr": "معدل الإزاحة المتسارع مؤشر انهيار وشيك؛ الإخلاء يزيل التعرض البشري فوراً والتثبيت يعالج السبب.",
+      "rationaleEn": "Accelerating displacement signals imminent failure; evacuation removes the exposure now, stabilisation treats the cause.",
       "impactAr": "خفض الدرجة إلى ~30",
       "targetScore": 30
     },
@@ -711,6 +722,23 @@
         "ar": "رصد يومي للميل",
         "en": "Daily inclinometer readings",
         "done": false
+      }
+    ],
+    "stakeholders": [
+      {
+        "id": "Site",
+        "ar": "الموقع",
+        "en": "Site"
+      },
+      {
+        "id": "PM",
+        "ar": "مدير المشروع",
+        "en": "Project manager"
+      },
+      {
+        "id": "PMO",
+        "ar": "مكتب إدارة المشاريع",
+        "en": "PMO"
       }
     ],
     "pmImpact": {
@@ -758,8 +786,8 @@
         "kind": "detected",
         "byAr": "ذكاء الموقع (الصور والتقارير)",
         "byEn": "Site AI",
-        "textAr": "اكتشاف تلقائي — الدرجة 85 (أحمر)، الثقة 90%",
-        "textEn": "Detected — score 85 (Red), confidence 90%",
+        "textAr": "اكتشاف تلقائي — الدرجة 100 (أحمر)، الثقة 90%",
+        "textEn": "Detected — score 100 (Red), confidence 90%",
         "date": "2026-11-08",
         "time": "05:30"
       },
@@ -832,7 +860,7 @@
         "at": "2026-11-08T05:35:00+03:00",
         "by": "النظام",
         "action": "escalate",
-        "detail": "تصعيد فوري تلقائي — الدرجة 85 ≥ عتبة الحرج (البريد، Slack، WhatsApp)"
+        "detail": "تصعيد فوري تلقائي — الدرجة 100 ≥ عتبة الحرج (البريد، Slack، WhatsApp)"
       }
     ],
     "closure": {

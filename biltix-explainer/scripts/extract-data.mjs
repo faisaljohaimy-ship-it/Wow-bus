@@ -86,6 +86,7 @@ const PERSON_EN = {
   'م. سارة القحطاني': 'Eng. Sara Al-Qahtani',
   'النظام': 'System',
 };
+const STAKEHOLDER_EN = { PM: 'Project manager', Legal: 'Legal', Procurement: 'Procurement', Site: 'Site', Finance: 'Finance', PMO: 'PMO' };
 const ROLE_AR = { hse: 'مسؤول السلامة', pm: 'مدير المشروع' };
 const ROLE_EN = { hse: 'HSE lead', pm: 'Project manager' };
 
@@ -241,6 +242,7 @@ const EN_STORY = {
     evidenceExcerpt: `Cumulative ${facts.cumulativeMm} mm · weekly rate ${facts.weeklyMm} mm (limit ${facts.limitMm}) · moving toward the pit · photo 22: ~${facts.crackLengthM} m tension cracks behind the crest`,
     evidenceSource: 'Sensor gateway',
     recommendation: `Evacuate ${facts.evacuateM} m below the north face, stop blasting within ${facts.noBlastM} m, bench and rock-bolt the slope within ${facts.stabiliseDays} days.`,
+    rationale: 'Accelerating displacement signals imminent failure; evacuation removes the exposure now, stabilisation treats the cause.',
     hazard: 'Slope collapse / geotechnical',
     location: 'Main excavation — package 2B, north face',
     taskTitle: `Evacuate ${facts.evacuateM} m below north face · stop blasting within ${facts.noBlastM} m · design slope stabilisation`,
@@ -320,6 +322,8 @@ const story = {
     actionAr: risk.recommendation.action,
     actionEn: en.recommendation,
     effortAr: risk.recommendation.effort,
+    rationaleAr: risk.recommendation.rationale,
+    rationaleEn: en.rationale,
     impactAr: risk.recommendation.impact,
     targetScore: facts.targetScore,
   },
@@ -328,6 +332,7 @@ const story = {
   locationAr: siteParams.location,
   locationEn: en.location,
   controls,
+  stakeholders: (risk.stakeholders || []).map((id) => ({ id, ar: (platformMod.STAKEHOLDER_ROLES.find((r) => r.id === id) || {}).name || id, en: STAKEHOLDER_EN[id] || id })),
   pmImpact: { scheduleDays: pm.scheduleImpactDays, costSAR: pm.costImpactSAR, criticalPath: !!pm.criticalPath },
   detectedAt: risk.detectedAt,
   alert: alert && {

@@ -3,9 +3,9 @@
 Legend: [ ] todo · [~] in progress · [x] done · [!] blocked
 
 ## Phase 0 — Baseline
-- [~] T0.1 Baseline screenshots (identical frozen clock/data) at 360–1440, dark/light — scratchpad/v3/baseline
-- [~] T0.2 Lighthouse + axe + network inventory on baseline (commit abf26c2)
-- [~] T0.3 Reproduce review observations (a)–(i) → baseline.md
+- [x] T0.1 Baseline screenshots (identical frozen clock/data) at 360–1440, dark/light — scratchpad/v3/baseline
+- [x] T0.2 Lighthouse + axe + network inventory on baseline (commit abf26c2)
+- [x] T0.3 Reproduce review observations (a)–(i) → baseline.md
 - [x] T0.4 Disable per-push Vercel deploys for claude/** (vercel.json)
 
 ## Phase 1 — Foundations (parallel, see CONTRACT.md §9 ownership)

@@ -1250,12 +1250,38 @@ function ratingOf(score) {
   return score >= 70 ? 'أحمر' : score >= 40 ? 'أصفر' : 'أخضر';
 }
 
+/**
+ * v3 (CONTRACT §8, spec D5): الشدة = الاحتمالية × الأثر × 4 (0–100) — قيمة واحدة مشتقة، لا تُكتب يدوياً.
+ * [الاحتمالية، الأثر] لكل مخاطرة، مختارة لتبقى وفية للدرجة السابقة وللسرد: نفس التقييم (أحمر/أصفر/أخضر)
+ * ونفس قرار التنبيه مقابل العتبتين الافتراضيتين (> 60 تنبيه، ≥ 85 تصعيد فوري)، والاحتمالية تعكس
+ * احتمال الحدوث المذكور في التفسير (احتمال التأخير، تكرار الملاحظة، حدوثه فعلاً) والأثر يعكس حجم العاقبة
+ * (التعرض المالي، أيام المسار الحرج، احتمال الإصابة الجسيمة).
+ *   ≥ 85 → 100 (5×5) · 70–84 → 80 (4×5 أو 5×4) · 61–69 → 64 (4×4) · 40–60 → 40/48/60 · < 40 → 4…36
+ */
+export const AI_RISK_LI = Object.freeze({
+  1: [5, 5], 2: [5, 4], 3: [4, 5], 4: [4, 5], 5: [5, 4], 6: [5, 4], 7: [4, 5], 8: [5, 4], 9: [5, 4], 10: [5, 5],
+  11: [4, 5], 12: [5, 4], 13: [4, 5], 14: [4, 5], 15: [4, 5], 16: [4, 5], 17: [5, 5], 18: [5, 5], 19: [4, 5], 20: [5, 5],
+  21: [5, 4], 22: [5, 4], 23: [5, 4], 24: [4, 4], 25: [4, 4], 26: [3, 5], 27: [4, 3], 28: [4, 4], 29: [5, 3], 30: [4, 3],
+  31: [4, 3], 32: [4, 4], 33: [4, 4], 34: [4, 4], 35: [4, 4], 36: [5, 3], 37: [5, 3], 38: [4, 4], 39: [4, 4], 40: [3, 4],
+  41: [3, 4], 42: [4, 4], 43: [4, 3], 44: [4, 4], 45: [3, 5], 46: [4, 4], 47: [4, 4], 48: [4, 4], 49: [3, 5], 50: [5, 2],
+  51: [3, 5], 52: [3, 3], 53: [4, 2], 54: [2, 2], 55: [2, 2], 56: [3, 3], 57: [2, 3], 58: [2, 3], 59: [2, 4], 60: [3, 3],
+  61: [2, 3], 62: [3, 2], 63: [2, 2], 64: [2, 2], 65: [4, 2], 66: [2, 3], 67: [2, 4], 68: [2, 4],
+});
+
+/** الدرجة المشتقة للمخاطرة رقم n (تُستخدم أيضاً في نصوص التنبيهات والسجل حتى لا تتعارض الأرقام). */
+export function liScore(likelihood, impact) {
+  return Math.round(Number(likelihood) || 0) * Math.round(Number(impact) || 0) * 4;
+}
+const S = (n) => liScore(AI_RISK_LI[n][0], AI_RISK_LI[n][1]);
+
 /** يملأ الحقول الافتراضية لمخاطرة مكتوبة يدوياً (الكود، إصدار النموذج، السجل الزمني الأولي). */
 function air(n, x) {
   const meta = PIPELINE_META[x.pipeline];
   const detected = x.detectedAt;
+  const [likelihood, impact] = AI_RISK_LI[n];
+  const score = liScore(likelihood, impact);
   const history = [
-    { at: detected, by: meta.nameAr, text: `اكتشاف تلقائي — الدرجة ${x.score} (${ratingOf(x.score)})، الثقة ${Math.round(x.confidence * 100)}%` },
+    { at: detected, by: meta.nameAr, text: `اكتشاف تلقائي — الدرجة ${score} (${ratingOf(score)})، الثقة ${Math.round(x.confidence * 100)}%` },
     ...(x.history || []),
   ];
   return {
@@ -1265,6 +1291,12 @@ function air(n, x) {
     updatedAt: x.updatedAt || (history[history.length - 1] || {}).at || detected,
     owner: null, dueDate: null, taskId: null, escalated: false, overrides: [],
     ...x,
+    likelihood,
+    impact,
+    score,
+    residualLikelihood: null,
+    residualImpact: null,
+    residualAssessment: null,
     history,
   };
 }
@@ -1439,7 +1471,7 @@ const aiRisks = [
       PMO: { trend: 'متدهور بحدة', kpi: 'SPI 0.93 · P80 +82 يوماً', portfolioRank: 1 },
     },
     history: [
-      { at: t(-45, '07:35'), by: 'النظام', text: 'تصعيد فوري — الدرجة 91 ≥ 85 (البريد، Slack، Teams)' },
+      { at: t(-45, '07:35'), by: 'النظام', text: `تصعيد فوري — الدرجة ${S(10)} ≥ 85 (البريد، Slack، Teams)` },
       { at: t(-40, '12:00'), by: 'م. فهد الشمري', text: 'تعديل التوصية: إضافة التعاقد الاحتياطي على محول من مورد بديل' },
       { at: t(-3, '17:45'), by: 'م. بدر القرني', text: 'فريق الفحص المقيم في المصنع منذ 10 أيام؛ FAT للمحول الأول مجدول d+41' },
     ],
@@ -1554,7 +1586,7 @@ const aiRisks = [
       Finance: { budgetImpactSAR: 62_800_000, cashflowMonth: '2027-01' },
     },
     history: [
-      { at: t(-9, '09:20'), by: 'النظام', text: 'تصعيد فوري — الدرجة 86 ≥ 85 (البريد، Slack)' },
+      { at: t(-9, '09:20'), by: 'النظام', text: `تصعيد فوري — الدرجة ${S(17)} ≥ 85 (البريد، Slack)` },
       { at: t(-8, '08:30'), by: 'م. ريم السبيعي', text: 'قبول التوصية؛ المهمة MT-0212 للمستشار القانوني' },
       { at: t(-1, '09:00'), by: 'أ. فيصل الحربي', text: 'مسودة الإشعار جاهزة؛ بانتظار تقرير المختبر الجيوتقني المرفق' },
     ],
@@ -1575,7 +1607,7 @@ const aiRisks = [
       Finance: { budgetImpactSAR: 26_800_000, cashflowMonth: '2027-02' },
     },
     history: [
-      { at: t(-11, '07:40'), by: 'النظام', text: 'تصعيد فوري — الدرجة 89 ≥ 85' },
+      { at: t(-11, '07:40'), by: 'النظام', text: `تصعيد فوري — الدرجة ${S(18)} ≥ 85` },
       { at: t(-10, '12:00'), by: 'م. ريم السبيعي', text: 'قبول التوصية؛ المهمة MT-0213 — طرح جبهة الحفر الثانية' },
       { at: t(-2, '16:00'), by: 'م. بدر القرني', text: 'استلام عرضين لجبهة الحفر الثانية؛ الترسية خلال 5 أيام' },
     ],
@@ -1610,7 +1642,7 @@ const aiRisks = [
       PMO: { trend: 'جديد — حرج', kpi: 'معدل الإزاحة 14 مم/أسبوع', portfolioRank: 1 },
     },
     history: [
-      { at: t(-1, '05:35'), by: 'النظام', text: 'تصعيد فوري — الدرجة 85 (البريد، Slack، WhatsApp)' },
+      { at: t(-1, '05:35'), by: 'النظام', text: `تصعيد فوري — الدرجة ${S(20)} ≥ 85 (البريد، Slack، WhatsApp)` },
       { at: t(-1, '06:10'), by: 'م. تركي المطيري', text: 'إخلاء المنطقة وإيقاف التفجير؛ قبول التوصية والمهمة MT-0214' },
       { at: t(0, '08:15'), by: 'م. ريم السبيعي', text: 'المهندس الجيوتقني في الموقع؛ تصميم التثبيت خلال 48 ساعة' },
     ],
@@ -1691,7 +1723,7 @@ const aiRisks = [
       Legal: { clauseRef: 'CT-2026-014 §19.1 و §8.4(c) و §20.1', exposureSAR: 6_900_000, disputeLikelihood: 0.52 },
       PM: { scheduleImpactDays: 11, costImpactSAR: 6_900_000, criticalPath: true },
     },
-    history: [{ at: t(-40, '09:00'), by: 'النظام', text: 'تنبيه قياسي — الدرجة 61 تجاوزت العتبة 60' }],
+    history: [{ at: t(-40, '09:00'), by: 'النظام', text: `تنبيه قياسي — الدرجة ${S(25)} تجاوزت العتبة 60` }],
   }),
   air(26, {
     projectId: 'S1', category: 'site', type: 'Safety', score: 58,
@@ -1840,7 +1872,7 @@ const aiRisks = [
       Finance: { budgetImpactSAR: 26_000_000, cashflowMonth: '2027-03' },
       Procurement: { supplier: 'مصنع شنغهاي للألواح / مصنع شنتشن BESS', leadTimeDays: 95, alternates: ['إعادة التسعير بالدولار'] },
     },
-    history: [{ at: t(-8, '09:00'), by: 'النظام', text: 'تنبيه قياسي — الدرجة 66 تجاوزت العتبة 60' }],
+    history: [{ at: t(-8, '09:00'), by: 'النظام', text: `تنبيه قياسي — الدرجة ${S(35)} تجاوزت العتبة 60` }],
   }),
   air(36, {
     projectId: 'S3', category: 'schedule', type: 'Delay', score: 56,
@@ -1947,7 +1979,7 @@ const aiRisks = [
       PM: { scheduleImpactDays: 7, costImpactSAR: 1_400_000, criticalPath: true },
       Site: { location: 'مستودع المتفجرات — الحزمة 2B', hazard: 'توقف التفجير / تخزين غير مرخص', controls: ['متابعة الترخيص', 'خطة حفر ميكانيكي بديلة'] },
     },
-    history: [{ at: t(-3, '08:00'), by: 'النظام', text: 'تنبيه قياسي — الدرجة 63 تجاوزت العتبة 60' }],
+    history: [{ at: t(-3, '08:00'), by: 'النظام', text: `تنبيه قياسي — الدرجة ${S(42)} تجاوزت العتبة 60` }],
   }),
   air(43, {
     projectId: 'S5', category: 'bom', type: 'Financial', score: 54,
@@ -2334,42 +2366,42 @@ function alert(n, x) {
 }
 
 const alerts = [
-  alert(1,  { riskId: 'AR10', projectId: 'S3', severity: 'critical', queue: 'immediate', channels: ['email', 'slack', 'teams'], sentAt: t(-45, '07:35'), acknowledged: true, ackBy: OWNERS.pm.S3, ackAt: t(-45, '08:10'), title: 'تصعيد فوري: توريد محولات 33/380 ك.ف من مورد متعثر — الدرجة 91' }),
-  alert(2,  { riskId: 'AR18', projectId: 'S5', severity: 'critical', queue: 'immediate', channels: ['email', 'slack'], sentAt: t(-11, '07:40'), acknowledged: true, ackBy: OWNERS.pm.S5, ackAt: t(-11, '09:05'), title: 'تصعيد فوري: الحفر الصخري 2B عند 17% — انزلاق متوقع 63 يوماً — الدرجة 89' }),
-  alert(3,  { riskId: 'AR1',  projectId: 'S1', severity: 'critical', queue: 'immediate', channels: ['email', 'slack'], sentAt: t(-61, '14:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-61, '15:20'), title: 'تصعيد فوري: غرامة تأخير بلا سقف CT-2026-014 §8.7 — الدرجة 88' }),
-  alert(4,  { riskId: 'AR17', projectId: 'S5', severity: 'critical', queue: 'immediate', channels: ['email', 'slack'], sentAt: t(-9, '09:20'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-9, '10:00'), title: 'تصعيد فوري: مهلة إشعار المطالبة الجيوتقنية تنتهي خلال أيام — الدرجة 86' }),
-  alert(5,  { riskId: 'AR20', projectId: 'S5', severity: 'critical', queue: 'immediate', channels: ['email', 'slack', 'whatsapp'], sentAt: t(-1, '05:35'), acknowledged: true, ackBy: OWNERS.hse.S5, ackAt: t(-1, '05:52'), title: 'تصعيد فوري: عدم استقرار منحدر الحفر الشمالي — إزاحة 14 مم/أسبوع — الدرجة 85' }),
+  alert(1,  { riskId: 'AR10', projectId: 'S3', severity: 'critical', queue: 'immediate', channels: ['email', 'slack', 'teams'], sentAt: t(-45, '07:35'), acknowledged: true, ackBy: OWNERS.pm.S3, ackAt: t(-45, '08:10'), title: `تصعيد فوري: توريد محولات 33/380 ك.ف من مورد متعثر — الدرجة ${S(10)}` }),
+  alert(2,  { riskId: 'AR18', projectId: 'S5', severity: 'critical', queue: 'immediate', channels: ['email', 'slack'], sentAt: t(-11, '07:40'), acknowledged: true, ackBy: OWNERS.pm.S5, ackAt: t(-11, '09:05'), title: `تصعيد فوري: الحفر الصخري 2B عند 17% — انزلاق متوقع 63 يوماً — الدرجة ${S(18)}` }),
+  alert(3,  { riskId: 'AR1',  projectId: 'S1', severity: 'critical', queue: 'immediate', channels: ['email', 'slack'], sentAt: t(-61, '14:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-61, '15:20'), title: `تصعيد فوري: غرامة تأخير بلا سقف CT-2026-014 §8.7 — الدرجة ${S(1)}` }),
+  alert(4,  { riskId: 'AR17', projectId: 'S5', severity: 'critical', queue: 'immediate', channels: ['email', 'slack'], sentAt: t(-9, '09:20'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-9, '10:00'), title: `تصعيد فوري: مهلة إشعار المطالبة الجيوتقنية تنتهي خلال أيام — الدرجة ${S(17)}` }),
+  alert(5,  { riskId: 'AR20', projectId: 'S5', severity: 'critical', queue: 'immediate', channels: ['email', 'slack', 'whatsapp'], sentAt: t(-1, '05:35'), acknowledged: true, ackBy: OWNERS.hse.S5, ackAt: t(-1, '05:52'), title: `تصعيد فوري: عدم استقرار منحدر الحفر الشمالي — إزاحة 14 مم/أسبوع — الدرجة ${S(20)}` }),
   alert(6,  { riskId: 'AR7',  projectId: 'S2', severity: 'critical', queue: 'immediate', channels: ['email', 'slack', 'teams'], sentAt: t(-4, '15:20'), title: 'تصعيد يدوي: تأخر توصيل التيار الدائم للمبنى ج — 94 يوماً دون جدولة فحص' }),
-  alert(7,  { riskId: 'AR11', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-48, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-47, '08:00'), title: 'تنبيه: غرامة 1.2 مليون ريال يومياً مرتبطة بتاريخ خارج سيطرة المقاول — الدرجة 84' }),
-  alert(8,  { riskId: 'AR19', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-5, '05:10'), title: 'تنبيه: أمر تغيير 62.8 مليون ريال غير معتمد وبند الأعمال الترابية +21% — الدرجة 83' }),
+  alert(7,  { riskId: 'AR11', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-48, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-47, '08:00'), title: `تنبيه: غرامة 1.2 مليون ريال يومياً مرتبطة بتاريخ خارج سيطرة المقاول — الدرجة ${S(11)}` }),
+  alert(8,  { riskId: 'AR19', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-5, '05:10'), title: `تنبيه: أمر تغيير 62.8 مليون ريال غير معتمد وبند الأعمال الترابية +21% — الدرجة ${S(19)}` }),
   alert(9,  { riskId: 'AR13', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-26, '05:10'), acknowledged: true, ackBy: OWNERS.finance, ackAt: t(-25, '09:00'), title: 'تنبيه: EAC يتجاوز الميزانية بـ 237 مليون ريال — CPI 0.91' }),
-  alert(10, { riskId: 'AR15', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-48, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-46, '11:00'), title: 'تنبيه: منهجية اختبار نسبة الأداء غير محددة — §9.4 — الدرجة 79' }),
-  alert(11, { riskId: 'AR12', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-19, '10:30'), title: 'تنبيه: تركّز الألواح في مورد وحيد وتأخر الشحنة الثالثة 19 يوماً — الدرجة 78' }),
-  alert(12, { riskId: 'AR14', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack', 'whatsapp'], sentAt: t(-1, '18:05'), title: 'تنبيه: رفع الألواح مع رياح متوقعة 46 كم/س — القطاع الجنوبي — الدرجة 77' }),
-  alert(13, { riskId: 'AR3',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-21, '07:40'), acknowledged: true, ackBy: OWNERS.planning, ackAt: t(-20, '08:30'), title: 'تنبيه: انزلاق بدء تركيب الواجهة الزجاجية (A1100) — الدرجة 76' }),
-  alert(14, { riskId: 'AR21', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-8, '10:30'), title: 'تنبيه: كمية الحفر الصخري في النموذج أعلى 20% من جدول الكميات — الدرجة 75' }),
-  alert(15, { riskId: 'AR4',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack', 'whatsapp'], sentAt: t(-2, '06:50'), acknowledged: true, ackBy: OWNERS.hse.S1, ackAt: t(-2, '07:15'), title: 'تنبيه: حواف بلاطة مكشوفة بلا حواجز — الطابق 23 — الدرجة 74' }),
-  alert(16, { riskId: 'AR5',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-13, '10:30'), title: 'تنبيه: مورد وحيد للواجهة الزجاجية مع تجاوز تاريخ الطلب — الدرجة 73' }),
-  alert(17, { riskId: 'AR8',  projectId: 'S2', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-16, '07:40'), acknowledged: true, ackBy: OWNERS.planning, ackAt: t(-15, '09:00'), title: 'تنبيه: فجوة فنيي المصاعد تهدد الموعد التعاقدي للمبنى أ — الدرجة 72' }),
-  alert(18, { riskId: 'AR16', projectId: 'S4', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-1, '07:15'), acknowledged: true, ackBy: OWNERS.hse.S4, ackAt: t(-1, '07:40'), title: 'تنبيه: دخول غير مصرح به إلى منطقة تركيب الهياكل — المستودع 3 — الدرجة 72' }),
-  alert(19, { riskId: 'AR22', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-14, '06:50'), acknowledged: true, ackBy: OWNERS.hse.S5, ackAt: t(-13, '08:00'), title: 'تنبيه: عدم استخدام واقيات السمع في منطقة التفجير — 38% — الدرجة 71' }),
-  alert(20, { riskId: 'AR6',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-30, '05:10'), acknowledged: true, ackBy: OWNERS.finance, ackAt: t(-29, '10:00'), title: 'تنبيه: تجاوز الميزانية المتوقع 118 مليون ريال — CPI 0.94 — الدرجة 70' }),
-  alert(21, { riskId: 'AR9',  projectId: 'S2', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-7, '10:30'), title: 'تنبيه: زيادة كمية الكابلات النحاسية 9.8% مع ارتفاع النحاس — الدرجة 70' }),
-  alert(22, { riskId: 'AR23', projectId: 'S6', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-9, '07:40'), acknowledged: true, ackBy: OWNERS.pm.S6, ackAt: t(-8, '09:00'), title: 'تنبيه: نقص فنيي الغازات الطبية يهدد اختبار الشبكة — الدرجة 70' }),
-  alert(23, { riskId: 'AR35', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-8, '09:00'), title: 'تنبيه: تعرض لليوان 22% من الميزانية بلا تحوط — الدرجة 66' }),
-  alert(24, { riskId: 'AR42', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-3, '08:00'), title: 'تنبيه: تصريح المتفجرات ينتهي خلال 19 يوماً — الدرجة 63' }),
-  alert(25, { riskId: 'AR25', projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-40, '09:00'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-39, '10:00'), title: 'تنبيه: استثناء العواصف الترابية من القوة القاهرة — الدرجة 61' }),
-  alert(26, { riskId: 'AR46', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-1, '08:05'), acknowledged: true, ackBy: OWNERS.hse.S5, ackAt: t(-1, '08:30'), title: 'تنبيه: اختراق السياج قرب منطقة استبعاد التفجير — الدرجة 68' }),
-  alert(27, { riskId: 'AR47', projectId: 'S6', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-27, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-26, '08:30'), title: 'تنبيه: معيار قبول الأنظمة الطبية "بما يرضي صاحب العمل" — §9.1 — الدرجة 67' }),
-  alert(28, { riskId: 'AR28', projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-50, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-49, '10:00'), title: 'تنبيه: غياب تأمين جميع أخطار المقاولين لمواد الواجهة — §18.2 — الدرجة 66' }),
-  alert(29, { riskId: 'AR38', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-48, '09:30'), title: 'تنبيه: قيود التصدير مستثناة من القوة القاهرة — §19.1 — الدرجة 66' }),
-  alert(30, { riskId: 'AR44', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-9, '09:30'), title: 'تنبيه: 14 يوم إيقاف بسبب العواصف الترابية غير قابلة للاسترداد — §19.1 — الدرجة 63' }),
-  alert(31, { riskId: 'AR34', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-6, '10:30'), title: 'تنبيه: حاويات BESS — النموذج يتطلب 64 حاوية مقابل 60 — الدرجة 62' }),
-  alert(32, { riskId: 'AR32', projectId: 'S2', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-5, '10:30'), acknowledged: true, ackBy: OWNERS.procurement, ackAt: t(-5, '11:10'), title: 'تنبيه: الشحنة الأخيرة من المصاعد تصل قبل 13 يوماً فقط من موعد التشغيل — الدرجة 61' }),
-  alert(33, { riskId: 'AR48', projectId: 'S6', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-2, '10:30'), title: 'تنبيه: أنابيب النحاس الطبية — تجاوز تاريخ الطلب 21 يوماً — الدرجة 61' }),
-  alert(34, { riskId: 'AR2',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-62, '09:30'), acknowledged: true, ackBy: OWNERS.finance, ackAt: t(-61, '09:00'), title: 'تنبيه: أجل سداد 90 يوماً بلا تعويض تأخير — CT-2026-014 §14.2 — الدرجة 82' }),
-  alert(35, { riskId: 'AR39', projectId: 'S4', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-36, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-35, '08:45'), title: 'تنبيه: فجوة تعديل سعر الفولاذ بين العقد الرئيسي وعقد الباطن — الدرجة 64' }),
-  alert(36, { riskId: 'AR24', projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-4, '10:30'), title: 'تنبيه: حديد التسليح قطر 32 مم — كمية النموذج أعلى 8.5% من جدول الكميات — الدرجة 64' }),
+  alert(10, { riskId: 'AR15', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-48, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-46, '11:00'), title: `تنبيه: منهجية اختبار نسبة الأداء غير محددة — §9.4 — الدرجة ${S(15)}` }),
+  alert(11, { riskId: 'AR12', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-19, '10:30'), title: `تنبيه: تركّز الألواح في مورد وحيد وتأخر الشحنة الثالثة 19 يوماً — الدرجة ${S(12)}` }),
+  alert(12, { riskId: 'AR14', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack', 'whatsapp'], sentAt: t(-1, '18:05'), title: `تنبيه: رفع الألواح مع رياح متوقعة 46 كم/س — القطاع الجنوبي — الدرجة ${S(14)}` }),
+  alert(13, { riskId: 'AR3',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-21, '07:40'), acknowledged: true, ackBy: OWNERS.planning, ackAt: t(-20, '08:30'), title: `تنبيه: انزلاق بدء تركيب الواجهة الزجاجية (A1100) — الدرجة ${S(3)}` }),
+  alert(14, { riskId: 'AR21', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-8, '10:30'), title: `تنبيه: كمية الحفر الصخري في النموذج أعلى 20% من جدول الكميات — الدرجة ${S(21)}` }),
+  alert(15, { riskId: 'AR4',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack', 'whatsapp'], sentAt: t(-2, '06:50'), acknowledged: true, ackBy: OWNERS.hse.S1, ackAt: t(-2, '07:15'), title: `تنبيه: حواف بلاطة مكشوفة بلا حواجز — الطابق 23 — الدرجة ${S(4)}` }),
+  alert(16, { riskId: 'AR5',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-13, '10:30'), title: `تنبيه: مورد وحيد للواجهة الزجاجية مع تجاوز تاريخ الطلب — الدرجة ${S(5)}` }),
+  alert(17, { riskId: 'AR8',  projectId: 'S2', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-16, '07:40'), acknowledged: true, ackBy: OWNERS.planning, ackAt: t(-15, '09:00'), title: `تنبيه: فجوة فنيي المصاعد تهدد الموعد التعاقدي للمبنى أ — الدرجة ${S(8)}` }),
+  alert(18, { riskId: 'AR16', projectId: 'S4', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-1, '07:15'), acknowledged: true, ackBy: OWNERS.hse.S4, ackAt: t(-1, '07:40'), title: `تنبيه: دخول غير مصرح به إلى منطقة تركيب الهياكل — المستودع 3 — الدرجة ${S(16)}` }),
+  alert(19, { riskId: 'AR22', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-14, '06:50'), acknowledged: true, ackBy: OWNERS.hse.S5, ackAt: t(-13, '08:00'), title: `تنبيه: عدم استخدام واقيات السمع في منطقة التفجير — 38% — الدرجة ${S(22)}` }),
+  alert(20, { riskId: 'AR6',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-30, '05:10'), acknowledged: true, ackBy: OWNERS.finance, ackAt: t(-29, '10:00'), title: `تنبيه: تجاوز الميزانية المتوقع 118 مليون ريال — CPI 0.94 — الدرجة ${S(6)}` }),
+  alert(21, { riskId: 'AR9',  projectId: 'S2', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-7, '10:30'), title: `تنبيه: زيادة كمية الكابلات النحاسية 9.8% مع ارتفاع النحاس — الدرجة ${S(9)}` }),
+  alert(22, { riskId: 'AR23', projectId: 'S6', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-9, '07:40'), acknowledged: true, ackBy: OWNERS.pm.S6, ackAt: t(-8, '09:00'), title: `تنبيه: نقص فنيي الغازات الطبية يهدد اختبار الشبكة — الدرجة ${S(23)}` }),
+  alert(23, { riskId: 'AR35', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-8, '09:00'), title: `تنبيه: تعرض لليوان 22% من الميزانية بلا تحوط — الدرجة ${S(35)}` }),
+  alert(24, { riskId: 'AR42', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-3, '08:00'), title: `تنبيه: تصريح المتفجرات ينتهي خلال 19 يوماً — الدرجة ${S(42)}` }),
+  alert(25, { riskId: 'AR25', projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-40, '09:00'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-39, '10:00'), title: `تنبيه: استثناء العواصف الترابية من القوة القاهرة — الدرجة ${S(25)}` }),
+  alert(26, { riskId: 'AR46', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-1, '08:05'), acknowledged: true, ackBy: OWNERS.hse.S5, ackAt: t(-1, '08:30'), title: `تنبيه: اختراق السياج قرب منطقة استبعاد التفجير — الدرجة ${S(46)}` }),
+  alert(27, { riskId: 'AR47', projectId: 'S6', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-27, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-26, '08:30'), title: `تنبيه: معيار قبول الأنظمة الطبية "بما يرضي صاحب العمل" — §9.1 — الدرجة ${S(47)}` }),
+  alert(28, { riskId: 'AR28', projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-50, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-49, '10:00'), title: `تنبيه: غياب تأمين جميع أخطار المقاولين لمواد الواجهة — §18.2 — الدرجة ${S(28)}` }),
+  alert(29, { riskId: 'AR38', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-48, '09:30'), title: `تنبيه: قيود التصدير مستثناة من القوة القاهرة — §19.1 — الدرجة ${S(38)}` }),
+  alert(30, { riskId: 'AR44', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-9, '09:30'), title: `تنبيه: 14 يوم إيقاف بسبب العواصف الترابية غير قابلة للاسترداد — §19.1 — الدرجة ${S(44)}` }),
+  alert(31, { riskId: 'AR34', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-6, '10:30'), title: `تنبيه: حاويات BESS — النموذج يتطلب 64 حاوية مقابل 60 — الدرجة ${S(34)}` }),
+  alert(32, { riskId: 'AR32', projectId: 'S2', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-5, '10:30'), acknowledged: true, ackBy: OWNERS.procurement, ackAt: t(-5, '11:10'), title: `تنبيه: الشحنة الأخيرة من المصاعد تصل قبل 13 يوماً فقط من موعد التشغيل — الدرجة ${S(32)}` }),
+  alert(33, { riskId: 'AR48', projectId: 'S6', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-2, '10:30'), title: `تنبيه: أنابيب النحاس الطبية — تجاوز تاريخ الطلب 21 يوماً — الدرجة ${S(48)}` }),
+  alert(34, { riskId: 'AR2',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-62, '09:30'), acknowledged: true, ackBy: OWNERS.finance, ackAt: t(-61, '09:00'), title: `تنبيه: أجل سداد 90 يوماً بلا تعويض تأخير — CT-2026-014 §14.2 — الدرجة ${S(2)}` }),
+  alert(35, { riskId: 'AR39', projectId: 'S4', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-36, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-35, '08:45'), title: `تنبيه: فجوة تعديل سعر الفولاذ بين العقد الرئيسي وعقد الباطن — الدرجة ${S(39)}` }),
+  alert(36, { riskId: 'AR24', projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-4, '10:30'), title: `تنبيه: حديد التسليح قطر 32 مم — كمية النموذج أعلى 8.5% من جدول الكميات — الدرجة ${S(24)}` }),
 ];
 
 // ------------------------------------------------------------------
@@ -2459,7 +2491,7 @@ const pipelines = [
     description: 'يحسب مؤشرات القيمة المكتسبة (CPI/SPI/EAC/VAC) من Oracle ERP والجدول، ويتوقع التكلفة بنماذج السلاسل الزمنية مع تضخم المدخلات وتقلب العملات وزحف أوامر التغيير ومؤشر العمالة.',
     techniques: ['تحليل القيمة المكتسبة (EVM) الشهري', 'توقع التكلفة بالسلاسل الزمنية مع متغيرات خارجية (السلع، العملات، العمالة)', 'نمذجة التعرض للعملات والتحوط', 'تحليل زحف أوامر التغيير حسب المحرك والحالة', 'كشف الانحرافات على مستوى WBS'],
     inputs: ['Oracle ERP (الميزانية، الفعلي، الالتزامات)', 'Biltix — التكلفة والميزانية', 'Primavera P6 (القيمة المخططة)', 'أسعار الصرف', 'مؤشرات السلع ومؤشر العمالة'],
-    status: 'training', lastRun: t(0, '05:00'), runsToday: 2, avgLatencyMs: 9600, precision: 0.85, recall: 0.8, calibrationError: 0.058, driftScore: 0.33, version: 'v1.6.3',
+    status: 'idle', lastRun: t(0, '05:00'), runsToday: 2, avgLatencyMs: 9600, precision: 0.85, recall: 0.8, calibrationError: 0.058, driftScore: 0.33, version: 'v1.6.3',
     featureImportance: [
       { feature: 'CPI واتجاهه (8 أسابيع)', weight: 0.24 }, { feature: 'تباين WBS (التوقع/الميزانية)', weight: 0.2 }, { feature: 'أوامر التغيير غير المعتمدة', weight: 0.17 },
       { feature: 'تضخم السلع المرتبطة بالبنود', weight: 0.15 }, { feature: 'التعرض غير المحوط للعملات', weight: 0.13 }, { feature: 'مؤشر تكلفة العمالة', weight: 0.11 },
@@ -2498,6 +2530,7 @@ const validation = {
     source({ id: 'VS10', name: 'مؤشرات السلع',               recordsIn: 144,     rejected: 0,   deduplicated: 0,   completenessPct: 100,  consistencyPct: 100,  lastBatch: t(0, '08:00') }),
     source({ id: 'VS11', name: 'أسعار الصرف (ساما)',         recordsIn: 36,      rejected: 0,   deduplicated: 0,   completenessPct: 100,  consistencyPct: 100,  lastBatch: t(0, '11:00') }),
     source({ id: 'VS12', name: 'المركز الوطني للأرصاد',       recordsIn: 1_008,   rejected: 12,  deduplicated: 24,  completenessPct: 98.8, consistencyPct: 99.4, lastBatch: t(0, '06:00') }),
+    source({ id: 'VS13', name: 'بوابة الحساسات (MQTT)',      recordsIn: 86_400,  rejected: 310, deduplicated: 0,   completenessPct: 99.2, consistencyPct: 97.8, lastBatch: t(0, '12:35') }),
   ],
   rules: [
     { id: 'VR1',  name: 'مطابقة مخطط السجل (الحقول الإلزامية والأنواع)',                type: 'schema',       hitsToday: 94,  enabled: true },
@@ -2581,13 +2614,13 @@ const auditLog = [
   audit({ at: t(0, '07:30'), actor: 'النظام', action: 'model-update', target: 'schedule-model v3.1.2', detail: 'تشغيل مجدول: 32 نشاطاً حرجاً مُقيَّماً، مونت كارلو 6 مشاريع × 5,000 تكرار' }),
   audit({ at: t(0, '06:36'), actor: 'النظام', action: 'validation', target: 'Biltix — تقارير الموقع', detail: 'رفض تقرير مكرر DR-S1-20261108 (بصمة مطابقة)' }),
   audit({ at: t(0, '06:01'), actor: 'النظام', action: 'validation', target: 'المركز الوطني للأرصاد', detail: 'رفض قراءة رياح 312 كم/س — خارج النطاق الفيزيائي (القاعدة VR10)' }),
-  audit({ at: t(0, '05:00'), actor: 'النظام', action: 'model-update', target: 'cost-forecast v1.6.3', detail: 'بدء إعادة التدريب: درجة الانحراف 0.33 تجاوزت العتبة 0.30' }),
+  audit({ at: t(0, '05:00'), actor: 'النظام', action: 'model-update', target: 'cost-forecast v1.6.3', detail: 'درجة الانحراف 0.33 تجاوزت العتبة 0.30 — إعادة التدريب تتطلب خدمة نماذج متصلة (غير متاحة في العرض التجريبي)' }),
   audit({ at: t(0, '05:02'), actor: 'النظام', action: 'validation', target: 'Oracle ERP', detail: 'حجر السجل ERP-PO-2026-0512-L3: عدم اتساق العملة (القاعدة VR8)' }),
   audit({ at: t(-1, '13:10'), actor: OWNERS.hse.S1, action: 'accept', target: 'AIR-1004', detail: 'قبول التوصية وإنشاء المهمة MT-0203 (حواجز الحافة — الطابق 23)' }),
-  audit({ at: t(-1, '13:11'), actor: 'النظام', action: 'writeback', target: 'MT-0203 → Biltix PM', detail: 'تمت الكتابة العكسية بنجاح (المعرّف الخارجي PM-TSK-88412)' }),
+  audit({ at: t(-1, '13:11'), actor: 'النظام', action: 'writeback', target: 'MT-0203 → Biltix PM', detail: 'كتابة عكسية مُحاكاة إلى Biltix PM (المعرّف الخارجي التجريبي PM-TSK-88412)' }),
   audit({ at: t(-1, '08:40'), actor: OWNERS.legal, action: 'login', target: 'قمرة القيادة', detail: 'تسجيل دخول — الدور: القانونية' }),
   audit({ at: t(-1, '06:10'), actor: OWNERS.hse.S5, action: 'accept', target: 'AIR-1020', detail: 'قبول التوصية وإنشاء المهمة MT-0214 (إخلاء المنحدر الشمالي) مع تصعيد' }),
-  audit({ at: t(-1, '05:35'), actor: 'النظام', action: 'escalate', target: 'AIR-1020', detail: 'تصعيد فوري تلقائي — الدرجة 85 ≥ عتبة الحرج (البريد، Slack، WhatsApp)' }),
+  audit({ at: t(-1, '05:35'), actor: 'النظام', action: 'escalate', target: 'AIR-1020', detail: `تصعيد فوري تلقائي — الدرجة ${S(20)} ≥ عتبة الحرج (البريد، Slack، WhatsApp)` }),
   audit({ at: t(-3, '14:00'), actor: OWNERS.hse.S4, action: 'accept', target: 'MT-0223', detail: 'إغلاق المهمة مع النتيجة؛ إغلاق المخاطرة AIR-1041 — النتيجة مُغذّاة لإعادة المعايرة' }),
   audit({ at: t(-4, '15:20'), actor: OWNERS.pm.S2, action: 'escalate', target: 'AIR-1007', detail: 'تصعيد يدوي عبر البريد وSlack وTeams — الفحص لم يُجدول بعد 25 يوماً' }),
   audit({ at: t(-7, '11:30'), actor: OWNERS.finance, action: 'override', target: 'AIR-1060', detail: 'تجاهل المخاطرة: سقف التحوط 70% وفق سياسة الخزينة' }),
@@ -2599,7 +2632,7 @@ const auditLog = [
   audit({ at: t(-44, '09:00'), actor: 'النظام', action: 'model-update', target: 'contract-nlp v2.3.1', detail: 'نشر الإصدار v2.3.1: تحسين كشف السقوف المفقودة (الدقة 0.88 → 0.91)' }),
   audit({ at: t(-55, '09:20'), actor: OWNERS.pm.S1, action: 'override', target: 'AIR-1002', detail: 'تعديل التوصية: إضافة تسهيل تمويل المستخلصات — السبب: غطاء نقدي فوري لدفعات الباطن' }),
   audit({ at: t(-58, '10:02'), actor: OWNERS.pmo, action: 'accept', target: 'AIR-1001', detail: 'قبول التوصية وإنشاء المهمة MT-0201 (سقف غرامة التأخير)' }),
-  audit({ at: t(-61, '14:30'), actor: 'النظام', action: 'escalate', target: 'AIR-1001', detail: 'تصعيد فوري تلقائي — الدرجة 88 ≥ عتبة الحرج' }),
+  audit({ at: t(-61, '14:30'), actor: 'النظام', action: 'escalate', target: 'AIR-1001', detail: `تصعيد فوري تلقائي — الدرجة ${S(1)} ≥ عتبة الحرج` }),
   audit({ at: t(-62, '08:00'), actor: 'النظام', action: 'config', target: 'الإعدادات — الأوزان', detail: 'اعتماد أوزان المجالات: العقود 0.20، المواد 0.20، الجدول 0.25، الموقع 0.20، التكلفة 0.15' }),
 ];
 
@@ -2634,20 +2667,192 @@ const roadmap = {
     'نقل البيانات التاريخية من أنظمة غير مذكورة في طبقة التكامل',
   ],
   milestones: [
-    { id: 'M0', name: 'تخصيص الفريق وانطلاق المشروع', month: 0, durationMonths: 0.5, paymentPct: null, status: 'منجز',
+    { id: 'M0', name: 'تخصيص الفريق وانطلاق المشروع', month: 0, durationMonths: null, paymentPct: null, status: 'قادم',
       deliverables: ['ميثاق المشروع وخطة الحوكمة', 'تشكيل الفريق المشترك وتعيين مالك المنتج', 'ورشة الانطلاق وخارطة أصحاب المصلحة', 'بيئات العمل وقنوات التواصل'] },
-    { id: 'M1', name: 'الاستكشاف ومعمارية التكامل', month: 1, durationMonths: 1.5, paymentPct: null, status: 'جارٍ',
+    { id: 'M1', name: 'الاستكشاف ومعمارية التكامل', month: 1, durationMonths: null, paymentPct: null, status: 'قادم',
       deliverables: ['تقييم جاهزية البيانات والمصادر', 'وثيقة معمارية التكامل (طبقات 1–5)', 'نموذج البيانات الموحد لبحيرة المخاطر', 'مصفوفة مؤشرات المخاطر الرئيسية (KRI) المعتمدة', 'خطة الأمن والامتثال (ECC/PDPL)'] },
-    { id: 'M2', name: 'بناء التكاملات وطبقة التحقق', month: 3, durationMonths: 2.5, paymentPct: null, status: 'قادم',
+    { id: 'M2', name: 'بناء التكاملات وطبقة التحقق', month: 2, durationMonths: null, paymentPct: null, status: 'قادم',
       deliverables: ['موصلات بلتكس الست والموصلات المؤسسية (P6، APS، Oracle)', 'موصلات المصادر الخارجية (السلع، العملات، الأرصاد، GIS)', 'طبقة التحقق والتنظيف وقائمة الحجر', 'بحيرة بيانات المخاطر مع التصدير والتدقيق', 'اختبارات التكامل الشاملة'] },
-    { id: 'M3', name: 'تحسينات محرك المخاطر', month: 5, durationMonths: 2.5, paymentPct: null, status: 'قادم',
+    { id: 'M3', name: 'تحسينات محرك المخاطر', month: 3, durationMonths: null, paymentPct: null, status: 'قادم',
       deliverables: ['الخطوط الخمسة مدرّبة على بيانات العميل', 'طبقة التقييم والتفسير المشتركة (0–100 + تفسير)', 'منطق التصنيف (النوع/التقييم) والعتبات', 'التنبيه وسير العمل والكتابة العكسية', 'تقرير أداء النماذج (الدقة، الاستدعاء، المعايرة)'] },
-    { id: 'M4', name: 'قمرة القيادة ومعاملات الاستجابة واختبار القبول والإطلاق', month: 8, durationMonths: 2, paymentPct: null, status: 'قادم',
+    { id: 'M4', name: 'قمرة القيادة ومعاملات الاستجابة واختبار القبول والإطلاق', month: 4, durationMonths: null, paymentPct: null, status: 'قادم',
       deliverables: ['قمرة قيادة المخاطر وسجل المخاطر الذكي', 'معاملات الاستجابة لأصحاب المصلحة (PM/القانونية/المشتريات/الموقع/المالية/PMO)', 'اختبار قبول المستخدم (UAT) وتدريب المستخدمين', 'الإطلاق التدريجي ودعم ما بعد الإطلاق (Hypercare)', 'وثائق التشغيل ونقل المعرفة'] },
   ],
   paymentNote: 'النسب تُستكمل مع العميل؛ المجموع 100%',
-  totalMonths: 10,
+  paymentNoteEn: 'Percentages are agreed with the client; the total must be 100%.',
+  // v3: the proposal table fixes the START month of each milestone (0–4) and nothing else. Durations,
+  // the overall length and the payment split are not stated, so they stay null and the UI says "to be agreed".
+  totalMonths: null,
+  monthsSpan: [0, 4],
+  durationNote: 'المدد تُحدد بالاتفاق مع العميل — لم يذكرها المقترح',
+  durationNoteEn: 'Durations to be agreed with the client — the proposal does not state them',
+  statusNote: 'لم يبدأ التنفيذ بعد — تُحدَّث حالة كل معلم عند اعتماد المقترح وانطلاق المشروع',
+  statusNoteEn: 'Not started — each milestone status is updated once the proposal is approved and the engagement starts',
 };
+
+// ------------------------------------------------------------------
+// 24b. v3 — جودة بيانات المدخلات، التقييم المتبقي، خطة المعالجة، ووسم البيانات المحاكاة
+// ------------------------------------------------------------------
+
+/**
+ * Validation source that feeds each source system named in `evidence.sourceSystem`. Image evidence
+ * reported through the site reports comes from the media pipeline (VS6) rather than the report text (VS4).
+ */
+export const SOURCE_VALIDATION = Object.freeze({
+  'Biltix — العقود': 'VS1',
+  'Biltix — BoQ/BoM': 'VS2',
+  'Biltix — الجدول الزمني': 'VS3',
+  'Biltix — تقارير الموقع': 'VS4',
+  'Biltix — التكلفة': 'VS5',
+  'Biltix — التكلفة والميزانية': 'VS5',
+  'Biltix — الصور': 'VS6',
+  'Primavera P6': 'VS7',
+  'Autodesk APS': 'VS8',
+  'Oracle ERP': 'VS9',
+  'مؤشرات السلع': 'VS10',
+  'أسعار الصرف': 'VS11',
+  'المركز الوطني للأرصاد': 'VS12',
+  'بوابة الحساسات': 'VS13',
+});
+
+/** Input-data quality bands (score 0–100). Distinct from severity (L×I×4) and from model confidence. */
+export const DATA_QUALITY_BANDS = Object.freeze({ high: 97, medium: 93 });
+const DQ_TARGET = 97;
+
+function r1v(n) { return Math.round(n * 10) / 10; }
+
+/**
+ * Input-data quality of a risk, derived from the validation layer of its source system (one definition,
+ * used by the seed, the store for new risks and psel.dataQuality for live values):
+ *   validity     = 100 × (1 − rejected / recordsIn)          (schema checks)
+ *   score        = mean(validity, completeness, consistency) − 1.5 × open quarantined records (max −9)
+ *   level        = high ≥ 97 · medium ≥ 93 · low < 93
+ *   issues       = each check below 97 % + every open quarantined record of that source (bilingual text)
+ * A source system without a validation feed yields { score: null, level: 'low', issues: [not-validated] }.
+ */
+export function deriveDataQuality(validationIn, sourceSystem, evidenceKind) {
+  const v = validationIn && typeof validationIn === 'object' ? validationIn : {};
+  const sources = Array.isArray(v.sources) ? v.sources : [];
+  const quarantine = Array.isArray(v.quarantine) ? v.quarantine : [];
+  let sourceId = SOURCE_VALIDATION[String(sourceSystem || '')] || null;
+  if (sourceId === 'VS4' && evidenceKind === 'image') sourceId = 'VS6';
+  const src = sourceId ? sources.find((s) => s && s.id === sourceId) : null;
+  if (!src || !(Number(src.recordsIn) > 0)) {
+    return {
+      score: null, level: 'low', sourceId: sourceId || null, sourceName: src ? src.name : (sourceSystem || null),
+      checks: null,
+      issues: [{ code: 'not-validated', text: 'مصدر البيانات غير مشمول بطبقة التحقق', textEn: 'This source is not covered by the validation layer' }],
+    };
+  }
+  const recordsIn = Number(src.recordsIn) || 0;
+  const validity = r1v(100 * (1 - (Number(src.rejected) || 0) / recordsIn));
+  const completeness = r1v(Number(src.completenessPct) || 0);
+  const consistency = r1v(Number(src.consistencyPct) || 0);
+  const open = quarantine.filter((q) => q && q.sourceId === src.id && q.status === 'معلّق');
+  const raw = (validity + completeness + consistency) / 3 - Math.min(9, 1.5 * open.length);
+  const score = Math.max(0, Math.min(100, Math.round(raw)));
+  const level = score >= DATA_QUALITY_BANDS.high ? 'high' : score >= DATA_QUALITY_BANDS.medium ? 'medium' : 'low';
+  const issues = [];
+  if (validity < DQ_TARGET) issues.push({ code: 'validity', value: validity, text: `اجتاز فحص المخطط ${validity}% من السجلات (المستهدف ${DQ_TARGET}%)`, textEn: `${validity}% of records passed schema checks (target ${DQ_TARGET}%)` });
+  if (completeness < DQ_TARGET) issues.push({ code: 'completeness', value: completeness, text: `اكتمال الحقول ${completeness}% (المستهدف ${DQ_TARGET}%)`, textEn: `Field completeness ${completeness}% (target ${DQ_TARGET}%)` });
+  if (consistency < DQ_TARGET) issues.push({ code: 'consistency', value: consistency, text: `اتساق البيانات ${consistency}% (المستهدف ${DQ_TARGET}%)`, textEn: `Data consistency ${consistency}% (target ${DQ_TARGET}%)` });
+  for (const q of open) {
+    issues.push({ code: 'quarantine', quarantineId: q.id, ref: q.recordRef, text: `سجل محجور بانتظار المراجعة: ${q.recordRef}`, textEn: `Quarantined record awaiting review: ${q.recordRef}` });
+  }
+  return {
+    score, level, sourceId: src.id, sourceName: src.name,
+    checks: { validityPct: validity, completenessPct: completeness, consistencyPct: consistency, quarantineOpen: open.length, lastBatch: src.lastBatch || null },
+    issues,
+  };
+}
+
+/**
+ * Residual assessments (after a mitigation) for risks in treatment (قيد المعالجة) or closed (مغلق).
+ * [residual likelihood, residual impact, at, by, justification, justificationEn]. Every other risk
+ * keeps residualLikelihood/residualImpact = null (not assessed). Closed risks that were accepted
+ * without extra treatment are assessed at their inherent level ("risk accepted").
+ */
+const RESIDUAL = {
+  2: [5, 2, t(-9, '16:45'), OWNERS.finance, 'اعتُمد تسهيل تمويل المستخلصات (150 مليون ريال) فانخفض أثر فجوة التدفق النقدي؛ احتمال تأخر السداد قائم حتى تعديل البند 14.2', 'The SAR 150M payment-certificate facility was approved, so the cash-flow impact drops; late payment stays likely until clause 14.2 is amended.'],
+  7: [4, 4, t(-4, '15:30'), OWNERS.pm.S2, 'أُرسل إشعار تمديد الوقت (§20.1) فانخفض التعرض للغرامات؛ احتمال تأخر الفحص ما زال مرتفعاً حتى تجدوله الشركة السعودية للكهرباء', 'The §20.1 extension-of-time notice was served, which reduces penalty exposure; the inspection delay stays likely until SEC schedules it.'],
+  10: [4, 4, t(-38, '10:00'), OWNERS.pm.S3, 'فريق فحص مقيم في المصنع وربط الدفعة بمعلم FAT وعقد احتياطي لمحول بديل؛ يبقى التعرض مرتفعاً حتى اجتياز اختبار FAT', 'Resident inspection team at the factory, payment tied to the FAT milestone and a back-up transformer contract; exposure stays high until FAT is passed.'],
+  15: [3, 5, t(-40, '11:00'), OWNERS.legal, 'الملحق التفسيري لمنهجية IEC 61724-1 قيد التفاوض؛ الأثر كما هو حتى توقيعه', 'The interpretation addendum for the IEC 61724-1 method is under negotiation; the impact is unchanged until it is signed.'],
+  18: [4, 4, t(-8, '12:00'), OWNERS.pm.S5, 'جبهة حفر ثانية بمقاول تفجير ثانٍ تعمل منذ أسبوع؛ معدل الإنجاز تحسّن لكنه ما زال دون المخطط', 'A second excavation front with a second blasting contractor has been running for a week; progress improved but is still below plan.'],
+  22: [2, 4, t(-6, '09:00'), OWNERS.hse.S5, 'نقطة تفتيش معدات الوقاية عند مدخل منطقة التفجير؛ انخفض عدم الالتزام إلى 6% في الجولات اللاحقة', 'PPE checkpoint at the blast-zone entrance; non-compliance fell to 6% in follow-up walks.'],
+  28: [2, 3, t(-30, '10:00'), OWNERS.legal, 'أُضيف المقاول من الباطن إلى وثيقة جميع أخطار المقاولين؛ يتبقى طلب وثيقة المسؤولية المهنية', 'The subcontractor was endorsed on the CAR policy; the professional-indemnity policy request is still open.'],
+  37: [3, 2, t(-5, '08:00'), OWNERS.hse.S3, 'تفعيل خطة قمع الغبار (رش المياه وحواجز الرياح)؛ قراءات PM10 خلال الأسبوع الماضي ضمن الحد', "Dust-suppression plan activated (water spraying and wind fences); last week's PM10 readings were within the limit."],
+  47: [3, 4, t(-20, '10:00'), OWNERS.legal, 'مسودة بروتوكول القبول المشترك (HTM 02-01 + NFPA 99) قيد المراجعة لدى صاحب العمل', 'The draft joint acceptance protocol (HTM 02-01 + NFPA 99) is under review by the employer.'],
+  41: [1, 4, t(-3, '13:30'), OWNERS.hse.S4, 'أُعيد تدريب 18 عاملاً وعُيّن مراقب سلامة على السقف؛ لا ملاحظات في صور الأسبوع التالي', "18 workers were retrained and a roof safety observer was assigned; no observations in the following week's photos."],
+  54: [2, 2, null, 'محرك توقع المواد BoM', 'قبول المخاطرة: الكمية ضمن التفاوت والمواصفة مطابقة — لا معالجة إضافية', 'Risk accepted: quantity within tolerance and specification compliant — no further treatment.'],
+  55: [2, 2, null, OWNERS.legal, 'قبول المخاطرة: بند ضمان قياسي (10%) — لا معالجة إضافية', 'Risk accepted: standard 10% performance bond — no further treatment.'],
+  58: [2, 3, null, OWNERS.pm.S2, 'قبول المخاطرة: التسلّم على مراحل بند مواتٍ — لا معالجة إضافية', 'Risk accepted: staged taking-over is a favourable clause — no further treatment.'],
+  64: [2, 2, null, 'محرك العقود NLP', 'قبول المخاطرة: آجال سداد متوازنة مع تعويض تأخير — لا معالجة إضافية', 'Risk accepted: balanced payment terms with late-payment compensation — no further treatment.'],
+  66: [1, 1, t(-8, '14:30'), OWNERS.procurement, 'المولدان مستلمان ومفحوصان (GRN-2026-0912) قبل الاحتياج بـ 9 أيام؛ زال خطر التأخر', 'Both generators were received and inspected (GRN-2026-0912) 9 days before they are needed; the delay risk no longer exists.'],
+  68: [1, 4, t(-6, '08:30'), OWNERS.hse.S6, 'أُزيلت المواد خلال 24 ساعة وخُصصت منطقة تخزين؛ الأثر المحتمل للحريق كما هو والاحتمال أصبح منخفضاً', 'Materials were removed within 24 hours and a storage area was assigned; the potential fire impact is unchanged and the likelihood is now low.'],
+};
+
+/** Closure outcome (bilingual) of the closed seed risks; closedAt = the closing history entry. */
+const CLOSURE_EN = {
+  41: 'Task closed: 18 workers retrained and a safety observer assigned; no observations in the following week\'s photos.',
+  54: 'Closed automatically: variance within tolerance and specification compliant.',
+  55: 'Closed: standard clause with no exposure; renewal added to the obligations calendar.',
+  58: 'Closed: favourable clause; partial taking-over request added to the obligations calendar.',
+  64: 'Closed automatically: clause within the market benchmark, no flags.',
+  66: 'Closed: both generators received and inspected (GRN-2026-0912).',
+  68: 'Closed: materials removed and a storage area assigned; no recurrence.',
+};
+
+/**
+ * Treatment evidence that is part of the SOURCE record (local: false — it lives in the client system the
+ * platform reads; nothing here was uploaded in this browser). Every other risk starts with an empty list.
+ */
+const SOURCE_EVIDENCE = {
+  2: [{ kind: 'note', title: 'موافقة البنك على تسهيل تمويل المستخلصات (150 مليون ريال)', titleEn: 'Bank approval of the SAR 150M payment-certificate facility', ref: 'FIN-FAC-2026-031', sourceSystem: 'Oracle ERP', addedAt: t(-9, '16:40'), by: OWNERS.finance }],
+  7: [{ kind: 'file', title: 'خطاب التصعيد إلى الشركة السعودية للكهرباء وإشعار تمديد الوقت §20.1', titleEn: 'Escalation letter to SEC and §20.1 extension-of-time notice', ref: 'CORR-S2-2026-0448', sourceSystem: 'Biltix — العقود', addedAt: t(-4, '15:25'), by: OWNERS.pm.S2 }],
+  22: [{ kind: 'note', title: 'سجل نقطة تفتيش معدات الوقاية — مدخل منطقة التفجير', titleEn: 'PPE checkpoint log — blast-zone entrance', ref: 'CHK-S5-2026-1101', sourceSystem: 'Biltix — تقارير الموقع', addedAt: t(-6, '08:45'), by: OWNERS.hse.S5 }],
+  41: [
+    { kind: 'file', title: 'سجل حضور إعادة التدريب على خطوط الحياة — 18 عاملاً', titleEn: 'Lifeline retraining attendance record — 18 workers', ref: 'TRN-S4-2026-1102', sourceSystem: 'Biltix — تقارير الموقع', addedAt: t(-4, '10:00'), by: OWNERS.hse.S4 },
+    { kind: 'file', title: 'صور الأسبوع التالي — سقف المستودع 2 دون ملاحظات', titleEn: "Following week's photos — warehouse 2 roof, no observations", ref: 'IMG-S4-20261105-022', sourceSystem: 'Biltix — الصور', addedAt: t(-3, '12:00'), by: OWNERS.hse.S4 },
+  ],
+  66: [{ kind: 'file', title: 'إشعار استلام البضاعة GRN-2026-0912 — المولدان 2000 ك.ف.أ', titleEn: 'Goods received note GRN-2026-0912 — two 2,000 kVA generators', ref: 'GRN-2026-0912', sourceSystem: 'Oracle ERP', addedAt: t(-8, '14:00'), by: OWNERS.procurement }],
+  68: [{ kind: 'file', title: 'صور قبل/بعد إزالة المواد من ممر الطابق 2', titleEn: 'Before/after photos of the level-2 corridor clearance', ref: 'IMG-S6-20261102-007', sourceSystem: 'Biltix — تقارير الموقع', addedAt: t(-7, '09:30'), by: OWNERS.hse.S6 }],
+};
+
+for (const risk of aiRisks) {
+  const n = Number(String(risk.id).replace(/\D/g, ''));
+  const task = risk.taskId ? tasks.find((x) => x.id === risk.taskId) : null;
+  const res = RESIDUAL[n];
+  if (res) {
+    const closing = (risk.history || []).slice().reverse().find((h) => /^إغلاق/.test(String(h.text || '')));
+    risk.residualLikelihood = res[0];
+    risk.residualImpact = res[1];
+    risk.residualAssessment = { at: res[2] || (closing ? closing.at : risk.updatedAt), by: res[3], justification: res[4], justificationEn: res[5] };
+  }
+  if (risk.status === 'مغلق') {
+    const closing = (risk.history || []).slice().reverse().find((h) => /^إغلاق/.test(String(h.text || '')));
+    risk.closedAt = closing ? closing.at : risk.updatedAt;
+    risk.outcome = closing ? closing.text : null;
+    risk.outcomeEn = CLOSURE_EN[n] || null;
+  }
+  risk.treatment = {
+    plan: task ? task.title : null,
+    taskId: task ? task.id : null,
+    evidence: (SOURCE_EVIDENCE[n] || []).map((e, i) => ({ id: `EV-${risk.id}-${i + 1}`, url: null, local: false, ...e })),
+  };
+  risk.dataQuality = deriveDataQuality(validation, risk.evidence && risk.evidence.sourceSystem, risk.evidence && risk.evidence.kind);
+}
+
+/*
+ * Honest status (CONTRACT §5): every number on connectors and model pipelines in this file is an
+ * illustrative scenario, not a measurement. `simulated: true` lets status.js classify them as Demo;
+ * a connector still marked 'configurable' was never configured (status.js → Not connected).
+ */
+for (const p of pipelines) { p.simulated = true; p.metricsIllustrative = true; }
+validation.simulated = true;
+for (const c of connectors) c.simulated = c.status !== 'configurable';
+
+/** Collection-level flags (status.js / views): which datasets are simulated in this demo build. */
+export const SIMULATED_DATASETS = Object.freeze({ connectors: true, pipelines: true, validation: true, aiRisks: true, tasks: true, alerts: true, auditLog: true });
 
 // ------------------------------------------------------------------
 // 25. التصدير
@@ -2661,6 +2866,7 @@ const platformSeed = {
     tagline: 'قمرة قيادة المخاطر — خمسة مجالات، تصنيف فوري، معالجة مُتتبعة',
     proposalVersion: 'v2',
   },
+  simulated: { ...SIMULATED_DATASETS },
   projects, contracts, suppliers, commodities, boqItems, scheduleTasks, monteCarlo, resources, approvals,
   subcontractors, weather, costLines, changeOrders, currencies, labourIndex, aiRisks, tasks, alerts,
   pipelines, validation, connectors, auditLog, roadmap,

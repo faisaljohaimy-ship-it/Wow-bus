@@ -1,5 +1,5 @@
 /**
- * Biltix Risk AI — event bus (js/core/bus.js)
+ * BILTIX Risk AI — event bus (js/core/bus.js)
  *
  * Tiny synchronous pub/sub shared by every module. Contract (ARCHITECTURE.md §4):
  *
@@ -13,6 +13,11 @@
  *   alert, route:change, sensors:tick, integrations:tick,
  *   ui:route-leave {from, to, params}   — emitted by the router BEFORE the current view is torn
  *                                          down, so transient UI (menus, drawers, sheets) can close.
+ *   lang:change {lang, dir}             — i18n.setLang() applied a new UI language (html[lang][dir]
+ *                                          already updated); the shell re-renders its chrome and the
+ *                                          router re-mounts the current view (params + scroll kept).
+ *   status:change {online, mode}        — app.js: navigator online/offline or data mode changed.
+ *   panel:change {open, pinned}         — app.js: the activity panel opened / closed / (un)pinned.
  *
  * Every handler runs inside its own try/catch so a failing listener can never
  * break the others or the emitter. Handlers are invoked in subscription order on

@@ -39,8 +39,8 @@ export const Background: React.FC<{ drift: number }> = ({ drift }) => {
       {/* registration marks at the content frame corners */}
       <svg width="1920" height="1080" style={{ position: 'absolute', inset: 0 }}>
         {[
-          [72, 196],
-          [1848, 196],
+          [72, 228],
+          [1848, 228],
           [72, 920],
           [1848, 920],
         ].map(([x, y], i) => (
@@ -70,17 +70,28 @@ export const Code: React.FC<{ children: React.ReactNode; size?: number; color?: 
   </bdi>
 );
 
-/* ── numbers in mono (tabular), isolated for RTL ── */
-export const Num: React.FC<{ children: React.ReactNode; size: number; weight?: number; color?: string; style?: React.CSSProperties }> = ({
+/* ── numbers: Plex Sans tabular figures (mono on request), isolated for RTL ── */
+export const Num: React.FC<{ children: React.ReactNode; size: number; weight?: number; color?: string; mono?: boolean; style?: React.CSSProperties }> = ({
   children,
   size,
   weight = 500,
   color = C.ink,
+  mono = false,
   style,
 }) => (
   <bdi
     dir="ltr"
-    style={{ fontFamily: FONT.mono, fontSize: size, fontWeight: weight, color, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', unicodeBidi: 'isolate', ...style }}
+    style={{
+      fontFamily: mono ? FONT.mono : FONT.en,
+      fontSize: size,
+      fontWeight: weight,
+      color,
+      whiteSpace: 'nowrap',
+      fontVariantNumeric: 'tabular-nums',
+      letterSpacing: mono ? '0' : '-0.01em',
+      unicodeBidi: 'isolate',
+      ...style,
+    }}
   >
     {children}
   </bdi>
@@ -132,7 +143,7 @@ export const RatingBadge: React.FC<{ color: string; label: string; size?: number
 
 /* ── top bar ── */
 export const TopBar: React.FC<{ lang: Lang; frame: number }> = ({ lang, frame }) => {
-  const p = prog(frame, 40, 24, EASE.out);
+  const p = prog(frame, 64, 24, EASE.out);
   const t = COPY[lang];
   return (
     <div style={{ position: 'absolute', top: 44, insetInlineStart: 96, insetInlineEnd: 96, height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', opacity: p }}>
