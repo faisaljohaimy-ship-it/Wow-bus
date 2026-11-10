@@ -415,7 +415,7 @@ const TEMPLATES = [
   { type: 'sensor', tone: 'good', sourceId: SOURCES.iot, weight: 1, title: 'معايرة دورية لحسّاس {sensor} — {zone}', detail: 'اكتملت المعايرة الآلية عبر بوابة الحساسات؛ انحراف القراءة أقل من 2%', titleEn: 'Routine calibration of the {sensor} sensor — {zone}', detailEn: 'Automatic calibration through the sensor gateway completed; reading drift below 2%' },
   { type: 'sensor', tone: 'accent', sourceId: SOURCES.iot, weight: 1, title: 'عودة بث حسّاس {sensor} — {zone}', detail: 'انقطاع قصير في بث MQTT لمدة {n} ثانية ثم عودة الإرسال طبيعيًا', titleEn: '{sensor} sensor stream back — {zone}', detailEn: 'Short MQTT gap of {n} seconds, then transmission resumed normally' },
   { type: 'sensor', tone: 'warning', sourceId: SOURCES.iot, weight: 1, title: 'بطارية حسّاس {sensor} منخفضة ({pct}%)', detail: 'يُنصح باستبدال البطارية خلال 48 ساعة — {zone}', titleEn: '{sensor} sensor battery low ({pct}%)', detailEn: 'Replace the battery within 48 hours — {zone}' },
-  // ── permits (Biltix PM)
+  // ── permits (BILTIX PM)
   { type: 'permit', tone: 'good', sourceId: SOURCES.pm, weight: 2, title: 'اعتماد تصريح {permitPending} — {permitPendingType}', detail: '{permitPendingLocation} · اعتمده {permitPendingApprover}', titleEn: 'Permit {permitPending} approved — {permitPendingType}', detailEn: '{permitPendingLocation} · approved by {permitPendingApprover}', requires: (c) => Boolean(c.permitPending) },
   { type: 'permit', tone: 'accent', sourceId: SOURCES.pm, weight: 3, title: 'تسجيل دخول {workersCount} عمال بموجب التصريح {permit}', detail: '{permitType} — {permitLocation}', titleEn: '{workersCount} workers signed in under permit {permit}', detailEn: '{permitType} — {permitLocation}' },
   { type: 'permit', tone: 'good', sourceId: SOURCES.pm, weight: 2, title: 'اختبار غازات جديد للتصريح {permit}', detail: 'O₂ {o2}% · LEL 0% · H2S {h2s} ppm · CO {co} ppm — القيم ضمن الحدود المقبولة', titleEn: 'New gas test for permit {permit}', detailEn: 'O₂ {o2}% · LEL 0% · H2S {h2s} ppm · CO {co} ppm — values within acceptable limits', requires: (c) => c.permitHasGas },
@@ -1188,12 +1188,19 @@ function sensorStep(now = Date.now()) {
       m.recovering = false;
       const low = m.lastDirection === 'low';
       const limit = low ? m.lowThreshold : m.threshold;
+      const recSite = siteById(m.siteId);
+      const recZone = recSite ? arr(recSite.zones).find((z) => z && z.id === m.zoneId) || null : null;
+      const recZoneEn = recZone ? zoneEn(recZone, recSite) : '';
+      const recKindEn = enumEn('sensorKind', m.kind, 'Sensor');
       emitFeed({
         type: 'sensor',
         tone: 'good',
         siteId: m.siteId,
-        title: `عودة قراءة ${m.kind} إلى المعدل الطبيعي — ${zoneName(m.siteId, m.zoneId) || 'الموقع'}`,
+        simulated: true,
+        title: `محاكاة: عودة قراءة ${m.kind} إلى المعدل الطبيعي — ${zoneName(m.siteId, m.zoneId) || 'الموقع'}`,
+        titleEn: `Simulated: ${recKindEn} reading back to normal — ${recZoneEn || (recSite ? siteEn(recSite) : 'site')}`,
         detail: `القراءة الحالية ${n1(m.value)} ${m.unit} (${low ? 'الحد الأدنى' : 'الحد'} ${n1(limit)} ${m.unit}) · رفع الإجراءات الاحترازية`,
+        detailEn: `Current value ${enNum(m.value, 1)} ${unitEn(m.unit)} (${low ? 'minimum' : 'limit'} ${enNum(limit, 1)} ${unitEn(m.unit)}) · precautions lifted`,
         sourceId: SOURCES.iot,
         refId: m.id,
         code: m.code,

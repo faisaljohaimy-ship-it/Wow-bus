@@ -1371,7 +1371,7 @@ const aiRisks = [
       Site: { location: 'المنطقة أ — الطابق 23، الحافتان الشمالية والشرقية', hazard: 'سقوط من ارتفاع', controls: ['حواجز حافة معتمدة (EN 13374 Class A)', 'خطوط حياة أفقية', 'تصريح عمل على ارتفاع'] },
       PM: { scheduleImpactDays: 1, costImpactSAR: 180_000, criticalPath: true },
     },
-    history: [{ at: t(-1, '13:10'), by: 'م. سارة القحطاني', text: 'قبول التوصية؛ أُنشئت المهمة MT-0203 وكُتبت إلى Biltix PM' }],
+    history: [{ at: t(-1, '13:10'), by: 'م. سارة القحطاني', text: 'قبول التوصية؛ أُنشئت المهمة MT-0203 وكُتبت إلى BILTIX PM' }],
   }),
   air(5, {
     projectId: 'S1', category: 'bom', type: 'Delay', score: 73,
@@ -1569,7 +1569,7 @@ const aiRisks = [
       Site: { location: 'المستودع 3 — منطقة الرفع، البوابة G2', hazard: 'أحمال معلقة / دهس — دخول غير مصرح', controls: ['حاجز مادي على G2', 'مراقب بوابة أثناء الرفع', 'تحويل مسار شاحنات الميناء'] },
       PM: { scheduleImpactDays: 0, costImpactSAR: 45_000, criticalPath: false },
     },
-    history: [{ at: t(0, '09:30'), by: 'م. مها الغامدي', text: 'قبول التوصية؛ المهمة MT-0211 أُنشئت وكُتبت إلى Biltix PM' }],
+    history: [{ at: t(0, '09:30'), by: 'م. مها الغامدي', text: 'قبول التوصية؛ المهمة MT-0211 أُنشئت وكُتبت إلى BILTIX PM' }],
   }),
   air(17, {
     projectId: 'S5', category: 'contract', type: 'Conflict', score: 86,
@@ -2034,7 +2034,7 @@ const aiRisks = [
       Site: { location: 'المحيط الجنوبي — قرب منطقة استبعاد التفجير', hazard: 'دخول غير مصرح به إلى منطقة تفجير', controls: ['إصلاح السياج ورفعه', 'دورية قبل التفجير', 'تنبيه صوتي', 'توعية مجتمعية'] },
       PM: { scheduleImpactDays: 1, costImpactSAR: 220_000, criticalPath: false },
     },
-    history: [{ at: t(0, '10:00'), by: 'م. تركي المطيري', text: 'قبول التوصية؛ المهمة MT-0224 — الكتابة العكسية فشلت (انتهاء مهلة Biltix PM) وسيعاد الإرسال' }],
+    history: [{ at: t(0, '10:00'), by: 'م. تركي المطيري', text: 'قبول التوصية؛ المهمة MT-0224 — الكتابة العكسية فشلت (انتهاء مهلة BILTIX PM) وسيعاد الإرسال' }],
   }),
   air(47, {
     projectId: 'S6', category: 'contract', type: 'Conflict', score: 67,
@@ -2314,7 +2314,7 @@ const aiRisks = [
 ];
 
 // ------------------------------------------------------------------
-// 18. مهام المعالجة — ناتجة عن التوصيات مع حالة الكتابة العكسية إلى Biltix PM
+// 18. مهام المعالجة — ناتجة عن التوصيات مع حالة الكتابة العكسية إلى BILTIX PM
 // ------------------------------------------------------------------
 
 function mt(n, x) {
@@ -2322,7 +2322,7 @@ function mt(n, x) {
     id: `MT${n}`, code: `MT-${String(200 + n).padStart(4, '0')}`,
     closedAt: null, outcome: null,
     ...x,
-    writeback: { target: 'Biltix PM', status: 'synced', at: x.createdAt, ...(x.writeback || {}) },
+    writeback: { target: 'BILTIX PM', status: 'synced', at: x.createdAt, ...(x.writeback || {}) },
   };
 }
 
@@ -2606,9 +2606,9 @@ function audit(x) {
 }
 
 const auditLog = [
-  audit({ at: t(0, '10:01'), actor: 'النظام', action: 'writeback', target: 'MT-0224 → Biltix PM', detail: 'فشل الكتابة العكسية: انتهاء مهلة الاستجابة (30 ث) — سيعاد الإرسال تلقائياً' }),
+  audit({ at: t(0, '10:01'), actor: 'النظام', action: 'writeback', target: 'MT-0224 → BILTIX PM', detail: 'فشل الكتابة العكسية: انتهاء مهلة الاستجابة (30 ث) — سيعاد الإرسال تلقائياً' }),
   audit({ at: t(0, '10:00'), actor: OWNERS.hse.S5, action: 'accept', target: 'AIR-1046', detail: 'قبول التوصية وإنشاء المهمة MT-0224 (إصلاح السياج الجنوبي)' }),
-  audit({ at: t(0, '09:31'), actor: 'النظام', action: 'writeback', target: 'MT-0211 → Biltix PM', detail: 'إرسال المهمة إلى Biltix PM — بانتظار التأكيد' }),
+  audit({ at: t(0, '09:31'), actor: 'النظام', action: 'writeback', target: 'MT-0211 → BILTIX PM', detail: 'إرسال المهمة إلى BILTIX PM — بانتظار التأكيد' }),
   audit({ at: t(0, '09:30'), actor: OWNERS.hse.S4, action: 'accept', target: 'AIR-1016', detail: 'قبول التوصية وإنشاء المهمة MT-0211 (إغلاق البوابة G2)' }),
   audit({ at: t(0, '08:15'), actor: OWNERS.pm.S5, action: 'escalate', target: 'AIR-1020', detail: 'تأكيد التصعيد الفوري؛ المهندس الجيوتقني في الموقع' }),
   audit({ at: t(0, '07:30'), actor: 'النظام', action: 'model-update', target: 'schedule-model v3.1.2', detail: 'تشغيل مجدول: 32 نشاطاً حرجاً مُقيَّماً، مونت كارلو 6 مشاريع × 5,000 تكرار' }),
@@ -2617,7 +2617,7 @@ const auditLog = [
   audit({ at: t(0, '05:00'), actor: 'النظام', action: 'model-update', target: 'cost-forecast v1.6.3', detail: 'درجة الانحراف 0.33 تجاوزت العتبة 0.30 — إعادة التدريب تتطلب خدمة نماذج متصلة (غير متاحة في العرض التجريبي)' }),
   audit({ at: t(0, '05:02'), actor: 'النظام', action: 'validation', target: 'Oracle ERP', detail: 'حجر السجل ERP-PO-2026-0512-L3: عدم اتساق العملة (القاعدة VR8)' }),
   audit({ at: t(-1, '13:10'), actor: OWNERS.hse.S1, action: 'accept', target: 'AIR-1004', detail: 'قبول التوصية وإنشاء المهمة MT-0203 (حواجز الحافة — الطابق 23)' }),
-  audit({ at: t(-1, '13:11'), actor: 'النظام', action: 'writeback', target: 'MT-0203 → Biltix PM', detail: 'كتابة عكسية مُحاكاة إلى Biltix PM (المعرّف الخارجي التجريبي PM-TSK-88412)' }),
+  audit({ at: t(-1, '13:11'), actor: 'النظام', action: 'writeback', target: 'MT-0203 → BILTIX PM', detail: 'كتابة عكسية مُحاكاة إلى BILTIX PM (المعرّف الخارجي التجريبي PM-TSK-88412)' }),
   audit({ at: t(-1, '08:40'), actor: OWNERS.legal, action: 'login', target: 'قمرة القيادة', detail: 'تسجيل دخول — الدور: القانونية' }),
   audit({ at: t(-1, '06:10'), actor: OWNERS.hse.S5, action: 'accept', target: 'AIR-1020', detail: 'قبول التوصية وإنشاء المهمة MT-0214 (إخلاء المنحدر الشمالي) مع تصعيد' }),
   audit({ at: t(-1, '05:35'), actor: 'النظام', action: 'escalate', target: 'AIR-1020', detail: `تصعيد فوري تلقائي — الدرجة ${S(20)} ≥ عتبة الحرج (البريد، Slack، WhatsApp)` }),

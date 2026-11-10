@@ -64,9 +64,9 @@ const MONTE_CARLO_RUNS = 5000;
 const RATING_LABEL = { red: 'أحمر', yellow: 'أصفر', green: 'أخضر' };
 const RATING_TONE = { red: 'critical', yellow: 'warning', green: 'good' };
 
-/** Biltix PM: Arabic name leads the sentence (RTL-5); the Latin name travels in `source`. */
+/** BILTIX PM: Arabic name leads the sentence (RTL-5); the Latin name travels in `source`. */
 const PM_NAME = 'منصة بلتكس لإدارة المشاريع';
-const PM_SOURCE = 'Biltix PM';
+const PM_SOURCE = 'BILTIX PM';
 
 /** Caps for engine-generated (simulated) records — see pruneSimulated(). */
 export const SIM_CAPS = Object.freeze({ aiRisks: 100 });

@@ -38,7 +38,7 @@
  *     addTask, updateTask, addAlert, ackAlert, updateValidation, updatePipeline,
  *     updateConnector, pushAudit, resolveQuarantine, retryWriteback) persist, emit
  *     `store:change`, append audit entries, generate AIR-#### / MT-#### / AL-#### codes and
- *     simulate the write-back to Biltix PM (pending → synced after 1.5 s + feed event).
+ *     simulate the write-back to BILTIX PM (pending → synced after 1.5 s + feed event).
  *
  *   • v3 "Precision" (CONTRACT §8): settings gain `lang`, `appearance {background, density}`, `calendar`,
  *     `motion` and `dataSource.lastSuccessAt/lastErrorAt/lastError`; weights must be 5 non-negative numbers
@@ -965,7 +965,7 @@ const ITEM_NORMALIZERS = {
     t.status = pickEnum(t.status, TASK_STATUS, 'جديدة');
     t.source = pickEnum(t.source, TASK_SOURCES, 'manual');
     t.riskId = t.riskId == null ? null : text(t.riskId);
-    if (!isPlainObject(t.writeback)) t.writeback = { target: 'Biltix PM', status: 'pending', at: null };
+    if (!isPlainObject(t.writeback)) t.writeback = { target: 'BILTIX PM', status: 'pending', at: null };
     t.writeback.status = pickEnum(t.writeback.status, ['pending', 'synced', 'failed'], 'pending');
     t.priority = t.priority == null ? null : pickEnum(t.priority, TASK_PRIORITIES, null);
     t.attachments = Array.isArray(t.attachments) ? t.attachments.map((a, i) => normalizeEvidenceItem(a, i, t.id)).filter(Boolean) : [];
@@ -1581,7 +1581,7 @@ function alertLevelFor(score) {
 
 const writebackTimers = new Set();
 
-/** Simulated write-back to Biltix PM: pending → synced after 1.5 s, with feed + audit entries. */
+/** Simulated write-back to BILTIX PM: pending → synced after 1.5 s, with feed + audit entries. */
 function scheduleWriteback(taskId) {
   const enabled = getPath(state, 'settings.platform.writebackEnabled') !== false;
   if (!enabled || typeof setTimeout !== 'function') return;
@@ -1589,11 +1589,11 @@ function scheduleWriteback(taskId) {
     writebackTimers.delete(timer);
     const task = findPlatform('tasks', taskId);
     if (!task || !isPlainObject(task.writeback) || task.writeback.status !== 'pending') return;
-    // Demo build: there is no Biltix PM endpoint, so the write-back is SIMULATED and labelled as such
+    // Demo build: there is no BILTIX PM endpoint, so the write-back is SIMULATED and labelled as such
     // (CONTRACT §5 — never claim an operation that did not happen). `simulated: true` travels with it.
     task.writeback.status = 'synced';
     task.writeback.at = localISO(store.now());
-    task.writeback.target = task.writeback.target || 'Biltix PM';
+    task.writeback.target = task.writeback.target || 'BILTIX PM';
     task.writeback.simulated = true;
     changed(`platform.tasks.${task.id}`);
     store.pushAudit({
@@ -1636,8 +1636,8 @@ function createTask(obj = {}, { silent = false, by = '' } = {}) {
     status: pickEnum(obj.status, TASK_STATUS, 'جديدة'),
     source: pickEnum(obj.source, TASK_SOURCES, 'manual'),
     writeback: isPlainObject(obj.writeback)
-      ? { target: 'Biltix PM', status: 'pending', at: null, ...obj.writeback }
-      : { target: 'Biltix PM', status: 'pending', at: null },
+      ? { target: 'BILTIX PM', status: 'pending', at: null, ...obj.writeback }
+      : { target: 'BILTIX PM', status: 'pending', at: null },
     priority: obj.priority == null || obj.priority === '' ? null : pickEnum(obj.priority, TASK_PRIORITIES, null),
     attachments: [],
     createdAt: localISO(now),
@@ -2591,7 +2591,7 @@ export const store = {
   retryWriteback(taskId) {
     const task = findPlatform('tasks', taskId);
     if (!task) return null;
-    task.writeback = { target: 'Biltix PM', ...(isPlainObject(task.writeback) ? task.writeback : {}), status: 'pending', at: null };
+    task.writeback = { target: 'BILTIX PM', ...(isPlainObject(task.writeback) ? task.writeback : {}), status: 'pending', at: null };
     changed(`platform.tasks.${task.id}`);
     emitFeed({ type: 'writeback', tone: 'accent', siteId: task.projectId, simulated: true, title: `محاكاة: إعادة محاولة الكتابة العكسية — ${task.code}`, titleEn: `Simulated: write-back retry — ${task.code}`, detail: task.title, detailEn: text(task.titleEn), sourceId: 'biltix-pm', refId: task.id, code: task.code });
     scheduleWriteback(task.id);
