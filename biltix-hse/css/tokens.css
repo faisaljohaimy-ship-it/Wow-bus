@@ -100,8 +100,8 @@
    Each fallback carries the unicode-range of the face it stands in for, so a
    script the real face lacks still falls through to the right family.
    Glyph coverage (cmap of the woff2 files, checked with fontTools): beyond Latin-1
-   the Latin subsets hold only – — ‘ ’ ‚ “ ” „ • … ‹ › ⁄ € ™ ↑ ↓ − ∕ (Sans and Mono
-   add ′ ″); there is no → ← ↔ ≥ ≤ ≈ ₂ σ ✓ ✕ in any file, so copy should not use
+   the punctuation and symbols the Latin subsets hold include – — ‘ ’ ‚ “ ” „ • … ‹ › ⁄ € ™ ↑ ↓
+   − ∕ (Sans and Mono add ′ ″), plus a few letters and combining marks; there is no → ← ↔ ≥ ≤ ≈ ₂ σ Δ ✓ ✕ in any file, so copy should not use
    those characters (they render and print in a system font). Neither Latin subset
    has U+2010/U+2011 (hyphen, non-breaking hyphen): the two Latin fallbacks leave
    U+2010-2011 out of their range so these fall through to the Plex Sans Arabic

@@ -1715,7 +1715,7 @@ function scheduleWriteback(taskId) {
     task.writeback.simulated = true;
     changed(`platform.tasks.${task.id}`);
     store.pushAudit({
-      actor: SYSTEM_ACTOR, action: 'writeback', target: task.code,
+      actor: SYSTEM_ACTOR, action: 'writeback', target: task.code, simulated: true,
       detail: `محاكاة الكتابة العكسية إلى ${task.writeback.target}: علم المخاطرة والدرجة ومهمة المعالجة ${task.code} (لم يُرسل شيء إلى نظام خارجي)`,
       detailEn: `Simulated write-back to BILTIX PM: risk flag, score and mitigation task ${task.code} (nothing was sent to an external system)`,
     });

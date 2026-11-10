@@ -1493,8 +1493,10 @@ dialog.modal.video-dialog, .video-dialog { inline-size: min(1040px, 100%); }
 /* Docked: while a modal / drawer is open, components.js moves #toasts into the topmost open dialog, in flow between
    its body and its footer. A toast then never covers the dialog's controls (a phone drawer is full width, so a
    floating stack had no free edge) and stays outside the inert page, so role=status / alert are still announced.
-   It is capped at a quarter of the viewport (a dialog is at most viewport-tall) and scrolls on its own, newest
-   toast first, so the dialog body keeps more room than the stack (390 px tall landscape phone: stack ≤ 97.5 px). */
+   It is capped at a quarter of the viewport height (240 px at most; a dialog is at most viewport-tall) and
+   scrolls on its own, newest toast first. At 390 px tall (landscape phone) that is 97.5 px and the dialog body
+   keeps more room than the stack. Below about 375 px the dialog head, tabs and footer alone take ~190 px, so
+   the body can end up smaller than the stack, and a three-line toast can need a scroll to read in full. */
 dialog > .toast-stack.is-docked {
   position: static;
   inset: auto;

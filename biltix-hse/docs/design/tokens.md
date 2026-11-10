@@ -180,18 +180,18 @@ The Plex Sans and Plex Mono fallbacks leave U+2010–2011 (hyphen, non-breaking 
 `unicode-range`: neither Latin subset has them, so they fall through to the Plex Sans Arabic hyphen
 instead of a local Arial / Liberation glyph.
 
-**Glyph coverage** — beyond Latin-1 the Latin subsets hold only – — ‘ ’ ‚ “ ” „ • … ‹ › ⁄ € ™ ↑ ↓ − ∕
-(Plex Sans and Plex Mono also ′ ″). No bundled file has → ← ↔ ≥ ≤ ≈ ₂ σ Δ ✓ ✕, so copy must not use
-them: they would render and print in a system font (checked against the cmap of the woff2 files; see the
-comment in `tokens.css`).
+**Glyph coverage** — beyond Latin-1, the punctuation and symbols in the Latin subsets include
+– — ‘ ’ ‚ “ ” „ • … ‹ › ⁄ € ™ ↑ ↓ − ∕ (Plex Sans and Plex Mono also ′ ″). The subsets also hold a few
+letters and combining marks (for example ı Œ œ ʻ ʼ, U+0300 and U+0301); this is not a full list. No
+bundled file has → ← ↔ ≥ ≤ ≈ ₂ σ Δ ✓ ✕ (each was looked up in every woff2 cmap), so copy must not use
+them: they would render and print in a system font. See the comment in `tokens.css`.
 
 **Stacks** — `--font-ar`, `--font-en`, `--font-mono`, and `--font-sans`, which resolves per
 `html[lang]`: Arabic first in `ar`, Latin first in `en` (Arabic data in English mode still renders in
 Plex Sans Arabic). `--font-mono` = Plex Mono, Plex Mono Fallback, then IBM Plex Sans Arabic (and the
 Naskh fallback) before the system monospace: Plex Mono has no Arabic script, so Arabic-Indic digits
-(numerals = arab), ٪ ٫ ٬, the U+061C mark Intl puts in Arabic-Indic numbers and stray Arabic letters
-render in Plex Sans Arabic rather than a system monospace (before: DejaVu Sans Mono on screen and in
-PDFs). `--font-mono-mixed` = Plex Mono for Latin/digits, then the language's sans face
+(numerals = arab), ٪ ٫ ٬ and stray Arabic letters render in Plex Sans Arabic rather than a
+system monospace (before: DejaVu Sans Mono on screen and in PDFs). `--font-mono-mixed` = Plex Mono for Latin/digits, then the language's sans face
 for Arabic letters inside codes such as "5س 12د".
 
 **Scale** — `--fs-xs 12` · `--fs-sm 13` · `--fs-ui 14` (controls, table cells, nav) · `--fs-md 15`

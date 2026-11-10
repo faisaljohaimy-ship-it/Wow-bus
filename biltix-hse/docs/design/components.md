@@ -24,7 +24,7 @@ Styles: `css/base.css` (shell), `css/components.css`, `css/charts.css`, `css/pla
 | App bar | `header.appbar` > `.appbar-start` (rail toggle, `.brand`) · `.appbar-center` (`.clock`, `.cmdk-btn`) · `.appbar-end` | 64 px, glass (blur) with a solid fallback. The centre is a container (`appbar-center`): when the end group grows it gives way first — dates < 340 px, clock < 270 px, search collapses to its icon < 200 px — so nothing collides with the brand. Tagline shows only ≥ 1680 px; on phones (< 480) the score pill, theme toggle and brand text step back (theme + language are also in the "More" sheet). |
 | Rail | `nav.rail` > `.rail-group` > `.rail-group-label` + `.rail-item` (`.rail-icon`, `.rail-label`) | 232 px; `body.rail-collapsed` → 72 px icons. Labels are never truncated (wrap to two lines). 960–1279 px: 72 px; `body.rail-open` expands it as an overlay. Collapsed tooltips: the shell sets native `title`s while the rail is icon-only; `.rail-tip` is styled for a custom (fixed-position) tooltip if one is wanted later. Module codes are hidden in the rail. |
 | Language switch | `.lang-switch` > `button.lang-opt[lang][aria-pressed]` | Fixed visual order "ع \| EN" in both directions. Active = raised pill. |
-| Data chip | `.data-status` (positioned wrapper) > `button.data-chip[data-status]` (`.data-chip-icon`, `.data-chip-label`, `.data-chip-offline`) + `.data-popover` | Dashed = simulated. Popover: title, text, `dl`, list, `.data-popover-actions`; anchored under the chip (inline-end aligned). |
+| Data chip | `.data-status` (positioned wrapper) > `button.data-chip[data-status]` (`.data-chip-icon`, `.data-chip-label`, `.data-chip-offline`) + `.data-popover` | Dashed = simulated. Popover: title, text, `dl`, list, `.data-popover-actions`. From 960 px it hangs under the chip (inline-end aligned). Below 960 px it is fixed under the app bar, 12 px from the end edge, its height stops above the tab bar and the bottom safe area, and it scrolls inside itself, so every action stays tappable on short and landscape phones. |
 | Activity panel | `aside.activity-panel` > `.activity-head` (title, `.activity-mode`, `.feed-count`, `.activity-actions`: pause / `.activity-pin` / `.activity-close`) + `.activity-new-chip` + `ul.activity-list` + `.activity-foot` | Closed by default; `body.panel-open` slides it in over content (elev-3). ≥ 1680 px `body.panel-pinned` makes it a grid column (no shadow). `.activity-pin` hidden below 1680. `.activity-new-chip` sticks under the head while the reader is scrolled. Toggle: `.activity-toggle` + `.activity-count`. |
 | Filters row | `.filters` > `.filters-group` | Quiet toolbar on the page plane. |
 | Tab bar | `nav.tabbar` > `.tab-item` | < 960 px, solid surface, active = brand text + top bar. "More" opens a bottom sheet (`dialog.drawer.is-sheet`) with `.sheet-quick` (language + theme) and `.sheet-list`. |
@@ -173,10 +173,14 @@ holding `video[controls]` (captions styled via `::cue`) or `button.video-poster`
   components.js docks `#toasts` inside the topmost dialog (`.toast-stack.is-docked`, in flow between the
   body and the footer): a toast never covers the dialog's controls and stays outside the inert page.
   It returns to `<body>` when the dialog closes. Docked, the stack is capped at 25 % of the viewport
-  height (240 px at most) and scrolls on its own, newest first; toasts keep their full height.
+  height (240 px at most) and scrolls on its own, newest first; toasts keep their full height. A new
+  toast scrolls the stack back to the top unless keyboard focus is inside the stack. Below about
+  375 px of viewport height the dialog body can be shorter than the stack.
   Dismissing a focused toast moves focus to the next toast, else back to the control it came from,
-  else to the dialog, so Escape still closes the dialog. A toast older than 1 s loses its live role
-  before the stack moves, so moving does not re-insert a live region that was already shown.
+  else to the dialog, so Escape still closes the dialog. Before the stack moves, every toast that has
+  probably been drawn at its old place (in the document for 50 ms, or past a drawn frame) loses its
+  live role, so moving does not re-insert a live region that was already shown. A toast moved straight
+  after it was raised keeps its role and is announced at its new place. Screen-reader speech itself has not been tested.
 
 ## Kanban
 

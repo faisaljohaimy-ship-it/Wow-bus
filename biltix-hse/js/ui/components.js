@@ -1730,20 +1730,24 @@ function bindStrayEscape() {
   });
 }
 
-/** A toast counts as already announced once it has been in the document this long (ms). */
-const TOAST_ANNOUNCED_MS = 1000;
+/** A toast counts as shown (already rendered at its place) after this long in the document (ms). */
+const TOAST_SHOWN_MS = 50;
 
 /**
  * Moving #toasts re-inserts its toasts, and a re-inserted role=alert / role=status node may be announced again.
- * So before a move, toasts that have been on screen for TOAST_ANNOUNCED_MS lose their live role (they stay
- * visible and their buttons keep working; app.js already does the same for alerts it announces itself).
- * A toast raised just before the move keeps its role and is announced at its new place: for example the
- * "saved" toast of a dialog action that also closes the dialog.
+ * So before a move, every toast that has probably been rendered at its old place loses its live role: one that
+ * has been in the document for TOAST_SHOWN_MS (about three frames), or that toast() saw survive a drawn frame
+ * (second animation frame). Settled toasts stay visible and their buttons keep working; app.js already does the
+ * same for alerts it announces itself. A toast moved straight after it was raised (same task, or before any
+ * frame) keeps its role and is announced at its new place. Example: "Register risk" shows its "saved" toast in
+ * <body> for 80-240 ms before the risk drawer opens; the toast then moves into the drawer without its role, so
+ * it is not announced a second time.
  */
 function settleToastRoles(stack) {
   const now = Date.now();
   for (const n of stack.children) {
-    if (n.__toastAt && now - n.__toastAt >= TOAST_ANNOUNCED_MS && n.hasAttribute('role')) n.removeAttribute('role');
+    const shown = n.__toastShown === true || (n.__toastAt && now - n.__toastAt >= TOAST_SHOWN_MS);
+    if (shown && n.hasAttribute('role')) n.removeAttribute('role');
   }
 }
 
@@ -1854,9 +1858,15 @@ export function toast(message, { tone = 'neutral', timeout = 4500, action = null
     if (old.contains(document.activeElement)) handOffToastFocus(old);
     old.remove();
   }
-  // Docked, the stack scrolls on its own: bring the newest toast (first) into view.
-  if (stack.classList.contains('is-docked')) stack.scrollTop = 0;
-  requestAnimationFrame(() => el.classList.add('is-in'));
+  // Docked, the stack scrolls on its own: bring the newest toast (first) into view, unless keyboard focus is
+  // inside the stack. Then the scroll position is left alone so the focused toast does not jump out of view.
+  if (stack.classList.contains('is-docked') && !stack.contains(document.activeElement)) stack.scrollTop = 0;
+  // The first animation frame runs before the frame that draws the toast; the second runs after it was drawn,
+  // so from then on the toast counts as shown (see settleToastRoles()).
+  requestAnimationFrame(() => {
+    el.classList.add('is-in');
+    requestAnimationFrame(() => { el.__toastShown = true; });
+  });
   arm();
   return { el, dismiss };
 }
