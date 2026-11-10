@@ -563,7 +563,7 @@ button.legend-item:hover { color: var(--ink-1); }
 .matrix-axis-title.is-y { writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; }
 .matrix-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--fs-xs); color: var(--ink-2); margin-block-start: var(--space-2); }
 .matrix-legend-item { display: inline-flex; align-items: center; gap: 6px; }
-.matrix-legend-item .legend-key { inline-size: 12px; block-size: 12px; border-radius: 3px; }
+.matrix-legend-item .legend-key { inline-size: 12px; block-size: 12px; border-radius: 3px; background: var(--tone, var(--key, currentColor)); }
 
 /* Training matrix: wide, scrolls horizontally, sticky worker names */
 .matrix-scroll { overflow: auto; max-block-size: 560px; border: 1px solid var(--line); border-radius: 10px; }
@@ -582,7 +582,9 @@ button.legend-item:hover { color: var(--ink-1); }
 .spark.is-down { color: var(--critical-text); }
 .spark.is-brand { color: var(--brand-text); }
 
-/* Segmented bar (replaces donuts) */
+/* Segmented bar (replaces donuts). The .segbar-part rules style the HTML bar; the SVG bar (charts.segmentedBar) reuses the
+   class on <rect>, so rect.segbar-part drops the HTML background (it confused contrast checkers; SVG paints with fill). */
+rect.segbar-part { background: none; }
 .segbar { display: flex; flex-direction: column; gap: 8px; }
 .segbar-track { display: flex; block-size: 28px; border-radius: 8px; overflow: hidden; background: var(--bg-3); }
 .segbar-track.is-thin { block-size: 10px; border-radius: var(--radius-pill); }

@@ -445,6 +445,8 @@ a.domain-card:hover, button.domain-card:hover, .domain-card.is-clickable:hover {
   background: var(--tone);
 }
 .status-badge[data-status="demo"], .status-badge.is-demo { --tone: var(--brand); --tone-ink: var(--brand-text); border-style: dashed; }
+/* Light theme: the 12% brand tint over the page lowers --brand-text to ~4.1–4.8:1; this ink keeps ≥ 5.3:1 on every light surface. */
+:root[data-theme="light"] .status-badge[data-status="demo"], :root[data-theme="light"] .status-badge.is-demo { --tone-ink: #174AB5; }
 .status-badge[data-status="live"], .status-badge.is-live { --tone: var(--accent); --tone-ink: var(--accent-text-strong); }
 .status-badge[data-status="offline"], .status-badge.is-offline { --tone: var(--ink-3); --tone-ink: var(--ink-2); }
 .status-badge[data-status="stale"], .status-badge.is-stale { --tone: var(--warning); --tone-ink: var(--warning-text); }
@@ -1104,7 +1106,8 @@ input[type="search"].field-control { padding-inline-start: 12px; }
   background-position: calc(100% - 12px) 50%;   /* RTL: inline-start = right */
 }
 :root[dir="ltr"] .filter-bar-search input[type="search"].field-control { background-position: 12px 50%; }
-.filter-bar-group.is-chips .chip-group { flex-wrap: wrap; gap: 6px; }
+/* :not(.is-scroll) so a chip row marked .chips.is-scroll keeps its one-line swipe layout on phones */
+.filter-bar-group.is-chips .chip-group:not(.is-scroll) { flex-wrap: wrap; gap: 6px; }
 .filter-bar-group.is-segmented .seg { flex: none; }
 .filter-bar-group.is-select .field-control { min-inline-size: 150px; }
 .filter-bar .seg { padding: 2px; }
@@ -1132,6 +1135,7 @@ input[type="search"].field-control { padding-inline-start: 12px; }
   .filter-bar { gap: var(--space-2); }
   .filter-bar-group, .filter-bar .filter-group { flex: 1 1 calc(50% - var(--space-2)); }
   .filter-bar .field-control { inline-size: 100%; min-inline-size: 0; max-inline-size: none; }
+  .filter-bar-group.is-select .field-control { min-inline-size: 0; } /* beats the 150px desktop minimum (same specificity, later) */
   .filter-bar-search { flex-basis: 100%; max-inline-size: none; }
 }
 
@@ -1494,6 +1498,8 @@ dialog.modal.video-dialog, .video-dialog { inline-size: min(1040px, 100%); }
   scroll-snap-type: inline proximity;
 }
 @media (max-width: 1599.98px) { .kanban { grid-auto-columns: minmax(232px, 1fr); } }
+/* Five-column boards (permits) fit a 1280–1599 px desktop without a hidden last column; narrower screens scroll. */
+@media (min-width: 1280px) and (max-width: 1599.98px) { .kanban:has(> :nth-child(5)) { grid-auto-columns: minmax(196px, 1fr); } }
 .kanban { --fade-end: to left; --fade-start: to right; }
 :root[dir="ltr"] .kanban { --fade-end: to right; --fade-start: to left; }
 .kanban.is-overflowing:not(.is-scroll-end) {
