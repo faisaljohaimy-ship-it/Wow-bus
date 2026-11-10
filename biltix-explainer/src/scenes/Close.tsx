@@ -12,7 +12,7 @@ import { C, EASE } from '../theme';
 
 const S = DATA.story;
 const ratingOf = (score: number) => (score >= 70 ? 'red' : score >= 40 ? 'yellow' : 'green'); // B2 thresholds
-const CODE_SPLIT = /(AIR-\d+|MT-\d+|AL-\d+|IN-[\w-]+|Biltix PM|\d+(?:\.\d+)?%)/;
+const CODE_SPLIT = /(AIR-\d+|MT-\d+|AL-\d+|IN-[\w-]+|Biltix PM|BILTIX PM|\d+(?:\.\d+)?%)/;
 const IS_PCT = /^\d+(?:\.\d+)?%$/;
 const IS_CODE = /^(AIR-\d+|MT-\d+|AL-\d+|IN-[\w-]+)$/;
 
@@ -31,7 +31,7 @@ const Rich: React.FC<{ text: string }> = ({ text }) => {
           <bdi key={i} dir="ltr">
             {p}
           </bdi>
-        ) : p === 'Biltix PM' ? (
+        ) : /^biltix pm$/i.test(p) ? (
           <bdi key={i} dir="ltr">
             {p}
           </bdi>

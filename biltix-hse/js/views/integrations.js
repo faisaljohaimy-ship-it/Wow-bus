@@ -1,734 +1,604 @@
 /**
- * Biltix HSE — view: التكاملات والأنظمة (js/views/integrations.js) — SEC-09
+ * BILTIX Risk AI — view: Integrations & systems (js/views/integrations.js) — SEC-09. Owner: B-PLATFORM.
  *
- * Summary strip, category filter chips, connector cards (status stripe, live dot,
- * relative last-sync, latency, rolling events-per-hour sparkline, إعداد / مزامنة الآن),
- * and the data-source panel (simulation / JSON API / Google Sheets CSV / Supabase)
- * with connection test, risk import, CSV template download and the alert webhook.
+ * Two groups of connectors on one honest screen:
+ *   • Site & safety systems  — state.integrations (seed.js; mirrors in data ns 'integrations')
+ *   • Enterprise connectors  — state.platform.connectors (platform-seed.js; data ns 'connectors')
+ * Every status comes from status.js (Demo / Not connected / Live / Stale / Error / Offline) — never the stored
+ * 'connected' value. Simulated figures carry a "Simulated scenario" tag. "Test connection" exists only for the
+ * types a browser can genuinely test over HTTP (json / sheets / supabase / webhook) and reports exactly what the
+ * real request returned; every other connector shows "Needs a backend" with the reason. A real test is recorded
+ * on the record as `lastTest` (diagnostic only: it never turns a connector "live" — only the data source in
+ * Settings can be live). The data source itself is managed in Settings (summary card here, #int-datasource,
+ * deep link ?section=datasource).
  *
- * Live updates: `integrations:tick` and `store:change` on `integrations.*` patch the
- * cards in place (no full re-render), a 30 s timer refreshes relative times. Rolling
- * eventsPerHour history is kept per connector id at module scope so it survives
- * navigation. Data reaches the DOM only via textContent / components.h.
+ * Live updates: `integrations:tick` patches simulated figures in place (no flash); a store change on one record
+ * repaints that card (flash only when its status changed); filters re-render the grid without motion.
+ * Strings: dictionary 'integrations' (js/i18n/integrations.js). Data reaches the DOM only via textContent / h().
  */
+
+import { i18n } from '../core/i18n.js';
+import dict from '../i18n/integrations.js';
+
+i18n.register('integrations', dict);
 
 const HISTORY_CAP = 24;
 const RELATIVE_REFRESH_MS = 30_000;
-const SIMULATED_TEST_MIN_MS = 600;
-const SIMULATED_TEST_MAX_MS = 900;
-
-const STATUS_META = {
-  connected:    { label: 'متصل',         tone: 'good',     rank: 0 },
-  degraded:     { label: 'أداء متدهور',  tone: 'warning',  rank: 1 },
-  disconnected: { label: 'غير متصل',     tone: 'critical', rank: 2 },
-  configurable: { label: 'قابل للإعداد', tone: 'neutral',  rank: 3 },
-};
-const CATEGORY_LABEL = {
-  core: 'الأنظمة الأساسية', sensors: 'الحساسات والرؤية', people: 'الأفراد والحضور',
-  external: 'جهات خارجية', alerts: 'قنوات التنبيه', data: 'البيانات والتحليلات',
-};
-const SOURCE_TYPES = [
-  { value: 'simulation', label: 'محاكاة حية' },
-  { value: 'json', label: 'JSON API' },
-  { value: 'sheets', label: 'Google Sheets CSV' },
-  { value: 'supabase', label: 'Supabase' },
-];
-const SOURCE_HINT = {
-  simulation: 'يعمل المركز حالياً على محرك المحاكاة الحية المدمج: بيانات واقعية متجددة دون الحاجة إلى أي اتصال خارجي.',
-  json: 'نقطة نهاية تعيد مصفوفة JSON من المخاطر (أو كائناً يحتوي على المفتاح risks). يُرسل مفتاح API في ترويسة Authorization عند تعبئته.',
-  sheets: 'انشر الورقة على الويب بصيغة CSV: ملف ← مشاركة ← نشر على الويب ← CSV، ثم الصق الرابط الناتج هنا. يجب أن يطابق صف العناوين قالب CSV.',
-  supabase: 'عنوان المشروع (https://xxxx.supabase.co) ومفتاح anon واسم الجدول. تُقرأ البيانات عبر REST بصلاحيات المفتاح المدخل فقط.',
-};
-/** Connectors whose "اختبار الاتصال" goes to sources.testConnection; everything else is simulated. */
-const REAL_TEST_TYPE = { 'google-sheets': 'sheets', supabase: 'supabase', webhooks: 'webhook', 'biltix-pm': 'json', 'biltix-dms': 'json' };
+const REAL_TYPES = ['json', 'sheets', 'supabase', 'webhook'];
+const TYPE_LABEL = { json: 'JSON API', sheets: 'Google Sheets CSV', supabase: 'Supabase', webhook: 'Webhook' };
+const STATUS_KEYS = ['demo', 'live', 'offline', 'stale', 'error', 'not_connected'];
 const FIELD_TYPES = new Set(['text', 'url', 'password', 'number', 'select', 'textarea', 'email']);
+const ICON_ALIAS = { document: 'dms', watch: 'wearable', users: 'hr', database: 'erp', chat: 'teams', sheet: 'sheets', sensor: 'iot', camera: 'cctv', shield: 'gosi' };
+const CONNECTOR_ICON = { enterprise: 'erp', biltix: 'biltix', external: 'globe' };
 
-/** Rolling eventsPerHour history per connector id (module scope, survives navigation). */
+/** Rolling eventsPerHour history per integration id (module scope, survives navigation). */
 const history = new Map();
-/** Connector grid presentation ('cards' | 'list'), remembered for the session. */
+/** Presentation and filters, remembered for the session. */
 let viewMode = 'cards';
-const PRODUCT_NAME = 'بلتكس Risk AI';
-/** Smooth scrolling only when motion is allowed (html[data-motion] override wins over the OS query). */
-const scrollBehavior = () => {
-  try {
-    const forced = document.documentElement.getAttribute('data-motion');
-    if (forced === 'reduce' || forced === 'reduced') return 'auto';
-    if (forced === 'full') return 'smooth';
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
-  } catch { return 'auto'; }
-};
+let filterState = { group: 'all', status: 'all', q: '' };
+
+const STYLE_ID = 'view-integrations-style';
+const STYLE_TEXT = `
+.view-integrations .intg-summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin: 0; }
+.view-integrations .intg-summary-item { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px 6px 8px; border-radius: var(--radius-md); background: var(--bg-1); border: 1px solid var(--line); }
+.view-integrations .intg-summary-item dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink-1); min-inline-size: 1.5ch; }
+.view-integrations .intg-summary-item.is-zero { opacity: .62; }
+.view-integrations .intg-summary-item.is-zero dd { color: var(--ink-3); }
+.view-integrations .intg-summary-label { font-size: var(--fs-sm); color: var(--ink-2); font-weight: 600; margin-inline-end: 4px; }
+.view-integrations .intg-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); flex-wrap: wrap; }
+.view-integrations .intg-count { font-size: var(--fs-sm); color: var(--ink-2); }
+.view-integrations .intg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: var(--gap); }
+.view-integrations .intg-grid.is-list { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
+.view-integrations .int-card { min-inline-size: 0; }
+.view-integrations .int-titles { flex: 1 1 auto; }
+.view-integrations .int-name { overflow-wrap: anywhere; }
+.view-integrations .int-desc { margin: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.view-integrations .intg-sim { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.view-integrations .int-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
+.view-integrations .int-stat-label, .view-integrations .int-stat-value { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+.view-integrations .int-stat-value { font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
+.view-integrations .intg-nodata { font-size: var(--fs-sm); color: var(--ink-3); padding: 10px 12px; border: 1px dashed var(--line-2); border-radius: var(--radius-md); display: flex; align-items: center; gap: 8px; }
+.view-integrations .intg-test { font-size: var(--fs-xs); color: var(--ink-2); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.view-integrations .intg-test.is-ok > svg { color: var(--good-text); }
+.view-integrations .intg-test.is-fail > svg { color: var(--critical-text); }
+.view-integrations .intg-test.is-opaque > svg { color: var(--warning-text); }
+.view-integrations .intg-backend { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--ink-3); min-block-size: 32px; }
+.view-integrations .intg-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.view-integrations .intg-grid.is-list .int-card { display: grid; grid-template-columns: minmax(220px, 1.3fr) minmax(0, 2fr) auto; align-items: center; gap: 10px 16px; padding-block: 12px; }
+.view-integrations .intg-grid.is-list .int-desc, .view-integrations .intg-grid.is-list .int-meta, .view-integrations .intg-grid.is-list .intg-sim { display: none; }
+.view-integrations .intg-grid.is-list .int-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); background: transparent; border: 0; padding: 0; }
+.view-integrations .intg-grid.is-list .int-foot { margin: 0; justify-content: flex-end; }
+.view-integrations .intg-grid.is-list .intg-test { grid-column: 1 / -1; }
+@container main (max-width: 900px) {
+  .view-integrations .intg-grid.is-list .int-card { grid-template-columns: minmax(0, 1fr) auto; }
+  .view-integrations .intg-grid.is-list .int-stats { grid-column: 1 / -1; grid-row: 2; }
+}
+.view-integrations .intg-ds { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: var(--space-2); margin: 0; }
+.view-integrations .intg-ds .intg-fact { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--bg-2); border: 1px solid var(--line); min-inline-size: 0; }
+.view-integrations .intg-ds dt { font-size: var(--fs-xs); color: var(--ink-2); }
+.view-integrations .intg-ds dd { margin: 0; color: var(--ink-1); font-size: var(--fs-sm); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.view-integrations #int-datasource { scroll-margin-block-start: var(--space-4); }
+@media (max-width: 959.98px) { .view-integrations #int-datasource { scroll-margin-block-start: calc(var(--appbar-h) + var(--space-4)); } }
+.view-integrations .num { font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
+@container main (max-width: 640px) {
+  .view-integrations .filter-bar-group.is-segmented, .view-integrations .filter-bar-group.is-select { flex-basis: 100%; flex-wrap: wrap; }
+  .view-integrations .filter-bar-group.is-segmented .seg { flex: 1 1 auto; flex-wrap: wrap; overflow: visible; }
+  .view-integrations .filter-bar-group.is-segmented .seg-btn { flex: 1 1 auto; white-space: normal; }
+}
+.intg-modal .intg-kv { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; font-size: var(--fs-sm); }
+.intg-modal .intg-kv div { display: inline-flex; gap: 6px; align-items: center; }
+.intg-modal .intg-kv dt { color: var(--ink-3); }
+.intg-modal .intg-kv dd { margin: 0; color: var(--ink-1); }
+`;
+
+/** Free text → the active numeral system; Latin alphanumeric tokens (WBGT, P6, 06:30 stays a time) keep ASCII digits. */
+const LATIN_NUM_TOKEN = /[A-Za-z][A-Za-z0-9._-]*\d[A-Za-z0-9._-]*|\d+[A-Za-z][A-Za-z0-9._-]*/g;
+function digitsIn(fmt, value) {
+  const s = String(value ?? '');
+  if (!fmt || typeof fmt.digits !== 'function' || !/\d/.test(s)) return s;
+  let out = ''; let last = 0; let m;
+  LATIN_NUM_TOKEN.lastIndex = 0;
+  while ((m = LATIN_NUM_TOKEN.exec(s))) { out += fmt.digits(s.slice(last, m.index)) + m[0]; last = m.index + m[0].length; }
+  return out + fmt.digits(s.slice(last));
+}
 
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const statusMeta = (status) => STATUS_META[status] || STATUS_META.configurable;
+const arr = (v) => (Array.isArray(v) ? v : []);
+const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-/** Seed a connector's history once: the seed's eventsHistory when present, else a flat baseline. */
+/** Date + 24 h time in Riyadh time (the product's reference zone), numerals and calendar from fmt.locale(). */
+function riyadhDateTime(fmt, iso) {
+  const d = iso instanceof Date ? iso : new Date(iso);
+  if (!Number.isFinite(d.getTime())) return '—';
+  try {
+    const loc = fmt.locale();
+    const date = new Intl.DateTimeFormat(loc, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Riyadh' }).format(d);
+    const time = new Intl.DateTimeFormat(loc, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Riyadh' }).format(d);
+    return `${date}${/^ar/.test(loc) ? '،' : ','} ${time}`;
+  } catch { return fmt.dateTime(d); }
+}
+
+function ensureStyle() {
+  if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = STYLE_TEXT;
+  document.head.appendChild(style);
+}
+
 function seedHistory(g) {
   const id = g && g.id;
-  if (!id || history.has(id)) return history.get(id) || [];
+  if (!id) return [];
+  if (history.has(id)) return history.get(id);
   const base = Array.isArray(g.eventsHistory) ? g.eventsHistory.map(Number).filter(Number.isFinite) : [];
   const v = Number(g.eventsPerHour);
-  const arr = base.length ? base.slice(-HISTORY_CAP) : (Number.isFinite(v) ? Array.from({ length: 6 }, () => v) : []);
-  history.set(id, arr);
-  return arr;
+  const list = base.length ? base.slice(-HISTORY_CAP) : (Number.isFinite(v) && v > 0 ? Array.from({ length: 6 }, () => v) : []);
+  history.set(id, list);
+  return list;
+}
+function pushHistory(g) {
+  const list = seedHistory(g);
+  const v = Number(g && g.eventsPerHour);
+  if (!Number.isFinite(v)) return list;
+  list.push(v);
+  while (list.length > HISTORY_CAP) list.shift();
+  return list;
 }
 
-function pushHistory(id, value, g = null) {
-  const v = Number(value);
-  let arr = history.get(id);
-  if (!arr) arr = seedHistory(g || { id, eventsPerHour: v });
-  if (!Number.isFinite(v)) return arr;
-  arr.push(v);
-  while (arr.length > HISTORY_CAP) arr.shift();
-  return arr;
-}
-
-function friendlyError(err) {
-  const msg = err && err.message ? String(err.message) : String(err || '');
-  if (/[؀-ۿ]/.test(msg)) return msg;                                   // already Arabic
-  if (/Failed to fetch|NetworkError|network|ECONN|CORS/i.test(msg)) return 'تعذر الوصول إلى الخادم. تحقق من الرابط وإعدادات CORS واتصال الشبكة.';
-  if (/abort|timeout|timed out/i.test(msg)) return 'انتهت مهلة الاتصال قبل وصول الرد. حاول مرة أخرى أو تحقق من استجابة الخادم.';
-  if (/401|403|unauthori[sz]ed|forbidden/i.test(msg)) return 'رُفض الطلب: تحقق من مفتاح API والصلاحيات.';
-  if (/404|not found/i.test(msg)) return 'المسار غير موجود (404). تحقق من العنوان أو اسم الجدول.';
-  if (/JSON|parse|Unexpected token/i.test(msg)) return 'تعذر قراءة الرد: الصيغة ليست JSON أو CSV صالحاً.';
-  if (/Invalid URL|URL/i.test(msg)) return 'الرابط غير صالح. يجب أن يبدأ بـ https://';
-  return 'حدث خطأ غير متوقع أثناء الاتصال. حاول مرة أخرى لاحقاً.';
-}
-
-function isHttpUrl(value) {
-  try { const u = new URL(String(value || '')); return u.protocol === 'https:' || u.protocol === 'http:'; } catch { return false; }
+function isHttpsUrl(value) {
+  try { return new URL(String(value || '').trim()).protocol === 'https:'; } catch { return false; }
 }
 
 export default {
   id: 'integrations',
   code: 'SEC-09',
-  title: 'التكاملات والأنظمة',
+  get title() { return i18n.has('core.nav.integrations.title') ? i18n.t('core.nav.integrations.title') : 'التكاملات والأنظمة'; },
   icon: 'plug',
 
   render(container, ctx) {
-    const { store, bus, sel, fmt, charts, components, sources, router, art } = ctx;
-    const { h, card, badge, button, segmented, modal, toast, emptyState, liveDot, svgIcon, glyph, formField, readForm, kv } = components;
-
-    /** Seed icon names → art.js names when they differ; resolved through art.hasIcon when available. */
-    const ICON_ALIAS = { document: 'dms', watch: 'wearable', users: 'user', database: 'erp', chat: 'teams', sheet: 'sheets', sensor: 'sensor', camera: 'cctv' };
-    function connectorIcon(g, size = 22) {
-      const candidates = [g && g.icon, ICON_ALIAS[g && g.icon], g && g.id, 'plug'].filter(Boolean);
-      const has = art && typeof art.hasIcon === 'function' ? (n) => { try { return !!art.hasIcon(n); } catch { return false; } } : () => true;
-      const name = candidates.find(has) || 'plug';
-      return svgIcon(name, size);
-    }
+    const { store, bus, fmt, charts, components, router, psel } = ctx;
+    const sources = ctx.sources || {};
+    const art = ctx.art || null;
+    const status = ctx.status || (typeof window !== 'undefined' && window.biltix && window.biltix.status) || null;
+    const motion = ctx.motion || components.motion || null;
+    const { h, card, badge, button, segmented, modal, toast, emptyState, svgIcon, glyph, formField, readForm, statusBadge, filterBar } = components;
+    const t = (k, p) => i18n.t(k, p);
+    const tn = (k, n, p) => i18n.tn(k, n, p);
+    const en = () => i18n.lang() === 'en';
+    const msgOf = (r) => String((en() ? (r && (r.messageEn || r.message)) : (r && (r.message || r.messageEn))) || '');
+    const now = () => (typeof store.now === 'function' ? store.now() : new Date());
+    const params = ctx.params || {};
+    ensureStyle();
 
     const root = h('section', { class: 'view view-integrations' });
     container.appendChild(root);
 
-    let raf = 0;
-    let lastNumerals = safe(() => store.state.settings.numerals, 'latn');
-    let category = 'all';
-    let openModal = null;
-    const cardRefs = new Map();     // id → { el, refs }
-    const summaryRefs = new Map();  // key → value node
-    let chipGroup = null;
+    const cardRefs = new Map();      // key → { el, refs, item, status }
     let gridEl = null;
-    let modeSeg = null;             // بطاقات / قائمة toggle
-    let dsPanel = null;             // data-source panel handle { el, sync() }
-    const params = (ctx && ctx.params) || {};
-    let sectionHandled = false;     // ?section=datasource is honoured once per mount
+    let countEl = null;
+    let summaryEl = null;
+    let bannerEl = null;
+    let dsCard = null;
+    let fb = null;
+    let openModal = null;
+    let firstPaint = true;
 
-    /* ───────────────────────── helpers ───────────────────────── */
+    /* ───────────────────────── data ───────────────────────── */
 
-    const mono = (text, extra = '') => h('span', { class: ['num', ...String(extra).split(/\s+/).filter(Boolean)], style: { fontFamily: 'var(--font-mono)' } }, String(text ?? ''));
-    const list = () => (Array.isArray(store.state.integrations) ? store.state.integrations : []);
-    const byId = (id) => list().find((g) => g && g.id === id) || null;
-
-    function summary() {
-      const s = safe(() => (typeof sel.integrationSummary === 'function' ? sel.integrationSummary(store.state) : null), null);
-      if (s) return s;
-      const l = list();
-      const connected = l.filter((g) => g.status === 'connected');
-      const lat = connected.map((g) => Number(g.latencyMs)).filter(Number.isFinite);
-      return {
-        total: l.length,
-        connected: connected.length,
-        degraded: l.filter((g) => g.status === 'degraded').length,
-        disconnected: l.filter((g) => g.status === 'disconnected').length,
-        configurable: l.filter((g) => g.status === 'configurable').length,
-        eventsPerHour: connected.reduce((n, g) => n + (Number(g.eventsPerHour) || 0), 0),
-        meanLatencyMs: lat.length ? Math.round(lat.reduce((a, b) => a + b, 0) / lat.length) : 0,
-      };
+    const integrations = () => arr(store.state && store.state.integrations).filter(Boolean);
+    const connectors = () => arr(safe(() => psel.platform(store.state).connectors, null) || (store.state.platform && store.state.platform.connectors)).filter(Boolean);
+    function items() {
+      return [
+        ...integrations().map((rec) => ({ key: `i:${rec.id}`, kind: 'integration', ns: 'integrations', group: 'site', rec })),
+        ...connectors().map((rec) => ({ key: `c:${rec.id}`, kind: 'connector', ns: 'connectors', group: 'enterprise', rec })),
+      ];
     }
+    const statusOf = (item) => {
+      const s = safe(() => status.connector(store.state, item.rec, now()), 'not_connected');
+      return STATUS_KEYS.includes(s) ? s : 'not_connected';
+    };
+    const nameOf = (item) => String(i18n.L(item.rec, 'name', item.ns) || item.rec.name || item.rec.id);
+    const vendorOf = (item) => {
+      const raw = String(item.rec.vendor || '');
+      if (!raw) return t('integrations.card.vendorUnknown');
+      // Generic vendor words the shared term list does not cover yet ('مفتوح' = open standard).
+      if (i18n.has(`integrations.vendors.${raw}`)) return t(`integrations.vendors.${raw}`);
+      // Brand casing (BILTIX) for the seed's "Biltix …" vendor names.
+      return String(i18n.term(raw) || raw).replace(/\bBiltix\b/g, 'BILTIX');
+    };
+    const descOf = (item) => digitsIn(fmt, brandCase(String(i18n.L(item.rec, 'description', item.ns) || '')));
+    const brandCase = (s) => s.replace(/\bBiltix\b/g, 'BILTIX');
+    const categoryOf = (item) => (item.kind === 'integration' ? i18n.label('integrationCategory', item.rec.category) : i18n.label('connectorLayer', item.rec.layer));
+    const testTypeOf = (item) => (item.kind === 'integration' && REAL_TYPES.includes(item.rec.connectionType) ? item.rec.connectionType : null);
+    function iconOf(item, size = 22) {
+      const rec = item.rec;
+      const candidates = item.kind === 'integration'
+        ? [rec.icon, ICON_ALIAS[rec.icon], rec.id, 'plug']
+        : [rec.id.startsWith('biltix') ? 'biltix' : null, rec.id === 'autodesk-aps' ? 'layers' : null, CONNECTOR_ICON[rec.layer], 'plug'];
+      const has = art && typeof art.hasIcon === 'function' ? (n) => { try { return !!art.hasIcon(n); } catch { return false; } } : () => true;
+      return svgIcon(candidates.filter(Boolean).find(has) || 'plug', size);
+    }
+    const relSafe = (iso) => {
+      const ms = Date.parse(iso);
+      if (!Number.isFinite(ms)) return '—';
+      return fmt.relative(new Date(Math.min(ms, now().getTime())), now());
+    };
+    const msText = (n) => t('integrations.card.ms', { n: fmt.num(n) });
 
-    function sparkFor(g) {
-      const id = g.id;
-      const values = history.has(id) ? history.get(id) : seedHistory(g);
-      if (!values.length || (g.status === 'configurable' && values.every((v) => !v))) return h('span', { class: 'text-xs muted' }, 'لا توجد قراءات بعد');
-      if (charts && typeof charts.sparkline === 'function') {
-        try {
-          const sp = charts.sparkline({ values, width: 120, height: 28, color: 'var(--ink-3)', accentLast: true });
-          if (sp && sp.el instanceof Node) { sp.el.setAttribute('aria-label', `سجل الأحداث بالساعة لآخر ${fmt.num(values.length)} قراءة`); return sp.el; }
-        } catch (err) { console.warn('[integrations] charts.sparkline failed', err); }
+    function matches(item, st) {
+      if (filterState.group !== 'all' && item.group !== filterState.group) return false;
+      if (filterState.status !== 'all' && st !== filterState.status) return false;
+      const q = String(filterState.q || '').trim().toLowerCase();
+      if (q) {
+        const hay = [nameOf(item), item.rec.name, vendorOf(item), item.rec.vendor, item.rec.id, categoryOf(item)].filter(Boolean).join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
       }
-      return h('span', { class: 'text-xs muted' }, `آخر ${fmt.num(values.length)} قراءات`);
+      return true;
     }
 
-    function setNote(host, tone, text, extra = null) {
-      host.replaceChildren(h('div', { class: ['note', `tone-${tone}`], role: tone === 'critical' ? 'alert' : 'status' },
-        h('span', { class: 'row gap-2' }, glyph(tone, 14), h('span', {}, text)),
-        extra ? h('div', { class: 'text-xs muted', style: { marginBlockStart: '4px' } }, extra) : null));
+    /* ───────────────────────── head, banner, data source ───────────────────────── */
+
+    function buildHead() {
+      return h('div', { class: 'view-head' },
+        h('div', { class: 'view-head-text' },
+          h('span', { class: 'code-tag' }, 'SEC-09'),
+          h('h1', { tabindex: '-1' }, t('integrations.title')),
+          h('p', { class: 'view-lead' }, t('integrations.lead'))),
+        h('div', { class: 'view-actions' }, statusBadge(safe(() => status.mode(store.state), 'demo') === 'demo' ? 'demo' : safe(() => status.source(store.state).status, 'not_connected'), { size: 'lg' })));
+    }
+    function buildBanner() {
+      const demo = safe(() => status.mode(store.state), 'demo') === 'demo';
+      return h('div', { class: ['note', 'is-demo'], role: 'note', style: { '--tone': 'var(--brand)' } },
+        h('span', { class: 'row gap-2', style: { alignItems: 'flex-start' } }, svgIcon('flask', 16), h('span', {}, demo ? t('integrations.bannerDemo') : t('integrations.bannerLive'))));
     }
 
-    function busy(btn, on) {
-      if (!btn) return;
-      btn.disabled = !!on;
-      if (on) btn.setAttribute('aria-busy', 'true'); else btn.removeAttribute('aria-busy');
-    }
-
-    function urlFieldKey(g) {
-      const fields = Array.isArray(g.configFields) ? g.configFields : [];
-      const f = fields.find((x) => x && x.type === 'url') || fields.find((x) => x && /url|endpoint|host/i.test(String(x.key)));
-      return f ? f.key : null;
-    }
-    function keyFieldKey(g) {
-      const fields = Array.isArray(g.configFields) ? g.configFields : [];
-      const f = fields.find((x) => x && x.type === 'password') || fields.find((x) => x && /key|token|secret/i.test(String(x.key)));
-      return f ? f.key : null;
-    }
-    function tableFieldKey(g) {
-      const fields = Array.isArray(g.configFields) ? g.configFields : [];
-      const f = fields.find((x) => x && /table|sheet|collection/i.test(String(x.key)));
-      return f ? f.key : null;
-    }
-    function testTypeFor(g) {
-      const declared = g && (g.connectionType || g.type);
-      if (typeof declared === 'string' && ['json', 'sheets', 'supabase', 'webhook'].includes(declared)) return declared;
-      return REAL_TEST_TYPE[g && g.id] || null;
-    }
-
-    /* ───────────────────────── summary strip ───────────────────────── */
-
-    function buildSummary() {
-      const s = summary();
-      summaryRefs.clear();
-      const cell = (key, label, value, tone = null, icon = null) => {
-        const v = h('span', { class: 'summary-value' }, value);
-        summaryRefs.set(key, v);
-        return h('div', { class: ['summary-cell', tone ? `tone-${tone}` : null], 'data-key': key },
-          h('span', { class: 'summary-label' }, icon || (tone ? glyph(tone, 12) : null), h('span', {}, label)), v);
-      };
-      return h('div', { class: 'summary-strip', role: 'group', 'aria-label': 'ملخص حالة التكاملات' },
-        cell('connected', 'متصل', fmt.num(s.connected), 'good'),
-        cell('degraded', 'أداء متدهور', fmt.num(s.degraded), 'warning'),
-        cell('disconnected', 'غير متصل', fmt.num(s.disconnected), 'critical'),
-        cell('events', 'إجمالي الأحداث بالساعة', fmt.num(s.eventsPerHour), null, liveDot('accent')),
-        cell('latency', 'متوسط زمن الاستجابة', `${fmt.num(s.meanLatencyMs)} م.ث`, null, glyph('clock', 12)),
-      );
-    }
-    function updateSummary() {
-      const s = summary();
-      const set = (k, v) => { const n = summaryRefs.get(k); if (n && n.textContent !== v) n.textContent = v; };
-      set('connected', fmt.num(s.connected)); set('degraded', fmt.num(s.degraded)); set('disconnected', fmt.num(s.disconnected));
-      set('events', fmt.num(s.eventsPerHour)); set('latency', `${fmt.num(s.meanLatencyMs)} م.ث`);
-      const head = root.querySelector('[data-role="connected-count"]');
-      if (head) head.textContent = `${fmt.num(s.connected)} من ${fmt.num(s.total)} متصل`;
-    }
-
-    /* ───────────────────────── chips ───────────────────────── */
-
-    function buildChips() {
-      const l = list();
-      const cats = ['all', ...Object.keys(CATEGORY_LABEL).filter((c) => l.some((g) => g.category === c))];
-      l.forEach((g) => { if (g.category && !CATEGORY_LABEL[g.category] && !cats.includes(g.category)) cats.push(g.category); });
-      // `chips is-scroll`: horizontal snap scroller on phones instead of a tall wrapped block.
-      const group = h('div', { class: 'chip-group chips is-scroll', role: 'group', 'aria-label': 'تصفية حسب الفئة' });
-      cats.forEach((c) => {
-        const count = c === 'all' ? l.length : l.filter((g) => g.category === c).length;
-        const chip = h('button', { type: 'button', class: ['chip', c === category ? 'is-active' : null], 'aria-pressed': c === category ? 'true' : 'false', 'data-category': c,
-          onClick: () => { category = c; group.querySelectorAll('.chip').forEach((b) => { const on = b.dataset.category === c; b.classList.toggle('is-active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); }); renderGrid(); } },
-          h('span', {}, c === 'all' ? 'الكل' : (CATEGORY_LABEL[c] || c)), h('span', { class: 'chip-count' }, fmt.num(count)));
-        group.appendChild(chip);
+    function buildDataSource() {
+      const s = store.state.settings || {};
+      const ds = isObj(s.dataSource) ? s.dataSource : {};
+      const src = safe(() => status.source(store.state, now()), { status: 'demo' });
+      const type = ['simulation', 'json', 'sheets', 'supabase'].includes(ds.type) ? ds.type : 'simulation';
+      const hook = typeof s.alertWebhook === 'string' && s.alertWebhook.trim() ? s.alertWebhook.trim() : '';
+      const go = (section) => (router && typeof router.navigate === 'function' ? router.navigate('settings', { section }) : (location.hash = `#/settings?section=${section}`));
+      const el = card({
+        id: 'int-datasource', code: 'INT-00', title: t('integrations.datasource.title'), subtitle: t('integrations.datasource.sub'),
+        body: h('dl', { class: 'intg-ds' },
+          h('div', { class: 'intg-fact' }, h('dt', {}, t('integrations.datasource.type')), h('dd', {}, statusBadge(src.status, { size: 'sm' }), h('span', {}, t(`integrations.datasource.types.${type}`)))),
+          h('div', { class: 'intg-fact' }, h('dt', {}, t('integrations.datasource.lastTest')), h('dd', {}, src.lastSuccessAt ? h('span', { title: riyadhDateTime(fmt, src.lastSuccessAt) }, relSafe(src.lastSuccessAt)) : t('integrations.datasource.never'))),
+          h('div', { class: 'intg-fact' }, h('dt', {}, t('integrations.datasource.webhook')), h('dd', {}, glyph(hook ? 'good' : 'neutral', 14), h('span', {}, hook ? t('integrations.datasource.webhookSet') : t('integrations.datasource.webhookNone'))))),
+        footer: h('div', { class: 'intg-actions' },
+          button(t('integrations.datasource.configure'), { variant: 'outline', size: 'sm', icon: 'settings', onClick: () => go('data') }),
+          button(t('integrations.datasource.configureWebhook'), { variant: 'ghost', size: 'sm', icon: 'webhook', onClick: () => go('notifications') })),
       });
-      return group;
-    }
-
-    /* ───────────────────────── connector cards ───────────────────────── */
-
-    function syncNow(g, btn) {
-      busy(btn, true);
-      delay(500 + Math.random() * 400).then(() => {
-        const patch = { lastSync: new Date().toISOString() };
-        if (g.status === 'disconnected') { patch.status = 'connected'; patch.latencyMs = Number(g.latencyMs) || 180; }
-        store.updateIntegration(g.id, patch);
-        toast(g.status === 'disconnected' ? `تمت إعادة الاتصال بـ «${g.name}» ومزامنته.` : `تمت مزامنة «${g.name}» الآن.`, { tone: 'good' });
-      }).catch(() => toast(`تعذرت مزامنة «${g.name}». حاول مرة أخرى.`, { tone: 'critical' })).finally(() => busy(btn, false));
-    }
-
-    function buildCard(g) {
-      const meta = statusMeta(g.status);
-      const refs = {};
-      refs.statusHost = h('span', { class: 'int-status' });
-      refs.sync = h('span', { class: 'int-stat-value' });
-      refs.latency = h('span', { class: 'int-stat-value' });
-      refs.events = h('span', { class: 'int-stat-value' });
-      refs.sparkHost = h('div', { class: 'int-spark', 'aria-hidden': 'true' });
-      refs.actions = h('div', { class: 'row gap-2 wrap' });
-      // Meta row: status first (cards mode; list mode moves it into the head), then category / uptime / type / id.
-      refs.metaBadges = h('span', { style: { display: 'contents' } });
-      refs.meta = h('div', { class: 'int-meta' }, refs.metaBadges);
-      refs.error = h('div', { class: 'stack', hidden: true });
-
-      /* Compact anatomy: head (icon + names) → 2-line description → status + meta badges → stats
-         (2×2 in cards, 4-up in list rows; the sparkline is the fourth cell) → actions. The footer
-         "last sync" line is dropped: the stat already carries it. Values wrap instead of colliding. */
-      refs.desc = g.description ? h('p', { class: 'int-desc', title: g.description, style: { display: '-webkit-box', webkitBoxOrient: 'vertical', webkitLineClamp: '2', overflow: 'hidden' } }, g.description) : null;
-      refs.head = h('div', { class: 'int-head' },
-        h('span', { class: 'int-icon', 'aria-hidden': 'true' }, connectorIcon(g, 22)),
-        h('div', { class: 'int-titles' }, h('span', { class: 'int-name' }, g.name || g.id), h('span', { class: 'int-vendor' }, g.vendor || '—')),
-      );
-      const wrapText = { whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', overflowWrap: 'anywhere' };
-      [refs.sync, refs.latency, refs.events].forEach((v) => Object.assign(v.style, wrapText));
-      const statLabel = (text) => h('span', { class: 'int-stat-label', style: wrapText }, text);
-      refs.stats = h('div', { class: 'int-stats' },
-        h('div', { class: 'int-stat' }, statLabel('آخر مزامنة'), refs.sync),
-        h('div', { class: 'int-stat' }, statLabel('زمن الاستجابة'), refs.latency),
-        h('div', { class: 'int-stat' }, statLabel('أحداث / ساعة'), refs.events),
-        h('div', { class: 'int-stat' }, statLabel('آخر القراءات'), refs.sparkHost),
-      );
-      refs.foot = h('div', { class: 'int-foot' }, refs.actions);
-      const el = h('article', { class: 'int-card is-compact', 'data-status': g.status || 'configurable', 'data-id': g.id, 'aria-label': g.name || g.id },
-        refs.head, refs.desc, refs.error, refs.meta, refs.stats, refs.foot);
-      const entry = { el, refs };
-      cardRefs.set(g.id, entry);
-      paintCard(g, entry, true);
-      applyMode(entry);
+      el.tabIndex = -1;
       return el;
     }
 
-    /** Cards ↔ list: list rows hide the description/meta and lay head · stats · actions on one line. */
-    function applyMode(entry) {
-      const { el, refs } = entry;
-      const list = viewMode === 'list';
-      el.classList.toggle('is-list', list);
-      if (refs.desc) refs.desc.hidden = list;
-      refs.meta.hidden = list;
-      // Status badge: end of the head in list rows, first item of the meta row in cards.
-      if (list) { refs.head.appendChild(refs.statusHost); refs.statusHost.style.marginInlineStart = ''; }
-      else { refs.meta.insertBefore(refs.statusHost, refs.meta.firstChild); refs.statusHost.style.marginInlineStart = '0'; }
-      refs.stats.style.gridTemplateColumns = list ? 'repeat(4, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))';
-      refs.stats.style.rowGap = list ? '' : '10px';
-      if (list) {
-        Object.assign(el.style, { display: 'flex', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: '10px 16px' });
-        Object.assign(refs.head.style, { flex: '1 1 240px', minInlineSize: '0' });
-        refs.error.style.flex = '1 1 100%';
-        Object.assign(refs.stats.style, { flex: '1 1 340px', borderBlock: '0', paddingBlock: '0' });
-        Object.assign(refs.foot.style, { flex: '0 0 auto', marginInlineStart: 'auto' });
+    function buildSummary() {
+      const list = items();
+      const counts = Object.fromEntries(STATUS_KEYS.map((s) => [s, 0]));
+      list.forEach((it) => { counts[statusOf(it)] += 1; });
+      return h('dl', { class: 'intg-summary', 'aria-label': t('integrations.summaryAria') },
+        h('span', { class: 'intg-summary-label', 'aria-hidden': 'true' }, `${t('integrations.summaryTitle')} · ${tn('integrations.total', list.length)}`),
+        ...STATUS_KEYS.map((s) => h('div', { class: ['intg-summary-item', counts[s] ? null : 'is-zero'] },
+          h('dt', {}, statusBadge(s, { size: 'sm' })),
+          h('dd', {}, fmt.num(counts[s])))));
+    }
+
+    /* ───────────────────────── cards ───────────────────────── */
+
+    function statCell(label, value) {
+      return h('div', { class: 'int-stat' }, h('span', { class: 'int-stat-label' }, label), h('span', { class: 'int-stat-value' }, value));
+    }
+    function sparkFor(rec) {
+      const values = seedHistory(rec);
+      if (!values.length || !charts || typeof charts.sparkline !== 'function') return h('span', { class: 'muted' }, '—');
+      try {
+        const sp = charts.sparkline({ values, width: 110, height: 26, color: 'var(--ink-3)', accentLast: true });
+        if (sp && sp.el instanceof Node) { sp.el.setAttribute('aria-label', t('integrations.card.historyAria', { count: fmt.num(values.length) })); sp.el.setAttribute('role', 'img'); sp.el.removeAttribute('aria-hidden'); return sp.el; }
+      } catch { /* fall through */ }
+      return h('span', { class: 'muted' }, '—');
+    }
+
+    function paintStats(entry) {
+      const { refs, item } = entry;
+      const rec = item.rec;
+      const st = entry.status;
+      if (st === 'not_connected') {
+        refs.statsHost.replaceChildren(h('div', { class: 'intg-nodata' }, svgIcon('plug', 14), h('span', {}, t('integrations.card.noData'))));
+        return;
+      }
+      const latency = Number(rec.latencyMs);
+      const cells = [
+        statCell(t('integrations.card.lastSync'), rec.lastSync ? h('span', { title: riyadhDateTime(fmt, rec.lastSync) }, relSafe(rec.lastSync)) : '—'),
+        statCell(t('integrations.card.latency'), Number.isFinite(latency) && latency > 0 ? h('span', { class: 'num' }, msText(latency)) : '—'),
+      ];
+      if (item.kind === 'integration') {
+        cells.push(statCell(t('integrations.card.events'), h('span', { class: 'num' }, fmt.num(Number(rec.eventsPerHour) || 0))));
+        cells.push(statCell(t('integrations.card.history'), sparkFor(rec)));
       } else {
-        ['display', 'flexDirection', 'flexWrap', 'alignItems', 'gap'].forEach((k) => { el.style[k] = ''; });
-        refs.error.style.flex = '';
-        ['flex', 'minInlineSize'].forEach((k) => { refs.head.style[k] = ''; });
-        ['flex', 'borderBlock', 'paddingBlock'].forEach((k) => { refs.stats.style[k] = ''; });
-        ['flex', 'marginInlineStart'].forEach((k) => { refs.foot.style[k] = ''; });
+        cells.push(statCell(t('integrations.card.records'), h('span', { class: 'num' }, fmt.num(Number(rec.recordsPerDay) || 0))));
+        cells.push(statCell(t('integrations.card.mode'), i18n.label('connectorMode', rec.mode)));
       }
-    }
-    function applyGridMode() {
-      if (!gridEl) return;
-      const list = viewMode === 'list';
-      gridEl.classList.toggle('is-list', list);
-      // Cards: at most three columns, each ≥ 240px (max(240px, 30%) caps the column count at 3). List: one column.
-      gridEl.style.gridTemplateColumns = list ? 'minmax(0, 1fr)' : 'repeat(auto-fill, minmax(min(100%, max(240px, 30%)), 1fr))';
-      gridEl.style.gap = list ? 'var(--space-2)' : '';
-      for (const entry of cardRefs.values()) applyMode(entry);
+      refs.statsHost.replaceChildren(
+        rec.simulated === false ? null : h('div', { class: 'intg-sim' }, h('span', { class: 'sim-tag' }, svgIcon('flask', 11), t('integrations.card.simulated'))),
+        h('div', { class: 'int-stats' }, ...cells));
     }
 
-    function paintCard(g, entry, full = false) {
-      const { el, refs } = entry;
-      const meta = statusMeta(g.status);
-      const prevStatus = el.dataset.status;
-      el.dataset.status = g.status || 'configurable';
-      if (full || prevStatus !== el.dataset.status) {
-        refs.statusHost.replaceChildren(liveDot(meta.tone), badge(meta.label, meta.tone));
-        refs.actions.replaceChildren();
-        const configure = button('إعداد', { variant: g.status === 'configurable' ? 'primary' : 'outline', size: 'sm', icon: svgIcon('settings', 15), onClick: () => openConfig(g.id) });
-        refs.actions.appendChild(configure);
-        if (g.status === 'connected' || g.status === 'degraded') {
-          const syncBtn = button('مزامنة الآن', { variant: 'ghost', size: 'sm', icon: svgIcon('refresh', 15), onClick: () => syncNow(byId(g.id) || g, syncBtn) });
-          refs.actions.appendChild(syncBtn);
-        } else if (g.status === 'disconnected') {
-          const reBtn = button('إعادة الاتصال', { variant: 'ghost', size: 'sm', icon: svgIcon('refresh', 15), onClick: () => syncNow(byId(g.id) || g, reBtn) });
-          refs.actions.appendChild(reBtn);
-        }
-      }
-      const hasSync = g.lastSync && g.status !== 'configurable';
-      refs.sync.textContent = hasSync ? fmt.relative(g.lastSync) : '—';
-      refs.sync.title = hasSync ? fmt.dateTime(g.lastSync) : '';
-      const latency = g.latencyMs === null || g.latencyMs === undefined || g.latencyMs === '' ? NaN : Number(g.latencyMs);
-      refs.latency.textContent = g.status === 'configurable' || !Number.isFinite(latency) ? '—' : `${fmt.num(latency)} م.ث`;
-      refs.events.textContent = g.status === 'configurable' ? '—' : fmt.num(g.eventsPerHour || 0);
-      refs.sparkHost.replaceChildren(sparkFor(g));
-      const uptime = g.uptimePct === null || g.uptimePct === undefined || g.uptimePct === '' ? NaN : Number(g.uptimePct);
-      const realType = testTypeFor(g);
-      refs.metaBadges.replaceChildren(...[
-        badge(CATEGORY_LABEL[g.category] || g.category || 'غير مصنف', 'neutral', { icon: svgIcon('grid', 12) }),
-        Number.isFinite(uptime) ? badge(`توافر ${fmt.pct(uptime, uptime % 1 ? 1 : 0)}`, uptime >= 99 ? 'good' : uptime >= 95 ? 'warning' : 'critical') : null,
-        realType ? badge({ json: 'JSON API', sheets: 'CSV', supabase: 'REST', webhook: 'Webhook' }[realType], 'brand', { icon: svgIcon('plug', 12) }) : null,
-        mono(g.id, 'text-xs muted'),
-      ].filter(Boolean));
-      const showError = Boolean(g.lastError) && (g.status === 'degraded' || g.status === 'disconnected');
-      refs.error.hidden = !showError;
-      refs.error.replaceChildren(...(showError
-        ? [h('div', { class: ['note', `tone-${meta.tone}`], role: 'status' }, h('span', { class: 'row gap-2' }, glyph(meta.tone, 14), h('span', {}, String(g.lastError))))]
-        : []));
+    function paintTest(entry) {
+      const lt = entry.item.rec.lastTest;
+      if (!isObj(lt) || !lt.at) { entry.refs.testHost.hidden = true; entry.refs.testHost.replaceChildren(); return; }
+      const kind = lt.ok ? 'ok' : (lt.opaque ? 'opaque' : 'fail');
+      entry.refs.testHost.hidden = false;
+      entry.refs.testHost.className = ['intg-test', `is-${kind}`].join(' ');
+      entry.refs.testHost.replaceChildren(
+        glyph(kind === 'ok' ? 'good' : (kind === 'opaque' ? 'warning' : 'critical'), 12),
+        h('span', {}, `${t('integrations.card.lastTest')}: ${t(`integrations.card.${kind === 'ok' ? 'testOk' : (kind === 'opaque' ? 'testOpaque' : 'testFail')}`)}`),
+        h('span', { class: 'muted', title: riyadhDateTime(fmt, lt.at) }, `· ${relSafe(lt.at)}`),
+        Number.isFinite(Number(lt.latencyMs)) && Number(lt.latencyMs) > 0 ? h('span', { class: 'muted num' }, `· ${msText(Number(lt.latencyMs))}`) : null);
     }
 
-    function renderGrid() {
+    function paintCard(entry, { full = false } = {}) {
+      const { el, refs, item } = entry;
+      const prev = entry.status;
+      entry.status = statusOf(item);
+      el.dataset.status = entry.status;
+      if (full || prev !== entry.status) refs.statusHost.replaceChildren(statusBadge(entry.status, { size: 'sm' }));
+      paintStats(entry);
+      paintTest(entry);
+      return prev !== undefined && prev !== entry.status;
+    }
+
+    function buildCard(item) {
+      const rec = item.rec;
+      const testType = testTypeOf(item);
+      const refs = {
+        statusHost: h('span', { class: 'int-status' }),
+        statsHost: h('div', { class: 'stack gap-2' }),
+        testHost: h('div', { class: 'intg-test', hidden: true }),
+      };
+      const backendTipId = `intg-tip-${String(rec.id).replace(/[^\w-]/g, '')}-${item.kind}`;
+      const configured = isObj(rec.config) && Object.values(rec.config).some((v) => String(v || '').trim());
+      const meta = h('div', { class: 'int-meta' },
+        badge(categoryOf(item), 'neutral', { icon: svgIcon('grid', 12) }),
+        testType ? badge(t('integrations.card.httpTest', { type: TYPE_LABEL[testType] }), 'brand', { icon: svgIcon('plug', 12) }) : badge(t('integrations.card.needsBackend'), 'neutral', { icon: svgIcon('lock', 12) }),
+        configured ? badge(t('integrations.card.configured'), 'neutral', { icon: svgIcon('check', 12) }) : null);
+      const actions = h('div', { class: 'intg-actions' },
+        button(t('integrations.card.configure'), { variant: 'outline', size: 'sm', icon: svgIcon('settings', 15), onClick: (e) => openConfig(item, e.currentTarget) }));
+      if (testType) actions.appendChild(button(t('integrations.card.test'), { variant: 'ghost', size: 'sm', icon: svgIcon('plug', 15), onClick: (e) => openConfig(item, e.currentTarget, { autoTest: true }) }));
+      else actions.appendChild(h('span', { class: 'intg-backend', id: backendTipId, title: t('integrations.card.needsBackendTip') }, svgIcon('lock', 13), h('span', {}, t('integrations.card.needsBackend')), h('span', { class: 'sr-only' }, ` — ${t('integrations.card.needsBackendTip')}`)));
+      const desc = descOf(item);
+      const el = h('article', { class: 'int-card', role: 'listitem', 'data-key': item.key, 'aria-label': nameOf(item) },
+        h('div', { class: 'int-head' },
+          h('span', { class: 'int-icon', 'aria-hidden': 'true' }, iconOf(item, 22)),
+          h('div', { class: 'int-titles' }, h('span', { class: 'int-name' }, nameOf(item)), h('span', { class: 'int-vendor' }, vendorOf(item))),
+          refs.statusHost),
+        desc ? h('p', { class: 'int-desc', title: desc }, desc) : null,
+        meta,
+        refs.statsHost,
+        refs.testHost,
+        h('div', { class: 'int-foot' }, actions));
+      const entry = { el, refs, item, status: undefined };
+      cardRefs.set(item.key, entry);
+      paintCard(entry, { full: true });
+      return el;
+    }
+
+    function renderGrid({ animate = false } = {}) {
       if (!gridEl) return;
-      const l = list().filter((g) => g && (category === 'all' || g.category === category));
       cardRefs.clear();
-      if (!l.length) {
-        gridEl.replaceChildren(emptyState({ title: 'لا توجد تكاملات في هذه الفئة', text: 'اختر فئة أخرى أو «الكل».' }));
+      gridEl.classList.toggle('is-list', viewMode === 'list');
+      const list = items().filter((it) => matches(it, statusOf(it)));
+      if (countEl) countEl.textContent = tn('integrations.shown', list.length);
+      if (!list.length) {
+        gridEl.replaceChildren(emptyState({ icon: svgIcon('filter', 28), title: t('integrations.empty.title'), text: t('integrations.empty.text'), action: fb ? { label: t('ui.filter.reset'), icon: 'refresh', onClick: () => fb.reset() } : null }));
         return;
       }
       const frag = document.createDocumentFragment();
-      l.forEach((g) => frag.appendChild(buildCard(g)));
+      list.forEach((it) => frag.appendChild(buildCard(it)));
       gridEl.replaceChildren(frag);
-      applyGridMode();
+      if (animate && motion && typeof motion.enter === 'function') motion.enter(Array.from(gridEl.children), { y: 8, stagger: 0.028 });
     }
 
-    function refreshCards(ids = null) {
-      for (const g of list()) {
-        if (!g || (ids && !ids.includes(g.id))) continue;
-        const entry = cardRefs.get(g.id);
-        if (entry) paintCard(g, entry, false);
-      }
-      updateSummary();
-    }
-
-    function refreshRelative() {
-      if (document.hidden) return; // paused while the tab is hidden; resumed on visibilitychange
-      for (const g of list()) {
-        const entry = cardRefs.get(g.id);
-        if (!entry || !g.lastSync || g.status === 'configurable') continue;
-        entry.refs.sync.textContent = fmt.relative(g.lastSync);
+    function refreshCards(keys = null) {
+      const byKey = new Map(items().map((it) => [it.key, it]));
+      for (const [key, entry] of cardRefs) {
+        if (keys && !keys.includes(key)) continue;
+        const it = byKey.get(key);
+        if (!it) continue;
+        entry.item = it;
+        const changed = paintCard(entry);
+        if (changed && motion && typeof motion.flash === 'function') motion.flash(entry.el);
       }
     }
+    function refreshSummary() {
+      if (!summaryEl || !summaryEl.isConnected) return;
+      const next = buildSummary();
+      summaryEl.replaceWith(next);
+      summaryEl = next;
+    }
 
-    /* ───────────────────────── config modal ───────────────────────── */
+    /* ───────────────────────── config / real test ───────────────────────── */
 
-    function openConfig(id) {
-      const g = byId(id);
-      if (!g) return;
+    function fieldKey(fields, test) { const f = fields.find((x) => x && test(x)); return f ? f.key : null; }
+
+    function openConfig(item, returnFocus, { autoTest = false } = {}) {
+      const fresh = items().find((it) => it.key === item.key) || item;
+      const rec = fresh.rec;
       if (openModal) { try { openModal.close(); } catch { /* ignore */ } openModal = null; }
-      const fields = Array.isArray(g.configFields) ? g.configFields : [];
-      const config = g.config && typeof g.config === 'object' ? g.config : {};
+      const fields = arr(rec.configFields).filter((f) => f && f.key);
+      const localized = arr(i18n.L(rec, 'configFields', fresh.ns));
+      const config = isObj(rec.config) ? rec.config : {};
       const form = h('form', { class: 'form-grid', novalidate: true, onSubmit: (e) => e.preventDefault() });
-      fields.forEach((f) => {
-        if (!f || !f.key) return;
+      fields.forEach((f, i) => {
+        const lf = isObj(localized[i]) ? localized[i] : {};
         const type = FIELD_TYPES.has(f.type) ? f.type : 'text';
-        form.appendChild(formField({ label: f.label || f.key, name: f.key, type, value: config[f.key] ?? f.value ?? '', placeholder: f.placeholder || '', hint: f.hint || '', options: f.options || [], required: !!f.required }));
+        form.appendChild(formField({ label: lf.label || f.label || f.key, name: f.key, type, value: config[f.key] ?? '', placeholder: lf.placeholder ?? f.placeholder ?? '', hint: lf.hint || f.hint || '', options: f.options || [] }));
       });
+      const testType = testTypeOf(fresh);
       const result = h('div', { class: 'stack', 'aria-live': 'polite' });
-      const meta = statusMeta(g.status);
-      const realType = testTypeFor(g);
-      const body = h('div', { class: 'stack gap-4' },
-        h('div', { class: 'row gap-3' },
-          h('span', { class: 'int-icon', 'aria-hidden': 'true' }, connectorIcon(g, 22)),
-          kv([['المزوّد', g.vendor || '—'], ['الفئة', CATEGORY_LABEL[g.category] || g.category || '—'], ['الحالة', badge(meta.label, meta.tone)]]),
-        ),
-        fields.length ? form : h('div', { class: 'note' }, 'لا يتطلب هذا التكامل إعدادات إضافية؛ يمكنك اختبار الاتصال مباشرة.'),
-        h('p', { class: 'text-xs muted' }, realType
-          ? 'يُجرى اختبار الاتصال فعلياً عبر الشبكة باستخدام القيم المدخلة.'
-          : 'يُجرى اختبار الاتصال عبر فحص محاكى لهذا النوع من الأنظمة (لا يُرسل أي بيانات خارج المتصفح).'),
-        result,
-      );
+      const st = statusOf(fresh);
+      const setResult = (tone, text, extra = null) => result.replaceChildren(h('div', { class: 'note', role: tone === 'critical' ? 'alert' : 'status', style: { '--tone': `var(--${tone === 'neutral' ? 'line-2' : tone})` } },
+        h('span', { class: 'row gap-2', style: { alignItems: 'flex-start' } }, glyph(tone, 14), h('span', {}, text)),
+        extra ? h('div', { class: 'text-xs muted', style: { marginBlockStart: '4px' } }, extra) : null));
+      const body = h('div', { class: 'stack gap-4 intg-modal' },
+        h('div', { class: 'row gap-3', style: { alignItems: 'flex-start' } },
+          h('span', { class: 'int-icon', 'aria-hidden': 'true' }, iconOf(fresh, 22)),
+          h('dl', { class: 'intg-kv' },
+            h('div', {}, h('dt', {}, t('integrations.modal.vendor')), h('dd', {}, vendorOf(fresh))),
+            h('div', {}, h('dt', {}, t('integrations.modal.category')), h('dd', {}, categoryOf(fresh))),
+            h('div', {}, h('dt', {}, t('integrations.modal.status')), h('dd', {}, statusBadge(st, { size: 'sm' }))))),
+        testType ? null : h('div', { class: 'note', style: { '--tone': 'var(--line-2)' } }, h('span', { class: 'row gap-2', style: { alignItems: 'flex-start' } }, svgIcon('lock', 14), h('span', {}, t('integrations.modal.backend')))),
+        fields.length ? form : h('p', { class: 'text-sm muted', style: { margin: 0 } }, t('integrations.modal.noFields')),
+        h('p', { class: 'text-xs muted', style: { margin: 0 } }, t('integrations.modal.storage')),
+        testType ? h('p', { class: 'text-xs muted', style: { margin: 0 } }, t('integrations.modal.realTest')) : null,
+        result);
 
-      async function runTest() {
+      const update = (patch) => (fresh.kind === 'integration'
+        ? (typeof store.updateIntegration === 'function' ? store.updateIntegration(rec.id, patch) : null)
+        : (typeof store.updateConnector === 'function' ? store.updateConnector(rec.id, patch) : null));
+
+      async function runTest(btn) {
         const values = readForm(form);
-        const started = performance.now();
-        setNote(result, 'accent', 'جارٍ اختبار الاتصال…');
-        try {
-          if (realType && sources && typeof sources.testConnection === 'function') {
-            const urlKey = urlFieldKey(g); const keyKey = keyFieldKey(g); const tableKey = tableFieldKey(g);
-            const url = urlKey ? String(values[urlKey] || '') : '';
-            if (!isHttpUrl(url)) { setNote(result, 'warning', 'أدخل رابطاً صالحاً يبدأ بـ https:// قبل اختبار الاتصال.'); return; }
-            const r = await sources.testConnection({ type: realType, url, apiKey: keyKey ? String(values[keyKey] || '') : '', table: tableKey ? String(values[tableKey] || '') : '' });
-            const ok = !!(r && r.ok);
-            const lat = r && Number.isFinite(Number(r.latencyMs)) ? Number(r.latencyMs) : Math.round(performance.now() - started);
-            setNote(result, ok ? 'good' : 'critical', (r && r.message) || (ok ? 'تم الاتصال بنجاح.' : 'فشل الاتصال.'), `زمن الاستجابة ${fmt.num(lat)} م.ث`);
-          } else {
-            await delay(SIMULATED_TEST_MIN_MS + Math.random() * (SIMULATED_TEST_MAX_MS - SIMULATED_TEST_MIN_MS));
-            const lat = Math.round(80 + Math.random() * 160);
-            setNote(result, 'good', `تم التحقق من الاتصال بـ «${g.name}» بنجاح.`, `زمن الاستجابة ${fmt.num(lat)} م.ث · فحص محاكى`);
-          }
-        } catch (err) {
-          setNote(result, 'critical', friendlyError(err));
+        const urlKey = fieldKey(fields, (x) => x.type === 'url') || fieldKey(fields, (x) => /url|endpoint|host/i.test(String(x.key)));
+        const keyKey = fieldKey(fields, (x) => x.type === 'password') || fieldKey(fields, (x) => /key|token|secret/i.test(String(x.key)));
+        const tableKey = fieldKey(fields, (x) => /table|sheet|collection/i.test(String(x.key)));
+        const url = urlKey ? String(values[urlKey] || '').trim() : '';
+        const urlOk = typeof sources.validateUrl === 'function' ? Boolean(safe(() => sources.validateUrl(url), null)) : isHttpsUrl(url);
+        if (!urlOk) { setResult('warning', t('integrations.modal.urlMissing')); return false; }
+        if (typeof sources.testConnection !== 'function') { setResult('warning', t('import.unavailable')); return false; }
+        if (btn && btn.getAttribute('aria-busy') === 'true') return false;
+        if (btn) { btn.setAttribute('aria-busy', 'true'); btn.setAttribute('aria-disabled', 'true'); }
+        setResult('accent', t('integrations.modal.testing'));
+        let r;
+        try { r = await sources.testConnection({ type: testType, url, apiKey: keyKey ? String(values[keyKey] || '') : '', table: tableKey ? String(values[tableKey] || '') : '' }); } catch (err) { r = { ok: false, real: true, message: String(err && err.message || err), messageEn: String(err && err.message || err) }; }
+        if (btn) { btn.removeAttribute('aria-busy'); btn.removeAttribute('aria-disabled'); }
+        const ok = Boolean(r && r.ok);
+        const latency = r && Number.isFinite(Number(r.latencyMs)) && Number(r.latencyMs) > 0 ? t('integrations.modal.latency', { ms: msText(Number(r.latencyMs)) }) : null;
+        setResult(ok ? 'good' : (r && r.opaque ? 'warning' : 'critical'), msgOf(r) || t('integrations.card.testFail'), latency);
+        if (r && r.real && !r.skipped) {
+          update({ lastTest: { ok, opaque: Boolean(r.opaque), at: now().toISOString(), latencyMs: Number(r.latencyMs) || null, reason: r.reason || null, message: r.message || '', messageEn: r.messageEn || '' } });
         }
+        return false;
       }
-
       function save() {
         const values = readForm(form);
         const clean = {};
         Object.keys(values).forEach((k) => { clean[k] = values[k] === null || values[k] === undefined ? '' : String(values[k]); });
-        store.updateIntegration(g.id, { config: clean });
-        toast(`تم حفظ إعدادات «${g.name}».`, { tone: 'good' });
+        update({ config: clean });
+        toast(t('integrations.modal.saved', { name: nameOf(fresh) }), { tone: 'good' });
       }
-
+      const testBtn = testType ? button(t('integrations.modal.test'), { variant: 'outline', icon: svgIcon('plug', 16), onClick: () => { runTest(testBtn); } }) : null;
       openModal = modal({
-        title: `إعداد — ${g.name}`,
-        subtitle: g.vendor ? `${g.vendor} · ${CATEGORY_LABEL[g.category] || g.category || ''}` : '',
+        title: t('integrations.modal.title', { name: nameOf(fresh) }),
+        subtitle: rec.api ? String(rec.api) : (testType ? TYPE_LABEL[testType] : ''),
         size: 'md',
         body,
+        returnFocus: returnFocus || null,
         actions: [
-          { label: 'اختبار الاتصال', variant: 'outline', closes: false, onClick: () => runTest().then(() => false) },
-          { label: 'حفظ', variant: 'primary', onClick: () => { save(); } },
-        ],
+          testBtn,
+          { label: t('integrations.modal.close'), variant: 'ghost' },
+          fields.length ? { label: t('integrations.modal.save'), variant: 'primary', onClick: () => { save(); } } : null,
+        ].filter(Boolean),
         onClose: () => { openModal = null; },
       });
       openModal.open();
-    }
-
-    /* ───────────────────────── data source panel ───────────────────────── */
-
-    function buildDataSource() {
-      const settings = store.state.settings || {};
-      const ds = { type: 'simulation', url: '', apiKey: '', table: '', ...(settings.dataSource || {}) };
-      if (!SOURCE_TYPES.some((t) => t.value === ds.type)) ds.type = 'simulation';
-
-      const fUrl = formField({ label: 'الرابط (URL)', name: 'url', type: 'url', value: ds.url, placeholder: 'https://', hint: '' });
-      const fKey = formField({ label: 'مفتاح API', name: 'apiKey', type: 'password', value: ds.apiKey, placeholder: '', hint: 'يُحفظ محلياً في هذا المتصفح فقط.' });
-      const fTable = formField({ label: 'اسم الجدول', name: 'table', type: 'text', value: ds.table, placeholder: 'risks' });
-      const hint = h('div', { class: 'note' }, SOURCE_HINT[ds.type]);
-      const result = h('div', { class: 'stack', 'aria-live': 'polite' });
-      const fields = h('div', { class: 'form-grid' }, fUrl, fKey, fTable);
-      const form = h('form', { class: 'stack gap-3', novalidate: true, onSubmit: (e) => e.preventDefault() }, fields);
-
-      const current = () => ({ type: ds.type, url: String(form.elements.url.value || '').trim(), apiKey: String(form.elements.apiKey.value || ''), table: String(form.elements.table.value || '').trim() });
-
-      function paintFields(type) {
-        const showUrl = type !== 'simulation';
-        fUrl.hidden = !showUrl;
-        fKey.hidden = !(type === 'json' || type === 'supabase');
-        fTable.hidden = type !== 'supabase';
-        fields.hidden = !showUrl;
-        hint.textContent = SOURCE_HINT[type] || '';
-        const urlInput = form.elements.url;
-        if (urlInput) urlInput.placeholder = type === 'sheets' ? 'https://docs.google.com/spreadsheets/d/…/pub?output=csv' : type === 'supabase' ? 'https://xxxx.supabase.co' : 'https://api.example.com/hse/risks';
-        testBtn.disabled = !showUrl;
-        importBtn.disabled = !showUrl;
-      }
-
-      function persist(partial = {}) {
-        const next = { ...current(), ...partial };
-        ds.type = next.type;
-        const prev = store.state.settings && store.state.settings.dataSource ? store.state.settings.dataSource : {};
-        if (prev.type === next.type && prev.url === next.url && prev.apiKey === next.apiKey && prev.table === next.table) return;
-        store.setSettings({ dataSource: next });
-      }
-
-      const seg = segmented({ options: SOURCE_TYPES, value: ds.type, ariaLabel: 'نوع مصدر البيانات', onChange: (v) => { ds.type = v; paintFields(v); persist({ type: v }); result.replaceChildren(); } });
-      form.addEventListener('change', () => persist());
-
-      async function runTest() {
-        const cfg = current();
-        if (cfg.type === 'simulation') { setNote(result, 'neutral', 'المحاكاة الحية لا تحتاج إلى اختبار اتصال.'); return; }
-        if (!isHttpUrl(cfg.url)) { setNote(result, 'warning', 'أدخل رابطاً صالحاً يبدأ بـ https:// أولاً.'); return; }
-        if (cfg.type === 'supabase' && !cfg.table) { setNote(result, 'warning', 'أدخل اسم الجدول لاختبار اتصال Supabase.'); return; }
-        busy(testBtn, true);
-        setNote(result, 'accent', 'جارٍ اختبار الاتصال…');
-        try {
-          if (!sources || typeof sources.testConnection !== 'function') throw new Error('مكوّن المصادر الخارجية غير متاح حالياً.');
-          const r = await sources.testConnection(cfg);
-          const ok = !!(r && r.ok);
-          setNote(result, ok ? 'good' : 'critical', (r && r.message) || (ok ? 'تم الاتصال بنجاح.' : 'فشل الاتصال.'), r && Number.isFinite(Number(r.latencyMs)) ? `زمن الاستجابة ${fmt.num(r.latencyMs)} م.ث` : null);
-        } catch (err) { setNote(result, 'critical', friendlyError(err)); } finally { busy(testBtn, false); }
-      }
-
-      async function runImport() {
-        const cfg = current();
-        if (cfg.type === 'simulation') { setNote(result, 'neutral', 'اختر مصدراً خارجياً (JSON API أو Google Sheets أو Supabase) لاستيراد المخاطر.'); return; }
-        if (!isHttpUrl(cfg.url)) { setNote(result, 'warning', 'أدخل رابطاً صالحاً يبدأ بـ https:// أولاً.'); return; }
-        busy(importBtn, true);
-        setNote(result, 'accent', 'جارٍ جلب المخاطر من المصدر…');
-        try {
-          if (!sources || typeof sources.importRisks !== 'function') throw new Error('مكوّن المصادر الخارجية غير متاح حالياً.');
-          const r = await sources.importRisks(cfg);
-          const rows = r && Array.isArray(r.risks) ? r.risks : [];
-          if (!rows.length) { setNote(result, 'warning', 'لم يُعثر على أي صفوف صالحة في المصدر. تحقق من صف العناوين مقارنة بقالب CSV.'); return; }
-          let added = 0;
-          rows.forEach((row) => { try { if (store.addRisk(row)) added += 1; } catch { /* skip bad row */ } });
-          const n = fmt.num(added);
-          setNote(result, 'good', `تم استيراد ${n} ${added === 1 ? 'مخاطرة' : added === 2 ? 'مخاطرتين' : added <= 10 ? 'مخاطر' : 'مخاطرة'} إلى سجل المخاطر.`, rows.length !== added ? `تم تجاهل ${fmt.num(rows.length - added)} صفاً غير صالح.` : null);
-          toast(`تم استيراد ${n} ${added === 1 ? 'مخاطرة' : 'مخاطر'} من ${SOURCE_TYPES.find((t) => t.value === cfg.type)?.label || 'المصدر'}.`, { tone: 'good', action: router && typeof router.navigate === 'function' ? { label: 'فتح السجل', onClick: () => router.navigate('risks') } : null });
-        } catch (err) { setNote(result, 'critical', friendlyError(err)); } finally { busy(importBtn, false); }
-      }
-
-      function downloadTemplate() {
-        try {
-          if (!sources || typeof sources.downloadTemplateCSV !== 'function') throw new Error('unavailable');
-          sources.downloadTemplateCSV();
-          toast('تم تنزيل قالب CSV لاستيراد المخاطر.', { tone: 'good' });
-        } catch { toast('تعذر تنزيل القالب حالياً.', { tone: 'critical' }); }
-      }
-
-      const testBtn = button('اختبار الاتصال', { variant: 'outline', icon: svgIcon('plug', 16), onClick: () => { runTest(); } });
-      const importBtn = button('استيراد المخاطر', { variant: 'primary', icon: svgIcon('download', 16), onClick: () => { runImport(); } });
-      const templateBtn = button('تنزيل قالب CSV', { variant: 'ghost', icon: svgIcon('file-text', 16), onClick: downloadTemplate });
-
-      /* Alert webhook */
-      const fHook = formField({ label: 'رابط Webhook للتنبيهات', name: 'alertWebhook', type: 'url', value: settings.alertWebhook || '', placeholder: 'https://hooks.example.com/biltix-hse', hint: 'تُرسل التنبيهات الحرجة إلى هذا الرابط بطلب POST بصيغة JSON (يناسب n8n وZapier وMake وSlack Webhooks).' });
-      const hookResult = h('div', { class: 'stack', 'aria-live': 'polite' });
-      const hookInput = fHook.querySelector('input');
-      hookInput.addEventListener('change', () => {
-        const v = String(hookInput.value || '').trim();
-        if (v && !isHttpUrl(v)) { setNote(hookResult, 'warning', 'الرابط غير صالح؛ لن يُحفظ حتى يبدأ بـ https://'); return; }
-        if ((store.state.settings && store.state.settings.alertWebhook) !== v) store.setSettings({ alertWebhook: v });
-        hookResult.replaceChildren();
-      });
-      async function sendTest() {
-        const url = String(hookInput.value || '').trim();
-        if (!isHttpUrl(url)) { setNote(hookResult, 'warning', 'أدخل رابط Webhook صالحاً يبدأ بـ https:// أولاً.'); return; }
-        busy(hookBtn, true);
-        setNote(hookResult, 'accent', 'جارٍ إرسال التنبيه التجريبي…');
-        try {
-          if (!sources || typeof sources.postWebhook !== 'function') throw new Error('مكوّن المصادر الخارجية غير متاح حالياً.');
-          const payload = { type: 'test', severity: 'info', tone: 'accent', title: `تنبيه تجريبي من ${PRODUCT_NAME}`, detail: 'هذه رسالة اختبار للتأكد من وصول تنبيهات ركيزة السلامة والصحة المهنية.', siteId: null, ts: new Date().toISOString(), source: 'biltix-hse' };
-          const r = await sources.postWebhook(url, payload);
-          const ok = !!(r && r.ok);
-          setNote(hookResult, ok ? 'good' : 'critical', ok ? 'تم إرسال التنبيه التجريبي بنجاح.' : 'لم يقبل الخادم الطلب.', r && r.status ? `رمز الاستجابة ${fmt.num(r.status)}` : (r && r.message) || null);
-        } catch (err) { setNote(hookResult, 'critical', friendlyError(err)); } finally { busy(hookBtn, false); }
-      }
-      const hookBtn = button('إرسال تنبيه تجريبي', { variant: 'outline', icon: svgIcon('bell', 16), onClick: () => { sendTest(); } });
-
-      paintFields(ds.type);
-
-      const body = h('div', { class: 'stack gap-4' },
-        h('div', { class: 'stack gap-2' }, h('span', { class: 'form-section-title' }, 'نوع المصدر'), seg.el, hint),
-        form,
-        h('div', { class: 'row wrap gap-2' }, testBtn, importBtn, templateBtn, h('span', { class: 'text-xs muted grow text-end' }, 'تُحفظ الإعدادات تلقائياً')),
-        result,
-        h('hr', { class: 'divider' }),
-        h('div', { class: 'stack gap-2' }, h('span', { class: 'form-section-title' }, 'قناة التنبيهات'), fHook, h('div', { class: 'row wrap gap-2' }, hookBtn), hookResult),
-      );
-
-      const el = card({ code: 'DATA-SRC', title: 'مصدر البيانات', subtitle: 'اختر من أين يقرأ المركز بيانات المخاطر، واختبر الاتصال واستورد السجلات', className: 'col-span-8', body, id: 'int-datasource' });
-      el.tabIndex = -1; // focus target for the ?section=datasource deep link
-
-      function sync() {
-        const s = store.state.settings || {};
-        const d = { type: 'simulation', url: '', apiKey: '', table: '', ...(s.dataSource || {}) };
-        const active = document.activeElement;
-        if (d.type !== ds.type) { ds.type = d.type; seg.set(d.type); paintFields(d.type); }
-        [['url', d.url], ['apiKey', d.apiKey], ['table', d.table]].forEach(([k, v]) => { const inp = form.elements[k]; if (inp && inp !== active && inp.value !== (v || '')) inp.value = v || ''; });
-        if (hookInput !== active && hookInput.value !== (s.alertWebhook || '')) hookInput.value = s.alertWebhook || '';
-      }
-      return { el, sync };
-    }
-
-    function buildTemplateGuide() {
-      const cols = [
-        ['code', 'رمز المخاطرة (اختياري، يُولَّد تلقائياً)'], ['siteId', 'معرّف الموقع S1…S6'], ['categoryId', 'فئة الخطر (height, electrical, …)'],
-        ['hazard', 'وصف الخطر'], ['activity', 'النشاط'], ['likelihood', `الاحتمالية من ${fmt.num(1)} إلى ${fmt.num(5)}`], ['severity', `الشدة من ${fmt.num(1)} إلى ${fmt.num(5)}`],
-        ['owner', 'المسؤول'], ['dueDate', 'تاريخ الاستحقاق YYYY-MM-DD'], ['status', 'الحالة (مفتوح، قيد المعالجة، …)'],
-      ];
-      const table = h('table', { class: 'table is-dense' }, h('caption', { class: 'sr-only' }, 'أعمدة قالب CSV'),
-        h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'العمود'), h('th', { scope: 'col' }, 'الوصف'))),
-        h('tbody', {}, ...cols.map(([k, d]) => h('tr', {}, h('td', { class: 'mono' }, k), h('td', {}, d)))));
-      const body = h('div', { class: 'stack gap-3' },
-        h('p', { class: 'text-sm ink-2' }, 'يُطابق المستورد صف العناوين التالي حرفياً (بالإنجليزية) ثم يحوّل كل صف إلى مخاطرة في السجل مع احتساب الدرجة تلقائياً.'),
-        h('div', { class: 'table-wrap' }, table),
-        h('p', { class: 'text-xs muted' }, `الحقول غير المعروفة تُتجاهل، والقيم الناقصة تُستكمل بالافتراضيات (الاحتمالية والشدة ${fmt.num(3)}، الحالة «مفتوح»).`),
-      );
-      return card({ code: 'DATA-TPL', title: 'دليل قالب الاستيراد', subtitle: 'أعمدة CSV / JSON المدعومة', className: 'col-span-4', body });
+      if (autoTest && testBtn) requestAnimationFrame(() => runTest(testBtn));
     }
 
     /* ───────────────────────── build ───────────────────────── */
 
-    function buildHead() {
-      const s = summary();
-      return h('div', { class: 'view-head' },
-        h('div', { class: 'view-head-text' },
-          h('span', { class: 'code-tag' }, 'SEC-09'),
-          h('h1', { tabindex: '-1' }, 'التكاملات والأنظمة'),
-          h('p', { class: 'view-lead' }, 'حالة الاتصال بأنظمة الموقع والجهات الخارجية وقنوات التنبيه في الزمن الحقيقي، مع إعداد مصدر البيانات الخارجي لاستيراد سجل المخاطر.'),
-        ),
-        h('div', { class: 'view-actions' },
-          h('span', { class: 'row gap-2 text-sm ink-2' }, liveDot('accent'), h('span', { 'data-role': 'connected-count' }, `${fmt.num(s.connected)} من ${fmt.num(s.total)} متصل`)),
-        ),
-      );
+    function buildFilters() {
+      const list = items();
+      const counts = Object.fromEntries(STATUS_KEYS.map((s) => [s, 0]));
+      list.forEach((it) => { counts[statusOf(it)] += 1; });
+      fb = filterBar({
+        label: t('integrations.filter.label'),
+        value: { group: filterState.group, status: filterState.status, q: filterState.q },
+        filters: [
+          { id: 'group', type: 'segmented', label: t('integrations.filter.group'), options: [
+            { value: 'all', label: t('integrations.groups.all') },
+            { value: 'site', label: t('integrations.groups.site') },
+            { value: 'enterprise', label: t('integrations.groups.enterprise') },
+          ] },
+          { id: 'status', type: 'select', label: t('integrations.filter.status'), allValue: 'all', options: STATUS_KEYS.map((s) => ({ value: s, label: `${safe(() => status.label(s), s)} (${fmt.num(counts[s])})` })) },
+          { id: 'q', type: 'search', label: t('integrations.filter.search'), placeholder: t('integrations.filter.searchPlaceholder') },
+        ],
+        onChange: (v) => { filterState = { group: v.group || 'all', status: v.status || 'all', q: v.q || '' }; renderGrid(); },
+      });
+      return fb.el;
     }
 
     function build() {
-      raf = 0;
       cardRefs.clear();
-      chipGroup = buildChips();
-      gridEl = h('div', { class: 'cards-grid int-grid is-compact', role: 'list', 'aria-label': 'بطاقات التكاملات' });
-      modeSeg = segmented({
-        options: [{ value: 'cards', label: 'بطاقات', icon: svgIcon('grid', 14) }, { value: 'list', label: 'قائمة', icon: glyph('table', 14) }],
-        value: viewMode, ariaLabel: 'طريقة عرض الموصلات',
-        onChange: (v) => { viewMode = v === 'list' ? 'list' : 'cards'; applyGridMode(); },
+      bannerEl = buildBanner();
+      dsCard = buildDataSource();
+      summaryEl = buildSummary();
+      countEl = h('span', { class: 'intg-count', 'aria-live': 'polite' });
+      const modeSeg = segmented({
+        options: [{ value: 'cards', label: t('integrations.view.cards'), icon: svgIcon('grid', 14) }, { value: 'list', label: t('integrations.view.list'), icon: glyph('table', 14) }],
+        value: viewMode,
+        ariaLabel: t('integrations.view.aria'),
+        onChange: (v) => { viewMode = v === 'list' ? 'list' : 'cards'; if (gridEl) gridEl.classList.toggle('is-list', viewMode === 'list'); },
       });
       modeSeg.el.classList.add('seg-sm');
-      dsPanel = buildDataSource();
-      const frag = document.createDocumentFragment();
-      frag.append(
-        buildHead(),
-        buildSummary(),
-        h('section', { class: 'stack gap-3', 'aria-labelledby': 'int-grid-title' },
-          h('div', { class: 'row between wrap gap-3' },
-            h('div', { class: 'card-titles' }, h('span', { class: 'card-code', 'aria-hidden': 'true' }, 'INT-01'), h('h2', { class: 'card-title', id: 'int-grid-title' }, 'الموصلات')),
-            h('div', { class: 'row wrap gap-3', style: { minInlineSize: '0', flex: '1 1 auto', justifyContent: 'flex-end' } }, chipGroup, modeSeg.el),
-          ),
-          gridEl,
-        ),
-        h('div', { class: 'grid-12' }, dsPanel.el, buildTemplateGuide()),
-      );
-      root.replaceChildren(frag);
-      renderGrid();
+      gridEl = h('div', { class: 'intg-grid', role: 'list', 'aria-label': t('integrations.gridAria') });
+      const head = buildHead();
+      const filters = buildFilters();
+      root.replaceChildren(
+        head,
+        bannerEl,
+        dsCard,
+        summaryEl,
+        h('section', { class: 'view-section', 'aria-label': t('integrations.gridAria') },
+          filters,
+          h('div', { class: 'intg-toolbar' }, countEl, modeSeg.el),
+          gridEl));
+      renderGrid({ animate: firstPaint });
+      if (firstPaint && motion && typeof motion.enter === 'function') motion.enter([bannerEl, dsCard, summaryEl, filters], { y: 6, stagger: 0.03 });
+      firstPaint = false;
       revealSection();
     }
 
-    /** ?section=datasource → scroll to and briefly highlight the data-source card, then drop the param. */
+    /** ?section=datasource → scroll to the data-source summary once (the param is then dropped). */
     function revealSection() {
-      if (sectionHandled || params.section !== 'datasource' || !dsPanel) return;
-      sectionHandled = true;
-      const el = dsPanel.el;
+      if (params.section !== 'datasource' || !dsCard || !/[?&]section=/.test(location.hash || '')) return;
       requestAnimationFrame(() => {
-        try { el.scrollIntoView({ behavior: scrollBehavior(), block: 'start' }); } catch { el.scrollIntoView(); }
-        el.classList.add('is-highlight');
-        el.style.boxShadow = 'var(--glow-accent)';
-        el.style.transition = 'box-shadow var(--dur-2) var(--ease)';
-        try { el.focus({ preventScroll: true }); } catch { /* ignore */ }
-        setTimeout(() => { el.classList.remove('is-highlight'); el.style.boxShadow = ''; }, 2600);
-        try { window.history.replaceState(null, '', router && typeof router.href === 'function' ? router.href('integrations') : '#/integrations'); } catch { /* ignore */ }
+        const smooth = motion && typeof motion.enabled === 'function' && motion.enabled();
+        try { dsCard.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' }); } catch { dsCard.scrollIntoView(); }
+        try { dsCard.focus({ preventScroll: true }); } catch { /* ignore */ }
+        if (motion && typeof motion.flash === 'function') motion.flash(dsCard);
+        try { history.replaceState(history.state, '', router && typeof router.href === 'function' ? router.href('integrations') : '#/integrations'); } catch { /* ignore */ }
       });
     }
 
-    function schedule() { if (!raf) raf = requestAnimationFrame(build); }
+    function refreshTop() {
+      if (bannerEl && bannerEl.isConnected) { const b = buildBanner(); bannerEl.replaceWith(b); bannerEl = b; }
+      if (dsCard && dsCard.isConnected) { const d = buildDataSource(); dsCard.replaceWith(d); dsCard = d; }
+      const headBadge = root.querySelector('.view-head .view-actions');
+      if (headBadge) headBadge.replaceChildren(statusBadge(safe(() => status.mode(store.state), 'demo') === 'demo' ? 'demo' : safe(() => status.source(store.state).status, 'not_connected'), { size: 'lg' }));
+    }
+
+    let raf = 0;
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; build(); }); };
 
     const unsubs = [
       bus.on('integrations:tick', (payload) => {
-        const items = payload && Array.isArray(payload.integrations) ? payload.integrations : list();
-        items.forEach((g) => { if (g && g.id) pushHistory(g.id, g.eventsPerHour, g); });
-        refreshCards();
+        const list = payload && Array.isArray(payload.integrations) ? payload.integrations : integrations();
+        list.forEach((g) => { if (g && g.id) pushHistory(g); });
+        refreshCards(list.map((g) => `i:${g.id}`));
       }),
       bus.on('store:change', (payload) => {
         const path = payload && payload.path ? String(payload.path) : '*';
         if (path === '*') { schedule(); return; }
-        if (path.startsWith('integrations')) {
-          const id = path.split('.')[1];
-          const g = id ? byId(id) : null;
-          if (g && cardRefs.has(id)) refreshCards([id]); else if (!id || !cardRefs.has(id)) schedule(); else refreshCards();
-          return;
-        }
-        if (path.startsWith('settings') && dsPanel) dsPanel.sync();
+        if (path.startsWith('integrations')) { const id = path.split('.')[1]; refreshCards(id ? [`i:${id}`] : null); refreshSummary(); return; }
+        if (path.startsWith('platform.connectors')) { const id = path.split('.')[2]; refreshCards(id ? [`c:${id}`] : null); refreshSummary(); }
       }),
-      bus.on('settings:change', (payload) => {
-        const s = payload && payload.settings ? payload.settings : store.state.settings;
-        const n = s ? s.numerals : lastNumerals;
-        if (n !== lastNumerals) { lastNumerals = n; schedule(); return; }
-        if (dsPanel) dsPanel.sync();
-      }),
+      bus.on('settings:change', () => { refreshTop(); refreshCards(); refreshSummary(); }),
     ];
-    const relTimer = setInterval(refreshRelative, RELATIVE_REFRESH_MS);
-    const onVisibility = () => { if (!document.hidden) refreshRelative(); };
-    document.addEventListener('visibilitychange', onVisibility);
+    const relTimer = setInterval(() => { if (!document.hidden) refreshCards(); }, RELATIVE_REFRESH_MS);
+    const onNet = () => { refreshTop(); refreshCards(); refreshSummary(); };
+    window.addEventListener('online', onNet);
+    window.addEventListener('offline', onNet);
 
     build();
 
@@ -736,11 +606,11 @@ export default {
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
       clearInterval(relTimer);
-      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('online', onNet);
+      window.removeEventListener('offline', onNet);
       unsubs.forEach((u) => { try { if (typeof u === 'function') u(); } catch { /* ignore */ } });
       if (openModal) { try { openModal.close(); } catch { /* ignore */ } openModal = null; }
       cardRefs.clear();
-      summaryRefs.clear();
       root.remove();
     };
   },

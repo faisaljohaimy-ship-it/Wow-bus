@@ -19,7 +19,7 @@ import dict from '../i18n/permits.js';
 import * as SEED from '../data/seed.js';
 import {
   h, clear, glyph, svgIcon, card, badge, button, modal, drawer, toast, kanban, countdown,
-  formField, emptyState, kv, filterBar, motion,
+  formField, emptyState, kv, motion,
 } from '../ui/components.js';
 
 i18n.register('permits', dict);
@@ -98,6 +98,20 @@ const typeLabel = (type) => i18n.label('permitType', type);
 const statusLabel = (s) => i18n.label('permitStatus', s);
 const lines = (value) => String(value || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
 
+/** Digits inside record text follow the numerals setting; codes (MH-14, R-1042, PM2.5, ISO 45001) stay Latin. */
+const AR_DIGITS = '٠١٢٣٤٥٦٧٨٩';
+function codeSafeDigits(fmt, text) {
+  const s = String(text ?? '');
+  if (!s || !fmt || typeof fmt.getNumerals !== 'function' || fmt.getNumerals() !== 'arab') return s;
+  return s.replace(/\d+(?:[.,/:]\d+)*/g, (m, offset, whole) => {
+    let prev = whole[offset - 1] || '';
+    if (prev === '/' || prev === ':') prev = whole[offset - 2] || '';
+    const next = whole[offset + m.length] || '';
+    if (/[A-Za-z\-_#]/.test(prev) || /[A-Za-z]/.test(next) || /(ISO|SBC|UTC)\s?\+?$/i.test(whole.slice(Math.max(0, offset - 5), offset))) return m;
+    return m.replace(/\d/g, (d) => AR_DIGITS[Number(d)]).replace(/\./g, '٫').replace(/,/g, '٬');
+  });
+}
+
 function touches(path, prefix) {
   if (!path || path === '*') return true;
   const p = String(path);
@@ -142,8 +156,8 @@ export const permitsView = {
     const globalFilters = () => ({ ...(store.filters || state().filters || {}) });
     const findPermit = (id) => (state().permits || []).find((p) => p && p.id === id) || null;
     const siteOf = (siteId) => (state().sites || []).find((s) => s && s.id === siteId) || null;
-    const siteName = (siteId) => { const s = siteOf(siteId); return s ? i18n.L(s, 'name', 'sites') : '—'; };
-    const loc = (p) => i18n.L(p, 'location', 'permits') || '—';
+    const siteName = (siteId) => { const s = siteOf(siteId); return s ? codeSafeDigits(fmt, i18n.L(s, 'name', 'sites')) : '—'; };
+    const loc = (p) => codeSafeDigits(fmt, i18n.L(p, 'location', 'permits') || '—');
     const person = (v) => (v ? i18n.term(v) : '—');
     const inSite = (p, gf) => !gf.siteId || gf.siteId === 'all' || p.siteId === gf.siteId;
 
@@ -269,27 +283,42 @@ export const permitsView = {
     }
 
     /* ── type filter bar (rebuilt only when the counts change) ── */
-    let filterApi = null;
-    let filterSig = '';
+    /* One swipe row of type chips on phones (.chips.is-scroll), wrapped rows on wider screens. "All" clears. */
+    const chipEls = new Map();
+    const chipRow = h('div', { class: 'chip-group chips is-scroll', role: 'group', 'aria-label': t('permits.board.filterLabel') });
+    const paintChipState = () => {
+      for (const [v, b] of chipEls) {
+        const on = v === '__all__' ? typeFilter.length === 0 : typeFilter.includes(v);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        b.classList.toggle('is-active', on);
+      }
+    };
+    const addChip = (value, label, iconName) => {
+      const count = h('span', { class: 'chip-count num' }, '');
+      const b = h('button', { type: 'button', class: 'chip', 'aria-pressed': 'false', 'data-value': value,
+        onClick: () => {
+          if (value === '__all__') typeFilter = [];
+          else typeFilter = typeFilter.includes(value) ? typeFilter.filter((x) => x !== value) : PERMIT_TYPES.filter((x) => x === value || typeFilter.includes(x));
+          paintChipState();
+          schedule(2);
+        } });
+      if (iconName) b.appendChild(svgIcon(iconName, 14));
+      b.appendChild(h('span', { class: 'chip-label' }, label));
+      b.appendChild(count);
+      b.countEl = count;
+      chipEls.set(value, b);
+      chipRow.appendChild(b);
+    };
+    addChip('__all__', t('core.common.all'), null);
+    PERMIT_TYPES.forEach((tp) => addChip(tp, typeLabel(tp), typeIcon(tp)));
+    filterHost.appendChild(chipRow);
     function paintFilter() {
       const all = sel.filteredPermits(state(), globalFilters());
-      const counts = PERMIT_TYPES.map((tp) => all.filter((p) => p.type === tp).length);
-      const sig = `${i18n.lang()}|${counts.join(',')}`;
-      if (filterApi && sig === filterSig) return;
-      filterSig = sig;
-      const value = { type: typeFilter.slice() };
-      filterApi = filterBar({
-        label: t('permits.board.filterLabel'),
-        filters: [{
-          id: 'type', type: 'chips', label: t('permits.board.typeFilter'),
-          options: PERMIT_TYPES.map((tp, i) => ({ value: tp, label: typeLabel(tp), icon: typeIcon(tp), count: counts[i] })),
-        }],
-        value,
-        onChange: (v) => { typeFilter = Array.isArray(v.type) ? v.type.slice() : []; schedule(2); },
-      });
-      filterApi.el.querySelectorAll('.chip-group').forEach((g) => g.classList.add('chips', 'is-scroll'));
-      clear(filterHost);
-      filterHost.appendChild(filterApi.el);
+      for (const [v, b] of chipEls) {
+        const n = v === '__all__' ? all.length : all.filter((p) => p.type === v).length;
+        b.countEl.textContent = fmt.num(n);
+      }
+      paintChipState();
     }
 
     /* ── permit card content ── */
@@ -443,10 +472,10 @@ export const permitsView = {
         const controls = Array.isArray(p.controls) ? i18n.L(p, 'controls', 'permits') : [];
         return h('div', { class: 'stack gap-4' },
           section(`${t('permits.drawer.hazards')} (${fmt.num(hazards.length)})`, hazards.length
-            ? h('ul', { class: 'controls-list' }, hazards.map((x) => h('li', { class: 'controls-item tone-warning' }, h('span', { class: 'controls-type' }, t('permits.drawer.hazard')), h('span', {}, String(x)))))
+            ? h('ul', { class: 'controls-list' }, hazards.map((x) => h('li', { class: 'controls-item tone-warning' }, h('span', { class: 'controls-type' }, t('permits.drawer.hazard')), h('span', {}, codeSafeDigits(fmt, String(x))))))
             : h('p', { class: 'note' }, t('permits.drawer.noHazards'))),
           section(`${t('permits.drawer.controls')} (${fmt.num(controls.length)})`, controls.length
-            ? h('ol', { class: 'controls-list' }, controls.map((x, i) => h('li', { class: 'controls-item tone-good' }, h('span', { class: 'controls-type num' }, fmt.num(i + 1)), h('span', {}, typeof x === 'string' ? x : (x && x.text) || '—'))))
+            ? h('ol', { class: 'controls-list' }, controls.map((x, i) => h('li', { class: 'controls-item tone-good' }, h('span', { class: 'controls-type num' }, fmt.num(i + 1)), h('span', {}, codeSafeDigits(fmt, typeof x === 'string' ? x : (x && x.text) || '—')))))
             : h('p', { class: 'note' }, t('permits.drawer.noControls'))));
       };
       const gasTab = () => {
@@ -614,7 +643,7 @@ export const permitsView = {
         });
         if (!permit) { toast(t('permits.form.failed'), { tone: 'critical' }); return false; }
         toast(t('permits.form.saved', { code: permit.code, status: statusLabel(permit.status) }), { tone: 'good', title: t('permits.form.savedTitle'), action: { label: t('permits.form.view'), onClick: () => openDrawer(permit.id) } });
-        if (typeFilter.length && !typeFilter.includes(permit.type)) { typeFilter = []; filterSig = ''; }
+        if (typeFilter.length && !typeFilter.includes(permit.type)) typeFilter = [];
         return true;
       };
       form.addEventListener('submit', (e) => { e.preventDefault(); if (submit()) api.close('action'); });

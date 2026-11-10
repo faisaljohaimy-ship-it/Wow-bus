@@ -20,7 +20,7 @@
   },
   "product": {
     "nameAr": "بلتكس — منصة إدارة المخاطر بالذكاء الاصطناعي",
-    "nameEn": "Biltix AI Risk Management Platform",
+    "nameEn": "BILTIX Risk AI — AI risk management platform",
     "brandShort": "بلتكس Risk AI"
   },
   "consolidated": {
@@ -118,7 +118,7 @@
     {
       "rating": "yellow",
       "labelAr": "أصفر",
-      "labelEn": "Yellow",
+      "labelEn": "Amber",
       "value": 25
     },
     {
@@ -128,6 +128,18 @@
       "value": 10
     }
   ],
+  "ratingLabels": {
+    "ar": {
+      "red": "أحمر",
+      "yellow": "أصفر",
+      "green": "أخضر"
+    },
+    "en": {
+      "red": "Red",
+      "yellow": "Amber",
+      "green": "Green"
+    }
+  },
   "openAiRisks": 58,
   "totalAiRisks": 68,
   "severityDistribution": [
@@ -750,7 +762,7 @@
       "source": "ai-accepted",
       "createdAt": "2026-11-08T06:10:00+03:00",
       "writeback": {
-        "target": "Biltix PM",
+        "target": "BILTIX PM",
         "status": "synced",
         "at": "2026-11-08T06:10:00+03:00"
       }
@@ -801,8 +813,8 @@
         "kind": "writeback",
         "byAr": "النظام",
         "byEn": "System",
-        "textAr": "تمت الكتابة العكسية إلى Biltix PM (MT-0214)",
-        "textEn": "Written back to Biltix PM (MT-0214)",
+        "textAr": "تمت الكتابة العكسية إلى BILTIX PM (MT-0214)",
+        "textEn": "Written back to BILTIX PM (MT-0214)",
         "status": "synced",
         "date": "2026-11-08",
         "time": "06:10"

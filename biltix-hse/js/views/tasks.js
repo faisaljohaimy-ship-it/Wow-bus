@@ -1,543 +1,739 @@
 /**
- * Biltix Risk AI — مهام المعالجة (js/views/tasks.js)
+ * BILTIX Risk AI — mitigation tasks (js/views/tasks.js) — AIR-02. Owner: B-REGISTER.
  *
- * View contract (ARCHITECTURE.md §8, B9.3): `default { id, code, title, icon, render }`.
+ *   Heading    code tag · title · lead · honest data status · Board / List toggle (?view=list) · New task
+ *   Summary    open · overdue · closed this month · average time to close · acceptance (psel.taskKpis)
+ *   Filters    owner · priority · source · search (+ a removable "risk AIR-…" chip from ?risk=)
+ *   Board      kanban by status (New / In progress / Overdue / Closed) with guarded transitions:
+ *              → Closed asks for the outcome (store.updateTask refuses a close without one);
+ *              → Overdue only once the due date has passed; Closed → back reopens the task.
+ *   List       dataTable (code, task, risk, owner, due, priority, status, source, write-back, attachments)
+ *   Drawer     details · status actions · edit (title, due, priority, linked risk — store.editTask) ·
+ *              assign (store.assignTask) · attachments (link / note / file metadata, this device only —
+ *              store.addTaskAttachment / removeTaskAttachment) · write-back state labelled simulated in demo
+ *              (store.retryWriteback) · linked risk → shared risk drawer
+ *   Deep links ?id=TASK (or code) opens the drawer · ?new=1 (&risk=ID) opens the new-task form.
  *
- *   KPI strip   مفتوحة · متأخرة · أُغلقت هذا الشهر · متوسط زمن الإغلاق · نسبة القبول مقابل التعديل
- *   Kanban      components.kanban across the task statuses (جديدة / قيد التنفيذ / متأخرة / مغلقة);
- *               cards show code, title, linked risk code + rating badge, owner, due (overdue tone),
- *               source badge (.source-badge: توصية مقبولة / مُعدّلة / يدوية) and the write-back chip
- *               (.writeback-chip: synced / pending / failed with «إعادة المزامنة»). onMove →
- *               store.updateTask; moving into «مغلقة» asks for the outcome first (it feeds model
- *               recalibration through the audit log).
- *   Drawer      task details, linked risk (→ #/airisks?risk=ID), write-back status, actions.
- *   Modal       «مهمة يدوية» → store.addTask (source 'manual').
- *
- * Global filters apply: project (site) and search always; the range limits closed tasks only,
- * open tasks are always listed. Data reaches the DOM only through textContent (components.h);
- * the kanban is kept alive and updated in place; cleanup unsubscribes and clears timers.
+ * Global filters: project and search always; the period limits closed tasks only. Live changes patch the
+ * board / list and the open drawer in place. Strings: t('tasks.*') + shared t('risk.*').
  */
 
 import { components } from '../ui/components.js';
-import { fmt as defaultFmt } from '../core/fmt.js';
-import { store as defaultStore } from '../core/store.js';
-import { bus as defaultBus } from '../core/bus.js';
+import { i18n, t, tn } from '../core/i18n.js';
+import { status as statusApi } from '../core/status.js';
+import { motion } from '../ui/motion.js';
+import tasksDict from '../i18n/tasks.js';
+import {
+  openRiskDrawer, envOf, ensureStyles, ACTOR, codeSpan, withCodes, dataText, numRun, riskTitle, person, siteName, taskTitle, taskStatusLabel,
+  ratingBadge, ratingOf, dueCell, writebackChip, ownerField, ownerValue, readValues, showErrors, clearErrors, fieldErrors, failText,
+  hashParams, patchHashParams, todayISO, safeHttpUrl, TERMINAL, errParams, prose,
+} from './shared/risk-drawer.js';
 
-const { h, clear, glyph, svgIcon, statTile, badge, button, kanban, modal, drawer, toast, formField, readForm, emptyState, kv } = components;
+i18n.register('tasks', tasksDict);
 
-const USER = 'م. فيصل الحربي';
+const { h, clear, glyph, svgIcon, button, segmented, kanban, dataTable, filterBar, modal, drawer, toast, formField, emptyState, errorState, kv, badge, statusBadge } = components;
+
+const STATUSES = ['جديدة', 'قيد التنفيذ', 'متأخرة', 'مغلقة'];
+const NEW = 'جديدة';
+const PROGRESS = 'قيد التنفيذ';
+const OVERDUE = 'متأخرة';
+const CLOSED = 'مغلقة';
+const STATUS_TONE = { [NEW]: 'brand', [PROGRESS]: 'accent', [OVERDUE]: 'critical', [CLOSED]: 'good' };
+const PRIORITIES = ['high', 'medium', 'low'];
+const PRIORITY_TONE = { high: 'serious', medium: 'warning', low: 'neutral' };
+const SOURCES = ['ai-accepted', 'ai-edited', 'manual'];
+const EVIDENCE_ICON = { link: 'link', note: 'pencil', file: 'folder' };
 const DAY_MS = 86_400_000;
-const WRITEBACK_RESYNC_MS = 1500;
+const memory = { view: null, filters: null };
 
-const TASK_STATUSES = ['جديدة', 'قيد التنفيذ', 'متأخرة', 'مغلقة'];
-const TASK_STATUS_TONE = { 'جديدة': 'brand', 'قيد التنفيذ': 'accent', 'متأخرة': 'critical', 'مغلقة': 'good' };
-const SOURCE_LABEL = { 'ai-accepted': 'توصية مقبولة', 'ai-edited': 'توصية مُعدّلة', manual: 'يدوية' };
-const PM_NAME = 'Biltix PM';
-const WRITEBACK_META = {
-  synced: { label: 'مُزامن مع ', product: PM_NAME, tone: 'good' },
-  pending: { label: 'بانتظار المزامنة', tone: 'warning' },
-  failed: { label: 'فشلت المزامنة', tone: 'critical' },
-};
-const RATING_META = {
-  red: { label: 'أحمر', tone: 'critical' },
-  yellow: { label: 'أصفر', tone: 'warning' },
-  green: { label: 'أخضر', tone: 'good' },
-};
-const TYPE_META = {
-  Financial: { label: 'مالي', icon: 'chart' },
-  Safety: { label: 'سلامة', icon: 'helmet' },
-  Delay: { label: 'تأخير', icon: 'clock' },
-  Conflict: { label: 'نزاع', icon: 'file-text' },
-};
+const STYLE_ID = 'view-tasks-style';
+const STYLE_TEXT = `
+.view-tasks { display: flex; flex-direction: column; gap: var(--space-5); }
+.view-tasks .view-actions { align-items: center; }
+.tsk-summary { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1099.98px) { .tsk-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 599.98px) { .tsk-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.tsk-summary .summary-value { display: flex; align-items: baseline; gap: 6px; }
+.tsk-summary .summary-cell .t-helper { font-size: 12px; color: var(--ink-3); line-height: 1.4; }
+.tsk-summary .summary-label > svg { flex: none; }
+.tsk-summary .tone-critical > svg { color: var(--critical-text); }
+.tsk-summary .tone-good > svg { color: var(--good-text); }
+.tsk-summary .tone-brand > svg { color: var(--brand-text); }
+.tsk-bar-row { display: flex; flex-direction: column; gap: var(--space-2); }
+.tsk-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.tsk-chips:empty { display: none; }
+.tsk-card { display: flex; flex-direction: column; gap: 8px; min-inline-size: 0; }
+.tsk-card-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+.tsk-card .kanban-card-title { margin: 0; font-size: var(--fs-sm); font-weight: 500; color: var(--ink-1); line-height: 1.5; overflow-wrap: anywhere; }
+.tsk-card-risk { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--ink-3); }
+.tsk-card-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 12px; color: var(--ink-2); }
+.tsk-card-meta > span { display: inline-flex; align-items: center; gap: 4px; }
+.tsk-card-meta svg { color: var(--ink-3); }
+.tsk-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+.tsk-prio { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500; padding: 0 7px; min-block-size: 20px; border-radius: 4px; border: 1px solid var(--line-2); color: var(--ink-2); background: var(--bg-2); }
+.tsk-prio.is-high { color: var(--serious-text); border-color: color-mix(in srgb, var(--serious) 45%, var(--line)); }
+.tsk-prio.is-medium { color: var(--warning-text); border-color: color-mix(in srgb, var(--warning) 45%, var(--line)); }
+.tsk-list .table td { vertical-align: middle; }
+.tsk-title { display: flex; flex-direction: column; gap: 2px; min-inline-size: 200px; max-inline-size: 440px; }
+.tsk-title-main { font-weight: 500; color: var(--ink-1); line-height: 1.45; overflow-wrap: anywhere; }
+.tsk-title-sub { font-size: 12px; color: var(--ink-3); }
+.tsk-drawer .drawer-body { display: flex; flex-direction: column; gap: var(--space-5); }
+.tsk-drawer .tsk-status-row { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.tsk-drawer .evidence-list { margin: 0; padding: 0; }
+.tsk-guard { font-size: 12px; color: var(--ink-3); display: flex; gap: 6px; align-items: flex-start; margin: 0; }
+.tsk-guard > svg { flex: none; margin-block-start: 2px; }
+`;
 
-/* ------------------------------------------------------------------ */
-/* Guards & helpers                                                     */
-/* ------------------------------------------------------------------ */
-
-/** Free text (seed titles, descriptions, rule names) → the active numeral system; Latin alphanumeric tokens (2B, P6, PN10) keep their ASCII digits (RTL-4). */
-const LATIN_NUM_TOKEN = /[A-Za-z][A-Za-z0-9._-]*\d[A-Za-z0-9._-]*|\d+[A-Za-z][A-Za-z0-9._-]*/g;
-function digitsIn(fmt, value) {
-  const s = String(value ?? '');
-  if (!fmt || typeof fmt.digits !== 'function' || !/\d/.test(s)) return s;
-  let out = ''; let last = 0; let m;
-  LATIN_NUM_TOKEN.lastIndex = 0;
-  while ((m = LATIN_NUM_TOKEN.exec(s))) { out += fmt.digits(s.slice(last, m.index)) + m[0]; last = m.index + m[0].length; }
-  return out + fmt.digits(s.slice(last));
+function ensureStyle() {
+  ensureStyles();
+  if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = STYLE_TEXT;
+  document.head.appendChild(style);
 }
 
-const warned = new Set();
-function warnOnce(key, err) {
-  if (warned.has(key)) return;
-  warned.add(key);
-  console.warn(`[tasks] ${key} غير متاح — استخدام بديل محلي:`, err && err.message ? err.message : err);
-}
-function safe(key, fn, fallback) {
-  try {
-    const v = fn();
-    return v === undefined || v === null ? fallback : v;
-  } catch (err) {
-    warnOnce(key, err);
-    return fallback;
-  }
-}
-function viaPsel(psel, key, fn, fallback) { return psel ? safe(`psel.${key}`, fn, fallback) : fallback; }
-let pselLoad = null;
-function loadPsel() {
-  if (!pselLoad) pselLoad = import('../core/platform-selectors.js').then((m) => (m && (m.psel || m.default)) || null).catch(() => null);
-  return pselLoad;
-}
-const isNum = (n) => typeof n === 'number' && Number.isFinite(n);
-const num = (n, d = 0) => (isNum(n) ? n : d);
+const arr = (v) => (Array.isArray(v) ? v : []);
 const text = (v) => (typeof v === 'string' ? v.trim() : (v == null ? '' : String(v)));
-const pad2 = (n) => String(n).padStart(2, '0');
-
-function startOfDay(date) { const x = new Date(date); x.setHours(0, 0, 0, 0); return x.getTime(); }
-function isOverdue(iso, now) { const d = defaultFmt.toDate(iso); return !!d && d.getTime() < startOfDay(now); }
-function isoDay(date) { return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`; }
-function plusDays(date, days) { return isoDay(new Date(date.getTime() + days * DAY_MS)); }
-function localISO(date) {
-  const off = -date.getTimezoneOffset(); const sign = off >= 0 ? '+' : '-'; const abs = Math.abs(off);
-  return `${isoDay(date)}T${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}${sign}${pad2(Math.floor(abs / 60))}:${pad2(abs % 60)}`;
-}
-function sameMonth(iso, date) { const d = defaultFmt.toDate(iso); return !!d && d.getFullYear() === date.getFullYear() && d.getMonth() === date.getMonth(); }
-function monthsAgo(date, n) { return new Date(date.getFullYear(), date.getMonth() - n, 1); }
-
-const localRating = (score) => (score >= 70 ? 'red' : score >= 40 ? 'yellow' : 'green');
-function ratingOf(psel, score) { return viaPsel(psel, 'rating', () => psel.rating(score), localRating(score)); }
-function ratingTone(psel, rating) { return viaPsel(psel, 'ratingTone', () => psel.ratingTone(rating), (RATING_META[rating] || RATING_META.green).tone); }
-function ratingLabel(psel, rating) { return viaPsel(psel, 'ratingLabel', () => psel.ratingLabel(rating), (RATING_META[rating] || RATING_META.green).label); }
-function ratingBadge(psel, rating, { sm = false } = {}) {
-  return h('span', { class: ['rating', `is-${rating}`, sm ? 'is-sm' : null], 'data-rating': rating }, glyph(ratingTone(psel, rating), 12), h('span', {}, ratingLabel(psel, rating)));
-}
-function typeChip(psel, type) {
-  const meta = TYPE_META[type] || { icon: 'alert-circle', label: String(type || '—') };
-  const label = viaPsel(psel, 'typeLabel', () => psel.typeLabel(type), meta.label);
-  return h('span', { class: ['type-chip', `is-${String(type || 'unknown').toLowerCase()}`], 'data-type': type || '' }, svgIcon(meta.icon, 12), h('span', {}, label));
-}
-const statusBadge = (status) => badge(status || '—', TASK_STATUS_TONE[status] || 'neutral');
-const sourceBadge = (source) => h('span', { class: 'source-badge', 'data-source': source || '' }, SOURCE_LABEL[source] || source || '—');
-/** Latin product / vendor names get lang="en" dir="ltr" (RTL-28). */
-const latin = (label) => h('span', { lang: 'en', dir: 'ltr' }, String(label ?? ''));
-const CODE_RE = /\b[A-Z]{1,5}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
-/** A code such as AIR-1042 / MT-0224 as an isolated LTR mono run that never breaks (RTL-5). */
-const codeSpan = (code, extra = null) => h('span', { class: ['code', 'mono', 'nowrap', extra], dir: 'ltr' }, String(code ?? ''));
-/** Split a title mixing Arabic prose and Latin codes into text + code spans. */
-function withCodes(str) {
-  const t = String(str ?? ''); const out = []; let last = 0; let m;
-  CODE_RE.lastIndex = 0;
-  while ((m = CODE_RE.exec(t))) { if (m.index > last) out.push(digitsIn(defaultFmt, t.slice(last, m.index))); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
-  if (last < t.length) out.push(digitsIn(defaultFmt, t.slice(last)));
-  return out.length ? out : [digitsIn(defaultFmt, t)];
-}
-/** Static chip — write-back changes are announced once through a toast, so no live region here (RTL-18). */
-function writebackChip(wb) {
-  const status = wb && wb.status ? String(wb.status) : '';
-  const meta = WRITEBACK_META[status] || { label: status || 'بدون كتابة عكسية', tone: 'neutral' };
-  return h('span', { class: 'writeback-chip', 'data-status': status }, glyph(meta.tone === 'neutral' ? 'neutral' : meta.tone, 11), meta.label, meta.product ? latin(meta.product) : null);
-}
-
-function viewHead({ code, title, lead, actions = [] }) {
-  const textEl = h('div', { class: 'view-head-text' }, h('span', { class: 'code-tag' }, code), h('h1', {}, title), lead ? h('p', { class: 'view-lead' }, lead) : null);
-  return h('div', { class: 'view-head' }, textEl, actions.length ? h('div', { class: 'view-actions' }, actions) : null);
-}
-function section(tag, title, ...children) {
-  return h('section', { class: 'drawer-section' }, h('h3', { class: 'drawer-section-title is-platform' }, h('span', { class: 'mono', 'aria-hidden': 'true' }, tag), ...(Array.isArray(title) ? title : [title])), ...children);
-}
-
-/* ------------------------------------------------------------------ */
-/* View                                                                 */
-/* ------------------------------------------------------------------ */
+const cssEscape = (v) => (typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(String(v)) : String(v).replace(/["\\]/g, '\\$&'));
+function dateMs(v) { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v || '')); return m ? new Date(+m[1], +m[2] - 1, +m[3]).getTime() : NaN; }
 
 export default {
   id: 'tasks',
   code: 'AIR-02',
-  title: 'مهام المعالجة',
+  get title() { return t('tasks.title'); },
   icon: 'file-check',
 
   render(container, ctx = {}) {
-    const store = ctx.store || defaultStore;
-    const bus = ctx.bus || defaultBus;
-    const fmt = ctx.fmt || defaultFmt;
-    const router = ctx.router;
-    let psel = ctx.psel || null;
-
+    ensureStyle();
+    const env = envOf(ctx);
+    const { store, bus, psel, fmt } = env;
+    const router = ctx.router || null;
     let alive = true;
     let raf = 0;
-    const subs = [];
-    const timers = new Set();
+    const unsubs = [];
+    const overlays = new Set();
     let board = null;
-    let drawerState = null; // { api, id }
+    let table = null;
+    let drawerState = null; // { api, id, forms: Map }
 
+    const stateOf = () => store.state || {};
+    const platform = () => stateOf().platform || {};
+    const globalFilters = () => store.filters || stateOf().filters || { siteId: 'all', range: 30, search: '' };
+    const now = () => store.now();
+    const today0 = () => { const d = now(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+    const findTask = (id) => arr(platform().tasks).find((x) => x && (x.id === id || x.code === id)) || null;
+    const riskOf = (task) => (task && task.riskId ? arr(platform().aiRisks).find((r) => r && r.id === task.riskId) || null : null);
+    const isOverdue = (task) => task.status !== CLOSED && (task.status === OVERDUE || (task.dueDate && dateMs(task.dueDate) < today0()));
     const navigate = (id, params = {}) => { if (router && typeof router.navigate === 'function') router.navigate(id, params); };
-    const nowDate = () => (typeof store.now === 'function' ? store.now() : new Date());
-    const stateOf = () => store.state || store.get();
-    const settings = () => (stateOf().settings || {});
-    const platformOf = () => (stateOf().platform || {});
-    const sites = () => (stateOf().sites || []);
-    const projectName = (id) => { const s = sites().find((x) => x.id === id); return digitsIn(fmt, s ? s.name : String(id || '—')); };
-    const findTask = (id) => (platformOf().tasks || []).find((t) => t && t.id === id) || null;
-    const riskOf = (task) => (task && task.riskId ? (platformOf().aiRisks || []).find((r) => r.id === task.riskId) || null : null);
-    const addTimer = (fn, ms) => { const id = setTimeout(() => { timers.delete(id); if (alive) fn(); }, ms); timers.add(id); return id; };
-    const canStore = (name) => typeof store[name] === 'function';
-    const requireStore = (name) => { if (canStore(name)) return true; toast(`الإجراء غير متاح: وظيفة المتجر ${name} غير محمّلة`, { tone: 'critical' }); return false; };
-    const overlays = new Set(); // open modals, closed on cleanup
+    const demo = () => statusApi.mode(stateOf()) === 'demo';
+
+    /* ── local state (view + filters survive a language re-mount through the URL / memory) ── */
+    const hp = hashParams();
+    const params = { ...(ctx.params || {}), ...hp };
+    const local = {
+      view: params.view === 'list' || params.view === 'board' ? params.view : (memory.view || 'board'),
+      owner: params.owner || (memory.filters && memory.filters.owner) || 'all',
+      priority: params.priority || (memory.filters && memory.filters.priority) || 'all',
+      source: params.source || (memory.filters && memory.filters.source) || 'all',
+      q: params.q || (memory.filters && memory.filters.q) || '',
+      risk: params.risk && params.new !== '1' ? params.risk : null,
+    };
+
+    /* ── data ── */
+    function allInScope() {
+      const g = globalFilters();
+      let groups = [];
+      try { groups = arr(psel.tasksByStatus(stateOf(), g, now())); } catch { groups = []; }
+      const range = Number(g.range) > 0 ? Number(g.range) : 30;
+      const since = now().getTime() - range * DAY_MS;
+      return groups.flatMap((gr) => arr(gr.items)).filter((x) => x.status !== CLOSED || (Date.parse(x.closedAt || x.updatedAt || x.createdAt) || 0) >= since);
+    }
+    function visibleTasks() {
+      const g = globalFilters();
+      const q = [text(g.search), text(local.q)].filter(Boolean).join(' ').toLowerCase();
+      return allInScope().filter((x) => {
+        if (local.owner !== 'all' && x.owner !== local.owner) return false;
+        if (local.priority !== 'all' && (local.priority === 'none' ? !!x.priority : x.priority !== local.priority)) return false;
+        if (local.source !== 'all' && x.source !== local.source) return false;
+        if (local.risk && x.riskId !== local.risk && x.riskCode !== local.risk) return false;
+        if (q) {
+          const risk = x.risk || null;
+          const hay = [x.code, x.title, taskTitle(x, risk), person(x.owner), x.owner, risk && risk.code, risk && riskTitle(risk)].map((v) => String(v || '').toLowerCase()).join(' ');
+          if (!q.split(/\s+/).every((term) => hay.includes(term))) return false;
+        }
+        return true;
+      });
+    }
+    const activeFilterCount = () => ['owner', 'priority', 'source'].filter((k) => local[k] !== 'all').length + (local.q ? 1 : 0) + (local.risk ? 1 : 0);
+
+    /* ── heading ── */
+    const viewSeg = segmented({
+      options: [{ value: 'board', label: t('tasks.board'), icon: 'kanban' }, { value: 'list', label: t('tasks.list'), icon: 'list' }],
+      value: local.view, ariaLabel: t('tasks.viewLabel'),
+      onChange: (v) => { local.view = v; memory.view = v; patchHashParams({ view: v === 'list' ? 'list' : null }); paintBody({ rebuild: true }); },
+    });
+    viewSeg.el.classList.add('seg-sm');
+    const newBtn = button(t('tasks.newTask'), { variant: 'primary', icon: 'plus', onClick: () => newTaskFlow({ trigger: newBtn }) });
+    const head = h('header', { class: 'view-head' },
+      h('div', { class: 'view-head-text' },
+        h('span', { class: 'code-tag' }, 'AIR-02'),
+        h('h1', { class: 't-page', tabindex: '-1' }, t('tasks.title')),
+        h('p', { class: 'view-lead t-lead' }, t('tasks.lead'))),
+      h('div', { class: 'view-actions' },
+        statusBadge(statusApi.mode(stateOf())),
+        button(t('tasks.register'), { variant: 'ghost', icon: 'shield-alert', onClick: () => navigate('airisks') }),
+        viewSeg.el, newBtn));
+
+    /* ── summary ── */
+    const summary = h('div', { class: 'summary-strip tsk-summary', role: 'group', 'aria-label': t('tasks.summaryAria') });
+    function cell(icon, tone, label, value, hint) {
+      return h('div', { class: 'summary-cell' },
+        h('span', { class: ['summary-label', `tone-${tone}`] }, tone === 'critical' || tone === 'good' ? glyph(tone, 14) : svgIcon(icon, 14), h('span', {}, label)),
+        h('span', { class: 'summary-value' }, value),
+        h('span', { class: 't-helper' }, hint));
+    }
+    function paintSummary() {
+      clear(summary);
+      let k = null;
+      try { k = psel.taskKpis(stateOf(), globalFilters(), now()); } catch { k = null; }
+      if (!k) return;
+      const scope = allInScope();
+      const nNew = scope.filter((x) => x.status === NEW).length;
+      const nProg = scope.filter((x) => x.status === PROGRESS).length;
+      const aiTotal = k.accepted + k.edited;
+      summary.append(
+        cell('file-check', 'brand', t('tasks.kpi.open'), numRun(fmt.num(k.open)), t('tasks.kpi.openHint', { new: fmt.num(nNew), progress: fmt.num(nProg) })),
+        cell('clock', k.overdue ? 'critical' : 'good', t('tasks.kpi.overdue'), numRun(fmt.num(k.overdue)), k.overdue ? t('tasks.kpi.overdueHint') : t('tasks.kpi.overdueNone')),
+        cell('check-circle', 'good', t('tasks.kpi.closed'), numRun(fmt.num(k.closedThisMonth)), t('tasks.kpi.closedHint')),
+        cell('clock', 'neutral', t('tasks.kpi.avg'), k.avgCloseDays ? h('span', {}, t('tasks.kpi.avgValue', { days: fmt.num(k.avgCloseDays, { maximumFractionDigits: 1 }) })) : '—', k.avgCloseDays ? t('tasks.kpi.avgHint') : t('tasks.kpi.avgNone')),
+        cell('sliders', 'neutral', t('tasks.kpi.acceptance'), aiTotal ? numRun(fmt.pct(k.acceptancePct)) : '—', aiTotal ? t('tasks.kpi.acceptanceHint', { accepted: fmt.num(k.accepted), edited: fmt.num(k.edited), manual: fmt.num(k.manual) }) : t('tasks.kpi.acceptanceNone')));
+    }
+
+    /* ── filters ── */
+    function ownerList() {
+      const set = new Set(allInScope().map((x) => text(x.owner)).filter(Boolean));
+      if (local.owner !== 'all') set.add(local.owner);
+      return Array.from(set).sort((a, b) => person(a).localeCompare(person(b), i18n.locale()));
+    }
+    const bar = filterBar({
+      label: t('tasks.filters.label'),
+      className: 'tsk-filter-bar',
+      value: { owner: local.owner, priority: local.priority, source: local.source, q: local.q },
+      filters: [
+        { id: 'owner', type: 'select', label: t('tasks.filters.owner'), options: ownerList().map((o) => ({ value: o, label: person(o) })) },
+        { id: 'priority', type: 'select', label: t('tasks.filters.priority'), options: PRIORITIES.map((p) => ({ value: p, label: t(`tasks.priority.${p}`) })).concat([{ value: 'none', label: t('tasks.priority.none') }]) },
+        { id: 'source', type: 'select', label: t('tasks.filters.source'), options: SOURCES.map((s) => ({ value: s, label: i18n.label('taskSource', s) || s })) },
+        { id: 'q', type: 'search', label: t('tasks.filters.search'), placeholder: t('tasks.filters.searchPh') },
+      ],
+      onChange: (v) => {
+        local.owner = v.owner || 'all'; local.priority = v.priority || 'all'; local.source = v.source || 'all'; local.q = text(v.q);
+        memory.filters = { owner: local.owner, priority: local.priority, source: local.source, q: local.q };
+        patchHashParams({ owner: local.owner, priority: local.priority, source: local.source, q: local.q || null });
+        paintBody({ resetPage: true });
+      },
+      onReset: () => { local.risk = null; patchHashParams({ risk: null }); },
+    });
+    const chips = h('div', { class: 'tsk-chips' });
+    function paintChips() {
+      clear(chips);
+      if (!local.risk) return;
+      const r = arr(platform().aiRisks).find((x) => x && (x.id === local.risk || x.code === local.risk));
+      const code = r ? r.code : local.risk;
+      chips.appendChild(h('button', { type: 'button', class: 'reg-chip', 'aria-label': t('tasks.filters.removeRisk', { code }), onClick: () => { local.risk = null; patchHashParams({ risk: null }); paintChips(); paintBody({ resetPage: true }); bar.el.querySelector('select')?.focus(); } },
+        h('span', {}, t('tasks.filters.risk', { code })), svgIcon('close', 12)));
+    }
+    const filtersCard = h('div', { class: 'tsk-bar-row' }, bar.el, chips);
+
+    /* ── body (board or list) ── */
+    const bodyHost = h('div', { class: 'tsk-body' });
+    const root = h('section', { class: 'view view-tasks' }, head, summary, filtersCard, bodyHost);
+    container.appendChild(root);
+
+    function priorityChip(p) {
+      if (!PRIORITIES.includes(p)) return null;
+      return h('span', { class: ['tsk-prio', `is-${p}`] }, glyph(PRIORITY_TONE[p] === 'neutral' ? 'neutral' : PRIORITY_TONE[p], 11), h('span', {}, t(`tasks.priority.${p}`)));
+    }
+    function statusChip(s) { return badge(taskStatusLabel(s), STATUS_TONE[s] || 'neutral'); }
+    function riskRef(task) {
+      const risk = task.risk || riskOf(task);
+      if (!risk) return h('span', { class: 'risk-muted' }, t('tasks.noRisk'));
+      return h('span', { class: 'tsk-card-risk' }, codeSpan(risk.code), ratingBadge(ratingOf(risk.score, env), { sm: true }));
+    }
+
+    function taskCard(task) {
+      const risk = task.risk || riskOf(task);
+      const overdue = isOverdue(task);
+      const el = h('div', { class: 'tsk-card' },
+        h('div', { class: 'tsk-card-top' }, codeSpan(task.code || task.id, 'text-xs'), priorityChip(task.priority)),
+        h('p', { class: 'kanban-card-title' }, ...withCodes(taskTitle(task, risk))),
+        riskRef(task),
+        h('div', { class: 'tsk-card-meta' },
+          h('span', {}, svgIcon('user', 12), dataText(person(task.owner))),
+          dueCell(task.dueDate, overdue),
+          arr(task.attachments).length ? h('span', {}, svgIcon('folder', 12), tn('tasks.attachmentsCount', arr(task.attachments).length)) : null),
+        h('div', { class: 'tsk-card-foot' },
+          writebackChip(task, env),
+          button('', { variant: 'ghost', size: 'sm', icon: 'chevron-end', onClick: (e) => { e.stopPropagation(); openTask(task.id, { trigger: e.currentTarget }); }, attrs: { 'aria-label': t('tasks.details', { code: task.code || task.id }) } })));
+      el.addEventListener('click', (e) => { if (e.target.closest('button,a,input,select')) return; openTask(task.id, { trigger: el.closest('.kanban-card') }); });
+      return el;
+    }
+    const boardItems = (tasks) => tasks.map((x) => ({ id: x.id, code: x.code, title: taskTitle(x, x.risk), columnId: STATUSES.includes(x.status) ? x.status : NEW, render: () => taskCard(x) }));
+
+    function listColumns() {
+      return [
+        { key: 'code', label: t('tasks.col.code'), priority: 'high', width: 100, render: (x) => codeSpan(x.code || x.id), sortValue: (x) => x.code },
+        { key: 'title', label: t('tasks.col.title'), priority: 'high', render: (x) => h('span', { class: 'tsk-title' }, h('span', { class: 'tsk-title-main' }, ...withCodes(taskTitle(x, x.risk))), h('span', { class: 'tsk-title-sub' }, siteName(stateOf(), x.projectId))), sortValue: (x) => taskTitle(x, x.risk) },
+        { key: 'risk', label: t('tasks.col.risk'), priority: 'medium', render: riskRef, sortValue: (x) => x.riskCode || '' },
+        { key: 'owner', label: t('tasks.col.owner'), priority: 'medium', render: (x) => dataText(person(x.owner)), sortValue: (x) => person(x.owner) },
+        { key: 'due', label: t('tasks.col.due'), priority: 'high', render: (x) => dueCell(x.dueDate, isOverdue(x)), sortValue: (x) => dateMs(x.dueDate) || null },
+        { key: 'priority', label: t('tasks.col.priority'), priority: 'low', render: (x) => priorityChip(x.priority) || h('span', { class: 'risk-muted', title: t('tasks.priority.none') }, '—'), sortValue: (x) => (x.priority ? PRIORITIES.indexOf(x.priority) : 9) },
+        { key: 'status', label: t('tasks.col.status'), priority: 'high', render: (x) => statusChip(x.status), sortValue: (x) => STATUSES.indexOf(x.status) },
+        { key: 'source', label: t('tasks.col.source'), priority: 'low', render: (x) => h('span', { class: 'source-badge', 'data-source': x.source || '' }, i18n.label('taskSource', x.source) || x.source || '—'), sortValue: (x) => x.source },
+        { key: 'writeback', label: t('tasks.col.writeback'), priority: 'low', render: (x) => writebackChip(x, env), sortValue: (x) => (x.writeback && x.writeback.status) || '' },
+      ];
+    }
+
+    function emptyBlock(rowsTotal) {
+      if (rowsTotal) return null;
+      const filtered = activeFilterCount() > 0;
+      return emptyState({
+        icon: 'file-check', title: filtered ? t('tasks.emptyFiltered') : t('tasks.empty'), text: filtered ? t('tasks.emptyFilteredText') : t('tasks.emptyText'),
+        action: filtered ? { label: t('tasks.clearFilters'), icon: 'refresh', onClick: () => { local.risk = null; patchHashParams({ risk: null }); paintChips(); bar.reset(); } } : { label: t('tasks.newTask'), icon: 'plus', onClick: () => newTaskFlow({}) },
+      });
+    }
+
+    let lastSig = '';
+    function paintBody({ rebuild = false, resetPage = false, live = false } = {}) {
+      if (!alive) return;
+      const p = platform();
+      if (!Array.isArray(p.tasks)) {
+        clear(bodyHost); board = null; table = null;
+        bodyHost.appendChild(errorState({ title: t('tasks.noPlatform'), text: t('tasks.noPlatformText'), retry: () => paintBody({ rebuild: true }), retryLabel: t('tasks.retry') }));
+        return;
+      }
+      const tasks = visibleTasks();
+      const sig = `${local.view}|${tasks.length ? 1 : 0}`;
+      if (rebuild || sig !== lastSig || (!board && !table)) {
+        lastSig = sig;
+        clear(bodyHost);
+        board = null;
+        if (table) { table.destroy(); table = null; }
+        const empty = emptyBlock(tasks.length);
+        if (empty) { bodyHost.appendChild(h('div', { class: 'card' }, h('div', { class: 'card-body' }, empty))); return; }
+        if (local.view === 'list') {
+          table = dataTable({ columns: listColumns(), rows: tasks, rowKey: 'id', pageSize: 12, caption: t('tasks.caption'), rowLabel: (x) => `${x.code} — ${taskTitle(x, x.risk)}`, onRowClick: (row, e) => openTask(row.id, { trigger: e && e.target && e.target.closest ? e.target.closest('tr')?.querySelector('.row-open') : null }) });
+          bodyHost.appendChild(components.card({ code: 'TSK-02', title: t('tasks.list'), subtitle: tn('tasks.count', tasks.length), className: 'tsk-list', body: table.el }));
+        } else {
+          board = kanban({
+            ariaLabel: t('tasks.boardAria'),
+            columns: STATUSES.map((s) => ({ id: s, label: taskStatusLabel(s), tone: STATUS_TONE[s] })),
+            items: boardItems(tasks),
+            onMove: (id, to) => moveTask(id, to),
+          });
+          bodyHost.appendChild(board.el);
+        }
+        return;
+      }
+      if (table) {
+        table.update(tasks, live ? { preserve: true, flash: true } : { resetPage });
+        const sub = bodyHost.querySelector('.card-sub');
+        if (sub) sub.textContent = tn('tasks.count', tasks.length);
+      } else if (board) board.update(boardItems(tasks));
+    }
+
+    /* ── transitions with guards ── */
+    function moveTask(id, to, { from = 'board' } = {}) {
+      const task = findTask(id);
+      if (!task || task.status === to) return;
+      if (to === CLOSED) { closeFlow(task, { via: from }); return; }
+      if (to === OVERDUE && !(task.dueDate && dateMs(task.dueDate) < today0())) {
+        toast(t('tasks.guard.overdueFuture', { due: fmt.date(task.dueDate) }), { tone: 'warning', title: task.code });
+        return;
+      }
+      if (task.status === CLOSED) { reopenFlow(task, { to }); return; }
+      const res = store.updateTask(task.id, { status: to, by: ACTOR });
+      if (!res) { toast(t('tasks.toast.failed'), { tone: 'warning', title: task.code }); return; }
+      toast(t('tasks.toast.moved', { code: task.code, status: taskStatusLabel(to) }), { tone: 'neutral', title: task.code });
+    }
+
     function openModal(opts) {
       let api = null;
-      api = modal({ ...opts, onClose: () => overlays.delete(api) });
+      api = modal({ ...opts, onClose: (r) => { overlays.delete(api); if (opts.onClose) opts.onClose(r); } });
       overlays.add(api);
       api.open();
       return api;
     }
 
-    if (!psel) loadPsel().then((p) => { if (p && alive && !psel) { psel = p; schedule(); } });
-
-    /* ---------------- scaffold ---------------- */
-
-    const root = h('section', { class: 'view view-tasks' });
-    root.appendChild(viewHead({
-      code: 'AIR-02',
-      title: 'مهام المعالجة',
-      lead: h('span', {}, 'كل مهمة تُولَّد من قبول توصية المحرك أو تعديلها (أو تُضاف يدوياً)، تُسند إلى مالك، وتُكتب عكسياً إلى ', latin(PM_NAME), '. اسحب البطاقات بين الأعمدة أو استخدم زر النقل؛ إغلاق المهمة يتطلب تسجيل النتيجة لتغذية إعادة معايرة النماذج.'),
-      actions: [
-        button('سجل المخاطر الذكي', { variant: 'ghost', size: 'sm', icon: 'shield-alert', onClick: () => navigate('airisks') }),
-        button('مهمة يدوية', { variant: 'primary', size: 'sm', icon: 'plus', onClick: () => manualTaskFlow() }),
-      ],
-    }));
-    const kpiHost = h('div', { class: 'kpi-row tasks-kpis', role: 'region', 'aria-label': 'مؤشرات مهام المعالجة', style: { gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' } });
-    const boardHost = h('div', { class: 'tasks-board' });
-    root.append(kpiHost, boardHost);
-    container.appendChild(root);
-
-    /* ---------------- data ---------------- */
-
-    function visibleTasks() {
-      const state = stateOf();
-      const filters = store.filters || state.filters || { siteId: 'all', range: 30, search: '' };
-      const now = nowDate();
-      const siteId = filters.siteId || 'all';
-      const q = text(filters.search).toLowerCase();
-      const rangeMs = num(filters.range, 30) * DAY_MS;
-      const risks = platformOf().aiRisks || [];
-      return (platformOf().tasks || []).filter((t) => {
-        if (!t) return false;
-        if (siteId !== 'all' && t.projectId !== siteId) return false;
-        if (t.status === 'مغلقة') {
-          const closedAt = Date.parse(t.closedAt || t.updatedAt || t.createdAt);
-          if (Number.isFinite(closedAt) && now.getTime() - closedAt > rangeMs) return false;
-        }
-        if (q) {
-          const risk = t.riskId ? risks.find((r) => r.id === t.riskId) : null;
-          const hay = [t.code, t.title, t.owner, risk && risk.code, risk && risk.title].map((x) => String(x || '').toLowerCase());
-          if (!hay.some((x) => x.includes(q))) return false;
-        }
-        return true;
-      });
-    }
-
-    function kpis(tasks, now) {
-      const filters = store.filters || {};
-      const inSite = (t) => !filters.siteId || filters.siteId === 'all' || t.projectId === filters.siteId;
-      const all = (platformOf().tasks || []).filter(inSite);
-      const open = tasks.filter((t) => t.status !== 'مغلقة');
-      const fromPsel = viaPsel(psel, 'overdueTasks', () => psel.overdueTasks(stateOf(), filters, now), null);
-      const overdue = open.filter((t) => t.status === 'متأخرة' || isOverdue(t.dueDate, now) || (Array.isArray(fromPsel) && fromPsel.some((o) => o && o.id === t.id)));
-      const closed = all.filter((t) => t.status === 'مغلقة');
-      const closedThisMonth = closed.filter((t) => sameMonth(t.closedAt, now)).length;
-      const closedLastMonth = closed.filter((t) => sameMonth(t.closedAt, monthsAgo(now, 1))).length;
-      const durations = closed.map((t) => { const a = Date.parse(t.createdAt); const b = Date.parse(t.closedAt); return Number.isFinite(a) && Number.isFinite(b) && b >= a ? (b - a) / DAY_MS : null; }).filter((d) => d !== null);
-      const avgClose = durations.length ? Math.round((durations.reduce((s, d) => s + d, 0) / durations.length) * 10) / 10 : null;
-      const accepted = all.filter((t) => t.source === 'ai-accepted').length;
-      const edited = all.filter((t) => t.source === 'ai-edited').length;
-      const manual = all.filter((t) => t.source === 'manual').length;
-      const acceptance = accepted + edited ? Math.round((accepted / (accepted + edited)) * 100) : null;
-      return { open, overdue, closedThisMonth, closedLastMonth, avgClose, accepted, edited, manual, acceptance };
-    }
-
-    function paintKpis(tasks, now) {
-      clear(kpiHost);
-      const k = kpis(tasks, now);
-      const newCount = k.open.filter((t) => t.status === 'جديدة').length;
-      const inProgress = k.open.filter((t) => t.status === 'قيد التنفيذ').length;
-      kpiHost.append(
-        statTile({ label: 'مهام مفتوحة', value: k.open.length, icon: 'file-check', tone: 'brand', hint: `${fmt.num(newCount)} جديدة · ${fmt.num(inProgress)} قيد التنفيذ` }),
-        statTile({ label: 'متأخرة', value: k.overdue.length, icon: 'clock', tone: k.overdue.length ? 'critical' : 'good', hint: k.overdue.length ? 'تجاوزت تاريخ الاستحقاق دون إغلاق' : 'لا توجد مهام متأخرة' }),
-        statTile({ label: 'أُغلقت هذا الشهر', value: k.closedThisMonth, icon: 'check-circle', tone: 'good', delta: k.closedThisMonth - k.closedLastMonth, deltaGoodWhen: 'up', hint: 'مقارنة بالشهر الماضي' }),
-        statTile({ label: 'متوسط زمن الإغلاق', value: k.avgClose, unit: 'يوم', icon: 'clock', hint: 'من إنشاء المهمة حتى إغلاقها' }),
-        statTile({ label: 'القبول مقابل التعديل', value: k.acceptance === null ? null : fmt.pct(k.acceptance), icon: 'sliders', tone: k.acceptance === null ? null : (k.acceptance >= 70 ? 'good' : 'warning'), hint: `${fmt.num(k.accepted)} مقبولة كما هي · ${fmt.num(k.edited)} مُعدّلة · ${fmt.num(k.manual)} يدوية` }),
-      );
-    }
-
-    /* ---------------- cards ---------------- */
-
-    function dueCell(iso, now, done) {
-      const overdue = !done && isOverdue(iso, now);
-      return h('span', { class: ['row gap-1 due-cell', overdue ? 'is-overdue' : null], title: overdue ? 'متأخر عن موعد الاستحقاق' : undefined },
-        glyph(overdue ? 'critical' : 'clock', 12), h('span', {}, fmt.date(iso, { style: 'short' })), overdue ? h('span', { class: 'sr-only' }, ' — متأخر') : null);
-    }
-
-    function taskCard(task, now) {
+    function closeConsequence(task) {
       const risk = riskOf(task);
-      const overdue = task.status !== 'مغلقة' && (task.status === 'متأخرة' || isOverdue(task.dueDate, now));
-      const wb = task.writeback || {};
-      const el = h('div', { class: ['task-card stack gap-2', overdue ? 'is-overdue' : null], 'data-task': task.id },
-        h('div', { class: 'row between gap-2 wrap' },
-          h('span', { class: 'code mono nowrap text-xs muted', dir: 'ltr' }, task.code || task.id),
-          risk
-            ? h('span', { class: 'row gap-1 task-risk-ref', title: risk.title }, h('span', { class: 'code mono nowrap text-xs', dir: 'ltr' }, risk.code), ratingBadge(psel, ratingOf(psel, num(risk.score)), { sm: true }))
-            : badge('بدون مخاطرة مرتبطة', 'neutral')),
-        h('p', { class: 'kanban-card-title' }, ...withCodes(task.title || '—')),
-        h('div', { class: 'kanban-card-meta' },
-          h('span', { title: 'المالك' }, svgIcon('user', 12), task.owner || '—'),
-          h('span', { class: overdue ? 'is-overdue' : null, title: 'تاريخ الاستحقاق' }, dueCell(task.dueDate, now, task.status === 'مغلقة')),
-          h('span', { title: 'المشروع' }, svgIcon('building', 12), projectName(task.projectId))),
-        h('div', { class: 'kanban-card-foot' },
-          h('span', { class: 'row gap-1 wrap' }, sourceBadge(task.source), writebackChip(wb),
-            wb.status === 'failed' && (canStore('retryWriteback') || canStore('updateTask')) ? button('إعادة المزامنة', { variant: 'outline', size: 'sm', icon: 'refresh', onClick: (e) => { e.stopPropagation(); resync(task); } }) : null),
-          button('', { variant: 'ghost', size: 'sm', icon: 'chevron-end', onClick: (e) => { e.stopPropagation(); openTask(task.id); }, attrs: { 'aria-label': `تفاصيل المهمة ${task.code || ''}` } })));
-      el.addEventListener('click', (e) => { if (e.target.closest('button,a,input,select')) return; openTask(task.id); });
-      return el;
-    }
-
-    function boardItems(tasks, now) {
-      return tasks.map((t) => ({ id: t.id, columnId: TASK_STATUSES.includes(t.status) ? t.status : 'جديدة', render: () => taskCard(t, now) }));
-    }
-
-    /* ---------------- store actions ---------------- */
-
-    function setStatus(task, status, { silent = false } = {}) {
-      if (!requireStore('updateTask')) return;
-      try {
-        store.updateTask(task.id, { status, by: USER });
-        if (!silent) toast(`نُقلت المهمة ${task.code || ''} إلى «${status}»`, { tone: status === 'متأخرة' ? 'warning' : 'accent' });
-      } catch (err) { warnOnce('store.updateTask', err); toast('تعذر تحديث حالة المهمة', { tone: 'critical' }); }
+      if (!risk || TERMINAL.includes(risk.status)) return null;
+      const assessed = risk.residualLikelihood && risk.residualImpact;
+      return h('p', { class: 'tsk-guard' }, glyph('neutral', 12), assessed ? t('tasks.guard.riskWillClose', { code: risk.code }) : t('tasks.guard.riskResidual', { code: risk.code }));
     }
 
     function closeFlow(task) {
-      if (!requireStore('updateTask')) return;
       const form = h('form', { class: 'stack gap-3', novalidate: true },
-        h('p', { class: 'note text-sm' }, 'سجّل نتيجة المعالجة: تُغلق المخاطرة المرتبطة وتُسجَّل النتيجة في سجل التدقيق لتغذية إعادة معايرة النموذج.'),
-        formField({ label: 'نتيجة المعالجة', name: 'outcome', type: 'textarea', required: true, rows: 3, placeholder: `مثال: تم تعديل البند تعاقدياً وخُفّضت الدرجة إلى ${fmt.num(28)}` }));
+        h('p', { class: 'text-sm', style: { margin: 0, color: 'var(--ink-2)' } }, t('tasks.form.closeIntro')),
+        formField({ label: t('tasks.form.outcome'), name: 'outcome', type: 'textarea', rows: 3, required: true, placeholder: t('tasks.form.outcomePh') }),
+        closeConsequence(task));
       const submit = () => {
-        if (!form.reportValidity()) return false;
-        const outcome = text(readForm(form).outcome);
-        if (!outcome) { toast('أدخل نتيجة المعالجة', { tone: 'warning' }); return false; }
-        try {
-          store.updateTask(task.id, { status: 'مغلقة', outcome, by: USER });
-          toast(`أُغلقت المهمة ${task.code || ''} وسُجّلت النتيجة`, { tone: 'good' });
-        } catch (err) { warnOnce('store.updateTask', err); toast('تعذر إغلاق المهمة', { tone: 'critical' }); return false; }
+        clearErrors(form);
+        const outcome = text(readValues(form).outcome);
+        if (!outcome) { showErrors(form, [{ field: 'outcome', message: t('tasks.guard.closeNeedsOutcome') }]); return false; }
+        const res = store.updateTask(task.id, { status: CLOSED, outcome, by: ACTOR });
+        if (!res) { showErrors(form, [], { summary: t('tasks.toast.failed') }); return false; }
+        toast(t('tasks.toast.closed', { code: task.code }), { tone: 'good', title: task.code });
         return undefined;
       };
-      const api = openModal({ title: 'إغلاق المهمة', subtitle: `${task.code || ''} — ${task.title || ''}`, body: form, actions: [{ label: 'إلغاء', variant: 'ghost' }, { label: 'إغلاق المهمة', variant: 'primary', onClick: submit }] });
+      const api = openModal({ title: t('tasks.form.closeTitle'), subtitle: `${task.code} — ${taskTitle(task, riskOf(task))}`, body: form, actions: [{ label: t('risk.common.cancel'), variant: 'ghost' }, { label: t('tasks.form.closeSubmit'), variant: 'primary', icon: 'check', onClick: submit }] });
       form.addEventListener('submit', (e) => { e.preventDefault(); if (submit() !== false) api.close('action'); });
     }
 
-    function resync(task) {
-      try {
-        if (canStore('retryWriteback')) {
-          store.retryWriteback(task.id);
-          toast('بدأت إعادة مزامنة المهمة مع Biltix PM', { tone: 'accent', title: task.code });
-          return;
-        }
-        if (!canStore('updateTask')) return;
-        const wb = task.writeback || {};
-        store.updateTask(task.id, { writeback: { ...wb, target: wb.target || 'Biltix PM', status: 'pending', at: localISO(nowDate()) } });
-        toast('بدأت إعادة مزامنة المهمة مع Biltix PM', { tone: 'accent', title: task.code });
-        addTimer(() => {
-          try { store.updateTask(task.id, { writeback: { ...wb, target: wb.target || 'Biltix PM', status: 'synced', at: localISO(nowDate()) } }); toast('تمت الكتابة العكسية إلى Biltix PM', { tone: 'good', title: task.code }); } catch (err) { warnOnce('store.updateTask', err); }
-        }, WRITEBACK_RESYNC_MS);
-      } catch (err) { warnOnce('store.retryWriteback', err); toast('تعذر بدء إعادة المزامنة', { tone: 'critical' }); }
+    function reopenFlow(task, { to = PROGRESS } = {}) {
+      const res = store.updateTask(task.id, { status: to === CLOSED ? PROGRESS : to, by: ACTOR });
+      if (!res) { toast(t('tasks.toast.failed'), { tone: 'warning', title: task.code }); return; }
+      toast(t('tasks.toast.reopened', { code: task.code }), { tone: 'warning', title: task.code });
     }
 
-    function manualTaskFlow() {
-      if (!requireStore('addTask')) return;
-      const now = nowDate();
-      const filters = store.filters || {};
-      const defaultProject = filters.siteId && filters.siteId !== 'all' ? filters.siteId : (sites()[0] ? sites()[0].id : '');
-      const openRisks = (platformOf().aiRisks || []).filter((r) => r && r.status !== 'مغلق' && r.status !== 'مُتجاوز')
-        .slice().sort((a, b) => String(a.projectId).localeCompare(String(b.projectId)) || String(a.code).localeCompare(String(b.code)));
-      const riskOptions = [{ value: '', label: 'بدون ربط بمخاطرة' }].concat(openRisks.map((r) => ({ value: r.id, label: `${r.code} — ${String(r.title || '').slice(0, 56)} (${projectName(r.projectId)})` })));
-      const form = h('form', { class: 'stack gap-3', novalidate: true },
-        formField({ label: 'عنوان المهمة', name: 'title', type: 'text', required: true, placeholder: 'مثال: مراجعة بند غرامات التأخير مع الاستشاري' }),
-        formField({ label: 'المشروع', name: 'projectId', type: 'select', value: defaultProject, required: true, options: sites().map((s) => ({ value: s.id, label: s.name })) }),
-        formField({ label: 'المخاطرة المرتبطة', name: 'riskId', type: 'select', value: '', options: riskOptions, hint: 'اختياري — ربط المهمة بمخاطرة يُظهرها في سجل المخاطر الذكي.' }),
-        formField({ label: 'المالك المسؤول', name: 'owner', type: 'text', required: true, value: USER }),
-        formField({ label: 'تاريخ الاستحقاق', name: 'dueDate', type: 'date', required: true, value: plusDays(now, 7), min: isoDay(now) }));
-      const submit = () => {
-        if (!form.reportValidity()) return false;
-        const data = readForm(form);
-        const title = text(data.title); const owner = text(data.owner);
-        if (!title || !owner) { toast('أكمل عنوان المهمة والمالك', { tone: 'warning' }); return false; }
-        try {
-          const created = store.addTask({ title, projectId: text(data.projectId) || defaultProject, riskId: text(data.riskId) || null, owner, dueDate: text(data.dueDate) || plusDays(now, 7), status: 'جديدة', source: 'manual' });
-          toast(`أُضيفت المهمة اليدوية ${created && created.code ? created.code : ''}`.trim(), { tone: 'good' });
-        } catch (err) { warnOnce('store.addTask', err); toast('تعذر إضافة المهمة', { tone: 'critical' }); return false; }
-        return undefined;
-      };
-      const api = openModal({ title: 'مهمة معالجة يدوية', subtitle: 'تُضاف بمصدر «يدوية» وتظهر في عمود «جديدة»', body: form, actions: [{ label: 'إلغاء', variant: 'ghost' }, { label: 'إضافة المهمة', variant: 'primary', onClick: submit }] });
-      form.addEventListener('submit', (e) => { e.preventDefault(); if (submit() !== false) api.close('action'); });
-    }
-
-    /* ---------------- drawer ---------------- */
-
-    function buildTaskBody(task) {
-      const now = nowDate();
-      const risk = riskOf(task);
-      const overdue = task.status !== 'مغلقة' && (task.status === 'متأخرة' || isOverdue(task.dueDate, now));
-      const wb = task.writeback || {};
-      const details = kv([
-        ['الحالة', h('span', { class: 'row gap-1 wrap' }, statusBadge(task.status), overdue ? badge('متأخرة عن الاستحقاق', 'critical') : null)],
-        ['المصدر', sourceBadge(task.source)],
-        ['المالك', task.owner || '—'],
-        ['الاستحقاق', task.dueDate ? dueCell(task.dueDate, now, task.status === 'مغلقة') : '—'],
-        ['المشروع', projectName(task.projectId)],
-        ['أُنشئت', fmt.dateTime(task.createdAt)],
-        ['أُغلقت', task.closedAt ? fmt.dateTime(task.closedAt) : '—'],
-        ['النتيجة', task.outcome ? h('span', {}, digitsIn(fmt, task.outcome)) : '—'],
-      ]);
-      details.classList.add('is-compact');
-
-      const riskBlock = risk
-        ? h('div', { class: 'recommendation is-decided' },
-          h('div', { class: 'recommendation-head' },
-            h('h4', {}, h('span', { class: 'code mono nowrap', dir: 'ltr' }, risk.code)),
-            h('div', { class: 'recommendation-chips' }, ratingBadge(psel, ratingOf(psel, num(risk.score))), typeChip(psel, risk.type), h('span', { class: 'recommendation-chip' }, 'الدرجة ', h('span', { class: 'mono' }, fmt.num(num(risk.score)))))),
-          h('p', { class: 'recommendation-action' }, ...withCodes(risk.title)),
-          risk.recommendation && risk.recommendation.action ? h('p', { class: 'recommendation-rationale' }, digitsIn(fmt, risk.recommendation.action)) : null,
-          h('div', { class: 'recommendation-actions' }, button('فتح المخاطرة في السجل الذكي', { variant: 'outline', size: 'sm', icon: 'shield-alert', onClick: () => { closeDrawer(); navigate('airisks', { risk: risk.id }); } })))
-        : h('p', { class: 'note text-sm' }, 'هذه مهمة يدوية غير مرتبطة بمخاطرة مكتشفة.');
-
-      const wbBlock = h('div', { class: 'stack gap-2' },
-        kv([['الهدف', latin(wb.target || PM_NAME)], ['الحالة', h('span', { class: 'row gap-2 wrap' }, writebackChip(wb), wb.at ? h('span', { class: 'text-xs muted', title: fmt.dateTime(wb.at) }, fmt.relative(wb.at)) : null)]]),
-        wb.status === 'failed' && (canStore('retryWriteback') || canStore('updateTask')) ? h('div', { class: 'row' }, button('إعادة المزامنة', { variant: 'primary', size: 'sm', icon: 'refresh', onClick: () => resync(task) })) : null,
-        settings().platform && settings().platform.writebackEnabled === false ? h('p', { class: 'note tone-warning text-xs' }, 'الكتابة العكسية معطّلة في الإعدادات.') : null);
-
-      const actions = h('div', { class: 'row wrap gap-2' });
-      if (task.status !== 'مغلقة') {
-        if (task.status !== 'قيد التنفيذ') actions.appendChild(button('بدء التنفيذ', { variant: 'outline', icon: 'play', onClick: () => setStatus(task, 'قيد التنفيذ') }));
-        actions.appendChild(button('إغلاق المهمة وتسجيل النتيجة', { variant: 'primary', icon: 'check', onClick: () => closeFlow(task) }));
-      } else {
-        actions.appendChild(button('إعادة فتح المهمة', { variant: 'outline', icon: 'refresh', onClick: () => setStatus(task, 'قيد التنفيذ') }));
-      }
-
-      return h('div', { class: 'task-drawer-body' },
-        h('div', { class: 'drawer-section' }, details),
-        section('01', 'المخاطرة المرتبطة', riskBlock),
-        section('02', ['الكتابة العكسية إلى ', latin(PM_NAME)], wbBlock),
-        section('03', 'الإجراءات', actions));
-    }
-
-    const subtitleOf = (task) => `${task.code || task.id} · ${projectName(task.projectId)}`;
-
-    function openTask(id) {
-      const task = findTask(id);
-      if (!task) { toast('لم يتم العثور على المهمة', { tone: 'warning' }); return; }
-      if (drawerState && drawerState.api && drawerState.api.isOpen()) { drawerState.id = id; refreshDrawer(); return; }
-      const api = drawer({
-        title: task.title || task.code, subtitle: subtitleOf(task), size: 'md',
-        body: () => buildTaskBody(task),
-        onClose: () => { if (drawerState && drawerState.api === api) drawerState = null; },
-      });
-      api.el.classList.add('task-drawer');
-      drawerState = { api, id };
-      api.open();
-    }
-    function refreshDrawer() {
-      if (!drawerState || !drawerState.api || !drawerState.api.isOpen()) return;
-      const { api, id } = drawerState;
-      const task = findTask(id);
-      if (!task) { api.close('gone'); return; }
-      const scroll = api.body.scrollTop;
-      clear(api.body);
-      api.body.appendChild(buildTaskBody(task));
-      api.setTitle(task.title || task.code);
-      const sub = api.el.querySelector('.drawer-sub');
-      if (sub) sub.textContent = subtitleOf(task);
-      api.body.scrollTop = scroll;
-    }
-    function closeDrawer() { if (drawerState && drawerState.api) drawerState.api.close('action'); }
-
-    /* ---------------- paint & refresh ---------------- */
-
-    function paint() {
-      clear(boardHost);
-      board = null;
+    /* ── new task ── */
+    function newTaskFlow({ trigger = null, riskId = null } = {}) {
       const state = stateOf();
-      if (!state.platform || !Array.isArray(state.platform.tasks)) {
-        clear(kpiHost);
-        boardHost.appendChild(emptyState({ icon: 'file-check', title: 'بيانات المنصة غير متاحة بعد', text: 'لم تُحمَّل بيانات منصة إدارة المخاطر (state.platform).' }));
-        return;
-      }
-      const now = nowDate();
-      const tasks = visibleTasks();
-      paintKpis(tasks, now);
-      board = kanban({
-        columns: TASK_STATUSES.map((status) => ({ id: status, label: status, tone: TASK_STATUS_TONE[status] })),
-        items: boardItems(tasks, now),
-        onMove: (id, toColumnId) => {
-          const task = findTask(id);
-          if (!task || task.status === toColumnId) return;
-          if (toColumnId === 'مغلقة') { closeFlow(task); return; }
-          setStatus(task, toColumnId);
+      const g = globalFilters();
+      const preRisk = riskId ? arr(platform().aiRisks).find((r) => r && (r.id === riskId || r.code === riskId)) : null;
+      const projectDefault = preRisk ? preRisk.projectId : (g.siteId && g.siteId !== 'all' ? g.siteId : '');
+      const openRisks = arr(platform().aiRisks).filter((r) => r && !TERMINAL.includes(r.status)).slice().sort((a, b) => String(a.code).localeCompare(String(b.code)));
+      const form = h('form', { class: 'stack gap-3', novalidate: true },
+        h('div', { class: 'risk-form-grid' },
+          h('div', { class: 'is-full' }, formField({ label: t('tasks.form.title'), name: 'title', type: 'text', required: true, placeholder: t('tasks.form.titlePh') })),
+          formField({ label: t('tasks.form.project'), name: 'projectId', type: 'select', required: true, value: projectDefault, placeholder: t('tasks.form.projectPh'), options: arr(state.sites).map((s) => ({ value: s.id, label: siteName(state, s.id) })) }),
+          formField({ label: t('tasks.form.risk'), name: 'riskId', type: 'select', value: preRisk ? preRisk.id : '', hint: t('tasks.form.riskHint'), options: [{ value: '', label: t('tasks.form.riskNone') }].concat(openRisks.map((r) => ({ value: r.id, label: `${r.code} — ${riskTitle(r).slice(0, 60)}` }))) }),
+          ownerField(state, { value: preRisk && preRisk.owner ? preRisk.owner : '' }),
+          formField({ label: t('risk.form.due'), name: 'dueDate', type: 'date', required: true, min: todayISO(env) }),
+          formField({ label: t('tasks.form.priority'), name: 'priority', type: 'select', value: '', options: [{ value: '', label: t('tasks.priority.none') }].concat(PRIORITIES.map((p) => ({ value: p, label: t(`tasks.priority.${p}`) }))) }),
+          h('div', { class: 'is-full' }, formField({ label: t('tasks.form.description'), name: 'description', type: 'textarea', rows: 2 }))));
+      const submit = () => {
+        clearErrors(form);
+        const v = readValues(form);
+        const errors = [];
+        if (!text(v.title)) errors.push({ field: 'title', message: t('tasks.form.titleRequired') });
+        if (!text(v.projectId)) errors.push({ field: 'projectId', message: t('tasks.form.projectRequired') });
+        const owner = ownerValue(v);
+        if (!owner) errors.push({ field: 'owner', message: t('risk.err.field.owner.required', errParams()) });
+        const due = text(v.dueDate);
+        if (!due) errors.push({ field: 'dueDate', message: t('risk.err.field.dueDate.required', errParams()) });
+        else if (due < todayISO(env)) errors.push({ field: 'dueDate', message: t('risk.err.field.dueDate.past', errParams()) });
+        if (errors.length) { showErrors(form, errors, { summary: t('tasks.form.summary') }); return false; }
+        let created = null;
+        try { created = store.addTask({ title: text(v.title), projectId: text(v.projectId), riskId: text(v.riskId) || null, owner, dueDate: due, priority: v.priority || null, description: text(v.description), status: NEW, source: 'manual' }); } catch { created = null; }
+        if (!created || created.ok === false) { showErrors(form, [], { summary: t('tasks.toast.failed') }); return false; }
+        toast(t('tasks.toast.created', { code: created.code }), { tone: 'good', title: created.code });
+        return undefined;
+      };
+      const api = openModal({ title: t('tasks.form.newTitle'), subtitle: t('tasks.form.newSub'), body: form, size: 'lg', returnFocus: trigger, actions: [{ label: t('risk.common.cancel'), variant: 'ghost' }, { label: t('tasks.form.submitNew'), variant: 'primary', icon: 'plus', onClick: submit }] });
+      form.addEventListener('submit', (e) => { e.preventDefault(); if (submit() !== false) api.close('action'); });
+    }
+
+    /* ── drawer ── */
+    function openTask(id, { trigger = null } = {}) {
+      const task = findTask(id);
+      if (!task) { toast(t('tasks.notFound'), { tone: 'warning' }); patchHashParams({ id: null }); return; }
+      if (drawerState && drawerState.api.isOpen()) { drawerState.id = task.id; drawerState.forms.clear(); refreshDrawer(true); patchHashParams({ id: task.code || task.id }); return; }
+      const st = { id: task.id, forms: new Map(), sig: '', api: null };
+      st.api = drawer({
+        title: prose(taskTitle(task, riskOf(task))), subtitle: ' ', size: 'lg', className: 'tsk-drawer', returnFocus: trigger,
+        body: () => h('div', { class: 'tsk-drawer-body stack gap-5' }),
+        onClose: (reason) => {
+          if (drawerState === st) drawerState = null;
+          if (['close', 'escape', 'backdrop', 'action'].includes(reason)) patchHashParams({ id: null });
         },
       });
-      boardHost.appendChild(board.el);
+      st.api.el.addEventListener('input', (e) => remember(st, e.target));
+      st.api.el.addEventListener('change', (e) => remember(st, e.target));
+      drawerState = st;
+      refreshDrawer(true);
+      st.api.open();
+      patchHashParams({ id: task.code || task.id });
+    }
+    function remember(st, el) {
+      const f = el && el.closest && el.closest('[data-form]');
+      if (!f || !el.name) return;
+      const entry = st.forms.get(f.dataset.form) || { values: {} };
+      if (el.type === 'radio') { if (el.checked) entry.values[el.name] = el.value; } else if (el.type === 'file') entry.file = el.files && el.files[0] ? el.files[0] : null;
+      else if (el.type === 'checkbox') entry.values[el.name] = el.checked; else entry.values[el.name] = el.value;
+      st.forms.set(f.dataset.form, entry);
+    }
+    function drawerSig(task) {
+      const risk = riskOf(task);
+      return [task.updatedAt, task.status, task.owner, task.dueDate, task.priority, task.title, arr(task.attachments).length, task.writeback && task.writeback.status, task.writeback && task.writeback.at, risk && risk.status, risk && risk.updatedAt].join('|');
+    }
+    function refreshDrawer(force = false) {
+      const st = drawerState;
+      if (!st) return;
+      const task = findTask(st.id);
+      if (!task) { st.api.close('gone'); return; }
+      const sig = drawerSig(task);
+      if (!force && sig === st.sig) return;
+      st.sig = sig;
+      const a = document.activeElement;
+      const focusInfo = a && st.api.el.contains(a) ? (a.closest('[data-form]') && a.name ? { form: a.closest('[data-form]').dataset.form, name: a.name } : (a.dataset && a.dataset.focusKey ? { key: a.dataset.focusKey } : null)) : null;
+      const scroll = st.api.body.scrollTop;
+      st.api.setTitle(prose(taskTitle(task, riskOf(task))));
+      const sub = st.api.el.querySelector('.drawer-sub');
+      if (sub) { clear(sub); sub.append(codeSpan(task.code || task.id), ' · ', siteName(stateOf(), task.projectId)); }
+      const bodyEl = st.api.body.firstElementChild || st.api.body;
+      clear(bodyEl);
+      bodyEl.appendChild(drawerContent(st, task));
+      st.api.body.scrollTop = scroll;
+      if (focusInfo) {
+        const target = focusInfo.form
+          ? st.api.el.querySelector(`[data-form="${cssEscape(focusInfo.form)}"] [name="${cssEscape(focusInfo.name)}"]`)
+          : st.api.el.querySelector(`[data-focus-key="${cssEscape(focusInfo.key)}"]`);
+        if (target) { try { target.focus({ preventScroll: true }); } catch { target.focus(); } }
+      }
     }
 
-    function refresh() {
-      if (!alive) return;
-      if (!board) { paint(); refreshDrawer(); return; }
-      const now = nowDate();
-      const tasks = visibleTasks();
-      paintKpis(tasks, now);
-      board.update(boardItems(tasks, now));
-      refreshDrawer();
+    function section(title, sub, actions, ...children) {
+      return h('section', { class: 'risk-sec' },
+        h('div', { class: 'risk-sec-head' }, h('div', {}, h('h3', { class: 'risk-sec-title t-card' }, title), sub ? h('p', { class: 'risk-sec-sub' }, sub) : null), actions || null),
+        ...children);
     }
 
+    function inline(st, id, { title, intro, body, submitLabel, icon, onSubmit }) {
+      const saved = (st.forms.get(id) || {}).values || {};
+      const form = h('form', { class: 'risk-inline-form', 'data-form': id, novalidate: true, 'aria-label': title },
+        h('p', { class: 'form-title' }, title), intro ? h('p', { class: 'form-intro' }, intro) : null, body,
+        h('div', { class: 'form-actions' }, button(submitLabel, { variant: 'primary', icon, attrs: { type: 'submit' } }), button(t('risk.common.cancel'), { variant: 'ghost', onClick: () => { st.forms.delete(id); refreshDrawer(true); focusKey(`open-${id}`); } })));
+      for (const [name, value] of Object.entries(saved)) {
+        form.querySelectorAll(`[name="${cssEscape(name)}"]`).forEach((c) => {
+          if (c.type === 'radio') c.checked = String(c.value) === String(value); else if (c.type === 'checkbox') c.checked = !!value; else if (c.type !== 'file') c.value = value;
+        });
+      }
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        clearErrors(form);
+        let res;
+        try { res = onSubmit(readValues(form)); } catch { res = { ok: false, message: t('tasks.toast.failed') }; }
+        if (res && res.ok === false) { showErrors(form, res.errors || [], { summary: res.message || null }); return; }
+        st.forms.delete(id);
+        refreshDrawer(true);
+        focusKey(`open-${id}`);
+      });
+      return form;
+    }
+    function focusKey(key) {
+      requestAnimationFrame(() => { const el = drawerState && drawerState.api.el.querySelector(`[data-focus-key="${cssEscape(key)}"]`); if (el) { try { el.focus({ preventScroll: true }); } catch { el.focus(); } } });
+    }
+    function openInline(st, id) {
+      st.forms.set(id, st.forms.get(id) || { values: {} });
+      refreshDrawer(true);
+      requestAnimationFrame(() => {
+        const f = st.api.el.querySelector(`[data-form="${cssEscape(id)}"]`);
+        if (!f) return;
+        try { f.scrollIntoView({ block: 'nearest', behavior: motion.enabled() ? 'smooth' : 'auto' }); } catch { /* ignore */ }
+        const first = f.querySelector('input:not([type="hidden"]), select, textarea');
+        if (first) { try { first.focus({ preventScroll: true }); } catch { first.focus(); } }
+      });
+    }
+
+    function drawerContent(st, task) {
+      const risk = riskOf(task);
+      const closed = task.status === CLOSED;
+      const overdue = isOverdue(task);
+      const wrap = h('div', { class: 'stack gap-5' });
+
+      /* status + actions */
+      const actions = [];
+      if (!closed) {
+        if (task.status !== PROGRESS) actions.push(button(t('tasks.action.start'), { variant: 'outline', icon: 'play', onClick: () => moveTask(task.id, PROGRESS, { from: 'drawer' }) }));
+        if (task.status !== OVERDUE && task.dueDate && dateMs(task.dueDate) < today0()) actions.push(button(t('tasks.action.markOverdue'), { variant: 'outline', icon: 'clock', onClick: () => moveTask(task.id, OVERDUE, { from: 'drawer' }) }));
+        if (!st.forms.has('close')) actions.push(button(t('tasks.action.close'), { variant: 'primary', icon: 'check', onClick: () => openInline(st, 'close'), attrs: { 'data-focus-key': 'open-close' } }));
+      } else if (!st.forms.has('reopen')) actions.push(button(t('tasks.action.reopen'), { variant: 'outline', icon: 'refresh', onClick: () => moveTask(task.id, PROGRESS, { from: 'drawer' }), attrs: { 'data-focus-key': 'open-reopen' } }));
+      wrap.appendChild(section(t('tasks.drawer.status'), null, null,
+        h('div', { class: 'tsk-status-row' }, statusChip(task.status), overdue ? badge(t('risk.common.overdue'), 'critical', { icon: 'clock' }) : null, priorityChip(task.priority), h('span', { class: 'source-badge', 'data-source': task.source || '' }, i18n.label('taskSource', task.source) || task.source)),
+        h('div', { class: 'risk-actions' }, ...actions),
+        st.forms.has('close') && !closed ? inline(st, 'close', {
+          title: t('tasks.form.closeTitle'), intro: t('tasks.form.closeIntro'), submitLabel: t('tasks.form.closeSubmit'), icon: 'check',
+          body: h('div', { class: 'stack gap-2' }, formField({ label: t('tasks.form.outcome'), name: 'outcome', type: 'textarea', rows: 3, required: true, placeholder: t('tasks.form.outcomePh') }), closeConsequence(task)),
+          onSubmit: (v) => {
+            if (!text(v.outcome)) return { ok: false, errors: [{ field: 'outcome', message: t('tasks.guard.closeNeedsOutcome') }] };
+            const res = store.updateTask(task.id, { status: CLOSED, outcome: text(v.outcome), by: ACTOR });
+            if (!res) return { ok: false, message: t('tasks.toast.failed') };
+            toast(t('tasks.toast.closed', { code: task.code }), { tone: 'good', title: task.code });
+            return { ok: true };
+          },
+        }) : null));
+
+      /* details + edit + assign */
+      const details = kv([
+        [t('tasks.drawer.project'), siteName(stateOf(), task.projectId)],
+        [t('tasks.drawer.owner'), dataText(person(task.owner))],
+        [t('tasks.drawer.due'), dueCell(task.dueDate, overdue, { short: false })],
+        [t('tasks.drawer.priority'), priorityChip(task.priority) || t('tasks.priority.none')],
+        [t('tasks.drawer.created'), fmt.dateTime(task.createdAt)],
+        [t('tasks.drawer.closed'), task.closedAt ? fmt.dateTime(task.closedAt) : '—'],
+        [t('tasks.drawer.outcome'), task.outcome ? h('span', {}, ...withCodes(i18n.lang() === 'en' ? (text(i18n.L(task, 'outcome', 'tasks')) || task.outcome) : task.outcome)) : '—'],
+        text(task.description) ? [t('tasks.drawer.description'), h('span', {}, ...withCodes(task.description))] : null,
+      ]);
+      details.classList.add('is-compact');
+      const detailActions = closed ? null : h('div', { class: 'risk-actions' },
+        !st.forms.has('edit') ? button(t('tasks.drawer.edit'), { variant: 'outline', size: 'sm', icon: 'edit', onClick: () => openInline(st, 'edit'), attrs: { 'data-focus-key': 'open-edit' } }) : null,
+        !st.forms.has('assign') ? button(t('tasks.drawer.assign'), { variant: 'outline', size: 'sm', icon: 'user', onClick: () => openInline(st, 'assign'), attrs: { 'data-focus-key': 'open-assign' } }) : null);
+      const openRisks = arr(platform().aiRisks).filter((r) => r && (!TERMINAL.includes(r.status) || r.id === task.riskId)).slice().sort((a, b) => String(a.code).localeCompare(String(b.code)));
+      wrap.appendChild(section(t('tasks.drawer.details'), null, detailActions,
+        details,
+        closed ? h('p', { class: 'tsk-guard' }, glyph('neutral', 12), t('tasks.guard.closedEdit')) : null,
+        st.forms.has('edit') && !closed ? inline(st, 'edit', {
+          title: t('tasks.form.editTitle'), submitLabel: t('tasks.form.editSubmit'), icon: 'check',
+          body: h('div', { class: 'risk-form-grid' },
+            h('div', { class: 'is-full' }, formField({ label: t('tasks.form.title'), name: 'title', type: 'text', required: true, value: task.title })),
+            formField({ label: t('risk.form.due'), name: 'dueDate', type: 'date', required: true, value: task.dueDate || '' }),
+            formField({ label: t('tasks.form.priority'), name: 'priority', type: 'select', value: task.priority || '', options: [{ value: '', label: t('tasks.priority.none') }].concat(PRIORITIES.map((p) => ({ value: p, label: t(`tasks.priority.${p}`) }))) }),
+            h('div', { class: 'is-full' }, formField({ label: t('tasks.form.risk'), name: 'riskId', type: 'select', value: task.riskId || '', options: [{ value: '', label: t('tasks.form.riskNone') }].concat(openRisks.map((r) => ({ value: r.id, label: `${r.code} — ${riskTitle(r).slice(0, 60)}` }))) }))),
+          onSubmit: (v) => {
+            const patch = { title: text(v.title), dueDate: text(v.dueDate), priority: v.priority || null, riskId: v.riskId || null };
+            const errors = [];
+            if (!patch.title) errors.push({ field: 'title', message: t('tasks.form.titleRequired') });
+            if (!patch.dueDate) errors.push({ field: 'dueDate', message: t('risk.err.field.dueDate.required', errParams()) });
+            if (errors.length) return { ok: false, errors };
+            if (typeof store.editTask !== 'function') return { ok: false, message: t('risk.err.unavailable') };
+            const res = store.editTask(task.id, patch, { by: ACTOR });
+            if (!res || res.ok === false) return { ok: false, message: failText(res), errors: fieldErrors(res && res.errors) };
+            toast(res.changed && res.changed.length ? t('tasks.toast.edited', { code: task.code }) : t('tasks.toast.noChange'), { tone: res.changed && res.changed.length ? 'good' : 'neutral', title: task.code });
+            return { ok: true };
+          },
+        }) : null,
+        st.forms.has('assign') && !closed ? inline(st, 'assign', {
+          title: t('tasks.form.assignTitle'), submitLabel: t('tasks.form.assignSubmit'), icon: 'user',
+          body: h('div', { class: 'risk-form-grid' }, ownerField(stateOf(), { value: task.owner || '' })),
+          onSubmit: (v) => {
+            const owner = ownerValue(v);
+            if (!owner) return { ok: false, errors: [{ field: 'owner', message: t('risk.err.field.owner.required', errParams()) }] };
+            if (typeof store.assignTask !== 'function') return { ok: false, message: t('risk.err.unavailable') };
+            const res = store.assignTask(task.id, owner, { by: ACTOR });
+            if (!res || res.ok === false) return { ok: false, message: failText(res), errors: fieldErrors(res && res.errors) };
+            toast(res.changed ? t('tasks.toast.assigned', { code: task.code, owner: person(owner) }) : t('tasks.toast.noChange'), { tone: res.changed ? 'good' : 'neutral', title: task.code });
+            return { ok: true };
+          },
+        }) : null));
+
+      /* linked risk */
+      wrap.appendChild(section(t('tasks.drawer.risk'), null,
+        risk ? button(t('tasks.drawer.openRisk'), { variant: 'outline', size: 'sm', icon: 'shield-alert', onClick: () => { const rid = risk.id; st.api.close('navigate'); patchHashParams({ id: null }); setTimeout(() => openRiskDrawer(ctx, rid, { urlParam: false }), 220); } }) : null,
+        risk
+          ? h('div', { class: 'risk-list-item' }, h('div', { class: 'risk-list-main' },
+            h('span', { class: 'risk-list-title' }, codeSpan(risk.code), ' ', ...withCodes(riskTitle(risk))),
+            h('span', { class: 'risk-list-meta' }, ratingBadge(ratingOf(risk.score, env), { sm: true }), numRun(`${fmt.num(Number(risk.score))}/${fmt.num(100)}`), badge(i18n.label('aiRiskStatus', risk.status) || risk.status, 'neutral'))))
+          : h('p', { class: 'text-sm risk-muted', style: { margin: 0 } }, t('tasks.drawer.noRisk'))));
+
+      /* attachments */
+      const atts = arr(task.attachments).slice().sort((a, b) => (Date.parse(b.addedAt) || 0) - (Date.parse(a.addedAt) || 0));
+      wrap.appendChild(section(t('tasks.drawer.attachments'), t('tasks.drawer.attachmentsSub'),
+        !st.forms.has('att') ? button(t('tasks.drawer.addAttachment'), { variant: 'outline', size: 'sm', icon: 'plus', onClick: () => openInline(st, 'att'), attrs: { 'data-focus-key': 'open-att' } }) : null,
+        atts.length ? h('ul', { class: 'evidence-list' }, atts.map((a) => attItem(task, a))) : h('p', { class: 'text-sm risk-muted', style: { margin: 0 } }, t('tasks.drawer.noAttachments')),
+        st.forms.has('att') ? attForm(st, task) : null));
+
+      /* write-back */
+      const wb = task.writeback || {};
+      const enabled = !((stateOf().settings || {}).platform && stateOf().settings.platform.writebackEnabled === false);
+      const wbKv = kv([
+        [t('tasks.drawer.target'), 'BILTIX PM'],
+        [t('tasks.drawer.wbState'), writebackChip(task, env)],
+        [t('tasks.drawer.wbAt'), wb.at ? h('span', { title: fmt.dateTime(wb.at) }, fmt.relative(wb.at)) : '—'],
+      ]);
+      wbKv.classList.add('is-compact');
+      wrap.appendChild(section(t('tasks.drawer.writeback'), null,
+        wb.status === 'failed' && typeof store.retryWriteback === 'function' ? button(t('tasks.drawer.retry'), { variant: 'outline', size: 'sm', icon: 'refresh', onClick: () => { store.retryWriteback(task.id); toast(t('tasks.toast.retry', { code: task.code }), { tone: 'neutral', title: task.code }); } }) : null,
+        wbKv,
+        demo() ? h('p', { class: 'note text-sm is-demo', style: { '--tone': 'var(--accent)', margin: 0 } }, t('tasks.drawer.writebackDemo')) : null,
+        !enabled ? h('p', { class: 'tsk-guard' }, glyph('warning', 12), t('tasks.drawer.writebackOff')) : null));
+      return wrap;
+    }
+
+    function attItem(task, a) {
+      const url = a.kind === 'link' ? safeHttpUrl(a.url) : null;
+      const title = i18n.lang() === 'en' ? (text(a.titleEn) || text(a.title)) : text(a.title);
+      return h('li', { class: 'evidence-item', 'data-kind': a.kind || 'note' },
+        h('span', { class: 'evidence-icon', 'aria-hidden': 'true' }, svgIcon(EVIDENCE_ICON[a.kind] || 'file-text', 16)),
+        h('span', { class: 'evidence-body' },
+          url ? h('a', { class: 'evidence-title', href: url, target: '_blank', rel: 'noopener noreferrer' }, title || url) : h('span', { class: 'evidence-title' }, ...withCodes(title || '—')),
+          a.kind === 'note' && a.note ? h('span', { class: 'text-sm', style: { color: 'var(--ink-2)' } }, ...withCodes(a.note)) : null,
+          h('span', { class: 'evidence-meta' }, h('span', {}, i18n.label('evidenceKind', a.kind) || a.kind), a.by ? h('span', {}, dataText(person(a.by))) : null, a.addedAt ? h('span', {}, fmt.date(a.addedAt)) : null, a.fileName ? h('span', { dir: 'auto' }, a.fileName) : null)),
+        h('span', { class: 'evidence-local', title: t('risk.ev.localTitle') }, t('risk.ev.local')),
+        h('span', { class: 'evidence-actions' }, button('', { variant: 'ghost', size: 'sm', icon: 'trash', attrs: { 'aria-label': t('risk.ev.remove', { title }), title: t('risk.ev.removeShort') }, onClick: () => {
+          const res = typeof store.removeTaskAttachment === 'function' ? store.removeTaskAttachment(task.id, a.id, { by: ACTOR }) : null;
+          if (res && res.ok) toast(t('tasks.toast.removed'), { tone: 'neutral', title: task.code }); else toast(failText(res), { tone: 'warning', title: task.code });
+        } })));
+    }
+
+    function attForm(st, task) {
+      const saved = (st.forms.get('att') || {}).values || {};
+      const kindSaved = saved.kind || 'link';
+      const kindField = h('fieldset', { class: 'field risk-checks', 'data-name': 'kind' }, h('legend', {}, t('risk.ev.formKind')),
+        ...['link', 'note', 'file'].map((k) => h('label', { class: 'risk-check' }, h('input', { type: 'radio', name: 'kind', value: k, checked: k === kindSaved ? true : undefined }), h('span', {}, i18n.label('evidenceKind', k) || k))));
+      const body = h('div', { class: 'risk-form-grid' },
+        h('div', { class: 'is-full' }, kindField),
+        h('div', { class: 'is-full' }, formField({ label: t('risk.ev.formTitle'), name: 'title', type: 'text', required: true, placeholder: t('risk.ev.formTitlePh') })),
+        h('div', { class: 'is-full', 'data-kind-slot': 'link' }, formField({ label: t('risk.ev.formUrl'), name: 'url', type: 'url', placeholder: 'https://', hint: t('risk.ev.formUrlHint') })),
+        h('div', { class: 'is-full', 'data-kind-slot': 'note' }, formField({ label: t('risk.ev.formNote'), name: 'note', type: 'textarea', rows: 3 })),
+        h('div', { class: 'is-full', 'data-kind-slot': 'file' }, h('div', { class: 'field', 'data-name': 'fileName' }, h('label', { class: 'field-label', for: 'tsk-att-file' }, t('risk.ev.formFile')), h('input', { type: 'file', id: 'tsk-att-file', name: 'file', class: 'risk-file-input' }), h('p', { class: 'field-hint' }, t('risk.ev.formFileHint')))));
+      const sync = (k) => body.querySelectorAll('[data-kind-slot]').forEach((n) => { n.hidden = n.dataset.kindSlot !== k; });
+      kindField.addEventListener('change', (e) => { if (e.target.name === 'kind') sync(e.target.value); });
+      sync(kindSaved);
+      return inline(st, 'att', {
+        title: t('tasks.form.attTitle'), intro: t('tasks.form.attIntro'), body, submitLabel: t('tasks.form.attSubmit'), icon: 'plus',
+        onSubmit: (v) => {
+          if (typeof store.addTaskAttachment !== 'function') return { ok: false, message: t('risk.err.unavailable') };
+          const kind = v.kind || 'link';
+          const payload = { kind, title: text(v.title) };
+          if (kind === 'link') payload.url = text(v.url);
+          if (kind === 'note') payload.note = text(v.note);
+          if (kind === 'file') { const f = v.file || (st.forms.get('att') || {}).file; if (f) { payload.fileName = f.name; payload.size = f.size; payload.mime = f.type; } }
+          const res = store.addTaskAttachment(task.id, payload, { by: ACTOR });
+          if (!res || res.ok === false) return { ok: false, message: failText(res), errors: fieldErrors(res && res.errors, { size: 'fileName' }) };
+          toast(t('tasks.toast.attached'), { tone: 'good', title: task.code });
+          return { ok: true };
+        },
+      });
+    }
+
+    /* ── live updates ── */
     function schedule() {
-      if (!alive) return;
-      if (raf) cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => { raf = 0; if (alive) refresh(); });
+      if (!alive || raf) return;
+      raf = requestAnimationFrame(() => { raf = 0; if (!alive) return; paintSummary(); paintBody({ live: true }); refreshDrawer(); });
     }
-
-    subs.push(bus.on('store:change', (payload) => {
+    unsubs.push(bus.on('store:change', (payload) => {
       const path = payload && typeof payload.path === 'string' ? payload.path : '*';
-      // only platform entities, settings and site names feed this view; Part A live ticks are ignored
-      if (path !== '*' && !/^(platform|settings|sites)/.test(path)) return;
-      if (/^platform\.(validation|pipelines|connectors|auditLog|alerts)/.test(path)) return;
+      if (path !== '*' && !/^(platform\.(tasks|aiRisks)|platform$|sites|settings)/.test(path)) return;
       schedule();
     }));
-    subs.push(bus.on('filters:change', schedule));
-    subs.push(bus.on('settings:change', schedule));
+    unsubs.push(bus.on('filters:change', () => { if (!alive) return; paintSummary(); paintBody({ resetPage: true }); }));
+    unsubs.push(bus.on('ui:route-leave', () => { if (drawerState) { try { drawerState.api.close('navigate'); } catch { /* ignore */ } } }));
 
-    paint();
+    paintChips();
+    paintSummary();
+    paintBody({ rebuild: true });
+    motion.enter([head, summary, filtersCard, bodyHost], { y: 6 });
 
-    // Deep links (C-2): ?id=TASK opens the task drawer, ?new=1 opens the manual-task modal; the param is dropped from the URL.
-    const params = ctx.params || {};
-    const dropParams = () => { try { if (/^#\/tasks\?/.test(location.hash || '')) history.replaceState(null, '', '#/tasks'); } catch { /* ignore */ } };
-    if (params.new === '1' || params.new === 'true') {
-      addTimer(() => { manualTaskFlow(); dropParams(); }, 0);
-    } else if (params.id || params.task) {
-      const wanted = params.id || params.task;
-      addTimer(() => {
-        const task = findTask(wanted) || (platformOf().tasks || []).find((t) => t && t.code === wanted) || null;
-        if (task) openTask(task.id); else toast('لم يتم العثور على المهمة المطلوبة', { tone: 'warning' });
-        dropParams();
-      }, 0);
-    }
+    // Deep links: ?id=TASK opens the drawer; ?new=1 (&risk=ID) opens the new-task form.
+    const timer = setTimeout(() => {
+      if (!alive) return;
+      if (params.new === '1' || params.new === 'true') {
+        patchHashParams({ new: null, risk: null });
+        newTaskFlow({ riskId: params.risk || null });
+      } else if (params.id || params.task) openTask(params.id || params.task);
+    }, 0);
 
     return () => {
       alive = false;
+      clearTimeout(timer);
       if (raf) cancelAnimationFrame(raf);
-      timers.forEach((id) => clearTimeout(id));
-      timers.clear();
-      subs.splice(0).forEach((unsub) => { try { unsub(); } catch { /* ignore */ } });
+      unsubs.splice(0).forEach((u) => { try { u(); } catch { /* ignore */ } });
       Array.from(overlays).forEach((o) => { try { o.close('navigate'); } catch { /* ignore */ } });
       overlays.clear();
-      if (drawerState && drawerState.api) {
-        const api = drawerState.api;
-        drawerState = null;
-        try { api.close('navigate'); } catch { /* ignore */ }
-      }
+      if (table) table.destroy();
+      if (board && typeof board.destroy === 'function') board.destroy();
+      if (drawerState) { const api = drawerState.api; drawerState = null; try { api.close('navigate'); } catch { /* ignore */ } }
     };
   },
 };

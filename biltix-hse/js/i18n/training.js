@@ -17,7 +17,8 @@ export default {
     metrics: {
       label: 'ملخص التدريب',
       compliance: 'الامتثال التدريبي',
-      complianceHelper: 'مقارنةً بالـ{days} يوماً السابقة',
+      complianceHelper: 'مقارنةً بالفترة السابقة ({days})',
+      days: { zero: 'لا أيام', one: 'يوم واحد', two: 'يومان', few: '{count} أيام', many: '{count} يوماً', other: '{count} يوم' },
       complianceHint: 'نسبة الشهادات الإلزامية السارية لجميع العمال ضمن النطاق',
       expiring: 'تنتهي خلال {days} يوماً',
       expiringHelper: { zero: 'لا شيء خلال {days} يوماً', one: 'منها شهادة واحدة خلال {days} يوماً', two: 'منها شهادتان خلال {days} يوماً', few: 'منها {count} شهادات خلال {days} يوماً', many: 'منها {count} شهادة خلال {days} يوماً', other: 'منها {count} شهادة خلال {days} يوماً' },
@@ -133,7 +134,8 @@ export default {
     metrics: {
       label: 'Training summary',
       compliance: 'Training compliance',
-      complianceHelper: 'vs the previous {days} days',
+      complianceHelper: 'vs the previous {days}',
+      days: { zero: 'no days', one: '1 day', other: '{count} days' },
       complianceHint: 'Share of mandatory certificates that are valid for every worker in scope',
       expiring: 'Expiring within {days} days',
       expiringHelper: { zero: 'None within {days} days', one: '1 within {days} days', other: '{count} within {days} days' },

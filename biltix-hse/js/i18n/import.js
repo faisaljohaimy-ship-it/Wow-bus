@@ -7,8 +7,8 @@
 export default {
   ar: {
     title: 'معاينة الاستيراد',
-    subtitleFile: 'الملف «{name}» → سجل مخاطر السلامة',
-    subtitleSource: 'المصدر: {type} → سجل مخاطر السلامة',
+    subtitleFile: 'الملف «{name}» ← سجل مخاطر السلامة',
+    subtitleSource: 'المصدر: {type} ← سجل مخاطر السلامة',
     subtitleData: 'سجل مخاطر السلامة',
     loadingTitle: 'جارٍ قراءة البيانات والتحقق من كل صف…',
     loadingRemote: 'طلب حقيقي إلى المصدر المهيأ (المهلة {seconds} ثوانٍ). لا يُحفظ شيء قبل تأكيدك.',

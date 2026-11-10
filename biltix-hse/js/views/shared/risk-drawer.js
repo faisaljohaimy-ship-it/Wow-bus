@@ -118,7 +118,15 @@ export function withCodes(str) {
   CODE_RE.lastIndex = 0;
   while ((m = CODE_RE.exec(s))) { if (m.index > last) out.push(prose(s.slice(last, m.index))); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
   if (last < s.length) out.push(prose(s.slice(last)));
-  return out.length ? out : [prose(s)];
+  const nodes = out.length ? out : [prose(s)];
+  // Data the dictionaries do not cover (user input, runtime records) stays Arabic in English mode: mark it.
+  return isEn() && ARABIC_RE.test(s) ? [h('span', { lang: 'ar', dir: 'rtl' }, ...nodes)] : nodes;
+}
+const ARABIC_RE = /[\u0600-\u06FF]/;
+/** A text node for data that may fall back to Arabic in English mode (lang="ar" when it does). */
+export function dataText(str, cls = null) {
+  const s = String(str ?? '');
+  return isEn() && ARABIC_RE.test(s) ? h('span', { class: cls, lang: 'ar', dir: 'rtl' }, s) : (cls ? h('span', { class: cls }, s) : s);
 }
 /** One LTR numeric run (keeps "80/100" and "4×5" together in Arabic). */
 export function numRun(str, extra = null) { return h('span', { class: ['num', 'nowrap', extra], dir: 'ltr' }, String(str)); }
@@ -208,8 +216,9 @@ export function channelChip(key) {
 export function scoreGroup(score, likelihood, impact, { badgeToo = true, sm = true } = {}) {
   const r = ratingOf(score);
   return h('span', { class: 'risk-score-group' },
-    h('span', { class: ['score-num', `is-${r}`], 'data-rating': r }, defaultFmt.num(num(score))),
-    badgeToo ? ratingBadge(r, { sm }) : null,
+    h('span', { class: 'risk-score-top' },
+      h('span', { class: ['score-num', `is-${r}`], 'data-rating': r }, defaultFmt.num(num(score))),
+      badgeToo ? ratingBadge(r, { sm }) : null),
     isNum(Number(likelihood)) && Number(likelihood) > 0 && Number(impact) > 0
       ? h('span', { class: 'risk-li', title: t('risk.common.liTitle', { l: defaultFmt.num(Number(likelihood)), i: defaultFmt.num(Number(impact)) }) }, numRun(`${defaultFmt.num(Number(likelihood))}×${defaultFmt.num(Number(impact))}`))
       : null);
@@ -231,7 +240,7 @@ export function dqChip(level, score = null) {
   const lv = ['high', 'medium', 'low'].includes(level) ? level : null;
   const filled = lv === 'high' ? 3 : lv === 'medium' ? 2 : lv === 'low' ? 1 : 0;
   const label = lv ? (i18n.label('dataQualityLevel', lv) || lv) : t('risk.common.notValidated');
-  return h('span', { class: ['dq-chip', lv ? `is-${lv}` : 'is-none'], title: score != null ? t('risk.ov.dqScoreTitle', { score: defaultFmt.num(score) }) : undefined },
+  return h('span', { class: ['dq-chip', lv ? `is-${lv}` : 'is-none'], title: score != null ? t('risk.ov.dqScoreTitle', { score: defaultFmt.num(score), max: defaultFmt.num(100) }) : undefined },
     h('span', { class: 'dq-bars', 'aria-hidden': 'true' }, [0, 1, 2].map((i) => h('span', { class: i < filled ? 'is-on' : null }))),
     h('span', {}, label));
 }
@@ -258,10 +267,13 @@ export function fieldErrors(errors, map = {}) {
   return arr(errors).map((e) => {
     const field = map[e.field] || e.field;
     const key = `risk.err.field.${e.field}.${e.code}`;
-    const message = i18n.has(key) ? t(key) : (isEn() ? (e.messageEn || e.message) : (e.message || e.messageEn));
+    const message = i18n.has(key) ? t(key, errParams()) : (isEn() ? (e.messageEn || e.message) : (e.message || e.messageEn));
     return { field, message: message || t('risk.err.generic') };
   });
 }
+
+/** Numbers used in validation copy, formatted in the active numeral system. */
+export function errParams() { return { n: defaultFmt.num(5), a: defaultFmt.num(1), b: defaultFmt.num(5), mb: defaultFmt.num(25) }; }
 
 /* ────────────────────────────── inline forms ────────────────────────────── */
 
@@ -367,7 +379,8 @@ export function exportCsv(env, rows, columns, filename) {
 /* ────────────────────────────── shared styles ────────────────────────────── */
 
 const STYLE_TEXT = `
-.risk-score-group { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.risk-score-group { display: inline-flex; align-items: center; gap: 4px 6px; flex-wrap: wrap; }
+.risk-score-top { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .risk-score-group .score-num { font-size: var(--fs-md); min-inline-size: 2ch; }
 .risk-li { font-family: var(--font-mono-mixed); font-size: 11px; color: var(--ink-3); padding: 0 5px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg-2); white-space: nowrap; }
 .risk-due { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; color: var(--ink-2); font-size: var(--fs-sm); }
@@ -386,6 +399,18 @@ const STYLE_TEXT = `
 .dq-chip.is-none { color: var(--ink-3); }
 .risk-muted { color: var(--ink-3); }
 .risk-status-chip { white-space: nowrap; }
+.reg-chip { display: inline-flex; align-items: center; gap: 6px; min-block-size: 32px; padding: 0 10px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--brand) 45%, var(--line-2)); background: color-mix(in srgb, var(--brand) 10%, var(--bg-1)); color: var(--ink-1); font-size: var(--fs-sm); cursor: pointer; }
+.reg-chip:hover { border-color: var(--brand); }
+.reg-chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.reg-chip > svg { inline-size: 12px; block-size: 12px; color: var(--ink-3); }
+@media (pointer: coarse) { .reg-chip { min-block-size: 40px; } }
+/* phones: filter selects stack under their label and may shrink (components.css keeps a 150px floor on .is-select) */
+@container main (max-width: 640px) {
+  .reg-filter-bar .filter-bar-group.is-select, .tsk-filter-bar .filter-bar-group.is-select { flex-direction: column; align-items: stretch; gap: 4px; }
+  .reg-filter-bar .filter-bar-group.is-select .field-control, .tsk-filter-bar .filter-bar-group.is-select .field-control { min-inline-size: 0; inline-size: 100%; }
+  .reg-filter-bar .filter-bar-group.is-segmented { flex-basis: 100%; flex-wrap: wrap; }
+  .reg-filter-bar .filter-bar-group.is-segmented .seg { flex: 1 1 auto; }
+}
 
 /* inline forms (drawer, tasks) */
 .risk-inline-form { display: grid; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--line-2); border-radius: var(--radius-md); background: var(--bg-2); }
@@ -502,6 +527,10 @@ const STYLE_TEXT = `
 .risk-ev-check .k { font-size: 12px; color: var(--ink-3); }
 .risk-ev-check .v { font-size: var(--fs-lg); font-weight: 600; color: var(--ink-1); font-variant-numeric: tabular-nums; }
 .risk-file-input { font-size: var(--fs-sm); color: var(--ink-2); }
+@media (max-width: 479.98px) {
+  .risk-drawer .drawer-tab > svg, .risk-drawer .drawer-tab > .icon { display: none; }
+  .risk-drawer .drawer-tab { padding-inline: 10px; }
+}
 @media (prefers-reduced-motion: reduce) { .risk-scale-face { transition: none; } }
 `;
 
@@ -589,7 +618,7 @@ export function openRiskDrawer(ctx = {}, riskId, { onClose = null, returnFocus =
     { id: 'history', label: t('risk.tab.history'), icon: 'clock', count: timelineOf(st, risk).length, render: (panel) => renderPanel(st, 'history', panel) },
   ];
   const api = drawer({
-    title: riskTitle(risk),
+    title: prose(riskTitle(risk)),
     subtitle: ' ',
     tabs,
     activeTab: tab || null,
@@ -674,7 +703,7 @@ function refresh(st, { force = false, all = false } = {}) {
 }
 
 function paintHead(st, risk) {
-  st.api.setTitle(riskTitle(risk));
+  st.api.setTitle(prose(riskTitle(risk)));
   const sub = st.api.el.querySelector('.drawer-sub');
   if (sub) {
     clear(sub);
@@ -872,9 +901,9 @@ function severityMeasure(risk, env) {
     ratingBadge(r));
   const matrix = hasLI ? liMatrix(l, i, hasRes ? rl : null, hasRes ? ri : null) : null;
   return measure('shield-alert', t('risk.ov.severity'), value,
-    hasLI ? h('p', { class: 'risk-measure-help' }, t('risk.ov.severityFormula', { l: defaultFmt.num(l), i: defaultFmt.num(i), lw: t(`risk.scale.l.${l}`), iw: t(`risk.scale.i.${i}`) })) : null,
+    hasLI ? h('p', { class: 'risk-measure-help' }, t('risk.ov.severityFormula', { l: defaultFmt.num(l), i: defaultFmt.num(i), k: defaultFmt.num(4), lw: t(`risk.scale.l.${l}`), iw: t(`risk.scale.i.${i}`) })) : null,
     matrix,
-    h('p', { class: 'risk-measure-help' }, t('risk.ov.severityHelp')));
+    h('p', { class: 'risk-measure-help' }, t('risk.ov.severityHelp', { min: defaultFmt.num(0), max: defaultFmt.num(100) })));
 }
 
 /** 5×5 likelihood (x) × impact (y) position; the dark cell is the inherent position, the dashed one the residual. */
@@ -1016,7 +1045,7 @@ function renderEvidence(st, risk) {
     wrap.appendChild(section(t('risk.ev.source'), { id: 'risk-ev-source', sub: t('risk.ev.sourceSub') },
       h('div', { class: 'evidence' },
         h('div', { class: 'evidence-head' },
-          ev.ref ? h('span', { class: 'evidence-ref mono', dir: 'ltr' }, String(ev.ref)) : null,
+          ev.ref ? h('span', { class: 'evidence-ref mono', dir: /^[\x20-\x7E]+$/.test(String(ev.ref)) ? 'ltr' : 'auto' }, dataText(i18n.term(String(ev.ref)))) : null,
           h('span', { class: 'source-chip' }, svgIcon('layers', 12), sourceLabel(ev.sourceSystem))),
         excerpt ? h('blockquote', { class: 'evidence-excerpt' }, ...withCodes(excerpt)) : h('p', { class: 'risk-muted text-sm' }, t('risk.ev.noExcerpt')),
         h('div', { class: 'evidence-meta' },
@@ -1193,11 +1222,12 @@ function renderTreatment(st, risk) {
     return null;
   })();
   const recActions = [];
-  if (hasRec || tr.accept) {
+  const decided = tasks.length > 0 || risk.status === DISMISSED;
+  if ((hasRec || tr.accept) && !decided) {
     if (!st.forms.has('accept')) recActions.push(button(t('risk.tr.accept'), { variant: 'primary', icon: 'check', onClick: () => openForm(st, 'accept'), attrs: { disabled: !tr.accept, 'data-focus-key': 'open-accept' } }));
     if (!st.forms.has('override')) recActions.push(button(t('risk.tr.override'), { variant: 'outline', icon: 'edit', onClick: () => openForm(st, 'override'), attrs: { disabled: !tr.override, 'data-focus-key': 'open-override' } }));
   }
-  if (!st.forms.has('dismiss')) recActions.push(button(t('risk.tr.dismiss'), { variant: 'ghost', icon: 'close', onClick: () => openForm(st, 'dismiss'), attrs: { disabled: !tr.dismiss, 'data-focus-key': 'open-dismiss' } }));
+  if (!st.forms.has('dismiss') && tr.dismiss) recActions.push(button(t('risk.tr.dismiss'), { variant: 'ghost', icon: 'close', onClick: () => openForm(st, 'dismiss'), attrs: { disabled: !tr.dismiss, 'data-focus-key': 'open-dismiss' } }));
   const recBlock = hasRec
     ? h('div', { class: 'risk-rec' },
       h('div', { class: 'risk-chips' },
@@ -1208,10 +1238,10 @@ function renderTreatment(st, risk) {
       text(recL.rationale) ? h('p', { class: 'risk-rec-why' }, ...withCodes(text(recL.rationale))) : null,
       arr(recL.alternatives).length ? h('div', { class: 'stack gap-1' }, h('span', { class: 't-label' }, t('risk.tr.alternatives')), h('ul', { class: 'risk-rec-alts' }, arr(recL.alternatives).map((a) => h('li', {}, ...withCodes(text(a)))))) : null)
     : h('p', { class: 'note text-sm', style: { '--tone': 'var(--line-2)' } }, risk.origin === 'manual' ? t('risk.tr.noRecManual') : t('risk.tr.noRec'));
-  const transitionsWhy = !tr.accept && !terminal && hasRec ? h('p', { class: 'risk-reason' }, glyph('neutral', 12), tasks.length ? t('risk.tr.alreadyDecided') : t('risk.tr.notAssignable')) : null;
+  const transitionsWhy = !tr.accept && !terminal && hasRec && !decided ? h('p', { class: 'risk-reason' }, glyph('neutral', 12), t('risk.tr.notAssignable')) : null;
   wrap.appendChild(section(t('risk.tr.recommendation'), { id: 'risk-tr-rec' },
     recBlock, decision, transitionsWhy,
-    terminal ? null : h('div', { class: 'risk-actions' }, ...recActions),
+    terminal || !recActions.length ? null : h('div', { class: 'risk-actions' }, ...recActions),
     st.forms.has('accept') && tr.accept ? acceptForm(st, risk) : null,
     st.forms.has('override') && tr.override ? overrideForm(st, risk) : null,
     st.forms.has('dismiss') && tr.dismiss ? dismissForm(st, risk) : null));
@@ -1340,10 +1370,10 @@ function dueField(env, value, { name = 'dueDate', label = null, required = true 
 function validateOwnerDue(env, v, { ownerRequired = true } = {}) {
   const errors = [];
   const owner = ownerValue(v);
-  if (ownerRequired && !owner) errors.push({ field: 'owner', message: t('risk.err.field.owner.required') });
+  if (ownerRequired && !owner) errors.push({ field: 'owner', message: t('risk.err.field.owner.required', errParams()) });
   const due = text(v.dueDate);
-  if (!due) errors.push({ field: 'dueDate', message: t('risk.err.field.dueDate.required') });
-  else if (due < todayISO(env)) errors.push({ field: 'dueDate', message: t('risk.err.field.dueDate.past') });
+  if (!due) errors.push({ field: 'dueDate', message: t('risk.err.field.dueDate.required', errParams()) });
+  else if (due < todayISO(env)) errors.push({ field: 'dueDate', message: t('risk.err.field.dueDate.past', errParams()) });
   return { owner, due, errors };
 }
 
@@ -1384,8 +1414,8 @@ function overrideForm(st, risk) {
     title: t('risk.tr.overrideTitle'), intro: t('risk.tr.overrideIntro'), body, submitLabel: t('risk.tr.overrideSubmit'), icon: 'edit',
     onSubmit: (v) => {
       const { owner, due, errors } = validateOwnerDue(env, v);
-      if (!text(v.action)) errors.unshift({ field: 'action', message: t('risk.err.field.action.required') });
-      if (text(v.reason).length < 5) errors.unshift({ field: 'reason', message: t('risk.err.field.reason.required') });
+      if (!text(v.action)) errors.unshift({ field: 'action', message: t('risk.err.field.action.required', errParams()) });
+      if (text(v.reason).length < 5) errors.unshift({ field: 'reason', message: t('risk.err.field.reason.required', errParams()) });
       if (errors.length) return { ok: false, errors };
       if (typeof env.store.overrideRecommendation !== 'function') return { ok: false, message: t('risk.err.unavailable') };
       const task = env.store.overrideRecommendation(risk.id, { action: text(v.action), reason: text(v.reason), owner, dueDate: due, escalate: !!v.escalate, by: ACTOR });
@@ -1402,7 +1432,7 @@ function dismissForm(st, risk) {
   return inlineForm(st, 'dismiss', {
     title: t('risk.tr.dismissTitle'), intro: t('risk.tr.dismissIntro'), body, submitLabel: t('risk.tr.dismissSubmit'), variant: 'danger', icon: 'close',
     onSubmit: (v) => {
-      if (text(v.reason).length < 5) return { ok: false, errors: [{ field: 'reason', message: t('risk.err.field.reason.required') }] };
+      if (text(v.reason).length < 5) return { ok: false, errors: [{ field: 'reason', message: t('risk.err.field.reason.required', errParams()) }] };
       if (typeof env.store.dismissAiRisk !== 'function') return { ok: false, message: t('risk.err.unavailable') };
       const res = env.store.dismissAiRisk(risk.id, text(v.reason), ACTOR);
       if (!res) return { ok: false, message: t('risk.err.transition') };
@@ -1456,11 +1486,11 @@ function escalateForm(st, risk) {
     title: t('risk.tr.escalateTitle'), intro: t('risk.tr.escalateIntro'), body, submitLabel: t('risk.tr.escalateSubmit'), variant: 'danger', icon: 'bell',
     onSubmit: (v) => {
       const channels = arr(v.channels);
-      if (!channels.length) return { ok: false, errors: [{ field: 'channels', message: t('risk.err.field.channels.required') }] };
+      if (!channels.length) return { ok: false, errors: [{ field: 'channels', message: t('risk.err.field.channels.required', errParams()) }] };
       if (typeof env.store.escalateRisk !== 'function') return { ok: false, message: t('risk.err.unavailable') };
       const alert = env.store.escalateRisk(risk.id, channels, ACTOR);
       if (!alert) return { ok: false, message: t('risk.err.transition') };
-      toast(t('risk.toast.escalated', { count: defaultFmt.num(channels.length) }), { tone: 'warning', title: risk.code });
+      toast(tn('risk.toast.escalated', channels.length), { tone: 'warning', title: risk.code });
       return { ok: true };
     },
   });
@@ -1477,8 +1507,8 @@ function residualForm(st, risk) {
     const s = l * i * 4;
     const r = ratingOf(s, env);
     preview.append(h('span', {}, t('risk.tr.residualPreview')), h('span', { class: ['score-num', `is-${r}`] }, numRun(`${defaultFmt.num(s)}/${defaultFmt.num(100)}`)), ratingBadge(r, { sm: true }),
-      h('span', { class: 'text-xs muted' }, t('risk.tr.residualVsInherent', { score: defaultFmt.num(inherent) })),
-      s > inherent ? h('span', { class: 'risk-reason', style: { color: 'var(--critical-text)' } }, glyph('critical', 12), t('risk.err.residual-above-inherent')) : null);
+      h('span', { class: 'text-xs muted' }, t('risk.tr.residualVsInherent', { score: defaultFmt.num(inherent) })));
+    if (s > inherent) preview.append(h('span', { class: 'risk-reason', style: { color: 'var(--critical-text)' } }, glyph('critical', 12), t('risk.err.residual-above-inherent')));
   };
   let L = num(saved.likelihood, NaN);
   let I = num(saved.impact, NaN);
@@ -1486,15 +1516,15 @@ function residualForm(st, risk) {
     scaleField({ name: 'likelihood', label: t('risk.tr.residualL'), kind: 'l', value: saved.likelihood || null, onChange: (n) => { L = n; paint(L, I); } }),
     scaleField({ name: 'impact', label: t('risk.tr.residualI'), kind: 'i', value: saved.impact || null, onChange: (n) => { I = n; paint(L, I); } }),
     preview,
-    formField({ label: t('risk.tr.residualWhy'), name: 'justification', type: 'textarea', rows: 3, required: true, hint: t('risk.tr.residualWhyHint') }));
+    formField({ label: t('risk.tr.residualWhy'), name: 'justification', type: 'textarea', rows: 3, required: true, hint: t('risk.tr.residualWhyHint', errParams()) }));
   paint(L, I);
   return inlineForm(st, 'residual', {
     title: t('risk.tr.residualTitle'), intro: t('risk.tr.residualIntro', { l: defaultFmt.num(num(risk.likelihood)), i: defaultFmt.num(num(risk.impact)), score: defaultFmt.num(inherent) }), body, submitLabel: t('risk.tr.residualSubmit'), icon: 'sliders',
     onSubmit: (v) => {
       const errors = [];
-      if (!v.likelihood) errors.push({ field: 'likelihood', message: t('risk.err.field.likelihood.required') });
-      if (!v.impact) errors.push({ field: 'impact', message: t('risk.err.field.impact.required') });
-      if (text(v.justification).length < 5) errors.push({ field: 'justification', message: t('risk.err.field.justification.required') });
+      if (!v.likelihood) errors.push({ field: 'likelihood', message: t('risk.err.field.likelihood.required', errParams()) });
+      if (!v.impact) errors.push({ field: 'impact', message: t('risk.err.field.impact.required', errParams()) });
+      if (text(v.justification).length < 5) errors.push({ field: 'justification', message: t('risk.err.field.justification.required', errParams()) });
       if (errors.length) return { ok: false, errors };
       if (typeof env.store.assessResidual !== 'function') return { ok: false, message: t('risk.err.unavailable') };
       const res = env.store.assessResidual(risk.id, { likelihood: Number(v.likelihood), impact: Number(v.impact), justification: text(v.justification), by: ACTOR });
@@ -1514,7 +1544,7 @@ function closeForm2(st, risk) {
   return inlineForm(st, 'close', {
     title: t('risk.tr.closeFormTitle'), intro: t('risk.tr.closeIntro'), body, submitLabel: t('risk.tr.closeSubmit'), icon: 'check-circle',
     onSubmit: (v) => {
-      if (!text(v.outcome)) return { ok: false, errors: [{ field: 'outcome', message: t('risk.err.field.outcome.required') }] };
+      if (!text(v.outcome)) return { ok: false, errors: [{ field: 'outcome', message: t('risk.err.field.outcome.required', errParams()) }] };
       if (typeof env.store.closeAiRisk !== 'function') return { ok: false, message: t('risk.err.unavailable') };
       const res = env.store.closeAiRisk(risk.id, { outcome: text(v.outcome), by: ACTOR });
       if (!res || res.ok === false) return { ok: false, message: failText(res) };
@@ -1530,7 +1560,7 @@ function reopenForm(st, risk) {
   return inlineForm(st, 'reopen', {
     title: t('risk.tr.reopenTitle'), intro: t('risk.tr.reopenIntro'), body, submitLabel: t('risk.tr.reopenSubmit'), icon: 'refresh',
     onSubmit: (v) => {
-      if (!text(v.reason)) return { ok: false, errors: [{ field: 'reason', message: t('risk.err.field.reason.required') }] };
+      if (!text(v.reason)) return { ok: false, errors: [{ field: 'reason', message: t('risk.err.field.reason.required', errParams()) }] };
       if (typeof env.store.reopenAiRisk !== 'function') return { ok: false, message: t('risk.err.unavailable') };
       const res = env.store.reopenAiRisk(risk.id, { reason: text(v.reason), by: ACTOR });
       if (!res || res.ok === false) return { ok: false, message: failText(res) };
@@ -1543,8 +1573,13 @@ function reopenForm(st, risk) {
 /* ── History ── */
 
 /** One timeline entry's text in the active language (seed history via the aiRisks mirror, runtime via textEn). */
+const ASSIGN_NOTE_RE = /^إسناد المخاطرة إلى (.+) — الاستحقاق (\d{4}-\d{2}-\d{2})$/;
 function entryText(risk, e) {
+  const structural = structuralText(risk, e);
+  if (structural) return structural;
   if (!isEn()) return text(e.text);
+  const am = ASSIGN_NOTE_RE.exec(text(e.text));
+  if (am) return t('risk.hist.assignedNote', { owner: person(am[1]), due: defaultFmt.date(am[2]) });
   if (e.kind === 'history' || (e.kind === 'detected' && Number.isInteger(e.historyIndex))) {
     if (text(e.textEn)) return text(e.textEn);
     const hist = riskField(risk, 'history');
@@ -1553,6 +1588,29 @@ function entryText(risk, e) {
     return text(e.text);
   }
   return text(e.textEn) || text(e.text);
+}
+
+/** Timeline entries built by psel from structured records are worded from the dictionary (both languages). */
+function structuralText(risk, e) {
+  switch (e.kind) {
+    case 'detected':
+      if (Number.isInteger(e.historyIndex)) return '';
+      return t('risk.hist.detectedText', { score: defaultFmt.num(num(risk.score)), rating: ratingLabel(ratingOf(num(risk.score))) });
+    case 'task': return e.task ? t('risk.hist.taskText', { code: e.task.code || e.task.id, title: taskTitle(e.task, risk) }) : '';
+    case 'task-closed': return e.task ? t('risk.hist.taskClosedText', { code: e.task.code || e.task.id }) : '';
+    case 'writeback': {
+      const code = (/\(([A-Z]+-\d+)\)\s*$/.exec(text(e.text)) || [])[1] || '';
+      const stKey = ['synced', 'failed', 'pending'].includes(e.status) ? e.status : 'pending';
+      return t(`risk.hist.wb.${stKey}`, { code });
+    }
+    case 'alert': {
+      const a = e.alert || {};
+      const ch = arr(a.channels).map((c) => i18n.label('channel', c) || c).join(t('risk.common.listSep'));
+      return t(a.queue === 'immediate' ? 'risk.hist.alertImmediate' : 'risk.hist.alertStandard', { channels: ch || t('risk.hist.noChannels') });
+    }
+    case 'ack': return t('risk.hist.ackText');
+    default: return '';
+  }
 }
 
 function historyRows(st, risk) {
@@ -1580,7 +1638,7 @@ function exportHistory(st, risk) {
     { key: 'at', label: t('risk.hist.colTime') }, { key: 'iso', label: t('risk.hist.colIso') }, { key: 'actor', label: t('risk.hist.colActor') },
     { key: 'kind', label: t('risk.hist.colKind') }, { key: 'text', label: t('risk.hist.colText') },
   ], `biltix-risk-ai-${risk.code || risk.id}-history-${todayISO(st.env)}.csv`);
-  toast(ok ? t('risk.toast.exported', { count: defaultFmt.num(rows.length) }) : t('risk.err.export'), { tone: ok ? 'good' : 'warning' });
+  toast(ok ? tn('risk.toast.exported', rows.length) : t('risk.err.export'), { tone: ok ? 'good' : 'warning' });
 }
 
 /* ────────────────────────────── exports ────────────────────────────── */
@@ -1590,7 +1648,7 @@ export const riskUi = {
   envOf, ensureStyles, prose, codeSpan, withCodes, numRun, safeHttpUrl, riskTitle, riskField, person, siteName, siteOf,
   domainLabel, typeLabel, ratingLabel, statusLabel, taskStatusLabel, sourceLabel, ratingOf, ratingTone, statusTone, taskTitle, alertTitle,
   dataQualityOf, ratingBadge, statusChip, domainChip, typeChip, channelChip, scoreGroup, dueCell, confidenceText, dqChip, writebackChip,
-  failText, fieldErrors, showErrors, clearErrors, scaleField, readValues, exportCsv, patchHashParams, hashParams, ownerOptions, ownerField, ownerValue, todayISO,
+  failText, fieldErrors, errParams, showErrors, clearErrors, scaleField, readValues, exportCsv, patchHashParams, hashParams, ownerOptions, ownerField, ownerValue, todayISO,
 };
 
 export default openRiskDrawer;

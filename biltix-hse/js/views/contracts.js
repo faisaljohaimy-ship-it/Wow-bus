@@ -47,6 +47,9 @@ const STYLE_TEXT = `
 .view-contracts .dom-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: var(--fs-sm); color: var(--ink-3); }
 .view-contracts .dom-meta-item { display: inline-flex; align-items: center; gap: 6px; min-inline-size: 0; }
 .view-contracts .dom-meta-item > svg { flex: none; color: var(--ink-3); }
+.view-contracts .dom-meta-item.is-source { display: block; line-height: 1.7; }
+.view-contracts .dom-meta-item.is-source > svg { display: inline-block; vertical-align: -2px; margin-inline-end: 6px; }
+.view-contracts .dom-meta-item.is-source > .status-badge { margin-inline-start: 6px; }
 .view-contracts .dom-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap); align-items: start; }
 @container main (min-width: 761px) {
   .view-contracts .dom-row.is-2-1 { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
@@ -60,9 +63,14 @@ const STYLE_TEXT = `
 .view-contracts .li-pos { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); unicode-bidi: isolate; }
 .view-contracts .cell-stack { display: flex; flex-direction: column; gap: 3px; min-inline-size: 0; }
 .view-contracts .cell-sub { font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.45; }
+.view-contracts .cell-stack > .cell-code { align-self: flex-start; font-size: var(--fs-xs); color: var(--ink-2); }
+.view-contracts .cell-sub.row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
 .view-contracts .score-cell { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .view-contracts .score-cell .t-num { font-weight: 600; font-variant-numeric: tabular-nums; }
-.view-contracts .ob-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 8px; }
+.view-contracts .ob-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 8px; }
+.view-contracts .ob-grid .urgent-item { grid-template-columns: auto minmax(0, 1fr); align-items: start; }
+.view-contracts .ob-due { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-block-start: 2px; font-size: var(--fs-xs); color: var(--ink-2); }
+.view-contracts .is-overdue .ob-due > .mono { color: var(--critical-text); font-weight: 600; }
 .view-contracts .link-btn { display: inline; padding: 0; border: 0; background: none; color: var(--ink-1); font: inherit; font-weight: 500; text-align: start; cursor: pointer; border-radius: 4px; min-block-size: 24px; }
 .view-contracts .link-btn:hover { color: var(--link, var(--brand-text)); text-decoration: underline; }
 .view-contracts .clause-item { display: flex; flex-direction: column; gap: 10px; }
@@ -72,7 +80,7 @@ const STYLE_TEXT = `
 .view-contracts .chev { transition: transform var(--dur-micro) var(--ease-out); }
 .view-contracts [aria-expanded="true"] .chev { transform: rotate(180deg); }
 @media (prefers-reduced-motion: reduce) { .view-contracts .chev { transition: none; } }
-@media (pointer: coarse) { .view-contracts .link-btn { min-block-size: 40px; } }
+@media (pointer: coarse) { .view-contracts .link-btn { min-block-size: 40px; min-inline-size: 40px; } }
 `;
 
 /** UI state that survives re-renders inside one visit (no strings, no persistence). */
@@ -486,7 +494,7 @@ export default {
               const late = o.status === 'متأخر' || (daysUntil(o.due) ?? 1) < 0;
               return h('li', { class: ['urgent-item', late ? 'is-overdue tone-critical' : 'tone-neutral'] },
                 h('span', { class: 'urgent-icon' }, glyph(late ? 'critical' : 'clock', 15)),
-                h('div', { class: 'urgent-text' }, h('span', {}, digitsIn(o.text)), h('span', { class: 'urgent-sub' }, t('obligations.meta', { ref: digitsIn(o.clauseRef || '—'), owner: o.owner ? term(o.owner) : '—' }))),
+                h('div', { class: 'urgent-text' }, h('span', {}, digitsIn(o.text)), h('span', { class: 'urgent-sub' }, t('obligations.meta', { ref: `\u2066§${digitsIn(o.clauseRef || '—')}\u2069`, owner: o.owner ? term(o.owner) : '—' }))),
                 h('div', { class: 'urgent-due' }, h('span', {}, fmt.date(o.due, { style: 'short' })), dueBadge(o.due, o.status)));
             }))
             : emptyState({ title: t('drawer.obligationsEmpty') })) },
@@ -521,7 +529,7 @@ export default {
           h('div', { class: 'dom-meta' },
             h('span', { class: 'dom-meta-item' }, svgIcon('building', 14), h('span', {}, t('dom.scope', { scope: scopeLabel(data) }))),
             h('span', { class: 'dom-meta-item', title: data.fresh ? t('dom.freshTitle', { time: fmt.dateTime(data.fresh) }) : undefined }, glyph('clock', 14), h('span', {}, freshText)),
-            h('span', { class: 'dom-meta-item' }, svgIcon('plug', 14), h('span', {}, conn ? t('dom.source', { source: digitsIn(L(conn, 'name', 'connectors')) }) : t('dom.sourceMissing')), statusBadge(st, { size: 'sm' })),
+            h('span', { class: 'dom-meta-item is-source' }, svgIcon('plug', 14), h('span', {}, conn ? t('dom.source', { source: digitsIn(L(conn, 'name', 'connectors')) }) : t('dom.sourceMissing')), statusBadge(st, { size: 'sm' })),
           ),
         ),
         h('div', { class: 'view-actions' },
@@ -570,8 +578,7 @@ export default {
         rowLabel: (r) => `${r.code} — ${r.title}`,
         initialSort: { key: 'riskScore', dir: 'desc' },
         columns: [
-          { key: 'code', label: t('list.code'), width: 128, priority: 'high', render: (r) => codeSpan(r.code) },
-          { key: 'title', label: t('list.contract'), priority: 'high', sortValue: (r) => r.title, render: (r) => h('div', { class: 'cell-stack' }, h('span', { class: 'cell-title' }, ...withCodes(r.title)), h('span', { class: 'cell-sub' }, t('list.meta', { type: label('contractType', r.type) || '—', party: digitsIn(r.counterparty || '—'), site: siteName(data.state, r.projectId) }))) },
+          { key: 'title', label: t('list.contract'), priority: 'high', sortValue: (r) => r.title, render: (r) => h('div', { class: 'cell-stack' }, codeSpan(r.code, 'cell-code'), h('span', { class: 'cell-title' }, ...withCodes(r.title)), h('span', { class: 'cell-sub' }, t('list.meta', { type: label('contractType', r.type) || '—', party: digitsIn(r.counterparty || '—'), site: siteName(data.state, r.projectId) }))) },
           { key: 'valueSAR', label: t('list.value'), align: 'end', priority: 'medium', sortValue: (r) => num(r.valueSAR), render: (r) => h('div', { class: 'cell-stack', style: { alignItems: 'flex-end' } }, h('span', { class: 'mono nowrap' }, money(r.valueSAR)), enumBadge('contractStatus', r.status, CONTRACT_STATUS_TONE)) },
           { key: '_flagged', label: t('list.flagged'), align: 'center', priority: 'medium', sortValue: (r) => r._flagged, render: (r) => badge(fmt.num(r._flagged), r._flagged ? RATING_TONE[ratingOf(r._maxSev)] : 'good') },
           { key: 'riskScore', label: t('list.score'), priority: 'high', sortValue: (r) => num(r.riskScore), render: (r) => scoreCell(r.riskScore) },
@@ -619,7 +626,7 @@ export default {
           top ? h('div', { class: ['note', `tone-${tone}`] },
             h('p', {}, glyph(tone, 14), ' ', h('strong', {}, t('concentration.note', { name: top.label, share: fmt.pct(top.value, 1), base: data.subsOnly ? t('concentration.baseSubs') : t('concentration.baseAll') }))),
             h('p', {}, t(`concentration.${tone === 'critical' ? 'high' : tone === 'warning' ? 'medium' : 'low'}`)),
-            h('p', { class: 't-helper' }, t('concentration.hhi', { value: fmt.num(Math.round(data.hhi)) })),
+            h('p', { class: 't-helper' }, t('concentration.hhi', { value: fmt.num(Math.round(data.hhi)), max: fmt.num(10000) })),
           ) : null)
         : emptyState({ title: t('concentration.emptyTitle'), text: t('concentration.emptyText') });
       const el = card({ code: 'CT-03', title: t('concentration.title'), subtitle: data.subsOnly ? t('concentration.subSubs') : t('concentration.subAll'), body, tableView: items.length ? () => ((chart && typeof chart.table === 'function' && safe(() => chart.table(), null)) || fallback()) : null });
@@ -636,8 +643,8 @@ export default {
             h('span', { class: 'urgent-icon' }, glyph(o.overdue ? 'critical' : o.days <= 7 ? 'serious' : 'clock', 15)),
             h('div', { class: 'urgent-text' },
               h('button', { type: 'button', class: 'link-btn', 'aria-label': t('obligations.openAria', { code: o.contract.code, text: digitsIn(o.text) }), onClick: () => openContract(data, o.contract) }, digitsIn(o.text)),
-              h('span', { class: 'urgent-sub row gap-2 wrap' }, codeSpan(o.contract.code), h('span', {}, t('obligations.meta', { ref: digitsIn(o.clauseRef || '—'), owner: o.owner ? term(o.owner) : '—' })))),
-            h('div', { class: 'urgent-due' }, h('span', {}, `${fmt.dayName(o.due)} ${fmt.date(o.due, { style: 'short' })}`), dueBadge(o.due, o.status)));
+              h('span', { class: 'urgent-sub row gap-2 wrap' }, codeSpan(o.contract.code), h('span', {}, t('obligations.meta', { ref: `\u2066§${digitsIn(o.clauseRef || '—')}\u2069`, owner: o.owner ? term(o.owner) : '—' }))),
+              h('span', { class: 'ob-due' }, h('span', { class: 'mono' }, `${fmt.dayName(o.due)} ${fmt.date(o.due, { style: 'short' })}`), dueBadge(o.due, o.status))));
         }))
         : emptyState({ title: t('obligations.emptyTitle', { days: fmt.num(OBLIGATION_WINDOW_DAYS) }), text: t('obligations.emptyText') });
       const more = data.obligations.length > OBLIGATIONS_DEFAULT
@@ -669,8 +676,7 @@ export default {
         rowLabel: (r) => t('dom.risks.rowLabel', { code: r.code, title: L(r, 'title', 'aiRisks') }),
         initialSort: { key: 'score', dir: 'desc' },
         columns: [
-          { key: 'code', label: t('dom.risks.code'), width: 112, priority: 'high', render: (r) => codeSpan(r.code) },
-          { key: 'title', label: t('dom.risks.risk'), priority: 'high', sortValue: (r) => L(r, 'title', 'aiRisks'), render: (r) => { const ev = r.evidence ? L(r, 'evidence', 'aiRisks') : null; return h('div', { class: 'cell-stack' }, h('span', { class: 'cell-title' }, ...withCodes(L(r, 'title', 'aiRisks'))), h('span', { class: 'cell-sub row gap-1 wrap' }, h('span', {}, siteName(data.state, r.projectId)), ev && ev.ref ? h('span', { class: 'mono', dir: 'ltr' }, `· ${ev.ref}`) : null)); } },
+          { key: 'title', label: t('dom.risks.risk'), priority: 'high', sortValue: (r) => L(r, 'title', 'aiRisks'), render: (r) => { const ev = r.evidence ? L(r, 'evidence', 'aiRisks') : null; return h('div', { class: 'cell-stack' }, codeSpan(r.code, 'cell-code'), h('span', { class: 'cell-title' }, ...withCodes(L(r, 'title', 'aiRisks'))), h('span', { class: 'cell-sub row gap-1 wrap' }, h('span', {}, siteName(data.state, r.projectId)), ev && ev.ref ? h('span', { 'aria-hidden': 'true' }, '·') : null, ev && ev.ref ? h('span', { class: 'mono', dir: 'ltr' }, digitsIn(ev.ref)) : null)); } },
           { key: 'score', label: t('dom.risks.score'), priority: 'high', sortValue: (r) => num(r.score), render: (r) => scoreCell(r.score, r) },
           { key: 'type', label: t('dom.risks.type'), priority: 'medium', sortValue: (r) => label('aiType', r.type), render: (r) => typeChip(r.type) },
           { key: 'owner', label: t('dom.risks.owner'), priority: 'low', sortValue: (r) => term(r.owner) || '', render: (r) => (r.owner ? h('span', {}, term(r.owner)) : h('span', { class: 't-helper' }, t('dom.risks.unassigned'))) },
@@ -732,8 +738,8 @@ export default {
         buildHead(data),
         buildKpis(data),
         buildContractsCard(data),
-        h('div', { class: 'dom-row is-2-1' }, buildFlagsCard(data), buildConcentrationCard(data)),
-        buildObligationsCard(data),
+        buildFlagsCard(data),
+        h('div', { class: 'dom-row is-2-1' }, buildObligationsCard(data), buildConcentrationCard(data)),
         buildRisksCard(data),
         buildKriCard(data),
       );
@@ -802,6 +808,9 @@ export default {
       const c = data.platform ? data.contractsAll.find((x) => x.id === want || x.code === want) : null;
       if (c) openContract(data, c, ctx.params.clause || null);
     }
+
+    // Deep link: ?risk=AIR-… (mirrored by the shared risk drawer while it is open) reopens that drawer.
+    if (ctx.params && ctx.params.risk) openRisk({ id: String(ctx.params.risk) });
 
     return () => {
       if (raf) cancelAnimationFrame(raf);

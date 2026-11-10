@@ -162,7 +162,7 @@ export default {
     function toneLegend(items, cls) {
       return h('ul', { class: cls, role: 'list', 'aria-label': t('overview.common.legend') }, items.map((it) => h('li', { class: [`${cls}-item`, `tone-${it.tone}`] },
         C.glyph(it.tone, 12),
-        h('span', { class: 'legend-key' }),
+        h('span', { class: 'legend-key', style: { background: 'var(--tone)' } }),
         h('span', {}, it.count === undefined ? it.label : t('overview.common.legendCount', { label: it.label, count: fmt.num(it.count) })))));
     }
 
@@ -345,13 +345,15 @@ export default {
     const applyLayout = (w) => {
       const mode = w >= 1100 ? 'wide' : w >= 720 ? 'mid' : 'narrow';
       if (mode === layoutMode) return;
+      const changed = layoutMode !== '';
       layoutMode = mode;
       root.dataset.layout = mode;
+      if (changed) schedule();
       if (mode === 'wide') {
         span(heroCard, 4); span(radarCard, 8);
         span(matrixCard, 4); span(trendCard, 4); span(permitsCard, 4);
         row3.append(matrixCard, trendCard, permitsCard);
-        span(actionsCard, 5); span(sitesCard, 7);
+        span(actionsCard, 12); span(sitesCard, 12);
       } else if (mode === 'mid') {
         span(heroCard, 5); span(radarCard, 7);
         span(matrixCard, 6); span(permitsCard, 6); span(trendCard, 12);
@@ -431,7 +433,7 @@ export default {
       const m = safe(() => sel.riskMatrix(state(), filters()), [], 'riskMatrix');
       const header = [t('overview.matrix.corner'), ...[1, 2, 3, 4, 5].map((n) => scaleLabel('likelihood', n))];
       const rows = [1, 2, 3, 4, 5].map((n, ri) => [scaleLabel('severity', n), ...[0, 1, 2, 3, 4].map((ci) => fmt.num(Number(m[ri] && m[ri][ci]) || 0))]);
-      return simpleTable(t('overview.matrix.tableCaption'), header, rows, [false, true, true, true, true, true]);
+      return simpleTable(t('overview.matrix.tableCaption', { n: fmt.num(5) }), header, rows, [false, true, true, true, true, true]);
     }
     function trendRows() { return safe(() => sel.incidentTrend(state(), 12, filters()), [], 'incidentTrend'); }
     const weekLabel = (w) => t('overview.trend.week', { n: fmt.num(Number(w.week) || 0) });
@@ -458,21 +460,21 @@ export default {
       metrics.overdue.set({
         title: t('overview.metrics.overdue'), value: overdue.length, tone: overdue.length ? (worst && worst.tone === 'critical' ? 'critical' : 'serious') : 'good',
         delta: k && k.deltas ? k.deltas.overdueRisks : null, goodWhen: 'down', spark: sparkOf(hist, 'overdueRisks'),
-        helper: t('overview.metrics.vsPrevious', { period: periodText(f) }),
+        helper: tn('overview.common.vsPrevious', Number(f.range) || 30),
         aria: t('overview.metrics.overdueAria', { count: fmt.num(overdue.length) }),
       });
       const critical = k ? k.criticalRisks : 0;
       metrics.critical.set({
         title: t('overview.metrics.critical'), value: critical, tone: critical ? 'critical' : 'good',
         delta: k && k.deltas ? k.deltas.criticalRisks : null, goodWhen: 'down', spark: sparkOf(hist, 'criticalRisks'),
-        helper: t('overview.metrics.criticalHelper', { min: fmt.num(16) }),
+        helper: t('overview.metrics.criticalHelper', { min: fmt.num(16), max: fmt.num(25) }),
         aria: t('overview.metrics.criticalAria', { count: fmt.num(critical) }),
       });
       const open = k ? k.openIncidents : 0;
       metrics.incidents.set({
         title: t('overview.metrics.incidents'), value: open, tone: open ? 'serious' : 'good',
         delta: k && k.deltas ? k.deltas.openIncidents : null, goodWhen: 'down', spark: sparkOf(hist, 'openIncidents'),
-        helper: t('overview.metrics.vsPrevious', { period: periodText(f) }),
+        helper: tn('overview.common.vsPrevious', Number(f.range) || 30),
         aria: t('overview.metrics.incidentsAria', { count: fmt.num(open) }),
       });
       const nm = k ? k.nearMisses30d : 0;
@@ -499,7 +501,7 @@ export default {
       deltaHost.replaceChildren(
         C.badge(t('overview.hero.deltaPoints', { delta: String(fmt.signed(d)).replace(/[‎‏؜]/g, '') }), dd.direction === 'flat' ? 'neutral' : (dd.good ? 'good' : 'critical'),
           { icon: dd.direction === 'up' ? 'arrow-up' : dd.direction === 'down' ? 'arrow-down' : null }),
-        h('span', { class: 't-helper' }, t('overview.hero.vsPrevious', { period: periodText(f) })));
+        h('span', { class: 't-helper' }, tn('overview.common.vsPrevious', Number(f.range) || 30)));
 
       const fact = (text, value, unit) => h('div', { class: 'fact', style: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: '12px' } },
         h('span', { class: 'fact-label' }, text),
@@ -508,7 +510,7 @@ export default {
       factsHost.replaceChildren(
         fact(t('overview.hero.ltiFree'), fmt.num(days), tn('overview.hero.daysUnit', days)),
         fact(t('overview.hero.ltifr'), fmt.num(k ? k.ltifr : 0, { maximumFractionDigits: 2 }), t('overview.hero.ltifrUnit')),
-        fact(t('overview.hero.trir'), fmt.num(k ? k.trir : 0, { maximumFractionDigits: 2 }), t('overview.hero.trirUnit')));
+        fact(t('overview.hero.trir'), fmt.num(k ? k.trir : 0, { maximumFractionDigits: 2 }), t('overview.hero.trirUnit', { k: fmt.num(200), full: fmt.num(200000) })));
 
       const counts = tierCounts(st, f);
       const total = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -520,8 +522,7 @@ export default {
         h('div', { class: 'row between gap-2' },
           h('span', { class: 'radar-side-title' }, t('overview.hero.tiersTitle')),
           h('span', { class: 't-helper' }, tn('overview.common.risks', total))),
-        bar || h('span'),
-        toneLegend(TIERS.map((x) => ({ tone: x.tone, label: tierLabel(x.tier), count: counts[x.tone] })), 'matrix-legend'));
+        bar || toneLegend(TIERS.map((x) => ({ tone: x.tone, label: tierLabel(x.tier), count: counts[x.tone] })), 'matrix-legend'));
     }
 
     const LEADING = [
@@ -558,7 +559,7 @@ export default {
           const ci = Number(info && info.ci) || 0;
           router.navigate('risks', { l: ci + 1, s: ri + 1 });
         },
-        cellSize: 'auto', ariaLabel: t('overview.matrix.aria'), rowTitle: t('overview.matrix.rowTitle'), colTitle: t('overview.matrix.colTitle'),
+        cellSize: 'auto', ariaLabel: t('overview.matrix.aria', { n: fmt.num(5) }), rowTitle: t('overview.matrix.rowTitle'), colTitle: t('overview.matrix.colTitle'),
       }), 'heatmap');
       matrixHost.replaceChildren(chart || C.emptyState({ title: t('overview.errors.chart') }));
       const counts = tierCounts(st, f);
@@ -577,7 +578,7 @@ export default {
           { id: 'incidents', label: t('overview.trend.incidents'), color: 'var(--s1)', values: rows.map((w) => Number(w.incidents) || 0) },
           { id: 'nearMisses', label: t('overview.trend.nearMisses'), color: 'var(--s2)', values: rows.map((w) => Number(w.nearMisses) || 0) },
         ],
-        labels: rows.map(weekLabel), height: 220, yFormat: fmt.num, ariaLabel: t('overview.trend.aria', { n: fmt.num(12) }), xLabel: t('overview.trend.cols.week'),
+        labels: rows.map(weekLabel), height: 260, yFormat: fmt.num, ariaLabel: t('overview.trend.aria', { n: fmt.num(12) }), xLabel: t('overview.trend.cols.week'),
       }), 'lineChart');
       trendHost.replaceChildren(chart || C.emptyState({ title: t('overview.errors.chart') }));
     }
@@ -621,7 +622,7 @@ export default {
           items.push({ key: `incident:${a.id}`, kind: 'incident', tone: a.tone, due: a.due, code: a.code, siteId: a.siteId,
             title: inc ? (L(inc, 'title', 'incidents') || a.code) : a.code,
             badge: inc ? label('incidentStatus', inc.status) : '', dueText: t('overview.actions.reportedOn', { date: fmt.date(a.due, { style: 'short' }) }),
-            note: t('overview.actions.incidentNote', { severity: fmt.num(Number(inc && inc.severity) || 0) }), href: a.href });
+            note: t('overview.actions.incidentNote', { severity: fmt.num(Number(inc && inc.severity) || 0), max: fmt.num(5) }), href: a.href });
         } else if (a.kind === 'permit') {
           const pm = arr(st.permits).find((x) => x && x.id === a.id);
           const expired = Number.isFinite(dueMs) && dueMs <= at.getTime();
@@ -655,11 +656,14 @@ export default {
         actionsHost.replaceChildren(C.emptyState({ icon: ico('check-circle', 30), title: t('overview.actions.emptyTitle'), text: t('overview.actions.emptyText') }));
         return;
       }
-      const list = h('ol', { class: 'priority-list', 'aria-label': t('overview.actions.title') }, items.map((a) => h('li', {},
-        h('a', { class: ['priority-item', `tone-${a.tone || 'warning'}`, a.overdue ? 'is-overdue' : null], href: a.href || '#/overview', 'data-key': a.key },
+      const twoUp = layoutMode !== 'narrow' && items.length > 3;
+      const list = h('ol', { class: 'priority-list', 'aria-label': t('overview.actions.title'), style: twoUp ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', columnGap: 'var(--space-6)' } : undefined }, items.map((a) => h('li', {
+        class: ['priority-item', 'is-clickable', `tone-${a.tone || 'warning'}`, a.overdue ? 'is-overdue' : null], 'data-key': a.key,
+        onClick: (e) => { if (e.target.closest('a')) return; if (a.href) location.hash = a.href.replace(/^#/, ''); },
+      },
           h('span', { class: 'priority-rank', 'aria-hidden': 'true' }),
           h('span', { class: 'priority-main' },
-            h('span', { class: 'priority-title' }, a.title),
+            h('a', { class: 'priority-title', href: a.href || '#/overview', style: { color: 'inherit', textDecoration: 'none' } }, a.title),
             h('span', { class: 'priority-meta' },
               h('span', {}, ico(KIND_ICON[a.kind] || 'alert', 12), t(`overview.actions.kinds.${a.kind}`)),
               a.code ? h('span', { class: 'code mono', dir: 'ltr', translate: 'no' }, a.code) : null,
@@ -667,7 +671,7 @@ export default {
               a.note ? h('span', {}, a.note) : null)),
           h('span', { class: 'priority-side' },
             a.badge ? C.badge(a.badge, a.tone || 'warning') : null,
-            h('span', { class: ['priority-due', a.overdue ? 'is-overdue' : null] }, a.dueText))))));
+            h('span', { class: ['priority-due', a.overdue ? 'is-overdue' : null] }, a.dueText)))));
       actionsHost.replaceChildren(list);
     }
 

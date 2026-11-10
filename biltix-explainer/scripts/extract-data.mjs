@@ -298,7 +298,7 @@ const TL_EN = {
   ack: () => 'Alert acknowledged',
   accept: () => `Recommendation accepted · task ${task.code}`,
   task: () => `Task ${task.code} created`,
-  writeback: () => `Written back to Biltix PM (${task.code})`,
+  writeback: () => `Written back to ${task.writeback.target} (${task.code})`,
   onsite: () => 'Geotechnical engineer on site',
 };
 const timeline = [];
@@ -307,7 +307,8 @@ for (const e of detail.timeline) {
   else if (e.kind === 'alert') timeline.push({ at: e.at, kind: 'alert', byAr: e.by, byEn: 'System', textAr: `تصعيد فوري عبر ${alert.channels.length} قنوات`, textEn: TL_EN.alert() });
   else if (e.kind === 'ack') timeline.push({ at: e.at, kind: 'ack', byAr: e.by, byEn: enPerson(e.by), textAr: e.text, textEn: TL_EN.ack() });
   else if (e.kind === 'history' && /قبول التوصية/.test(e.text)) timeline.push({ at: e.at, kind: 'accept', byAr: e.by, byEn: enPerson(e.by), textAr: `قبول التوصية · المهمة ${task.code}`, textEn: TL_EN.accept() });
-  else if (e.kind === 'writeback') timeline.push({ at: e.at, kind: 'writeback', byAr: e.by, byEn: 'System', textAr: e.text, textEn: TL_EN.writeback(), status: e.status });
+  // the selector's Arabic label hard-codes the PM system name; use the task's own write-back target
+  else if (e.kind === 'writeback') timeline.push({ at: e.at, kind: 'writeback', byAr: e.by, byEn: 'System', textAr: e.text.replace(/Biltix PM/i, task.writeback.target), textEn: TL_EN.writeback(), status: e.status });
   else if (e.kind === 'history' && /الجيوتقني/.test(e.text)) timeline.push({ at: e.at, kind: 'onsite', byAr: e.by, byEn: enPerson(e.by), textAr: 'المهندس الجيوتقني في الموقع', textEn: TL_EN.onsite() });
 }
 timeline.forEach((t) => { t.date = fmtDate(t.at); t.time = fmtTime(t.at); });
@@ -422,6 +423,11 @@ const out = {
   },
   categories,
   ratingDistribution,
+  // display labels for the three ratings (app RATINGS for Arabic, app i18n for English)
+  ratingLabels: {
+    ar: Object.fromEntries(['red', 'yellow', 'green'].map((r) => [r, psel.ratingLabel(r)])),
+    en: Object.fromEntries(['red', 'yellow', 'green'].map((r) => [r, RATING_EN[r].label])),
+  },
   openAiRisks: openRisks.length,
   totalAiRisks: platformSeed.aiRisks.length,
   severityDistribution,

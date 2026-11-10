@@ -96,6 +96,19 @@ function dayPhrase(n, fmt) {
   const f = rtfCache.get(loc);
   try { return f ? f.format(n, 'day') : String(n); } catch { return String(n); }
 }
+/** Digits inside record text follow the numerals setting; codes (MH-14, R-1042, PM2.5, ISO 45001) stay Latin. */
+const AR_DIGITS = '٠١٢٣٤٥٦٧٨٩';
+function codeSafeDigits(fmt, text) {
+  const s = String(text ?? '');
+  if (!s || !fmt || typeof fmt.getNumerals !== 'function' || fmt.getNumerals() !== 'arab') return s;
+  return s.replace(/\d+(?:[.,/:]\d+)*/g, (m, offset, whole) => {
+    let prev = whole[offset - 1] || '';
+    if (prev === '/' || prev === ':') prev = whole[offset - 2] || '';
+    const next = whole[offset + m.length] || '';
+    if (/[A-Za-z\-_#]/.test(prev) || /[A-Za-z]/.test(next) || /(ISO|SBC|UTC)\s?\+?$/i.test(whole.slice(Math.max(0, offset - 5), offset))) return m;
+    return m.replace(/\d/g, (d) => AR_DIGITS[Number(d)]).replace(/\./g, '٫').replace(/,/g, '٬');
+  });
+}
 const isOverdueIns = (ins, todayKey) => ins.status === OVERDUE || (ins.status === SCHEDULED && dayKey(ins.date) < todayKey);
 
 function simpleTable(caption, headers, rows) {
@@ -144,13 +157,13 @@ export const inspectionsView = {
     const tableFilters = () => ({ ...typed(), status: statusFilter === 'all' ? undefined : statusFilter });
     const findInspection = (id) => (state().inspections || []).find((i) => i && i.id === id) || null;
     const siteOf = (id) => (state().sites || []).find((s) => s && s.id === id) || null;
-    const siteName = (id) => { const s = siteOf(id); return s ? i18n.L(s, 'name', 'sites') : '—'; };
+    const siteName = (id) => { const s = siteOf(id); return s ? codeSafeDigits(fmt, i18n.L(s, 'name', 'sites')) : '—'; };
     const shortSite = (name) => String(name || '').split(/\s+[—–]\s+/)[0];
     const person = (v) => (v ? i18n.term(v) : '—');
     const findingsOf = (ins) => {
       const raw = Array.isArray(ins.findings) ? ins.findings : [];
       const loc = i18n.L(ins, 'findings', 'inspections');
-      return raw.map((f, i) => ({ ...f, text: (Array.isArray(loc) && loc[i] && loc[i].text) || (f && f.text) || '—' }));
+      return raw.map((f, i) => ({ ...f, text: codeSafeDigits(fmt, (Array.isArray(loc) && loc[i] && loc[i].text) || (f && f.text) || '—') }));
     };
 
     /* ── page skeleton ── */
@@ -194,13 +207,13 @@ export const inspectionsView = {
       stickyFirst: true,
       columns: [
         { key: 'code', label: t('inspections.table.code'), priority: 'high', width: 96, render: (r) => h('span', { class: 'code' }, r.code) },
-        { key: 'type', label: t('inspections.table.type'), priority: 'high', sortValue: (r) => typeLabel(r.type), render: (r) => h('span', { class: 'row gap-1 nowrap' }, svgIcon(typeIcon(r.type), 14), typeLabel(r.type)) },
+        { key: 'type', label: t('inspections.table.type'), priority: 'medium', sortValue: (r) => typeLabel(r.type), render: (r) => h('span', { class: 'row gap-1', style: { minInlineSize: '12ch' } }, svgIcon(typeIcon(r.type), 14), typeLabel(r.type)) },
         {
           key: 'siteId', label: t('inspections.table.site'), priority: 'high', sortValue: (r) => siteName(r.siteId),
           render: (r) => {
             const site = siteOf(r.siteId);
             return h('span', { class: 'stack gap-1', style: { minInlineSize: '12ch', maxInlineSize: '22ch' } },
-              h('span', { class: 'cell-title', style: { whiteSpace: 'normal', lineHeight: '1.35' } }, site ? i18n.L(site, 'name', 'sites') : '—'),
+              h('span', { class: 'cell-title', style: { whiteSpace: 'normal', lineHeight: '1.35' } }, site ? siteName(site.id) : '—'),
               site ? h('span', { class: 'code cell-sub' }, site.code) : null);
           },
         },
@@ -237,11 +250,34 @@ export const inspectionsView = {
       ],
       rows: [],
     });
+    /* Narrow cards: each filter group takes a full row and the status segments may scroll (no overlap). */
+    const tableCardHost = h('div', { style: { minInlineSize: '0' } }, filters.el);
+    let filterRo = null;
+    if (typeof ResizeObserver === 'function') {
+      // Width-only, applied a frame later and only when the mode flips, so it never re-enters the observer loop.
+      let narrowMode = null;
+      let roRaf = 0;
+      filterRo = new ResizeObserver((entries) => {
+        const w = entries[0] ? Math.round(entries[0].contentRect.width) : 0;
+        if (!w) return;
+        const narrow = w < 560;
+        if (narrow === narrowMode) return;
+        narrowMode = narrow;
+        if (roRaf) cancelAnimationFrame(roRaf);
+        roRaf = requestAnimationFrame(() => {
+          roRaf = 0;
+          filters.el.querySelectorAll('.filter-bar-group').forEach((g) => { g.style.flex = narrow ? '1 1 100%' : ''; });
+          const seg = filters.el.querySelector('.seg');
+          if (seg) { seg.style.overflowX = narrow ? 'auto' : ''; seg.style.maxInlineSize = narrow ? '100%' : ''; }
+        });
+      });
+      filterRo.observe(tableCardHost);
+    }
     const tableCount = h('span', { class: 'badge tone-neutral' }, '');
     const tableSub = h('p', { class: 'card-sub' }, '');
     const tableCard = card({
       code: 'SEC-06.A', title: t('inspections.table.title'), subtitle: ' ', actions: [tableCount],
-      body: h('div', { class: 'stack gap-3' }, h('div', { class: 'card-pad' }, filters.el), table.el),
+      body: h('div', { class: 'stack gap-3' }, tableCardHost, table.el),
     });
     const sub = tableCard.querySelector('.card-sub');
     if (sub) sub.replaceWith(tableSub);
@@ -606,6 +642,7 @@ export const inspectionsView = {
 
     return () => {
       alive = false;
+      if (filterRo) { try { filterRo.disconnect(); } catch { /* ignore */ } filterRo = null; }
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
       subs.splice(0).forEach((u) => { try { u(); } catch { /* ignore */ } });
       if (activeDrawer) { try { activeDrawer.close(); } catch { /* ignore */ } activeDrawer = null; }

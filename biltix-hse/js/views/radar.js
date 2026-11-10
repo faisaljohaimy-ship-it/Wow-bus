@@ -1,44 +1,32 @@
 /**
- * Biltix HSE — SEC-02 الرادار الحي (js/views/radar.js)
+ * BILTIX Risk AI — HSE pillar · SEC-02 Risk radar (js/views/radar.js). Owner: B-HSE1.
  *
- * The live radar room: a strip of six telemetry chips refreshed every second, then four
- * continuously animated Canvas radars (SweepRadar, SensorRadar, SitePlanRadar,
- * ComplianceRadar) inside `.radar-grid`. Each card carries a mono telemetry strip
- * (`.radar-telemetry`), a tone legend and a "last update" relative time.
+ *   A. Head — title, lead, data status (status.js), the site the site radars follow, pause motion.
+ *   B. Site telemetry — six chips refreshed every second, marked "Simulated" (the live engine is an
+ *      in-browser simulation in every mode: no sensor gateway is connected).
+ *   C. Four canvas radars: risk sweep (register risks + simulated detections; click a blip to open the
+ *      risk), sensor dial (six fixed axes; a site without a sensor shows "—", never a fabricated 0),
+ *      isometric site plan (simulated workers / vehicles, register hazards), ISO 45001 clause scores.
+ *      Every radar card carries a mono telemetry strip, a tone legend and "updated" relative time.
  *
- * Site-sensitive radars (sensors, site plan) follow the global site filter; 'all' → S1.
- * Radars are created in render() and stopped + destroyed in the cleanup function; the
- * shared loop's FPS is shown as a discreet mono chip in the view head.
- *
- * Contract: docs/ARCHITECTURE.md §6 (radar engine), §7 (live), §8.2 (this view).
+ * Language: view strings from the 'radarView' dictionary (js/i18n/radar-view.js) and the shared 'risks'
+ * vocabulary; canvas chrome from A-UI's 'radar' dictionary; every label handed to a canvas (sector
+ * names, sensor axes and units, zone names, hazard labels, clause titles) is localised here.
+ * Telemetry is patched in place each second (no replay); motion.enter runs on the first render only.
  */
 
+import { i18n } from '../core/i18n.js';
 import * as seedMod from '../data/seed.js';
+import dict from '../i18n/radar-view.js';
+import risksDict from '../i18n/risks.js';
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
+i18n.register('risks', risksDict);
+i18n.register('radarView', dict);
+
 const CLOSED = 'مغلق';
 const ISO_TARGET = 85;
 const SWEEP_DEG_PER_SEC = 22;
-
-const FALLBACK_CATEGORIES = [
-  { id: 'height', name: 'العمل على ارتفاعات', icon: 'height' },
-  { id: 'excavation', name: 'الحفريات والخنادق', icon: 'excavation' },
-  { id: 'lifting', name: 'الرافعات وعمليات الرفع', icon: 'crane' },
-  { id: 'electrical', name: 'الكهرباء', icon: 'bolt' },
-  { id: 'confined', name: 'الأماكن المغلقة', icon: 'confined' },
-  { id: 'hotwork', name: 'الأعمال الساخنة', icon: 'flame' },
-  { id: 'heat', name: 'الإجهاد الحراري', icon: 'sun' },
-  { id: 'chemical', name: 'المواد الكيميائية والغبار', icon: 'flask' },
-  { id: 'traffic', name: 'المركبات وحركة المرور', icon: 'truck' },
-  { id: 'scaffold', name: 'السقالات والأعمال المؤقتة', icon: 'scaffold' },
-  { id: 'structural', name: 'الانهيارات الإنشائية', icon: 'structure' },
-  { id: 'ergonomic', name: 'المناولة اليدوية والإرجونوميكس', icon: 'body' },
-];
-const SHORT_CATEGORY = {
-  height: 'ارتفاعات', excavation: 'حفريات', lifting: 'رفع', electrical: 'كهرباء', confined: 'أماكن مغلقة',
-  hotwork: 'أعمال ساخنة', heat: 'إجهاد حراري', chemical: 'كيميائيات', traffic: 'مركبات', scaffold: 'سقالات',
-  structural: 'إنشائي', ergonomic: 'مناولة',
-};
+const FALLBACK_CATEGORY_IDS = ['height', 'excavation', 'lifting', 'electrical', 'confined', 'hotwork', 'heat', 'chemical', 'traffic', 'scaffold', 'structural', 'ergonomic'];
 const TIERS = [
   { tier: 'حرج', tone: 'critical' },
   { tier: 'عالٍ', tone: 'serious' },
@@ -46,68 +34,22 @@ const TIERS = [
   { tier: 'منخفض', tone: 'good' },
 ];
 const CHIPS = [
-  { id: 'sensors', label: 'الحساسات النشطة', icon: 'sensor', unit: 'حساس' },
-  { id: 'alerts', label: 'التنبيهات آخر ساعة', icon: 'alert', unit: 'تنبيه' },
-  { id: 'people', label: 'الأشخاص في الموقع', icon: 'users', unit: 'شخص' },
-  { id: 'vehicles', label: 'المعدات المتحركة', icon: 'truck', unit: 'معدّة' },
-  { id: 'wind', label: 'سرعة الرياح', icon: 'wind', unit: 'كم/س' },
-  { id: 'wbgt', label: 'WBGT', title: 'مؤشر الإجهاد الحراري (درجة حرارة الكرة الرطبة)', icon: 'thermo', unit: '°م' },
+  { id: 'sensors', icon: 'sensor' },
+  { id: 'alerts', icon: 'bell' },
+  { id: 'people', icon: 'helmet' },
+  { id: 'vehicles', icon: 'truck' },
+  { id: 'wind', icon: 'wind' },
+  { id: 'wbgt', icon: 'temperature' },
 ];
 
-const ICONS = {
-  gauge: ['M4 15a8 8 0 0 1 16 0', 'M12 15l4-5', 'c:12,15,1.2'],
-  pause: ['M8 5v14', 'M16 5v14'],
-  play: ['M7 4l13 8-13 8z'],
-  clock: ['c:12,12,9', 'M12 7v5l3 2'],
-  sensor: ['c:12,12,2.2', 'M8.5 8.5a5 5 0 0 0 0 7', 'M15.5 8.5a5 5 0 0 1 0 7', 'M5.6 5.6a9 9 0 0 0 0 12.8', 'M18.4 5.6a9 9 0 0 1 0 12.8'],
-  alert: ['M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z', 'M10 20a2 2 0 0 0 4 0'],
-  users: ['c:9,8,3.5', 'M3 20a6 6 0 0 1 12 0', 'c:17,9,2.5', 'M15.5 20a5 5 0 0 1 5.5-5'],
-  truck: ['M3 7h11v9H3z', 'M14 10h4l3 3v3h-7z', 'c:7,18,1.8', 'c:17,18,1.8'],
-  wind: ['M3 8h11a3 3 0 1 0-3-3', 'M3 12h16a3 3 0 1 1-3 3', 'M3 16h8a2 2 0 1 1-2 2'],
-  thermo: ['M10 14.5V5a2 2 0 0 1 4 0v9.5a3.5 3.5 0 1 1-4 0z', 'M12 10v7'],
-  radar: ['c:12,12,9', 'c:12,12,5', 'M12 12l6-6', 'M12 3v2'],
-  site: ['M4 20h16', 'M6 20V8l6-4 6 4v12', 'M10 20v-5h4v5'],
-  map: ['M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z', 'M9 4v14', 'M15 6v14'],
-  shield: ['M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z', 'M9 12l2 2 4-4'],
-  check: ['M5 12.5l4.5 4.5L19 7.5'],
-};
-
-function localIcon(name, size) {
-  const spec = ICONS[name];
-  if (!spec) return null;
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('width', String(size));
-  svg.setAttribute('height', String(size));
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
-  svg.setAttribute('stroke-width', '2');
-  svg.setAttribute('stroke-linecap', 'round');
-  svg.setAttribute('stroke-linejoin', 'round');
-  spec.forEach((d) => {
-    if (d.startsWith('c:')) {
-      const [cx, cy, r] = d.slice(2).split(',').map(Number);
-      const c = document.createElementNS(SVG_NS, 'circle');
-      c.setAttribute('cx', String(cx)); c.setAttribute('cy', String(cy)); c.setAttribute('r', String(r));
-      svg.appendChild(c);
-    } else {
-      const p = document.createElementNS(SVG_NS, 'path');
-      p.setAttribute('d', d);
-      svg.appendChild(p);
-    }
-  });
-  return svg;
-}
-
 const arr = (v) => (Array.isArray(v) ? v : []);
-const categories = () => (Array.isArray(seedMod.CATEGORIES) && seedMod.CATEGORIES.length ? seedMod.CATEGORIES : FALLBACK_CATEGORIES);
-const categoryName = (id) => { const c = categories().find((x) => x.id === id); return c ? c.name : '—'; };
-const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+const categories = () => (Array.isArray(seedMod.CATEGORIES) && seedMod.CATEGORIES.length ? seedMod.CATEGORIES : FALLBACK_CATEGORY_IDS.map((id) => ({ id })));
+const num = (v) => (v === null || v === undefined || v === '' ? null : (Number.isFinite(Number(v)) ? Number(v) : null));
 
 export default {
   id: 'radar',
   code: 'SEC-02',
-  title: 'الرادار الحي',
+  get title() { return i18n.has('core.nav.radar.title') ? i18n.t('core.nav.radar.title') : i18n.t('radarView.title'); },
   icon: 'radar',
 
   render(container, ctx) {
@@ -116,6 +58,13 @@ export default {
     const { h } = C;
     const R = ctx.radar || {};
     const loop = R.radarLoop || null;
+    const I = ctx.i18n || i18n;
+    const t = (key, p) => I.t(key, p);
+    const tn = (key, count, p) => I.tn(key, count, p);
+    const L = (record, field, ns) => (record ? I.L(record, field, ns) : '');
+    const label = (ns, value) => I.label(ns, value);
+    const statusApi = ctx.status || null;
+    const motion = ctx.motion || C.motion || null;
 
     /* ───────────── helpers ───────────── */
     const warned = new Set();
@@ -130,54 +79,64 @@ export default {
     };
     const ico = (name, size = 16) => {
       let node = null;
-      try { node = art && typeof art.icon === 'function' ? art.icon(name, size) : null; } catch { node = null; }
-      if (!(node instanceof Node)) node = localIcon(name, size) || C.glyph('neutral', size);
-      node.setAttribute('width', String(size));
-      node.setAttribute('height', String(size));
+      try { node = typeof C.svgIcon === 'function' ? C.svgIcon(name, size) : (art && art.icon ? art.icon(name, size) : null); } catch { node = null; }
+      if (!(node instanceof Node)) node = C.glyph('neutral', size);
       node.setAttribute('aria-hidden', 'true');
-      node.setAttribute('focusable', 'false');
-      node.classList.add('icon');
       return node;
     };
     const state = () => store.state || {};
     const filters = () => ({ siteId: 'all', range: 30, search: '', ...(store.filters || (store.state && store.state.filters) || {}) });
     const sites = () => arr(state().sites);
-    const siteById = (id) => sites().find((s) => s.id === id) || null;
-    const siteName = (id) => { const s = siteById(id); return s ? s.name : ''; };
-    /** Site the sensor/site-plan radars follow: the global filter, or S1 (first site) for 'all'. */
+    const siteById = (id) => sites().find((s) => s && s.id === id) || null;
+    const siteName = (id) => { const s = siteById(id); return s ? L(s, 'name', 'sites') : ''; };
+    const findRisk = (id) => arr(state().risks).find((r) => r && r.id === id) || null;
+    const tierLabel = (tier) => label('tier', tier);
+    const categoryLabel = (id) => label('hseCategory', id) || '—';
+    const unitLabel = (u) => (u ? label('unit', u) : '');
+    const isEn = () => I.lang() !== 'ar';
+    /** Site the sensor/site-plan radars follow: the global filter, or the first site for 'all'. */
     const siteFor = () => {
       const f = filters();
       if (f.siteId && f.siteId !== 'all' && siteById(f.siteId)) return f.siteId;
       return siteById('S1') ? 'S1' : (sites()[0] ? sites()[0].id : 'S1');
     };
-    const fmtValue = (v) => (v === null ? '—' : fmt.num(v, { maximumFractionDigits: Math.abs(v) < 10 ? 1 : 0 }));
-    /** Digit runs inside labels (ISO clause ids such as "7" or "7.5") follow the numerals setting. */
-    const digits = (s) => String(s ?? '').replace(/\d+(?:\.\d+)?/g, (m) => fmt.num(Number(m), { maximumFractionDigits: 2 }));
-    const clauseLabel = (c) => `${digits(c.id)} ${c.title}`;
-    const SWEEP_SUB = () => `المخاطر المفتوحة موزعة على ${fmt.num(12)} قطاعاً بحسب فئة الخطر — الأشد تقترب من المركز`;
-    const ISO_SUB = () => `درجات بنود المعيار من ${fmt.num(4)} إلى ${fmt.num(10)} مقابل حلقة المستهدف ${fmt.pct(ISO_TARGET)} — الفجوات مظللة`;
-    const setSub = (cardEl, text) => { const el = cardEl.querySelector('.card-sub'); if (el && el.textContent !== text) el.textContent = text; };
+    const fmtValue = (v) => (v === null || !Number.isFinite(v) ? '—' : fmt.num(v, { maximumFractionDigits: Math.abs(v) < 10 ? 1 : 0 }));
+    const axisLabel = (a) => (a && a.key && I.has(`radarView.axes.${a.key}`) ? t(`radarView.axes.${a.key}`) : label('sensorKind', a && (a.kind || a.label)) || (a && a.label) || '');
+    const clauseTitle = (c) => L(c, 'title', 'isoClauses') || c.title || '';
+    const sourceStatus = () => {
+      try { if (statusApi && typeof statusApi.source === 'function') return statusApi.source(state()).status || 'demo'; } catch (err) { warn('status', err); }
+      return 'demo';
+    };
+    const statusText = (s) => { try { return statusApi ? statusApi.label(s) : s; } catch { return s; } };
+    const statusDesc = (s) => { try { return statusApi ? statusApi.desc(s) : ''; } catch { return ''; } };
 
     function simpleTable(caption, headers, rows, numeric = []) {
       const table = h('table', { class: 'chart-table' });
       table.appendChild(h('caption', {}, caption));
-      table.appendChild(h('thead', {}, h('tr', {}, headers.map((label, i) => h('th', { scope: 'col', class: numeric[i] ? 'num' : null }, label)))));
+      table.appendChild(h('thead', {}, h('tr', {}, headers.map((x, i) => h('th', { scope: 'col', class: numeric[i] ? 'num' : null }, x)))));
       table.appendChild(h('tbody', {}, rows.length
         ? rows.map((r) => h('tr', {}, r.map((cell, i) => h('td', { class: numeric[i] ? 'num' : null }, cell))))
-        : h('tr', {}, h('td', { colspan: String(headers.length), class: 'muted' }, 'لا توجد بيانات'))));
+        : h('tr', {}, h('td', { colspan: String(headers.length), class: 'muted' }, t('radarView.common.noData')))));
       return table;
     }
     function toneLegend(items) {
-      return h('ul', { class: 'radar-legend', role: 'list', 'aria-label': 'دليل الألوان' }, items.map((it) => h('li', { class: ['radar-legend-item', `tone-${it.tone}`] },
+      return h('ul', { class: 'radar-legend', role: 'list', 'aria-label': t('radarView.common.legend') }, items.map((it) => h('li', { class: ['radar-legend-item', `tone-${it.tone}`] },
         C.glyph(it.tone, 12), h('span', { class: 'legend-key' }), h('span', {}, it.label))));
     }
+    /** Status text inside a radar frame: simulated sources say "Simulated", the data source says its status. */
+    function paintFrameStatus(el, kind) {
+      const s = kind === 'simulated' ? 'demo' : sourceStatus();
+      const text = kind === 'simulated' || s === 'demo' ? (kind === 'simulated' ? t('radarView.status.simulated') : statusText('demo')) : statusText(s);
+      el.dataset.status = s;
+      el.title = kind === 'simulated' ? t('radarView.status.simulatedDesc') : statusDesc(s);
+      el.replaceChildren(ico(s === 'demo' ? 'flask' : (s === 'live' ? 'check-circle' : 'alert-circle'), 12), h('span', {}, text));
+    }
 
-    /* Phones: telemetry labels wrap onto a second line instead of ellipsising ("5 القيادة ومشاركة العا…");
-       the full text stays in the title attribute everywhere. */
+    /* Phones: telemetry labels wrap instead of ellipsising; the full text stays in the title attribute. */
     const phoneMq = typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 640px)') : null;
     const WRAP_LABEL = { whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', overflowWrap: 'anywhere' };
     const UNWRAP_LABEL = { whiteSpace: '', overflow: '', textOverflow: '', overflowWrap: '' };
-    const paintTeleLabel = (label) => Object.assign(label.style, phoneMq && phoneMq.matches ? WRAP_LABEL : UNWRAP_LABEL);
+    const paintTeleLabel = (el) => Object.assign(el.style, phoneMq && phoneMq.matches ? WRAP_LABEL : UNWRAP_LABEL);
 
     /* Telemetry strips: rebuilt only when the row set changes; otherwise text nodes are patched. */
     const teleRefs = new WeakMap();
@@ -189,10 +148,10 @@ export default {
         ul.replaceChildren(...rows.map((r) => {
           const text = document.createTextNode('');
           const unit = h('span', { class: 'tele-unit' });
-          const value = h('span', { class: 'tele-value' }, text, unit);
-          const label = h('span', { class: 'tele-label', title: r.label }, r.label);
-          paintTeleLabel(label);
-          const li = h('li', { class: 'tele-row' }, label, value);
+          const value = h('bdi', { class: 'tele-value' }, text, unit);
+          const lab = h('span', { class: 'tele-label', title: r.title || r.label }, r.code ? h('span', { class: 'code mono', dir: 'ltr', translate: 'no' }, r.code) : null, r.code ? ' ' : null, r.label);
+          paintTeleLabel(lab);
+          const li = h('li', { class: 'tele-row' }, lab, value);
           refs.rows.set(r.key, { li, text, unit });
           return li;
         }));
@@ -205,17 +164,15 @@ export default {
         if (ref.text.data !== v) ref.text.data = v;
         const u = r.unit ? ` ${r.unit}` : '';
         if (ref.unit.textContent !== u) ref.unit.textContent = u;
+        // Explicit direction (dir=auto on an initially empty <bdi> is not re-resolved reliably): Arabic words → rtl.
+        const want = /[\u0600-\u06FF]/.test(v + u) ? 'rtl' : 'ltr';
+        if (ref.li.querySelector('.tele-value').getAttribute('dir') !== want) ref.li.querySelector('.tele-value').setAttribute('dir', want);
         ref.li.classList.toggle('is-alert', r.state === 'alert');
         ref.li.classList.toggle('is-warn', r.state === 'warn');
+        ref.li.classList.toggle('is-missing', r.state === 'missing');
       });
     }
     const setText = (node, value) => { const v = String(value); if (node.textContent !== v) node.textContent = v; };
-    const setDotTone = (dot, tone) => {
-      const want = `tone-${tone}`;
-      if (dot.classList.contains(want)) return;
-      Array.from(dot.classList).filter((c) => c.startsWith('tone-')).forEach((c) => dot.classList.remove(c));
-      dot.classList.add(want);
-    };
 
     /* ───────────── lifecycle registers ───────────── */
     const subs = [];
@@ -229,19 +186,14 @@ export default {
     let currentAxes = [];
     let isoCache = { at: 0, clauses: [] };
 
-    const makeRadar = (Cls, canvas, opts, label) => {
-      if (typeof Cls !== 'function') { warn(`radar:${label}`, new Error(`${label} غير متاح في radar.js`)); return null; }
-      try {
-        const r = new Cls(canvas, opts);
-        if (typeof r.start === 'function') r.start();
-        return r;
-      } catch (err) { warn(`radar:${label}`, err); return null; }
+    const makeRadar = (Cls, canvas, opts, name) => {
+      if (typeof Cls !== 'function') { warn(`radar:${name}`, new Error(`${name} unavailable`)); return null; }
+      try { const r = new Cls(canvas, opts); if (typeof r.start === 'function') r.start(); return r; } catch (err) { warn(`radar:${name}`, err); return null; }
     };
     const killRadar = (r) => {
       if (!r) return;
-      try { if (typeof r.stop === 'function') r.stop(); } catch { /* ignore */ }
+      try { if (typeof r.destroy === 'function') r.destroy(); else if (typeof r.stop === 'function') r.stop(); } catch { /* ignore */ }
       try { if (loop && typeof loop.remove === 'function') loop.remove(r); } catch { /* ignore */ }
-      try { if (typeof r.destroy === 'function') r.destroy(); } catch { /* ignore */ }
     };
     const replaceCanvas = (card) => {
       const fresh = card.canvas.cloneNode(false);
@@ -259,94 +211,105 @@ export default {
       if (f.siteId && f.siteId !== 'all') blips = blips.filter((b) => b && (!b.siteId || b.siteId === f.siteId));
       return blips.filter(Boolean);
     }
-    /** Axes for a site; only sensors that truly belong to it (selector may fall back to another site). */
-    function axesFor(siteId) {
-      const axes = safe(() => sel.sensorAxes(state(), siteId), [], 'sensorAxes');
-      return axes.length ? axes : [];
+    function blipLabel(b) {
+      if (!b) return '';
+      if (b.transient) return isEn() ? (b.labelEn || b.code || '') : (b.label || '');
+      const r = findRisk(b.id);
+      return r ? (L(r, 'hazard', 'risks') || r.code) : (b.label || b.code || '');
     }
-    /** Live sensor values aligned with `axes` (live engine → store values → axis defaults). */
+    const axesFor = (siteId) => safe(() => sel.sensorAxes(state(), siteId), [], 'sensorAxes');
+    /** Live values aligned with `axes`; a missing sensor stays null (shown as "—", never 0). */
     function valuesFor(siteId, axes) {
       let vals = null;
       if (live && typeof live.getSensorValues === 'function') vals = safe(() => live.getSensorValues(siteId), null, 'live.getSensorValues');
       const sensors = arr(state().sensors);
       return axes.map((a, i) => {
+        if (!a || a.missing) return null;
         if (Array.isArray(vals) && Number.isFinite(vals[i])) return vals[i];
         const s = sensors.find((x) => x && x.id === a.id);
-        return s && Number.isFinite(Number(s.value)) ? Number(s.value) : (Number(a.value) || 0);
+        return s && Number.isFinite(Number(s.value)) ? Number(s.value) : num(a.value);
       });
     }
-    function pingsFor(siteId) {
-      if (!live || typeof live.getPings !== 'function') return [];
-      const p = safe(() => live.getPings(siteId), [], 'live.getPings');
-      return Array.isArray(p) ? p : [];
-    }
+    const pingsFor = (siteId) => (live && typeof live.getPings === 'function' ? arr(safe(() => live.getPings(siteId), [], 'live.getPings')) : []);
     function hazardsFor(siteId) {
-      if (live && typeof live.getHazards === 'function') {
-        const hz = safe(() => live.getHazards(siteId), null, 'live.getHazards');
-        if (Array.isArray(hz)) return hz;
+      let list = null;
+      if (live && typeof live.getHazards === 'function') list = safe(() => live.getHazards(siteId), null, 'live.getHazards');
+      if (!Array.isArray(list)) {
+        const site = siteById(siteId);
+        const zones = arr(site && site.zones);
+        list = arr(state().risks)
+          .filter((r) => r && r.siteId === siteId && r.status !== CLOSED && r.zoneId)
+          .map((r) => {
+            const z = zones.find((x) => x.id === r.zoneId);
+            if (!z) return null;
+            const tone = safe(() => sel.tierTone(sel.riskTier(sel.riskScore(r))), 'warning', 'riskTier');
+            return { id: r.id, code: r.code, x: z.x + z.w / 2, y: z.y + z.h / 2, tone, zoneId: r.zoneId, kind: 'risk' };
+          })
+          .filter(Boolean);
       }
-      const site = siteById(siteId);
-      const zones = arr(site && site.zones);
-      return arr(state().risks)
-        .filter((r) => r && r.siteId === siteId && r.status !== CLOSED && r.zoneId)
-        .map((r) => {
-          const z = zones.find((x) => x.id === r.zoneId);
-          if (!z) return null;
-          const tone = safe(() => sel.tierTone(sel.riskTier(sel.riskScore(r))), 'warning', 'riskTier');
-          return { x: z.x + z.w / 2, y: z.y + z.h / 2, tone, label: r.hazard || r.code };
-        })
-        .filter(Boolean);
+      // Localise the label drawn on the plan: register risks through their mirror, simulated readings via labelEn.
+      return list.map((hz) => {
+        if (!hz) return hz;
+        if (hz.kind === 'risk' || findRisk(hz.id)) {
+          const r = findRisk(hz.id);
+          return { ...hz, label: r ? `${r.code} — ${L(r, 'hazard', 'risks')}` : (hz.label || hz.code) };
+        }
+        return { ...hz, label: isEn() ? (hz.labelEn || hz.code || '') : (hz.label || '') };
+      });
     }
     function isoClauses() {
-      const t = Date.now();
-      if (t - isoCache.at > 1000) isoCache = { at: t, clauses: safe(() => sel.isoScores(state()), [], 'isoScores') };
+      const now = Date.now();
+      if (now - isoCache.at > 1000) isoCache = { at: now, clauses: safe(() => sel.isoScores(state()), [], 'isoScores') };
       return isoCache.clauses;
     }
-    const isoOverall = () => {
-      const c = isoClauses();
-      return c.length ? Math.round(c.reduce((a, x) => a + (Number(x.score) || 0), 0) / c.length) : 0;
-    };
+    const isoOverall = () => safe(() => sel.isoOverall(state()), (() => { const c = isoClauses(); return c.length ? Math.round(c.reduce((a, x) => a + (Number(x.score) || 0), 0) / c.length) : 0; })(), 'isoOverall');
 
-    /* ───────────── view head ───────────── */
+    /* ═════════════ A. head ═════════════ */
     const root = h('section', { class: 'view view-radar' });
-    const fpsText = h('span', {}, 'FPS —');
-    const fpsChip = h('span', { class: 'chip is-sm mono', title: 'الإطارات في الثانية لحلقة الرسم المشتركة', 'aria-label': 'معدل الإطارات' }, ico('gauge', 14), fpsText);
-    const siteBadge = C.badge('', 'brand', { icon: ico('building', 14) });
-    const pauseBtn = C.button('إيقاف الحركة مؤقتاً', {
+    const statusHost = h('span', { class: 'row gap-2' });
+    const siteBadge = C.badge('', 'neutral', { icon: ico('building', 14) });
+    const pauseBtn = C.button(t('radarView.pause.pause'), {
       variant: 'outline', size: 'sm', icon: ico('pause', 14),
-      attrs: { 'aria-pressed': 'false', title: 'إيقاف حركة الرادارات مؤقتاً (تبقى البيانات حية)' },
+      attrs: { 'aria-pressed': 'false', title: t('radarView.pause.title') },
       onClick: () => setPaused(!paused),
     });
     root.appendChild(h('div', { class: 'view-head' },
       h('div', { class: 'view-head-text' },
-        h('span', { class: 'code-tag' }, 'SEC-02'),
-        h('h1', { tabindex: '-1' }, 'الرادار الحي'),
-        h('p', { class: 'view-lead' }, 'أربعة رادارات تعمل على مدار الساعة: مسح المخاطر المفتوحة حسب الفئة، قراءات الحساسات اللحظية، حركة العمال والمعدات على مخطط الموقع، ودرجات الامتثال لمعيار ISO 45001.')),
-      h('div', { class: 'view-actions' }, siteBadge, fpsChip, pauseBtn)));
+        h('span', { class: 'code-tag', translate: 'no' }, 'SEC-02'),
+        h('h1', { tabindex: '-1' }, i18n.has('core.nav.radar.title') ? t('core.nav.radar.title') : t('radarView.title')),
+        h('p', { class: 'view-lead' }, t('radarView.lead'))),
+      h('div', { class: 'view-actions' }, statusHost, siteBadge, pauseBtn)));
 
-    /* ───────────── live chips strip ───────────── */
+    /* ═════════════ B. telemetry chips ═════════════ */
     const chipRefs = new Map();
-    const strip = h('div', { class: 'live-strip', role: 'list', 'aria-label': 'القياسات الحية' }, CHIPS.map((c) => {
+    const strip = h('div', { class: 'live-strip', role: 'list', 'aria-labelledby': 'rdr-tele-title' }, CHIPS.map((c) => {
       const value = h('span', {}, '—');
-      const unit = h('span', { class: 'live-chip-unit' }, c.unit);
-      const dot = C.liveDot('accent');
-      const el = h('div', { class: 'live-chip', role: 'listitem', 'data-chip': c.id, title: c.title || c.label },
+      const unit = h('span', { class: 'live-chip-unit' });
+      const stateEl = h('span', { class: 'tone-glyph', style: { marginInlineStart: 'auto', display: 'inline-flex' } });
+      const stateSr = h('span', { class: 'sr-only' });
+      const el = h('div', { class: 'live-chip', role: 'listitem', 'data-chip': c.id, title: t(`radarView.chips.${c.id}Title`) },
         ico(c.icon, 18),
         h('div', { class: 'live-chip-text' },
-          h('span', { class: 'live-chip-label' }, c.label),
-          h('span', { class: 'live-chip-value' }, value, unit)),
-        dot);
-      chipRefs.set(c.id, { el, value, unit, dot });
+          h('span', { class: 'live-chip-label' }, t(`radarView.chips.${c.id}`)),
+          h('bdi', { class: 'live-chip-value', style: { whiteSpace: 'nowrap' } }, value, unit)),
+        stateEl, stateSr);
+      chipRefs.set(c.id, { el, value, unit, stateEl, stateSr, tone: null });
       return el;
     }));
-    root.appendChild(strip);
-    // Six chips in one row when the strip is wide enough, otherwise balanced 3+3 / 2+2+2 (never 5+1).
-    const fitStrip = (w) => { strip.style.gridTemplateColumns = w >= 900 ? 'repeat(6, minmax(0, 1fr))' : w >= 520 ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))'; };
+    root.appendChild(h('section', { class: 'view-section', 'aria-labelledby': 'rdr-tele-title' },
+      h('div', { class: 'view-section-head' },
+        h('div', { class: 'stack gap-1' },
+          h('div', { class: 'row gap-2 wrap' },
+            h('h2', { class: 't-section', id: 'rdr-tele-title' }, t('radarView.telemetry.title')),
+            typeof C.statusBadge === 'function' ? C.statusBadge('demo', { label: t('radarView.status.simulated'), title: t('radarView.status.simulatedDesc'), size: 'sm' }) : null),
+          h('p', { class: 't-helper' }, t('radarView.telemetry.subtitle')))),
+      strip));
+    // Six chips in one row when wide enough, otherwise balanced 3 + 3 / 2 + 2 + 2 (never 5 + 1).
+    const fitStrip = (w) => { strip.style.gridTemplateColumns = w >= 1080 ? 'repeat(6, minmax(0, 1fr))' : w >= 520 ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))'; };
     let stripObserver = null;
     let lastStripWidth = -1;
     let stripRaf = 0;
     if (typeof ResizeObserver === 'function') {
-      // Width-only and deferred a frame so the column change never re-enters the observer loop.
       stripObserver = new ResizeObserver((entries) => {
         for (const e of entries) {
           const w = Math.round(e.contentRect.width);
@@ -357,100 +320,87 @@ export default {
         }
       });
       stripObserver.observe(strip);
-    } else {
-      fitStrip(strip.getBoundingClientRect().width || 900);
     }
+    fitStrip(strip.getBoundingClientRect().width || 900);
 
-    /* ───────────── radar cards ───────────── */
-    function radarCard({ code, title, subtitle, caption, wide, large, landscape, legend, tableView, sideTitle, actions = [], sideBadges = [] }) {
+    /* ═════════════ C. radar cards ═════════════ */
+    function radarCard({ code, title, subtitle, caption, wide, large, landscape, legend, tableView, sideTitle, sideBadges = [], statusKind }) {
       const canvas = h('canvas', { class: 'radar-canvas', role: 'img', 'aria-label': title });
-      // Mono caption only where no rim labels can collide with it (the site plan); dials carry it in the card subtitle.
-      const captionEl = h('span', { class: 'radar-caption', hidden: !caption }, caption || '');
-      // The site plan is a 30°-sheared parallelogram → 4:3 frame (`.is-landscape`); the dials stay square.
-      const frame = h('div', { class: ['radar-frame', landscape ? 'is-landscape' : 'is-wide', large ? 'is-hero' : null] },
-        canvas, h('span', { class: 'radar-status' }, C.liveDot('accent'), 'مباشر'), captionEl);
-      const tip = h('div', { class: 'tooltip radar-tip', hidden: true, style: { position: 'absolute', insetBlockStart: '0', insetInlineStart: '0', pointerEvents: 'none', zIndex: '2' } });
+      const captionEl = h('span', { class: 'radar-caption', hidden: !caption, translate: 'no' }, caption || '');
+      const statusEl = h('span', { class: 'radar-status' });
+      const frame = h('div', { class: ['radar-frame', landscape ? 'is-landscape' : 'is-wide', large ? 'is-hero' : null] }, canvas, statusEl, captionEl);
+      const tip = h('div', { class: 'tooltip radar-tip', hidden: true, role: 'tooltip', style: { position: 'absolute', insetBlockStart: '0', insetInlineStart: '0', pointerEvents: 'none', zIndex: '2' } });
       const wrap = h('div', { style: { position: 'relative', inlineSize: '100%', maxInlineSize: large ? '720px' : '560px', marginInline: 'auto' } }, frame, tip);
-      const tele = h('ul', { class: 'radar-telemetry', role: 'list' });
+      const tele = h('ul', { class: 'radar-telemetry', role: 'list', 'aria-label': sideTitle });
       const updatedText = h('span', {});
       const side = h('div', { class: 'radar-side' },
-        h('div', { class: 'row between wrap' }, h('span', { class: 'radar-side-title' }, sideTitle), ...sideBadges),
+        h('div', { class: 'row between wrap gap-2' }, h('span', { class: 'radar-side-title' }, sideTitle), ...sideBadges),
         tele,
         toneLegend(legend),
         h('span', { class: 'tele-updated' }, ico('clock', 13), updatedText));
       const body = h('div', { class: ['radar-layout', wide ? null : 'is-stacked'] }, wrap, side);
-      const card = C.card({ code, title, subtitle, body, tableView, actions, className: wide ? 'is-wide' : '' });
-      return { card, canvas, frame, tip, wrap, tele, updatedText, captionEl };
+      const card = C.card({ code, title, subtitle, body, tableView, className: wide ? 'is-wide' : '' });
+      return { card, canvas, frame, tip, wrap, tele, updatedText, captionEl, statusEl, statusKind };
     }
 
     const sweepCard = radarCard({
-      code: 'RDR-01', title: 'رادار المخاطر', subtitle: SWEEP_SUB(),
-      wide: true, large: true, sideTitle: 'القياسات',
-      legend: TIERS.map((t) => ({ tone: t.tone, label: t.tier })),
-      tableView: () => simpleTable('المخاطر الظاهرة على الرادار', ['الكود', 'الخطر', 'الموقع', 'الفئة', 'الدرجة', 'المستوى'],
-        currentBlips().map((b) => [String(b.code || ''), String(b.label || ''), siteName(b.siteId) || '—', categoryName(b.categoryId), fmt.num(Number(b.score) || 0), String(b.tier || '')]),
-        [true, false, false, false, true, false]),
+      code: 'RDR-01', title: t('radarView.sweep.title'), subtitle: t('radarView.sweep.subtitle', { n: fmt.num(12) }),
+      wide: true, large: true, sideTitle: t('radarView.sweep.side'), statusKind: 'simulated',
+      legend: TIERS.map((x) => ({ tone: x.tone, label: tierLabel(x.tier) })),
+      tableView: () => simpleTable(t('radarView.sweep.tableCaption'),
+        [t('radarView.cols.code'), t('radarView.cols.hazard'), t('radarView.cols.site'), t('radarView.cols.category'), t('radarView.cols.score'), t('radarView.cols.tier')],
+        currentBlips().map((b) => [h('span', { class: 'code mono', dir: 'ltr', translate: 'no' }, String(b.code || '')), blipLabel(b), siteName(b.siteId) || '—', categoryLabel(b.categoryId), Number.isFinite(Number(b.score)) ? fmt.num(Number(b.score)) : '—', b.tier ? tierLabel(b.tier) : '—']),
+        [false, false, false, false, true, false]),
     });
     const sensorSiteBadge = C.badge('', 'neutral', { icon: ico('building', 12) });
     const sensorCard = radarCard({
-      code: 'RDR-02', title: 'رادار الحساسات', subtitle: 'قراءات لحظية من بوابة الحساسات (غازات، ضوضاء، حرارة، غبار، رياح) مقابل حدود الإنذار',
-      wide: false, sideTitle: 'القراءات الحية', sideBadges: [sensorSiteBadge],
-      legend: [{ tone: 'accent', label: 'القراءة الحية' }, { tone: 'warning', label: 'قريب من الحد' }, { tone: 'critical', label: 'تجاوز حد الإنذار' }],
+      code: 'RDR-02', title: t('radarView.sensors.title'), subtitle: t('radarView.sensors.subtitle'),
+      wide: false, sideTitle: t('radarView.sensors.side'), sideBadges: [sensorSiteBadge], statusKind: 'simulated',
+      legend: [{ tone: 'accent', label: t('radarView.sensors.legendReading') }, { tone: 'warning', label: t('radarView.sensors.legendNear') }, { tone: 'critical', label: t('radarView.sensors.legendOver') }],
       tableView: () => {
-        const axes = currentAxes;
-        const vals = valuesFor(followedSite, axes);
-        return simpleTable('قراءات الحساسات', ['الحساس', 'القراءة', 'حد الإنذار', 'الحد الأقصى'],
-          axes.map((a, i) => [`${a.label}${a.unit ? ` (${a.unit})` : ''}`, fmtValue(num(vals[i])), fmtValue(num(a.threshold)), fmtValue(num(a.max))]), [false, true, true, true]);
+        const vals = valuesFor(followedSite, currentAxes);
+        return simpleTable(t('radarView.sensors.tableCaption'), [t('radarView.sensors.colSensor'), t('radarView.sensors.colReading'), t('radarView.sensors.colThreshold'), t('radarView.sensors.colMax')],
+          currentAxes.map((a, i) => [t('radarView.sensors.axisWithUnit', { axis: axisLabel(a), unit: unitLabel(a.unit) }), a.missing ? t('radarView.sensors.noSensor') : fmtValue(num(vals[i])), fmtValue(num(a.threshold)), fmtValue(num(a.max))]), [false, true, true, true]);
       },
     });
     const planSiteBadge = C.badge('', 'neutral', { icon: ico('building', 12) });
     const planCard = radarCard({
-      code: 'RDR-03', title: 'رادار مخطط الموقع', subtitle: 'مناطق الموقع بمنظور أيزومتري مع حركة العمال والمعدات ونبضات مواضع الخطر',
-      caption: 'PLAN', wide: false, landscape: true, sideTitle: 'الحركة على الموقع', sideBadges: [planSiteBadge],
-      legend: [{ tone: 'neutral', label: 'عامل' }, { tone: 'accent', label: 'مركبة / رافعة' }, { tone: 'critical', label: 'خطر حرج' }, { tone: 'serious', label: 'خطر عالٍ' }, { tone: 'warning', label: 'خطر متوسط' }],
+      code: 'RDR-03', title: t('radarView.plan.title'), subtitle: t('radarView.plan.subtitle'),
+      caption: 'PLAN', wide: false, landscape: true, sideTitle: t('radarView.plan.side'), sideBadges: [planSiteBadge], statusKind: 'simulated',
+      legend: [{ tone: 'neutral', label: t('radarView.plan.legendWorker') }, { tone: 'accent', label: t('radarView.plan.legendVehicle') }, { tone: 'critical', label: t('radarView.plan.legendCritical') }, { tone: 'serious', label: t('radarView.plan.legendHigh') }, { tone: 'warning', label: t('radarView.plan.legendMedium') }],
       tableView: () => {
         const site = siteById(followedSite);
         const hazards = hazardsFor(followedSite);
-        const zones = arr(site && site.zones);
-        return simpleTable('مناطق الموقع', ['المنطقة', 'الرمز', 'نقاط الخطر'],
-          zones.map((z) => [String(z.name), String(z.id), fmt.num(hazards.filter((hz) => hz.x >= z.x && hz.x <= z.x + z.w && hz.y >= z.y && hz.y <= z.y + z.h).length)]), [false, true, true]);
+        const zones = arr(site && L(site, 'zones', 'sites'));
+        return simpleTable(t('radarView.plan.tableCaption'), [t('radarView.plan.colZone'), t('radarView.plan.colCode'), t('radarView.plan.colHazards')],
+          zones.map((z) => [String(z.name || ''), h('span', { class: 'code mono', dir: 'ltr', translate: 'no' }, String(z.id)), fmt.num(hazards.filter((hz) => hz && (hz.zoneId === z.id || (hz.x >= z.x && hz.x <= z.x + z.w && hz.y >= z.y && hz.y <= z.y + z.h))).length)]), [false, false, true]);
       },
     });
     const complianceCard = radarCard({
-      code: 'RDR-04', title: 'رادار الامتثال ISO 45001', subtitle: ISO_SUB(),
-      wide: true, large: true, sideTitle: 'درجات البنود',
-      legend: [{ tone: 'accent', label: 'درجة البند' }, { tone: 'neutral', label: `المستهدف ${fmt.pct(ISO_TARGET)}` }, { tone: 'warning', label: 'فجوة دون المستهدف' }],
-      tableView: () => simpleTable('درجات بنود ISO 45001', ['البند', 'الدرجة', 'الفجوات', 'الحالة'],
-        isoClauses().map((c) => [`${digits(c.id)} — ${c.title}`, fmt.pct(Number(c.score) || 0), fmt.num(Number(c.gaps) || 0), (Number(c.score) || 0) >= ISO_TARGET ? 'ضمن المستهدف' : 'دون المستهدف']), [false, true, true, false]),
+      code: 'RDR-04', title: t('radarView.iso.title'), subtitle: t('radarView.iso.subtitle', { from: '4', to: '10', target: fmt.pct(ISO_TARGET) }),
+      wide: true, large: true, sideTitle: t('radarView.iso.side'), statusKind: 'source',
+      legend: [{ tone: 'accent', label: t('radarView.iso.legendScore') }, { tone: 'neutral', label: t('radarView.iso.legendTarget', { target: fmt.pct(ISO_TARGET) }) }, { tone: 'warning', label: t('radarView.iso.legendGap') }],
+      tableView: () => simpleTable(t('radarView.iso.tableCaption'), [t('radarView.iso.colClause'), t('radarView.iso.colScore'), t('radarView.iso.colGaps'), t('radarView.iso.colState')],
+        isoClauses().map((c) => [h('span', {}, h('span', { class: 'code mono', dir: 'ltr', translate: 'no' }, String(c.id)), ` — ${clauseTitle(c)}`), fmt.pct(Number(c.score) || 0), fmt.num(Number(c.gaps) || 0), (Number(c.score) || 0) >= ISO_TARGET ? t('radarView.iso.onTarget') : t('radarView.iso.belowTarget')]), [false, true, true, false]),
     });
 
-    root.appendChild(h('div', { class: 'radar-grid' }, sweepCard.card, sensorCard.card, planCard.card, complianceCard.card));
+    const cards = [sweepCard, sensorCard, planCard, complianceCard];
+    root.appendChild(h('div', { class: 'radar-grid' }, ...cards.map((c) => c.card)));
     container.appendChild(root);
+    cards.forEach((c) => paintFrameStatus(c.statusEl, c.statusKind));
+    statusHost.replaceChildren(typeof C.statusBadge === 'function' ? C.statusBadge(sourceStatus(), { size: 'sm' }) : C.badge(statusText(sourceStatus()), 'accent'));
 
-    /* ───────────── sweep hover tooltip ───────────── */
+    /* ───────────── sweep hover tooltip + click ───────────── */
     function placeTip(card, pt) {
-      // Radar hover info (§6 engine): {x, y} = {localX, localY} canvas-local CSS px; {clientX, clientY} viewport.
       const rect = card.wrap.getBoundingClientRect();
       const c = card.canvas.getBoundingClientRect();
-      let x;
-      let y;
-      if (pt && Number.isFinite(pt.localX) && Number.isFinite(pt.localY)) {
-        x = pt.localX + (c.left - rect.left);
-        y = pt.localY + (c.top - rect.top);
-      } else if (pt && Number.isFinite(pt.clientX) && Number.isFinite(pt.clientY)) {
-        x = pt.clientX - rect.left;
-        y = pt.clientY - rect.top;
-      } else if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) {
-        x = pt.x + (c.left - rect.left);
-        y = pt.y + (c.top - rect.top);
-      } else {
-        x = rect.width / 2;
-        y = 16;
-      }
+      let x; let y;
+      if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) { x = pt.x + (c.left - rect.left); y = pt.y + (c.top - rect.top); }
+      else if (pt && Number.isFinite(pt.clientX) && Number.isFinite(pt.clientY)) { x = pt.clientX - rect.left; y = pt.clientY - rect.top; }
+      else { x = rect.width / 2; y = 16; }
       const tw = card.tip.offsetWidth || 200;
       const th = card.tip.offsetHeight || 80;
-      const rtl = getComputedStyle(document.documentElement).direction !== 'ltr';
-      const anchorStart = rtl ? rect.width - x : x;
+      const anchorStart = I.dir() === 'rtl' ? rect.width - x : x;
       let start = anchorStart + 14;
       let top = y + 14;
       if (start + tw > rect.width - 4) start = Math.max(4, anchorStart - tw - 14);
@@ -461,35 +411,35 @@ export default {
     function showBlipTip(blip, pt) {
       const { tip } = sweepCard;
       if (!blip) { tip.hidden = true; return; }
-      const row = (label, value) => h('div', { class: 'tooltip-row' }, h('span', {}, label), h('strong', {}, value));
+      const row = (k, v) => h('div', { class: 'tooltip-row' }, h('span', {}, k), h('strong', {}, v));
       tip.replaceChildren(
-        h('div', { class: 'tooltip-title' }, h('span', { class: 'blip-code' }, String(blip.code || '')), ' ', String(blip.label || '')),
+        h('div', { class: 'tooltip-title' }, h('span', { class: 'blip-code code mono', dir: 'ltr', translate: 'no' }, String(blip.code || '')), ' ', blipLabel(blip)),
         h('div', { class: 'tooltip-rows' },
-          row('الموقع', siteName(blip.siteId) || '—'),
-          row('الفئة', categoryName(blip.categoryId)),
-          row('الدرجة', fmt.num(Number(blip.score) || 0)),
-          blip.status ? row('الحالة', String(blip.status)) : null),
-        h('div', { class: 'row gap-2', style: { marginBlockStart: '6px' } }, blip.tier ? C.tierBadge(blip.tier) : null, h('span', { class: 'tooltip-kbd' }, 'انقر لفتح السجل')));
+          row(t('radarView.cols.site'), siteName(blip.siteId) || '—'),
+          row(t('radarView.cols.category'), categoryLabel(blip.categoryId)),
+          Number.isFinite(Number(blip.score)) ? row(t('radarView.cols.score'), fmt.num(Number(blip.score))) : null,
+          blip.status ? row(t('radarView.cols.status'), label('riskStatus', blip.status)) : null),
+        h('div', { class: 'row gap-2', style: { marginBlockStart: '6px' } },
+          blip.tier ? C.badge(tierLabel(blip.tier), safe(() => sel.tierTone(blip.tier), 'neutral', 'tierTone')) : null,
+          blip.transient ? C.badge(t('radarView.sweep.simulatedDetection'), 'accent') : h('span', { class: 'tooltip-kbd' }, t('radarView.sweep.clickHint'))));
       tip.hidden = false;
       placeTip(sweepCard, pt);
     }
+    const onBlipClick = (blip) => { if (blip && !blip.transient && findRisk(blip.id)) router.navigate('risks', { id: blip.id }); };
     sweepCard.frame.addEventListener('pointerleave', () => { sweepCard.tip.hidden = true; });
-    sweepCard.frame.addEventListener('click', () => { if (!sweepCard.tip.hidden) router.navigate('risks'); });
 
     /* ───────────── radar construction ───────────── */
     function buildSweep() {
       radars.sweep = makeRadar(R.SweepRadar, sweepCard.canvas, {
         rings: 4,
         sectors: 12,
-        sectorLabels: categories().map((c) => SHORT_CATEGORY[c.id] || c.name),
+        sectorLabels: categories().map((c) => (I.has(`risks.categoryShort.${c.id}`) ? t(`risks.categoryShort.${c.id}`) : categoryLabel(c.id))),
         sweepDegPerSec: SWEEP_DEG_PER_SEC,
         getBlips: currentBlips,
         onHover: showBlipTip,
+        onClick: onBlipClick,
         showLabels: true,
       }, 'SweepRadar');
-      if (radars.sweep && typeof radars.sweep.setHoverHandler === 'function') {
-        try { radars.sweep.setHoverHandler(showBlipTip); } catch (err) { warn('setHoverHandler', err); }
-      }
     }
     function buildSiteRadars() {
       killRadar(radars.sensor);
@@ -502,43 +452,53 @@ export default {
       const sensorSite = currentAxes[0] && currentAxes[0].siteId ? currentAxes[0].siteId : followedSite;
       const sensorSiteObj = siteById(sensorSite) || site;
       radars.sensor = makeRadar(R.SensorRadar, sensorCard.canvas, {
-        axes: currentAxes.map((a) => ({ id: a.id, label: a.label, unit: a.unit, max: a.max, threshold: a.threshold })),
+        axes: currentAxes.map((a) => ({ id: a.id, label: axisLabel(a), unit: unitLabel(a.unit), max: a.max, threshold: a.threshold })),
         getValues: () => valuesFor(sensorSite, currentAxes),
         rotateDegPerSec: 4,
+        emptyText: t('radarView.sensors.empty'),
       }, 'SensorRadar');
       radars.plan = makeRadar(R.SitePlanRadar, planCard.canvas, {
-        zones: arr(site && site.zones),
+        zones: arr(site && L(site, 'zones', 'sites')).map((z) => ({ id: z.id, name: z.name, x: z.x, y: z.y, w: z.w, h: z.h })),
         getPings: () => pingsFor(followedSite),
         getHazards: () => hazardsFor(followedSite),
       }, 'SitePlanRadar');
       planCard.captionEl.textContent = `PLAN · ${(site && site.code) || followedSite}`;
-      sensorCard.canvas.setAttribute('aria-label', `رادار الحساسات — ${sensorSiteObj ? sensorSiteObj.name : ''}`);
-      planCard.canvas.setAttribute('aria-label', `رادار مخطط الموقع — ${site ? site.name : ''}`);
-      sensorSiteBadge.querySelector('.badge-text').textContent = sensorSiteObj ? sensorSiteObj.name : '—';
-      planSiteBadge.querySelector('.badge-text').textContent = site ? site.name : '—';
+      sensorCard.canvas.setAttribute('aria-label', t('radarView.sensors.aria', { site: sensorSiteObj ? L(sensorSiteObj, 'name', 'sites') : '—' }));
+      planCard.canvas.setAttribute('aria-label', t('radarView.plan.aria', { site: site ? L(site, 'name', 'sites') : '—' }));
+      sensorSiteBadge.querySelector('.badge-text').textContent = sensorSiteObj ? L(sensorSiteObj, 'name', 'sites') : '—';
+      planSiteBadge.querySelector('.badge-text').textContent = site ? L(site, 'name', 'sites') : '—';
     }
     function buildCompliance() {
       const clauses = isoClauses();
       radars.compliance = makeRadar(R.ComplianceRadar, complianceCard.canvas, {
-        axes: clauses.map((c) => ({ id: String(c.id), label: clauseLabel(c) })),
+        axes: clauses.map((c) => ({ id: String(c.id), label: `${c.id} ${clauseTitle(c)}` })),
         getValues: () => isoClauses().map((c) => Number(c.score) || 0),
         target: ISO_TARGET,
       }, 'ComplianceRadar');
+      complianceCard.canvas.setAttribute('aria-label', t('radarView.iso.aria', { overall: fmt.pct(isoOverall()), target: fmt.pct(ISO_TARGET) }));
     }
     function setPaused(next) {
       paused = Boolean(next);
       try {
         if (loop) { if (paused && typeof loop.pause === 'function') loop.pause(); if (!paused && typeof loop.resume === 'function') loop.resume(); }
       } catch (err) { warn('radarLoop.pause', err); }
-      [sweepCard, sensorCard, planCard, complianceCard].forEach((c) => c.frame.classList.toggle('is-paused', paused));
+      cards.forEach((c) => c.frame.classList.toggle('is-paused', paused));
       pauseBtn.setAttribute('aria-pressed', paused ? 'true' : 'false');
-      const label = pauseBtn.querySelector('.btn-label');
-      if (label) label.textContent = paused ? 'استئناف الحركة' : 'إيقاف الحركة مؤقتاً';
+      const lab = pauseBtn.querySelector('.btn-label');
+      if (lab) lab.textContent = paused ? t('radarView.pause.resume') : t('radarView.pause.pause');
       const oldIcon = pauseBtn.querySelector('.btn-ic');
       if (oldIcon) { const fresh = ico(paused ? 'play' : 'pause', 14); fresh.classList.add('btn-ic'); oldIcon.replaceWith(fresh); }
     }
 
     /* ───────────── per-second tick (paused while the tab is hidden) ───────────── */
+    function chipTone(ref, tone) {
+      if (ref.tone === tone) return;
+      ref.tone = tone;
+      ref.stateEl.className = `tone-glyph tone-${tone}`;
+      ref.stateEl.style.color = tone === 'neutral' || tone === 'accent' ? 'var(--ink-3)' : `var(--${tone}-text)`;
+      ref.stateEl.replaceChildren(C.glyph(tone, 14));
+      ref.stateSr.textContent = ` — ${t(`radarView.chipState.${tone}`)}`;
+    }
     function tick() {
       if (destroyed || document.hidden) return;
       const st = state();
@@ -547,66 +507,64 @@ export default {
       const scopeIds = new Set(scopeSites.map((s) => s.id));
       const sensors = arr(st.sensors).filter((s) => s && scopeIds.has(s.siteId));
 
-      /* live sensor values by sensor id (aligned per site with sel.sensorAxes) */
-      const liveById = new Map();
-      scopeSites.forEach((s) => {
-        const axes = axesFor(s.id).filter((a) => a.siteId === s.id);
-        if (!axes.length) return;
-        const vals = valuesFor(s.id, axes);
-        axes.forEach((a, i) => liveById.set(a.id, vals[i]));
-      });
-      const liveValue = (s) => { const v = liveById.get(s.id); return Number.isFinite(v) ? v : (Number(s.value) || 0); };
-      const overThreshold = sensors.filter((s) => liveValue(s) > (Number(s.threshold) || Infinity));
-      const nearThreshold = sensors.filter((s) => { const t = Number(s.threshold) || Infinity; const v = liveValue(s); return v <= t && v > t * 0.8; });
-
-      /* chips */
+      /* chips: wind / heat follow the followed site's fixed axes (same numbers as the sensor dial) */
+      const axes = currentAxes.length ? currentAxes : axesFor(followedSite);
+      const vals = valuesFor(followedSite, axes);
+      const axisReading = (key) => {
+        const i = axes.findIndex((a) => a && a.key === key);
+        if (i < 0 || axes[i].missing) return null;
+        const v = vals[i];
+        const thr = Number(axes[i].threshold) || Infinity;
+        return { value: v, unit: unitLabel(axes[i].unit), tone: !Number.isFinite(v) ? 'neutral' : (v > thr ? 'critical' : v > thr * 0.8 ? 'warning' : 'good') };
+      };
       const alerts = safe(() => sel.feedStats(st, 1), null, 'feedStats');
-      const alertCount = alerts && Number.isFinite(alerts.alerts) ? alerts.alerts
-        : arr(st.feed).filter((ev) => ev && (ev.tone === 'critical' || ev.tone === 'serious') && Date.now() - Date.parse(ev.ts) <= 3_600_000).length;
+      const alertCount = alerts && Number.isFinite(alerts.alerts) ? alerts.alerts : 0;
       const people = scopeSites.reduce((sum, s) => sum + (Number(s.workers) || 0), 0);
-      let vehicles = null;
-      if (live && typeof live.getPings === 'function') {
-        vehicles = scopeSites.reduce((sum, s) => sum + pingsFor(s.id).filter((p) => p && p.kind && p.kind !== 'worker').length, 0);
-      }
-      const pick = (needle) => sensors.find((s) => String(s.kind || '').includes(needle) && s.siteId === followedSite) || sensors.find((s) => String(s.kind || '').includes(needle)) || null;
-      const wind = pick('الرياح');
-      const wbgt = pick('WBGT');
-      const sensorState = (s) => (s ? (liveValue(s) > (Number(s.threshold) || Infinity) ? 'critical' : liveValue(s) > (Number(s.threshold) || Infinity) * 0.8 ? 'warning' : 'good') : 'neutral');
-
+      const vehicles = live && typeof live.getPings === 'function'
+        ? scopeSites.reduce((sum, s) => sum + pingsFor(s.id).filter((p) => p && p.kind && p.kind !== 'worker').length, 0)
+        : null;
+      let over = 0; let near = 0;
+      axes.forEach((a, i) => { if (!a || a.missing || !Number.isFinite(vals[i])) return; const thr = Number(a.threshold) || Infinity; if (vals[i] > thr) over += 1; else if (vals[i] > thr * 0.8) near += 1; });
       const chip = (id, value, unit, tone) => {
         const ref = chipRefs.get(id);
         if (!ref) return;
         setText(ref.value, value);
-        if (unit !== undefined) setText(ref.unit, unit);
-        setDotTone(ref.dot, tone);
+        setText(ref.unit, unit ? ` ${unit}` : '');
+        const want = /[\u0600-\u06FF]/.test(`${value}${unit || ''}`) ? 'rtl' : 'ltr';
+        const valueEl = ref.value.parentElement;
+        if (valueEl && valueEl.getAttribute('dir') !== want) valueEl.setAttribute('dir', want);
+        chipTone(ref, tone);
       };
-      chip('sensors', fmt.num(sensors.length), undefined, overThreshold.length ? 'critical' : nearThreshold.length ? 'warning' : 'good');
-      chip('alerts', fmt.num(alertCount), undefined, alertCount > 0 ? 'warning' : 'good');
-      chip('people', fmt.num(people), undefined, 'accent');
-      chip('vehicles', vehicles === null ? '—' : fmt.num(vehicles), undefined, vehicles === null ? 'neutral' : 'accent');
-      chip('wind', wind ? fmtValue(liveValue(wind)) : '—', wind && wind.unit ? wind.unit : 'كم/س', sensorState(wind));
-      chip('wbgt', wbgt ? fmtValue(liveValue(wbgt)) : '—', wbgt && wbgt.unit ? wbgt.unit : '°م', sensorState(wbgt));
+      chip('sensors', fmt.num(sensors.length), '', over ? 'critical' : near ? 'warning' : 'good');
+      chip('alerts', fmt.num(alertCount), '', alertCount > 0 ? 'warning' : 'good');
+      chip('people', fmt.num(people), '', 'neutral');
+      chip('vehicles', vehicles === null ? '—' : fmt.num(vehicles), '', 'neutral');
+      const wind = axisReading('wind');
+      const heat = axisReading('heat');
+      chip('wind', wind ? fmtValue(wind.value) : '—', wind ? wind.unit : '', wind ? wind.tone : 'neutral');
+      chip('wbgt', heat ? fmtValue(heat.value) : '—', heat ? heat.unit : '', heat ? heat.tone : 'neutral');
 
       /* sweep telemetry */
       const blips = currentBlips();
       const byTone = { critical: 0, serious: 0, warning: 0, good: 0 };
-      blips.forEach((b) => { if (b.tone in byTone) byTone[b.tone] += 1; });
+      let transients = 0;
+      blips.forEach((b) => { if (b.transient) transients += 1; else if (b.tone in byTone) byTone[b.tone] += 1; });
       setTelemetry(sweepCard.tele, [
-        { key: 'total', label: 'المخاطر على الرادار', value: fmt.num(blips.length) },
-        ...TIERS.map((t) => ({ key: t.tone, label: t.tier, value: fmt.num(byTone[t.tone]), state: t.tone === 'critical' && byTone.critical ? 'alert' : undefined })),
-        { key: 'sweep', label: 'سرعة المسح', value: fmt.num(SWEEP_DEG_PER_SEC), unit: '°/ث' },
-        { key: 'scope', label: 'النطاق', value: f.siteId === 'all' ? 'جميع المواقع' : (siteName(f.siteId) || '—') },
+        { key: 'total', label: t('radarView.sweep.total'), value: fmt.num(blips.length - transients) },
+        ...TIERS.map((x) => ({ key: x.tone, label: tierLabel(x.tier), value: fmt.num(byTone[x.tone]), state: x.tone === 'critical' && byTone.critical ? 'alert' : undefined })),
+        { key: 'detections', label: t('radarView.sweep.detections'), value: fmt.num(transients) },
+        { key: 'sweep', label: t('radarView.sweep.speed'), value: fmt.num(SWEEP_DEG_PER_SEC), unit: t('radarView.sweep.speedUnit') },
+        { key: 'scope', label: t('radarView.sweep.scope'), value: f.siteId === 'all' ? t('radarView.common.allSites') : (siteName(f.siteId) || '—') },
       ]);
-      sweepCard.canvas.setAttribute('aria-label', `رادار المخاطر: ${fmt.num(blips.length)} مخاطرة مفتوحة، منها ${fmt.num(byTone.critical)} حرجة`);
+      sweepCard.canvas.setAttribute('aria-label', t('radarView.sweep.aria', { count: tn('radarView.common.risks', blips.length - transients), critical: fmt.num(byTone.critical) }));
 
       /* sensor telemetry */
-      const sensorSite = currentAxes[0] && currentAxes[0].siteId ? currentAxes[0].siteId : followedSite;
-      const vals = valuesFor(sensorSite, currentAxes);
-      setTelemetry(sensorCard.tele, currentAxes.length ? currentAxes.map((a, i) => {
-        const v = Number.isFinite(vals[i]) ? vals[i] : 0;
-        const t = Number(a.threshold) || Infinity;
-        return { key: a.id, label: a.label, value: fmtValue(v), unit: a.unit || '', state: v > t ? 'alert' : v > t * 0.8 ? 'warn' : undefined };
-      }) : [{ key: 'none', label: 'لا توجد حساسات مرتبطة بهذا الموقع', value: '—' }]);
+      setTelemetry(sensorCard.tele, axes.length ? axes.map((a, i) => {
+        if (!a || a.missing) return { key: a ? a.key || a.id : `x${i}`, label: axisLabel(a), value: t('radarView.sensors.noSensor'), state: 'missing' };
+        const v = Number.isFinite(vals[i]) ? vals[i] : null;
+        const thr = Number(a.threshold) || Infinity;
+        return { key: a.key || a.id, label: axisLabel(a), value: fmtValue(v), unit: unitLabel(a.unit), state: v !== null && v > thr ? 'alert' : v !== null && v > thr * 0.8 ? 'warn' : undefined };
+      }) : [{ key: 'none', label: t('radarView.sensors.empty'), value: '—' }]);
 
       /* site plan telemetry */
       const pings = pingsFor(followedSite);
@@ -616,31 +574,30 @@ export default {
       pings.forEach((p) => { if (p && p.kind in kinds) kinds[p.kind] += 1; });
       const hasLivePings = live && typeof live.getPings === 'function';
       setTelemetry(planCard.tele, [
-        { key: 'workers', label: 'العمال', value: hasLivePings ? fmt.num(kinds.worker) : '—' },
-        { key: 'vehicles', label: 'المركبات', value: hasLivePings ? fmt.num(kinds.vehicle) : '—' },
-        { key: 'cranes', label: 'الرافعات', value: hasLivePings ? fmt.num(kinds.crane) : '—' },
-        { key: 'hazards', label: 'نقاط الخطر', value: fmt.num(hazards.length), state: hazards.some((hz) => hz && hz.tone === 'critical') ? 'alert' : hazards.length ? 'warn' : undefined },
-        { key: 'zones', label: 'المناطق', value: fmt.num(arr(site && site.zones).length) },
+        { key: 'workers', label: t('radarView.plan.workers'), value: hasLivePings ? fmt.num(kinds.worker) : '—' },
+        { key: 'vehicles', label: t('radarView.plan.vehicles'), value: hasLivePings ? fmt.num(kinds.vehicle) : '—' },
+        { key: 'cranes', label: t('radarView.plan.cranes'), value: hasLivePings ? fmt.num(kinds.crane) : '—' },
+        { key: 'hazards', label: t('radarView.plan.hazards'), value: fmt.num(hazards.length), state: hazards.some((hz) => hz && hz.tone === 'critical') ? 'alert' : hazards.length ? 'warn' : undefined },
+        { key: 'zones', label: t('radarView.plan.zones'), value: fmt.num(arr(site && site.zones).length) },
       ]);
 
-      /* compliance telemetry */
-      const clauses = isoClauses();
+      /* compliance telemetry (clause numbers are codes: Latin, never localised) */
+      const overall = isoOverall();
       setTelemetry(complianceCard.tele, [
-        { key: 'overall', label: 'الإجمالي', value: fmt.pct(isoOverall()), state: isoOverall() < ISO_TARGET ? 'warn' : undefined },
-        { key: 'target', label: 'المستهدف', value: fmt.pct(ISO_TARGET) },
-        ...clauses.map((c) => ({ key: `c${c.id}`, label: clauseLabel(c), value: fmt.pct(Number(c.score) || 0), state: (Number(c.score) || 0) < ISO_TARGET ? 'warn' : undefined })),
+        { key: 'overall', label: t('radarView.iso.overall'), value: fmt.pct(overall), state: overall < ISO_TARGET ? 'warn' : undefined },
+        { key: 'target', label: t('radarView.iso.target'), value: fmt.pct(ISO_TARGET) },
+        ...isoClauses().map((c) => ({ key: `c${c.id}`, code: String(c.id), label: clauseTitle(c), title: `${c.id} ${clauseTitle(c)}`, value: fmt.pct(Number(c.score) || 0), state: (Number(c.score) || 0) < ISO_TARGET ? 'warn' : undefined })),
       ]);
 
-      /* relative times + fps */
-      const rel = (ms) => `آخر تحديث ${fmt.relative(ms)}`;
+      /* relative times + scope */
+      const rel = (ms) => t('radarView.common.updated', { time: fmt.relative(ms) });
       setText(sweepCard.updatedText, rel(lastChangeAt));
       setText(sensorCard.updatedText, rel(lastSensorAt));
       setText(planCard.updatedText, rel(lastSensorAt));
       setText(complianceCard.updatedText, rel(lastChangeAt));
-      let fps = null;
-      if (loop && typeof loop.fps === 'function') fps = safe(() => Number(loop.fps()), null, 'radarLoop.fps');
-      setText(fpsText, Number.isFinite(fps) ? `FPS ${fmt.num(Math.round(fps))}` : 'FPS —');
-      setText(siteBadge.querySelector('.badge-text'), f.siteId === 'all' ? 'جميع المواقع — الرادارات الموقعية تتبع برج الواجهة المالية' : `الموقع: ${siteName(f.siteId) || f.siteId}`);
+      setText(siteBadge.querySelector('.badge-text'), f.siteId === 'all'
+        ? t('radarView.head.followAll', { site: siteName(followedSite) || '—' })
+        : t('radarView.head.followOne', { site: siteName(f.siteId) || '—' }));
     }
 
     /* ───────────── boot ───────────── */
@@ -648,8 +605,11 @@ export default {
     buildSiteRadars();
     buildCompliance();
     tick();
+    if (motion && typeof motion.enter === 'function') {
+      motion.enter(Array.from(strip.children), { y: 6 });
+      motion.enter(cards.map((c) => c.card), { y: 10, delay: 0.06 });
+    }
     timers.push(setInterval(tick, 1000));
-    // Telemetry labels are patched in place, so the label set must be rebuilt when the numerals change.
     const onVisibility = () => { if (!destroyed && !document.hidden) tick(); };
     document.addEventListener('visibilitychange', onVisibility);
     const onPhoneChange = () => { root.querySelectorAll('.tele-label').forEach(paintTeleLabel); };
@@ -658,7 +618,7 @@ export default {
     subs.push(bus.on('store:change', (p) => {
       const path = String((p && p.path) || '*');
       if (/^sensors/.test(path)) lastSensorAt = Date.now();
-      else lastChangeAt = Date.now();
+      else if (!/^(feed|platform)/.test(path)) lastChangeAt = Date.now();
     }));
     subs.push(bus.on('sensors:tick', () => { lastSensorAt = Date.now(); }));
     subs.push(bus.on('filters:change', () => {
@@ -668,9 +628,8 @@ export default {
     }));
     subs.push(bus.on('settings:change', () => {
       if (destroyed) return;
-      setSub(sweepCard.card, SWEEP_SUB());
-      setSub(complianceCard.card, ISO_SUB());
-      [sweepCard, sensorCard, planCard, complianceCard].forEach((c) => teleRefs.delete(c.tele));
+      cards.forEach((c) => { teleRefs.delete(c.tele); paintFrameStatus(c.statusEl, c.statusKind); });
+      statusHost.replaceChildren(typeof C.statusBadge === 'function' ? C.statusBadge(sourceStatus(), { size: 'sm' }) : C.badge(statusText(sourceStatus()), 'accent'));
       tick();
     }));
 
@@ -680,7 +639,7 @@ export default {
       document.removeEventListener('visibilitychange', onVisibility);
       if (phoneMq && typeof phoneMq.removeEventListener === 'function') phoneMq.removeEventListener('change', onPhoneChange);
       subs.splice(0).forEach((off) => { try { off(); } catch { /* ignore */ } });
-      timers.splice(0).forEach((t) => { clearInterval(t); clearTimeout(t); });
+      timers.splice(0).forEach((x) => { clearInterval(x); clearTimeout(x); });
       Object.keys(radars).forEach((k) => { killRadar(radars[k]); radars[k] = null; });
       if (stripObserver) { try { stripObserver.disconnect(); } catch { /* ignore */ } stripObserver = null; }
       if (stripRaf) { cancelAnimationFrame(stripRaf); stripRaf = 0; }

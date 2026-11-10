@@ -90,6 +90,12 @@ The script fails loudly when the data drifts, for example when a regex no longer
 number, an English label is missing, or the totals don't add up. It never renders stale or
 invented values.
 
+**Data snapshot.** `src/data.json` is frozen at extraction time, and the rendered videos
+reflect exactly that file. The app's dataset was being migrated to v3 while this video was
+produced (likelihood × impact scoring, bilingual labels), so after any change to
+`biltix-hse/js/data/*` run `npm run build` again. That re-runs extract → captions → render →
+export:web, and the numbers, captions and VTT files then stay in sync.
+
 ## 2. Preview
 
 ```bash
