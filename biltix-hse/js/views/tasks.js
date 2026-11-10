@@ -77,6 +77,23 @@ const STYLE_TEXT = `
 .tsk-title { display: flex; flex-direction: column; gap: 2px; min-inline-size: 200px; max-inline-size: 440px; }
 .tsk-title-main { font-weight: 500; color: var(--ink-1); line-height: 1.45; overflow-wrap: anywhere; }
 .tsk-title-sub { font-size: 12px; color: var(--ink-3); }
+.tsk-list .table td:nth-child(2), .tsk-title { white-space: normal; }
+.tsk-line { display: none; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin-block-start: 2px; font-size: 12px; color: var(--ink-2); }
+.tsk-owner { display: inline-flex; align-items: center; gap: 4px; }
+.tsk-owner svg { color: var(--ink-3); }
+@container card (max-width: 1180px) {
+  .tsk-list .table tr > :nth-child(6), .tsk-list .table tr > :nth-child(8), .tsk-list .table tr > :nth-child(9) { display: none; }
+  .tsk-list .tsk-l1 { display: flex; }
+}
+@container card (max-width: 900px) {
+  .tsk-list .table tr > :nth-child(3), .tsk-list .table tr > :nth-child(4) { display: none; }
+  .tsk-list .tsk-l2 { display: flex; }
+}
+@container card (max-width: 560px) {
+  .tsk-list .table tr > :nth-child(5), .tsk-list .table tr > :nth-child(7) { display: none; }
+  .tsk-list .tsk-l3 { display: flex; }
+  .tsk-title { min-inline-size: 0; }
+}
 .tsk-drawer .drawer-body { display: flex; flex-direction: column; gap: var(--space-5); }
 .tsk-drawer .tsk-status-row { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
 .tsk-drawer .evidence-list { margin: 0; padding: 0; }
@@ -280,17 +297,29 @@ export default {
     }
     const boardItems = (tasks) => tasks.map((x) => ({ id: x.id, code: x.code, title: taskTitle(x, x.risk), columnId: STATUSES.includes(x.status) ? x.status : NEW, render: () => taskCard(x) }));
 
+    /*
+     * List columns; narrower cards drop columns in tiers (container queries on nth-child in STYLE_TEXT) and
+     * repeat what was dropped inside the title cell: ≤ 1180 px priority, source, write-back · ≤ 900 px risk,
+     * owner · ≤ 560 px due, status. All columns are 'high' so the generic dataTable tiers never interfere.
+     */
     function listColumns() {
+      const sourceBadge = (x) => h('span', { class: 'source-badge', 'data-source': x.source || '' }, i18n.label('taskSource', x.source) || x.source || '—');
+      const titleCell = (x) => h('span', { class: 'tsk-title' },
+        h('span', { class: 'tsk-title-main' }, ...withCodes(taskTitle(x, x.risk))),
+        h('span', { class: 'tsk-title-sub' }, siteName(stateOf(), x.projectId)),
+        h('span', { class: 'tsk-line tsk-l2' }, riskRef(x), h('span', { class: 'tsk-owner' }, svgIcon('user', 12), dataText(person(x.owner)))),
+        h('span', { class: 'tsk-line tsk-l1' }, priorityChip(x.priority), sourceBadge(x), writebackChip(x, env)),
+        h('span', { class: 'tsk-line tsk-l3' }, statusChip(x.status), dueCell(x.dueDate, isOverdue(x))));
       return [
-        { key: 'code', label: t('tasks.col.code'), priority: 'high', width: 100, render: (x) => codeSpan(x.code || x.id), sortValue: (x) => x.code },
-        { key: 'title', label: t('tasks.col.title'), priority: 'high', render: (x) => h('span', { class: 'tsk-title' }, h('span', { class: 'tsk-title-main' }, ...withCodes(taskTitle(x, x.risk))), h('span', { class: 'tsk-title-sub' }, siteName(stateOf(), x.projectId))), sortValue: (x) => taskTitle(x, x.risk) },
-        { key: 'risk', label: t('tasks.col.risk'), priority: 'medium', render: riskRef, sortValue: (x) => x.riskCode || '' },
-        { key: 'owner', label: t('tasks.col.owner'), priority: 'medium', render: (x) => dataText(person(x.owner)), sortValue: (x) => person(x.owner) },
+        { key: 'code', label: t('tasks.col.code'), priority: 'high', width: 96, render: (x) => codeSpan(x.code || x.id), sortValue: (x) => x.code },
+        { key: 'title', label: t('tasks.col.title'), priority: 'high', render: titleCell, sortValue: (x) => taskTitle(x, x.risk) },
+        { key: 'risk', label: t('tasks.col.risk'), priority: 'high', render: riskRef, sortValue: (x) => x.riskCode || '' },
+        { key: 'owner', label: t('tasks.col.owner'), priority: 'high', render: (x) => dataText(person(x.owner)), sortValue: (x) => person(x.owner) },
         { key: 'due', label: t('tasks.col.due'), priority: 'high', render: (x) => dueCell(x.dueDate, isOverdue(x)), sortValue: (x) => dateMs(x.dueDate) || null },
-        { key: 'priority', label: t('tasks.col.priority'), priority: 'low', render: (x) => priorityChip(x.priority) || h('span', { class: 'risk-muted', title: t('tasks.priority.none') }, '—'), sortValue: (x) => (x.priority ? PRIORITIES.indexOf(x.priority) : 9) },
+        { key: 'priority', label: t('tasks.col.priority'), priority: 'high', render: (x) => priorityChip(x.priority) || h('span', { class: 'risk-muted', title: t('tasks.priority.none') }, '—'), sortValue: (x) => (x.priority ? PRIORITIES.indexOf(x.priority) : 9) },
         { key: 'status', label: t('tasks.col.status'), priority: 'high', render: (x) => statusChip(x.status), sortValue: (x) => STATUSES.indexOf(x.status) },
-        { key: 'source', label: t('tasks.col.source'), priority: 'low', render: (x) => h('span', { class: 'source-badge', 'data-source': x.source || '' }, i18n.label('taskSource', x.source) || x.source || '—'), sortValue: (x) => x.source },
-        { key: 'writeback', label: t('tasks.col.writeback'), priority: 'low', render: (x) => writebackChip(x, env), sortValue: (x) => (x.writeback && x.writeback.status) || '' },
+        { key: 'source', label: t('tasks.col.source'), priority: 'high', render: sourceBadge, sortValue: (x) => x.source },
+        { key: 'writeback', label: t('tasks.col.writeback'), priority: 'high', render: (x) => writebackChip(x, env), sortValue: (x) => (x.writeback && x.writeback.status) || '' },
       ];
     }
 

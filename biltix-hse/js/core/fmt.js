@@ -25,7 +25,11 @@
  *
  * Every Intl call is guarded: if the host lacks a calendar/locale, a deterministic fallback string
  * is produced instead of throwing. Date-only ISO strings ("2026-11-09") are parsed as LOCAL dates
- * so they never shift a day in western time zones. Side-effect free on import except registering
+ * so they never shift a day in western time zones.
+ *
+ * Time zone policy (one rule for every screen): instants are shown in Asia/Riyadh (fmt.timeZone,
+ * the sites' zone and the app-bar clock's). Calendar days — date-only strings, or a Date at local
+ * midnight passed to date()/dayName() — are shown as that day, with no zone conversion. Side-effect free on import except registering
  * fmt.num as i18n's {count} formatter (keeps tn() numerals-aware without an import cycle).
  */
 
@@ -80,6 +84,34 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 let numerals = 'latn';
+
+/** The product's reference time zone (fixed UTC+3, no DST). */
+export const TIME_ZONE = 'Asia/Riyadh';
+const TZ_OFFSET_MS = 3 * 3_600_000;
+/** Wall-clock fields of an instant in Riyadh time, for the no-Intl fallbacks. */
+function riyadhFields(d) {
+  const z = new Date(d.getTime() + TZ_OFFSET_MS);
+  return { y: z.getUTCFullYear(), m: z.getUTCMonth(), day: z.getUTCDate(), wd: z.getUTCDay(), h: z.getUTCHours(), min: z.getUTCMinutes(), s: z.getUTCSeconds() };
+}
+/** A calendar day rather than an instant: a date-only string, or a Date/number at local midnight. */
+function isCalendarDay(value, d) {
+  if (typeof value === 'string') return /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+  return d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0 && d.getMilliseconds() === 0;
+}
+/** A local Date carrying the Riyadh calendar day/time of an instant (only for the no-Intl fallbacks). */
+function riyadhAsLocal(d) {
+  const z = riyadhFields(d);
+  return new Date(z.y, z.m, z.day, z.h, z.min, z.s);
+}
+/**
+ * What to hand Intl for a date: instants are read in Riyadh time; a calendar day is re-expressed as UTC
+ * midnight of its own Y/M/D and formatted in UTC, so the host zone can never move it.
+ * @returns {{ date: Date, options: object }}
+ */
+function zoned(options, value, d, forceInstant = false) {
+  if (forceInstant || !isCalendarDay(value, d)) return { date: d, options: { ...options, timeZone: TIME_ZONE } };
+  return { date: new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())), options: { ...options, timeZone: 'UTC' } };
+}
 
 /** Memoised Intl formatter instances keyed by constructor + locale + options. */
 const cache = new Map();
@@ -398,11 +430,12 @@ export const fmt = {
    * @param {string|Date|number} iso
    * @param {{style?: 'short'|'medium'|'long'|'full'|'numeric'}} [opts]
    */
-  date(iso, { style = 'medium' } = {}) {
+  date(iso, { style = 'medium', instant = false } = {}) {
     const d = toDate(iso);
     if (!d) return EM_DASH;
-    const options = DATE_STYLES[style] || DATE_STYLES.medium;
-    return formatDateParts(d, options, fallbackDate(style));
+    const z = zoned(DATE_STYLES[style] || DATE_STYLES.medium, iso, d, instant);
+    const day = z.options.timeZone === TIME_ZONE ? riyadhAsLocal(d) : d; // local fields for the no-Intl fallback
+    return formatDateParts(z.date, z.options, () => fallbackDate(style)(day));
   },
 
   /**
@@ -412,7 +445,7 @@ export const fmt = {
   dateTime(iso) {
     const d = toDate(iso);
     if (!d) return EM_DASH;
-    return `${fmt.date(d)}${lang() === 'ar' ? '،' : ','} ${fmt.time(d)}`;
+    return `${fmt.date(d, { instant: true })}${lang() === 'ar' ? '،' : ','} ${fmt.time(d)}`;
   },
 
   /**
@@ -433,13 +466,12 @@ export const fmt = {
     const d = toDate(iso);
     if (!d) return EM_DASH;
     const options = seconds
-      ? { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }
-      : { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
-    return formatDateParts(d, options, (x) => (
-      seconds
-        ? `${pad2(x.getHours())}:${pad2(x.getMinutes())}:${pad2(x.getSeconds())}`
-        : `${pad2(x.getHours())}:${pad2(x.getMinutes())}`
-    ));
+      ? { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZone: TIME_ZONE }
+      : { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: TIME_ZONE };
+    return formatDateParts(d, options, (x) => {
+      const z = riyadhFields(x);
+      return seconds ? `${pad2(z.h)}:${pad2(z.min)}:${pad2(z.s)}` : `${pad2(z.h)}:${pad2(z.min)}`;
+    });
   },
 
   /**
@@ -450,14 +482,15 @@ export const fmt = {
     const d = toDate(dateObj);
     if (!d) return EM_DASH;
     try {
-      const formatter = cached('date', hijriLocale(), { day: 'numeric', month: 'long', year: 'numeric' });
-      const parts = formatter.formatToParts(d);
+      const z = zoned({ day: 'numeric', month: 'long', year: 'numeric' }, dateObj, d);
+      const formatter = cached('date', hijriLocale(), z.options);
+      const parts = formatter.formatToParts(z.date);
       const pick = (type) => (parts.find((p) => p.type === type) || {}).value || '';
       const day = pick('day');
       const month = pick('month');
       const year = pick('year');
       if (day && month && year) return `${day} ${month} ${year} ${HIJRI_ERA[lang()]}`;
-      return formatter.format(d);
+      return formatter.format(z.date);
     } catch {
       // Host without the Umm al-Qura calendar: fall back to the Gregorian date.
       return fmt.date(d);
@@ -521,11 +554,15 @@ export const fmt = {
   dayName(iso) {
     const d = toDate(iso);
     if (!d) return EM_DASH;
-    return formatDateParts(d, { weekday: 'long' }, (x) => WEEKDAYS[lang()][x.getDay()]);
+    const z = zoned({ weekday: 'long' }, iso, d);
+    return formatDateParts(z.date, z.options, () => WEEKDAYS[lang()][z.options.timeZone === TIME_ZONE ? riyadhFields(d).wd : d.getDay()]);
   },
 
   /** Parse helper re-exported on the object for convenience (see `toDate`). */
   toDate,
+
+  /** The reference time zone every instant is shown in ('Asia/Riyadh'). */
+  timeZone: TIME_ZONE,
 };
 
 // tn() preformats {count} with fmt.num (numerals-aware) — registered here to avoid an import cycle.
