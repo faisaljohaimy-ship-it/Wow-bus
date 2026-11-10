@@ -36,6 +36,7 @@ node --check js/path/to/file.js        # syntax check a module (there is no bund
 node tools/qa.mjs --lang ar,en --theme dark,light --viewport 1440x900,390x844 --out ./qa-out
                                        # browser smoke test of all 22 routes (Playwright + Chromium)
 node tools/vendor-motion.mjs           # re-vendor the Motion mini build into js/vendor/motion.js
+node tools/stamp-build.mjs             # stamp index.html before each publish (open pages then offer a reload)
 ```
 
 Run `node tests/run.mjs` and the QA script on the routes you touched before you commit.

@@ -94,6 +94,9 @@ export const core = {
       themeToLight: 'التبديل إلى السمة الفاتحة',
       themeDark: 'تم تفعيل السمة الداكنة.',
       themeLight: 'تم تفعيل السمة الفاتحة.',
+      updateTitle: 'نسخة أحدث متاحة',
+      updateAvailable: 'نُشرت نسخة أحدث من المنصة منذ فتح هذه الصفحة.',
+      updateReload: 'إعادة التحميل',
       quickSettings: 'إعدادات سريعة',
     },
     lang: {
@@ -335,6 +338,9 @@ export const core = {
       themeToLight: 'Switch to the light theme',
       themeDark: 'Dark theme on.',
       themeLight: 'Light theme on.',
+      updateTitle: 'Newer version available',
+      updateAvailable: 'A newer version of the platform was published since this page was opened.',
+      updateReload: 'Reload',
       quickSettings: 'Quick settings',
     },
     lang: {

@@ -56,7 +56,7 @@ const CODE_TOKEN_RE = /\b[A-Z]{1,5}[-‑][A-Z0-9‑-]*\d[A-Z0-9‑-]*\b/g;
 const STANDALONE_DIGITS_RE = /(?<![A-Za-z0-9.])\d+(?:[.,]\d+)?(?![A-Za-z])/g;
 const ARABIC_RE = /[؀-ۿ]/;
 
-const APP_VERSION = '3.0.0';
+const APP_VERSION = '3.1.0';
 const RIYADH_TZ = 'Asia/Riyadh';
 const FEED_CAP = 200;
 const ALERT_CAP = 30;
@@ -183,6 +183,35 @@ function pausableInterval(fn, ms) {
   if (!document.hidden) entry.start();
   return entry;
 }
+/**
+ * New-version notice. index.html carries <meta name="biltix-build"> (tools/stamp-build.mjs). A page left
+ * open across a publish (phones restore tabs from memory) checks the published index.html when it
+ * becomes visible again and every 5 minutes while visible; when the stamp differs it shows one
+ * persistent toast with a Reload action. It never reloads on its own (a form may be half filled).
+ */
+function watchForNewBuild() {
+  const meta = document.querySelector('meta[name="biltix-build"]');
+  const current = meta ? meta.getAttribute('content') : '';
+  if (!current || typeof fetch !== 'function' || location.protocol === 'file:') return;
+  let shown = false;
+  let busy = false;
+  const check = async () => {
+    if (shown || busy || document.hidden || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
+    busy = true;
+    try {
+      const res = await fetch(`${location.pathname}?build-check=${Date.now()}`, { cache: 'no-store', credentials: 'same-origin' });
+      if (!res.ok) return;
+      const html = await res.text();
+      const m = html.match(/<meta name="biltix-build" content="([^"]+)"/);
+      if (m && m[1] && m[1] !== current) {
+        shown = true;
+        toast(t('core.shell.updateAvailable'), { tone: 'brand', timeout: 0, title: t('core.shell.updateTitle'), action: { label: t('core.shell.updateReload'), onClick: () => location.reload() } });
+      }
+    } catch { /* offline or blocked: try again later */ } finally { busy = false; }
+  };
+  pausableInterval(check, 5 * 60 * 1000);
+}
+
 function installVisibilityManager() {
   document.addEventListener('visibilitychange', () => {
     for (const entry of pausableIntervals) {
@@ -2106,6 +2135,7 @@ async function boot() {
   document.body.classList.add('is-booting');
   trackInputModality();
   installVisibilityManager();
+  watchForNewBuild();
 
   // Views are NOT imported here: the static registry drives the rail / tab bar / palette and the
   // router imports each module on first navigation (hover / focus prefetch warms it up). English
