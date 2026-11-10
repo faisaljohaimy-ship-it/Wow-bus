@@ -23,7 +23,7 @@ const arg = (name, def) => {
 };
 const langs = arg('lang', 'both') === 'both' ? ['ar', 'en'] : [arg('lang')];
 // One frame inside each beat, at the moment its key visual has settled.
-const DEFAULT_FRAMES = [62, 160, 300, 440, 505, 610, 690, 800, 940, 1110, 1145, 1215];
+const DEFAULT_FRAMES = [60, 172, 280, 420, 560, 615, 715, 790, 865, 990, 1140, 1236];
 const frames = arg('frames', DEFAULT_FRAMES.join(',')).split(',').map(Number);
 const sheet = arg('sheet', frames.length === 12 ? 'yes' : 'no') === 'yes';
 

@@ -1,37 +1,41 @@
 WEBVTT - BILTIX Risk AI explainer (English) — demo data
 
 1
-00:00:00.600 --> 00:00:02.633 line:88% align:center
+00:00:00.600 --> 00:00:02.533 line:88% align:center
 From raw data to verified closure
 
 2
-00:00:02.833 --> 00:00:07.133 line:88% align:center
-13 sources feed the platform every day
+00:00:02.733 --> 00:00:06.733 line:88% align:center
+13 data sources flow into one pipeline
 
 3
-00:00:07.333 --> 00:00:11.633 line:88% align:center
+00:00:06.933 --> 00:00:10.933 line:88% align:center
 Every record is validated before analysis
 
 4
-00:00:11.833 --> 00:00:17.633 line:88% align:center
+00:00:11.133 --> 00:00:16.433 line:88% align:center
 AI scores risk across five categories
 
 5
-00:00:17.833 --> 00:00:23.633 line:88% align:center
+00:00:16.633 --> 00:00:21.500 line:88% align:center
 Every score is explained, with source evidence
 
 6
-00:00:23.833 --> 00:00:28.633 line:88% align:center
-A human reviewer makes the call
+00:00:21.767 --> 00:00:24.633 line:88% align:center
+A simulated site camera ties evidence to place
 
 7
-00:00:28.833 --> 00:00:33.133 line:88% align:center
-Approved actions become tracked mitigation tasks
+00:00:24.833 --> 00:00:29.233 line:88% align:center
+A human reviewer makes the call
 
 8
-00:00:33.333 --> 00:00:38.633 line:88% align:center
-A full audit trail to verified closure
+00:00:29.433 --> 00:00:33.633 line:88% align:center
+Approved actions become tracked mitigation tasks
 
 9
-00:00:38.833 --> 00:00:40.800 line:88% align:center
+00:00:33.833 --> 00:00:38.733 line:88% align:center
+A full audit trail to verified closure
+
+10
+00:00:38.933 --> 00:00:41.300 line:88% align:center
 Evidence-backed decisions, with humans in control

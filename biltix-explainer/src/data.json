@@ -57,7 +57,21 @@
       "open": 11,
       "red": 5,
       "yellow": 6,
-      "green": 0
+      "green": 0,
+      "trend": [
+        64,
+        60,
+        65,
+        76,
+        78,
+        83,
+        84,
+        85,
+        85,
+        86,
+        87,
+        87
+      ]
     },
     {
       "id": "bom",
@@ -69,7 +83,21 @@
       "open": 13,
       "red": 4,
       "yellow": 7,
-      "green": 2
+      "green": 2,
+      "trend": [
+        49,
+        51,
+        56,
+        53,
+        58,
+        60,
+        57,
+        59,
+        61,
+        65,
+        68,
+        70
+      ]
     },
     {
       "id": "schedule",
@@ -81,7 +109,21 @@
       "open": 13,
       "red": 6,
       "yellow": 3,
-      "green": 4
+      "green": 4,
+      "trend": [
+        59,
+        60,
+        64,
+        66,
+        69,
+        72,
+        72,
+        79,
+        78,
+        84,
+        84,
+        82
+      ]
     },
     {
       "id": "site",
@@ -93,7 +135,21 @@
       "open": 11,
       "red": 5,
       "yellow": 4,
-      "green": 2
+      "green": 2,
+      "trend": [
+        60,
+        61,
+        63,
+        64,
+        67,
+        68,
+        74,
+        76,
+        78,
+        80,
+        76,
+        83
+      ]
     },
     {
       "id": "cost",
@@ -105,7 +161,21 @@
       "open": 10,
       "red": 3,
       "yellow": 5,
-      "green": 2
+      "green": 2,
+      "trend": [
+        50,
+        51,
+        55,
+        56,
+        55,
+        56,
+        60,
+        63,
+        66,
+        66,
+        67,
+        68
+      ]
     }
   ],
   "ratingDistribution": [
@@ -738,8 +808,10 @@
       "channels": 3,
       "sentAt": "2026-11-08T05:35:00+03:00",
       "ackAt": "2026-11-08T05:52:00+03:00",
-      "ackMinutes": 17
+      "ackMinutes": 17,
+      "routedOnly": true
     },
+    "siteCamera": null,
     "reviewer": {
       "nameAr": "م. تركي المطيري",
       "nameEn": "Eng. Turki Al-Mutairi",
@@ -762,7 +834,8 @@
       "writeback": {
         "target": "BILTIX PM",
         "status": "synced",
-        "at": "2026-11-08T06:10:00+03:00"
+        "at": "2026-11-08T06:10:00+03:00",
+        "simulated": true
       }
     },
     "timeline": [
@@ -781,8 +854,8 @@
         "kind": "alert",
         "byAr": "النظام",
         "byEn": "System",
-        "textAr": "تصعيد فوري عبر 3 قنوات",
-        "textEn": "Immediate escalation · 3 channels",
+        "textAr": "توجيه التصعيد عبر 3 قنوات، دون إرسال",
+        "textEn": "Escalation routed · 3 channels, not sent",
         "date": "2026-11-08",
         "time": "05:35"
       },
@@ -811,8 +884,8 @@
         "kind": "writeback",
         "byAr": "النظام",
         "byEn": "System",
-        "textAr": "تمت الكتابة العكسية إلى BILTIX PM (MT-0214)",
-        "textEn": "Written back to BILTIX PM (MT-0214)",
+        "textAr": "الكتابة العكسية إلى BILTIX PM (محاكاة) (MT-0214)",
+        "textEn": "Write-back to BILTIX PM (simulated) · MT-0214",
         "status": "synced",
         "date": "2026-11-08",
         "time": "06:10"
@@ -845,7 +918,7 @@
         "at": "2026-11-08T05:35:00+03:00",
         "by": "النظام",
         "action": "escalate",
-        "detail": "تصعيد فوري تلقائي — الدرجة 100 ≥ عتبة الحرج (البريد، Slack، WhatsApp)"
+        "detail": "تصعيد فوري تلقائي — الدرجة 100 لا تقل عن عتبة الحرج؛ القنوات: البريد، Slack، WhatsApp (توجيه فقط، لم يُرسل في هذا الإصدار)"
       }
     ],
     "closure": {

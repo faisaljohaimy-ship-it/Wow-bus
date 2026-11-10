@@ -29,14 +29,14 @@ export const Seal: React.FC<{ size: number; ring: number; ticks: number; text: n
           position: 'absolute',
           inset: -30,
           borderRadius: 999,
-          background: `radial-gradient(circle, rgba(25,198,230,${0.16 * halo}) 0%, rgba(25,198,230,0) 65%)`,
+          background: `radial-gradient(circle, rgba(14,147,172,${0.14 * halo}) 0%, rgba(14,147,172,0) 65%)`,
         }}
       />
       <svg width={size} height={size} style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
         <defs>
           <radialGradient id="seal-disc" cx="50%" cy="38%" r="70%">
-            <stop offset="0%" stopColor="#1C2E48" />
-            <stop offset="100%" stopColor={C.surface} />
+            <stop offset="0%" stopColor="#FFFFFF" />
+            <stop offset="100%" stopColor={C.raised} />
           </radialGradient>
         </defs>
         <circle
@@ -95,7 +95,7 @@ export const Seal: React.FC<{ size: number; ring: number; ticks: number; text: n
         <circle cx={c} cy={c} r={rDisc - 10} fill="none" stroke={C.border} strokeWidth={1} opacity={Math.min(1, ring * 1.4)} />
       </svg>
       <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ filter: `drop-shadow(0 0 ${14 * halo}px rgba(25,198,230,0.7))` }}>
+        <div style={{ filter: `drop-shadow(0 0 ${12 * halo}px rgba(14,147,172,0.55))` }}>
           <Check size={rDisc * 1.05} p={check} color={C.accent} stroke={2.2} />
         </div>
       </div>

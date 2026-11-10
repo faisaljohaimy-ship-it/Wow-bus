@@ -1,66 +1,86 @@
 /**
- * Persistent frame chrome: blueprint background, top bar (brand + demo-data
- * label), the 7-beat step rail and the caption band.
+ * Persistent frame chrome (light theme): the background plate (ambient light + subtle BILTIX
+ * engineering grid + identity mark) on a far layer of the camera, and the screen-fixed HUD —
+ * top bar (brand, circular 7-beat step dial, demo-data label) and the caption band.
+ * The HUD never moves with the camera, so text there is always steady.
  */
 import React from 'react';
 import { AbsoluteFill, useCurrentFrame } from 'remotion';
 import { COPY } from '../copy';
-import { prog } from '../lib/anim';
 import { DATA } from '../data';
+import { prog } from '../lib/anim';
+import { arcPath } from '../lib/geom';
 import { CAPTION_FADE, CAPTIONS, captionCues, fillCaption, SCENES, STEPS, type Lang } from '../storyboard';
 import { C, EASE, FONT } from '../theme';
 import { Emblem } from './Emblem';
 
-/* ── background: deep surface, soft key light, sparse blueprint grid (2–4 %) ── */
-export const Background: React.FC<{ drift: number }> = ({ drift }) => {
-  const minor = 40;
-  const major = 200;
-  const ox = (drift * 0.6) % major;
-  const oy = (drift * 0.25) % major;
+/* ── background plate: drawn in world space, placed on a far layer (depth −800) by Explainer ── */
+const CELL = 160;
+export const BackgroundPlate: React.FC = () => {
+  // A 4000 × 2400 plate centred on the world, so it covers the frame at every dolly position.
+  const W = 4000;
+  const H = 2400;
+  const ox = -(W - 1920) / 2;
+  const oy = -(H - 1080) / 2;
+  const cross = 9;
   return (
-    <AbsoluteFill style={{ background: C.bg }}>
-      <AbsoluteFill
+    <div style={{ position: 'absolute', left: ox, top: oy, width: W, height: H, background: C.bg }}>
+      <div
         style={{
+          position: 'absolute',
+          inset: 0,
           background:
-            'radial-gradient(1100px 760px at 50% 46%, rgba(47,111,237,0.10), rgba(47,111,237,0) 70%), radial-gradient(900px 500px at 82% 12%, rgba(25,198,230,0.045), rgba(25,198,230,0) 70%)',
+            'radial-gradient(1100px 700px at 34% 30%, rgba(47,111,237,0.075), rgba(47,111,237,0) 70%), radial-gradient(900px 560px at 70% 38%, rgba(14,147,172,0.06), rgba(14,147,172,0) 70%)',
         }}
       />
-      <svg width="1920" height="1080" style={{ position: 'absolute', inset: 0 }}>
+      <svg width={W} height={H} style={{ position: 'absolute', inset: 0 }}>
         <defs>
-          <pattern id="g-minor" width={minor} height={minor} patternUnits="userSpaceOnUse" x={-ox} y={-oy}>
-            <path d={`M ${minor} 0 L 0 0 0 ${minor}`} fill="none" stroke={C.grid} strokeOpacity={0.022} strokeWidth={1} />
+          <pattern id="bg-cell" width={CELL} height={CELL} patternUnits="userSpaceOnUse" x={(-ox) % CELL} y={(-oy) % CELL}>
+            <path d={`M 0 0.5 H ${CELL} M 0.5 0 V ${CELL}`} fill="none" stroke={C.grid} strokeOpacity={0.032} strokeWidth={1} />
+            <path
+              d={`M 0 0.5 h ${cross} M ${CELL - cross} 0.5 h ${cross} M 0.5 0 v ${cross} M 0.5 ${CELL - cross} v ${cross}`}
+              fill="none"
+              stroke={C.grid}
+              strokeOpacity={0.075}
+              strokeWidth={1.5}
+            />
+            <path d={`M ${CELL / 2} ${CELL / 2 - 2} v 4 M ${CELL / 2 - 2} ${CELL / 2} h 4`} fill="none" stroke={C.grid} strokeOpacity={0.05} strokeWidth={1} />
           </pattern>
-          <pattern id="g-major" width={major} height={major} patternUnits="userSpaceOnUse" x={-ox} y={-oy}>
-            <path d={`M ${major} 0 L 0 0 0 ${major}`} fill="none" stroke={C.grid} strokeOpacity={0.04} strokeWidth={1} />
-          </pattern>
+          <radialGradient id="bg-fade" cx="50%" cy="30%" r="62%">
+            <stop offset="0%" stopColor="#FFFFFF" stopOpacity={1} />
+            <stop offset="100%" stopColor="#FFFFFF" stopOpacity={0.35} />
+          </radialGradient>
+          <mask id="bg-mask">
+            <rect width={W} height={H} fill="url(#bg-fade)" />
+          </mask>
         </defs>
-        <rect width="1920" height="1080" fill="url(#g-minor)" />
-        <rect width="1920" height="1080" fill="url(#g-major)" />
+        <rect width={W} height={H} fill="url(#bg-cell)" mask="url(#bg-mask)" />
       </svg>
-      {/* registration marks at the content frame corners */}
-      <svg width="1920" height="1080" style={{ position: 'absolute', inset: 0 }}>
-        {[
-          [72, 228],
-          [1848, 228],
-          [72, 920],
-          [1848, 920],
-        ].map(([x, y], i) => (
-          <g key={i} stroke={C.ink3} strokeOpacity={0.28} strokeWidth={1}>
-            <line x1={x - 9} y1={y} x2={x + 9} y2={y} />
-            <line x1={x} y1={y - 9} x2={x} y2={y + 9} />
-          </g>
-        ))}
-      </svg>
-      <AbsoluteFill style={{ background: 'radial-gradient(1400px 900px at 50% 50%, rgba(0,0,0,0) 60%, rgba(2,6,12,0.55) 100%)' }} />
-    </AbsoluteFill>
+    </div>
   );
 };
+
+/* ── screen-fixed lens vignette: a hair of depth at the frame edges ── */
+export const Vignette: React.FC = () => (
+  <AbsoluteFill style={{ pointerEvents: 'none', background: 'radial-gradient(1500px 980px at 50% 46%, rgba(19,34,56,0) 62%, rgba(19,34,56,0.075) 100%)' }} />
+);
+
+/**
+ * HUD bands: the top bar and the caption sit on soft fades of the app plane, so a card the camera
+ * carries under them dims instead of colliding with the HUD text.
+ */
+export const HudBands: React.FC<{ opacity: number }> = ({ opacity }) => (
+  <AbsoluteFill style={{ pointerEvents: 'none', opacity }}>
+    <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 150, background: 'linear-gradient(180deg, rgba(244,247,251,0.97) 0px, rgba(244,247,251,0.92) 92px, rgba(244,247,251,0) 150px)' }} />
+    <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 190, background: 'linear-gradient(0deg, rgba(244,247,251,0.9) 0px, rgba(244,247,251,0.55) 96px, rgba(244,247,251,0) 190px)' }} />
+  </AbsoluteFill>
+);
 
 /* ── code chip: Latin, monospace, never breaks ── */
 export const Code: React.FC<{ children: React.ReactNode; size?: number; color?: string; style?: React.CSSProperties }> = ({
   children,
   size = 22,
-  color = C.accent,
+  color = C.accentText,
   style,
 }) => (
   <bdi
@@ -98,180 +118,160 @@ export const Num: React.FC<{ children: React.ReactNode; size: number; weight?: n
   </bdi>
 );
 
-/* ── card surface ── */
-export const Card: React.FC<{ style?: React.CSSProperties; children: React.ReactNode; glow?: string }> = ({ style, children, glow }) => (
-  <div
-    style={{
-      position: 'absolute',
-      background: `linear-gradient(180deg, ${C.raised} 0%, ${C.surface} 100%)`,
-      border: `1px solid ${C.border}`,
-      borderRadius: 20,
-      boxShadow: `0 1px 0 rgba(255,255,255,0.04) inset, 0 24px 60px rgba(0,0,0,0.38)${glow ? `, 0 0 0 1px ${glow}` : ''}`,
-      boxSizing: 'border-box',
-      ...style,
-    }}
-  >
-    {children}
-  </div>
-);
-
 export const Eyebrow: React.FC<{ children: React.ReactNode; color?: string; style?: React.CSSProperties }> = ({ children, color = C.ink3, style }) => (
-  <div style={{ fontSize: 20, fontWeight: 500, color, letterSpacing: '0.02em', ...style }}>{children}</div>
+  <div style={{ fontSize: 21, fontWeight: 500, color, letterSpacing: '0.01em', ...style }}>{children}</div>
 );
 
 /* ── rating badge: colour is never alone, the label is always printed ── */
-export const RatingBadge: React.FC<{ color: string; label: string; size?: number; style?: React.CSSProperties }> = ({ color, label, size = 22, style }) => (
+export const RatingBadge: React.FC<{ color: string; textColor?: string; label: string; size?: number; style?: React.CSSProperties }> = ({
+  color,
+  textColor = C.ink,
+  label,
+  size = 22,
+  style,
+}) => (
   <span
     style={{
       display: 'inline-flex',
       alignItems: 'center',
       gap: 10,
-      padding: `${size * 0.28}px ${size * 0.62}px`,
+      padding: `${size * 0.26}px ${size * 0.62}px`,
       borderRadius: 999,
-      background: `${color}22`,
-      border: `1px solid ${color}88`,
-      color: C.ink,
+      background: `${color}1A`,
+      border: `1px solid ${color}99`,
+      color: textColor,
       fontSize: size,
       fontWeight: 600,
+      whiteSpace: 'nowrap',
+    }}
+  >
+    <span style={{ width: size * 0.45, height: size * 0.45, borderRadius: 999, background: color, boxShadow: `0 0 0 3px ${color}26` }} />
+    <span style={style}>{label}</span>
+  </span>
+);
+
+/** Dashed tag for demo / illustrative / simulated values (same idea as the app's tags). */
+export const Tag: React.FC<{ children: React.ReactNode; size?: number; color?: string; style?: React.CSSProperties }> = ({ children, size = 16, color = C.ink3, style }) => (
+  <span
+    style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6,
+      fontSize: size,
+      lineHeight: 1.2,
+      fontWeight: 500,
+      color,
+      padding: '3px 10px',
+      borderRadius: 999,
+      border: `1px dashed ${color}`,
+      background: '#FFFFFF',
       whiteSpace: 'nowrap',
       ...style,
     }}
   >
-    <span style={{ width: size * 0.45, height: size * 0.45, borderRadius: 999, background: color, boxShadow: `0 0 12px ${color}aa` }} />
-    {label}
+    {children}
   </span>
 );
 
+/* ── circular 7-beat step dial (top bar) ── */
+const StepDial: React.FC<{ lang: Lang }> = ({ lang }) => {
+  const frame = useCurrentFrame();
+  const rtl = lang === 'ar';
+  let f0 = 0;
+  let pos = -1;
+  let fadeIn = 0;
+  let fadeOut = 1;
+  let stepStart = 0;
+  for (const s of SCENES) {
+    if (s.id === 'intro') fadeIn = prog(frame, f0 + s.frames - 16, 22, EASE.out);
+    if (s.id === 'outro') fadeOut = 1 - prog(frame, f0 - 4, 18, EASE.inOut);
+    if (frame >= f0 + (s.cut ? 0 : 6) && s.step !== null && s.step !== pos) {
+      pos = s.step;
+      stepStart = f0 + (s.cut ? 0 : 6);
+    }
+    f0 += s.frames;
+  }
+  const o = fadeIn * fadeOut;
+  if (o <= 0.01 || pos < 0) return null;
+  const turn = prog(frame, stepStart, 20, EASE.inOut); // the current segment fills
+  const labelIn = prog(frame, stepStart, 14, EASE.out);
+  const R = 19;
+  const size = 52;
+  const c = size / 2;
+  const segDeg = 360 / 7;
+  const gap = 7;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 16, opacity: o }}>
+      <svg width={size} height={size} style={{ display: 'block', transform: rtl ? 'scaleX(-1)' : undefined }}>
+        {Array.from({ length: 7 }, (_, i) => {
+          const a0 = -90 + i * segDeg + gap / 2;
+          const a1 = -90 + (i + 1) * segDeg - gap / 2;
+          const done = i < pos;
+          const cur = i === pos;
+          return (
+            <g key={i}>
+              <path d={arcPath(c, c, R, a0, a1)} fill="none" stroke={C.border2} strokeWidth={5} strokeLinecap="round" />
+              {(done || cur) && (
+                <path
+                  d={arcPath(c, c, R, a0, cur ? a0 + (a1 - a0) * turn : a1)}
+                  fill="none"
+                  stroke={cur ? C.accent : C.primary}
+                  strokeWidth={5}
+                  strokeLinecap="round"
+                />
+              )}
+            </g>
+          );
+        })}
+      </svg>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, opacity: labelIn, transform: `translateY(${(1 - labelIn) * 6}px)`, whiteSpace: 'nowrap' }}>
+        <span style={{ fontFamily: FONT.mono, fontSize: 19, color: C.accentText, fontWeight: 500 }}>
+          <bdi dir="ltr">{`${String(pos + 1).padStart(2, '0')} / 07`}</bdi>
+        </span>
+        <span style={{ fontSize: 24, fontWeight: 600, color: C.ink }}>{STEPS[lang][pos]}</span>
+      </div>
+    </div>
+  );
+};
+
 /* ── top bar ── */
-export const TopBar: React.FC<{ lang: Lang; frame: number }> = ({ lang, frame }) => {
-  const p = prog(frame, 64, 24, EASE.out);
+export const TopBar: React.FC<{ lang: Lang; visible?: number }> = ({ lang, visible = 1 }) => {
+  const frame = useCurrentFrame();
+  const p = prog(frame, 60, 22, EASE.out) * visible;
   const t = COPY[lang];
   return (
-    <div style={{ position: 'absolute', top: 44, insetInlineStart: 96, insetInlineEnd: 96, height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', opacity: p }}>
-      <div dir="ltr" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        <Emblem size={44} id="tb" />
-        <span style={{ fontFamily: FONT.en, fontSize: 26, fontWeight: 600, letterSpacing: '0.1em', color: C.ink }}>BILTIX</span>
-        <span style={{ fontFamily: FONT.en, fontSize: 26, fontWeight: 400, color: C.ink2 }}>Risk AI</span>
+    <div style={{ position: 'absolute', top: 34, insetInlineStart: 96, insetInlineEnd: 96, height: 64, opacity: p }}>
+      <div style={{ position: 'absolute', top: 6, insetInlineStart: 0 }}>
+        <div dir="ltr" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <Emblem size={46} id="tb" />
+          <span style={{ fontFamily: FONT.en, fontSize: 27, fontWeight: 600, letterSpacing: '0.1em', color: C.ink }}>BILTIX</span>
+          <span style={{ fontFamily: FONT.en, fontSize: 27, fontWeight: 400, color: C.ink2 }}>Risk AI</span>
+        </div>
+      </div>
+      <div style={{ position: 'absolute', top: 6, left: 0, right: 0, display: 'flex', justifyContent: 'center' }}>
+        <StepDial lang={lang} />
       </div>
       <div
         style={{
+          position: 'absolute',
+          top: 10,
+          insetInlineEnd: 0,
           display: 'flex',
           alignItems: 'center',
           gap: 12,
           padding: '8px 18px',
           borderRadius: 999,
           border: `1px solid ${C.border}`,
-          background: 'rgba(17,29,46,0.7)',
+          background: '#FFFFFF',
+          boxShadow: '0 1px 2px rgba(19,34,56,0.06)',
           color: C.ink2,
           fontSize: 21,
           fontWeight: 500,
         }}
       >
-        <span style={{ width: 8, height: 8, borderRadius: 2, background: C.gold, transform: 'rotate(45deg)' }} />
+        <span style={{ width: 9, height: 9, borderRadius: 2, background: C.gold, transform: 'rotate(45deg)' }} />
         {t.demo}
       </div>
-    </div>
-  );
-};
-
-/* ── step rail: 7 beats, progress fills continuously with the story ── */
-export const StepRail: React.FC<{ lang: Lang }> = ({ lang }) => {
-  const frame = useCurrentFrame();
-  // continuous position along the rail (0..6) from scene timings
-  let f0 = 0;
-  let pos = -1;
-  let fadeIn = 0;
-  let fadeOut = 1;
-  for (const s of SCENES) {
-    if (s.id === 'intro') fadeIn = prog(frame, f0 + s.frames - 18, 24, EASE.out);
-    if (s.id === 'outro') fadeOut = 1 - prog(frame, f0 + 6, 22, EASE.inOut);
-    // the active node switches at the middle of the cross-fade into its scene
-    if (frame >= f0 + 6) {
-      if (s.step !== null) pos = s.step;
-      else if (s.id === 'outro') pos = 7;
-    }
-    f0 += s.frames;
-  }
-  const labels = STEPS[lang];
-  const x0 = 120;
-  const x1 = 1800;
-  const span = (x1 - x0) / 6;
-  const y = 148;
-  // smooth fill between nodes at each scene change
-  let fillTo = 0;
-  {
-    let start = 0;
-    for (const s of SCENES) {
-      if (s.step !== null) {
-        const p = prog(frame, start - 6, 22, EASE.inOut);
-        if (p > 0) fillTo = Math.max(fillTo, (s.step - 1) * span + p * span);
-      }
-      start += s.frames;
-    }
-    fillTo = Math.max(0, fillTo);
-  }
-  const rtl = lang === 'ar';
-  const X = (i: number) => (rtl ? x1 - i * span : x0 + i * span);
-  return (
-    <div style={{ position: 'absolute', inset: 0, opacity: fadeIn * fadeOut }}>
-      <svg width="1920" height="1080" style={{ position: 'absolute', inset: 0 }}>
-        <defs>
-          <linearGradient id="rail-fill" x1={rtl ? 1 : 0} x2={rtl ? 0 : 1} y1="0" y2="0">
-            <stop offset="0%" stopColor={C.primary} />
-            <stop offset="100%" stopColor={C.accent} />
-          </linearGradient>
-        </defs>
-        <line x1={x0} x2={x1} y1={y} y2={y} stroke={C.border} strokeWidth={2} />
-        <line
-          x1={rtl ? x1 : x0}
-          x2={rtl ? x1 - fillTo : x0 + fillTo}
-          y1={y}
-          y2={y}
-          stroke="url(#rail-fill)"
-          strokeWidth={2}
-        />
-        {labels.map((_, i) => {
-          const done = i < pos;
-          const cur = i === pos;
-          const cx = X(i);
-          return (
-            <g key={i}>
-              {cur && <circle cx={cx} cy={y} r={15} fill="none" stroke={C.accent} strokeOpacity={0.35} strokeWidth={1.5} />}
-              <circle
-                cx={cx}
-                cy={y}
-                r={cur ? 8 : 6.5}
-                fill={cur ? C.accent : done ? C.primary : C.bg}
-                stroke={cur ? C.accent : done ? C.primary : C.ink3}
-                strokeWidth={1.5}
-              />
-            </g>
-          );
-        })}
-      </svg>
-      {labels.map((label, i) => {
-        const cur = i === pos;
-        const done = i < pos;
-        return (
-          <div
-            key={i}
-            style={{
-              position: 'absolute',
-              top: y + 20,
-              left: X(i) - 140,
-              width: 280,
-              textAlign: 'center',
-              fontSize: 19,
-              fontWeight: cur ? 600 : 500,
-              color: cur ? C.ink : done ? C.ink2 : C.ink3,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <span style={{ fontFamily: FONT.mono, fontSize: 15, color: cur ? C.accent : C.ink3, marginInlineEnd: 8 }}>{String(i + 1).padStart(2, '0')}</span>
-            {label}
-          </div>
-        );
-      })}
     </div>
   );
 };
@@ -285,21 +285,21 @@ export const CaptionBand: React.FC<{ lang: Lang }> = ({ lang }) => {
   const pout = 1 - prog(frame, cue.to - CAPTION_FADE, CAPTION_FADE, EASE.inOut);
   const o = Math.min(pin, pout);
   return (
-    <div style={{ position: 'absolute', left: 0, right: 0, bottom: 58, display: 'flex', justifyContent: 'center', opacity: o }}>
+    <div style={{ position: 'absolute', left: 0, right: 0, bottom: 46, display: 'flex', justifyContent: 'center', opacity: o }}>
       <div
         style={{
-          maxWidth: 1500,
-          padding: '16px 40px 18px',
-          borderRadius: 16,
-          background: 'rgba(8,15,27,0.78)',
+          maxWidth: 1560,
+          padding: '14px 40px 17px',
+          borderRadius: 18,
+          background: 'rgba(255,255,255,0.96)',
           border: `1px solid ${C.border}`,
-          boxShadow: '0 18px 40px rgba(0,0,0,0.35)',
+          boxShadow: '0 2px 4px rgba(19,34,56,0.06), 0 18px 40px -18px rgba(19,34,56,0.35)',
           color: C.ink,
           fontSize: 44,
           fontWeight: 500,
           lineHeight: 1.3,
           textAlign: 'center',
-          transform: `translateY(${(1 - pin) * 10}px)`,
+          transform: `translateY(${(1 - pin) * 8}px)`,
           whiteSpace: 'nowrap',
         }}
       >

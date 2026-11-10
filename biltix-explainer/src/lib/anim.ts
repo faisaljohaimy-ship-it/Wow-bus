@@ -34,26 +34,6 @@ export function keys(frame: number, k: Array<[number, number]>, ease: EaseFn = E
   return k[k.length - 1][1];
 }
 
-export type CamKey = { f: number; s: number; x: number; y: number };
-
-/**
- * Restrained camera: scale 1.00–1.06 and small pans, eased between keys.
- * x/y are in px of the 1920×1080 canvas (positive x = toward inline-end when
- * `rtlMirror` is applied by the caller).
- */
-export function camera(frame: number, k: CamKey[], ease: EaseFn = EASE.inOut): CSSProperties {
-  const s = Math.min(1.06, Math.max(1, keys(frame, k.map((c) => [c.f, c.s] as [number, number]), ease)));
-  const xRaw = keys(frame, k.map((c) => [c.f, c.x] as [number, number]), ease);
-  const yRaw = keys(frame, k.map((c) => [c.f, c.y] as [number, number]), ease);
-  // Safe framing: the 1728 px content block never gets closer than 24 px to the
-  // frame edge, and vertical drift stays within ±10 px (clear of the caption band).
-  const maxX = Math.max(0, (1920 - 1728 * s) / 2 - 24);
-  // soft limit (tanh) so a limited pan still eases instead of stopping dead
-  const x = maxX > 0 ? maxX * Math.tanh(xRaw / maxX) : 0;
-  const y = 10 * Math.tanh(yRaw / 10);
-  return { transform: `translate(${x}px, ${y}px) scale(${s})`, transformOrigin: '50% 50%' };
-}
-
 /** Count-up value. */
 export function countUp(frame: number, start: number, dur: number, to: number, from = 0): number {
   return mix(from, to, prog(frame, start, dur, EASE.expo));

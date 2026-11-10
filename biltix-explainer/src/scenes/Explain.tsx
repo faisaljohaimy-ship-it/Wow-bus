@@ -1,269 +1,267 @@
 import React from 'react';
 import { useCurrentFrame } from 'remotion';
-import { Card, Code, Eyebrow, Num, RatingBadge } from '../components/Chrome';
-import { SceneFrame } from '../components/SceneFrame';
+import { Code, Eyebrow, Num, RatingBadge, Tag } from '../components/Chrome';
+import { Metal } from '../components/Metal';
+import { mixHex, RingGauge } from '../components/Ring';
 import { Section } from '../components/Section';
+import { Layer, Shot } from '../components/Stage';
 import { COPY } from '../copy';
 import { DATA } from '../data';
 import type { SceneProps } from '../Explainer';
+import { pull } from '../lib/camera';
 import { countUp, enter, prog } from '../lib/anim';
-import { arcPath } from '../lib/geom';
-import { C, EASE, RATING_TONE, STAGGER, TONE } from '../theme';
+import { arcPath, polar } from '../lib/geom';
+import { SHOTS } from '../shots';
+import { C, EASE, RATING_TONE, RING_TONE, STAGGER, TONE } from '../theme';
 
 const S = DATA.story;
-
-/** Small dashed tag for demo values (same idea as the app's "Illustrative values" tags). */
-const IllustrativeTag: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <span style={{ display: 'inline-block', fontSize: 15, lineHeight: 1.2, color: C.ink3, padding: '2px 9px', borderRadius: 999, border: `1px dashed ${C.ink3}`, whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
-    {children}
-  </span>
-);
 const F = S.facts;
+/** Rack focus: the risk card is sharp first, then the focus pulls to the evidence (max 3 px blur). */
+const RACK = { from: 60, to: 82, max: 3 };
 
-export const Explain: React.FC<SceneProps> = ({ lang, frames }) => {
+/** 270° displacement gauge: 0 → scaleMax mm, limit tick, value arc; exact angle = 270° × mm / scaleMax. */
+const RateGauge: React.FC<{ size: number; value: number; limit: number; scaleMax: number; p: number; rtl: boolean; tone: string; unit: string; ratio: string; limitLabel: string }> = ({
+  size,
+  value,
+  limit,
+  scaleMax,
+  p,
+  rtl,
+  tone,
+  unit,
+  ratio,
+  limitLabel,
+}) => {
+  const c = size / 2;
+  const r = size * 0.38;
+  const a0 = 135; // start (7:30), sweep 270° clockwise; mirrored in Arabic
+  const ang = (mm: number) => (rtl ? 180 - (a0 + (270 * mm) / scaleMax) : a0 + (270 * mm) / scaleMax);
+  const ticks = Array.from({ length: scaleMax / 4 + 1 }, (_, i) => i * 4);
+  const v = value * p;
+  const lim0 = polar(c, c, r - 22, ang(limit));
+  const lim1 = polar(c, c, r + 22, ang(limit));
+  const limL = polar(c, c, r + 44, ang(limit));
+  return (
+    <div style={{ position: 'relative', width: size, height: size }}>
+      <svg width={size} height={size} style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
+        <path d={arcPath(c, c, r, ang(0), ang(scaleMax))} fill="none" stroke={mixHex(tone, C.raised, 0.12)} strokeWidth={18} strokeLinecap="round" />
+        {/* the tolerated band (0 → limit) */}
+        <path d={arcPath(c, c, r + 16, ang(0), ang(limit))} fill="none" stroke={C.green} strokeOpacity={0.55} strokeWidth={4} />
+        {v > 0.05 && <path d={arcPath(c, c, r, ang(0), ang(v))} fill="none" stroke={tone} strokeWidth={18} strokeLinecap="round" style={{ filter: `drop-shadow(0 0 6px ${tone}66)` }} />}
+        <line x1={lim0.x} y1={lim0.y} x2={lim1.x} y2={lim1.y} stroke={C.ink} strokeWidth={2.5} />
+        {ticks.map((tv) => {
+          const q0 = polar(c, c, r - 14, ang(tv));
+          const q1 = polar(c, c, r - 24, ang(tv));
+          const ql = polar(c, c, r - 40, ang(tv));
+          return (
+            <g key={tv}>
+              <line x1={q0.x} y1={q0.y} x2={q1.x} y2={q1.y} stroke={C.ink3} strokeWidth={1.2} />
+              <text x={ql.x} y={ql.y + 5} fill={C.ink3} fontFamily='"IBM Plex Mono", monospace' fontSize={14} textAnchor="middle">
+                {tv}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      <div style={{ position: 'absolute', left: limL.x, top: limL.y - 12, transform: 'translate(-50%, 0)', fontSize: 15, color: C.ink, whiteSpace: 'nowrap', fontWeight: 600 }}>{limitLabel}</div>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <Num size={64} weight={600}>
+          {Math.round(v)}
+        </Num>
+        <div style={{ fontSize: 17, color: C.ink3, marginTop: -4 }}>{unit}</div>
+        <div style={{ marginTop: 6, opacity: p > 0.98 ? 1 : 0 }}>
+          <Num size={22} weight={600} color={C.redText}>
+            {ratio}
+          </Num>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export const Explain: React.FC<SceneProps> = ({ lang, frames, cutOut, matchIn, matchOut }) => {
   const f = useCurrentFrame();
   const rtl = lang === 'ar';
   const ar = lang === 'ar';
   const t = COPY[lang].explain;
   const rl = COPY[lang].rating;
-  const tone = TONE[RATING_TONE[S.rating]];
-  const score = countUp(f, 8, 40, S.score);
-
-  // weekly displacement vs limit — exact linear scale
+  const tone = RATING_TONE[S.rating];
+  const score = countUp(f, 6, 40, S.score);
   const scaleMax = Math.ceil((F.weeklyMm + 1) / 4) * 4;
-  const chartW = 732;
-  const xs = (mm: number) => (mm / scaleMax) * chartW;
-  const barP = prog(f, 60, 34, EASE.expo);
-  const maxW = Math.max(...S.drivers.map((d) => d.weight));
+  const rack = pull(f, RACK.from, RACK.to);
+  const blurA = RACK.max * rack;
+  const blurB = RACK.max * (1 - rack) * prog(f, 18, 14);
 
   return (
-    <SceneFrame
-      frames={frames}
-      rtl={rtl}
-      cam={[
-        { f: 0, s: 1.0, x: 0, y: 0 },
-        { f: 40, s: 1.02, x: 26, y: 4 },
-        { f: 92, s: 1.022, x: 18, y: 2 },
-        { f: frames + 15, s: 1.045, x: -30, y: 4 },
-      ]}
-    >
-      {/* ── risk card ── */}
-      <Card style={{ top: 236, insetInlineStart: 96, width: 900, height: 404, padding: '28px 36px' }} glow="rgba(208,59,59,0.25)">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, ...enter(f, 0) }}>
-          <span style={{ padding: '6px 14px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg }}>
-            <Code size={24}>{S.code}</Code>
-          </span>
-          <RatingBadge color={tone} label={rl[S.rating]} size={20} />
-          <span style={{ fontSize: 20, color: C.ink2 }}>{ar ? S.categoryAr : S.categoryEn}</span>
-          <span style={{ color: C.ink3 }}>·</span>
-          <Code size={20} color={C.ink2}>
-            {S.site.code}
-          </Code>
-        </div>
-        <div style={{ fontSize: 38, fontWeight: 600, marginTop: 18, lineHeight: 1.25, maxWidth: 700, ...enter(f, 2) }}>{ar ? S.titleShortAr : S.titleShortEn}</div>
-        <div style={{ display: 'flex', gap: 22, marginTop: 10, fontSize: 19, color: C.ink3, ...enter(f, 4) }}>
-          <span>
-            {ar ? S.pipeline.nameAr : S.pipeline.nameEn}{' '}
-            <Code size={17} color={C.ink3}>
-              {S.pipeline.version}
+    <Shot frames={frames} rtl={rtl} matchIn={matchIn} matchOut={matchOut} shots={SHOTS.explain} cutOut={cutOut}>
+      {/* ── layer A: the risk and its drivers ── */}
+      <Layer blur={blurA} opacity={1 - 0.12 * rack}>
+        <Metal x={96} y={150} w={920} h={432} rtl={rtl} comet={{ phase: 0.05, speed: 13, len: 160, opacity: 1 - rack }} style={{ padding: '28px 36px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, ...enter(f, 0) }}>
+            <span style={{ padding: '5px 14px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.raised }}>
+              <Code size={24}>{S.code}</Code>
+            </span>
+            <RatingBadge color={TONE[tone]} label={rl[S.rating]} size={20} />
+            <span style={{ fontSize: 20, color: C.ink2 }}>{ar ? S.categoryAr : S.categoryEn}</span>
+            <span style={{ color: C.ink3 }}>·</span>
+            <Code size={20} color={C.ink2}>
+              {S.site.code}
             </Code>
-          </span>
-          <span>
-            {t.confidence}{' '}
-            <Num size={19} color={C.ink2}>
-              {S.confidencePct}%
-            </Num>
-            <span style={{ color: C.ink3 }}> · </span>
-            <IllustrativeTag>{t.illustrative}</IllustrativeTag>
-          </span>
-        </div>
-        {S.likelihood != null && S.impact != null && (
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 10, fontSize: 19, color: C.ink2, ...enter(f, 6, 20, 8) }}>
-            <span>{ar ? 'الاحتمالية' : 'Likelihood'}</span>
-            <Num size={22} weight={600}>{S.likelihood}</Num>
-            <span style={{ color: C.ink3 }}>×</span>
-            <span>{ar ? 'الأثر' : 'impact'}</span>
-            <Num size={22} weight={600}>{S.impact}</Num>
-            <span style={{ color: C.ink3 }}>×</span>
-            <Num size={22} weight={600}>4</Num>
-            <span style={{ color: C.ink3 }}>=</span>
-            <Num size={22} weight={600} color={tone}>{S.score}</Num>
           </div>
-        )}
-        <div style={{ marginTop: 10, fontSize: ar ? 19.5 : 20.5, lineHeight: 1.55, color: C.ink2, maxWidth: 828, ...enter(f, 10, 22, 10) }}>
-          {ar ? S.explanationAr : S.explanationEn}
-        </div>
-        {/* detection facts */}
-        <div style={{ position: 'absolute', insetInlineStart: 36, insetInlineEnd: 36, bottom: 26, display: 'flex', gap: 44, paddingTop: 16, borderTop: `1px solid ${C.border}`, ...enter(f, 16, 20, 8) }}>
-          {[
-            [t.detected, <Num key="d" size={20} color={C.ink} mono>{`${S.detectedAt.slice(0, 10)} ${S.detectedAt.slice(11, 16)}`}</Num>],
-          ].map(([k, v], i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-              <span style={{ fontSize: 17, color: C.ink3 }}>{k}</span>
-              {v}
-            </div>
-          ))}
-        </div>
-        {/* score ring */}
-        <div style={{ position: 'absolute', top: 24, insetInlineEnd: 30, width: 120, height: 120 }}>
-          <svg width={120} height={120} style={{ transform: rtl ? 'scaleX(-1)' : undefined }}>
-            <circle cx={60} cy={60} r={50} fill="none" stroke={C.raised} strokeWidth={9} />
-            <path d={arcPath(60, 60, 50, -90, -90 + 3.6 * score * 0.9999)} fill="none" stroke={tone} strokeWidth={9} strokeLinecap="round" />
-          </svg>
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Num size={40} weight={600}>
-              {Math.round(score)}
-            </Num>
-          </div>
-        </div>
-      </Card>
-
-      {/* ── why: model drivers (site-ai feature importances) ── */}
-      <Card style={{ top: 660, insetInlineStart: 96, width: 900, height: 240, padding: '22px 36px', ...enter(f, 20, 22, 14) }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <div style={{ fontSize: 24, fontWeight: 600 }}>{t.why}</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 17, color: C.ink3 }}>
-            {t.modelWeight}
-            <IllustrativeTag>{t.illustrativeWeights}</IllustrativeTag>
-          </div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 40, rowGap: 14, marginTop: 14 }}>
-          {S.drivers.map((d, i) => {
-            const p = prog(f, 30 + i * STAGGER, 36, EASE.expo);
-            return (
-              <div key={d.key} style={enter(f, 24 + i * STAGGER, 18, 8)}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
-                  <span style={{ fontSize: 18, color: C.ink3, whiteSpace: 'nowrap' }}>{ar ? d.labelAr : d.labelEn}</span>
-                  <Num size={17} color={C.ink3} mono>
-                    {d.weight.toFixed(2)}
-                  </Num>
-                </div>
-                <div style={{ fontSize: 21, fontWeight: 500, color: C.ink, marginTop: 2, whiteSpace: 'nowrap' }}>{ar ? d.valueAr : d.valueEn}</div>
-                <div style={{ marginTop: 7, height: 5, borderRadius: 3, background: C.raised }}>
-                  <div style={{ width: `${(d.weight / maxW) * 100 * p}%`, height: '100%', borderRadius: 3, background: `linear-gradient(${rtl ? 270 : 90}deg, ${C.primary}, ${C.accent})` }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </Card>
-
-      {/* ── evidence ── */}
-      <Card style={{ top: 236, insetInlineStart: 1020, width: 804, height: 664, padding: '28px 36px', ...enter(f, 14, 24, 16) }}>
-        <Eyebrow>{t.evidence}</Eyebrow>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 6 }}>
-          <span style={{ fontSize: 28, fontWeight: 600 }}>{ar ? S.evidence.sourceAr : S.evidence.sourceEn}</span>
-          <span style={{ padding: '4px 12px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg }}>
-            <Code size={19}>{F.sensorRef}</Code>
-          </span>
-          <span style={{ padding: '4px 12px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg }}>
-            <Code size={16} color={C.ink2}>
-              {F.imageRef}
-            </Code>
-          </span>
-        </div>
-
-        {/* rate vs limit */}
-        <div style={{ marginTop: 26 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <span style={{ fontSize: 20, color: C.ink2 }}>{t.weeklyRate}</span>
-            <span style={{ display: 'flex', alignItems: 'baseline', gap: 8, opacity: prog(f, 84, 16) }}>
-              <Num size={30} weight={600}>
-                {F.rateRatio}×
+          <div style={{ fontSize: 36, fontWeight: 600, marginTop: 16, lineHeight: 1.25, maxWidth: 660, ...enter(f, 2) }}>{ar ? S.titleShortAr : S.titleShortEn}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 10, fontSize: 19, color: C.ink3, ...enter(f, 4) }}>
+            <span>
+              {ar ? S.pipeline.nameAr : S.pipeline.nameEn}{' '}
+              <Code size={16} color={C.ink3}>
+                {S.pipeline.version}
+              </Code>
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              {t.confidence}{' '}
+              <Num size={18} color={C.ink2}>
+                {S.confidencePct}%
               </Num>
-              <span style={{ fontSize: 18, color: C.ink3 }}>
-                {t.limit}
-              </span>
+              <Tag size={14}>{t.illustrative}</Tag>
             </span>
           </div>
-          <div style={{ position: 'relative', width: chartW, height: 92, marginTop: 10 }}>
-            <div style={{ position: 'absolute', top: 18, insetInlineStart: 0, width: chartW, height: 28, borderRadius: 6, background: C.raised }} />
-            <div
-              style={{
-                position: 'absolute',
-                top: 18,
-                insetInlineStart: 0,
-                width: xs(F.weeklyMm) * barP,
-                height: 28,
-                borderRadius: 6,
-                background: `linear-gradient(${rtl ? 270 : 90}deg, ${tone}aa, ${tone})`,
-                boxShadow: `0 0 18px ${tone}55`,
+          {S.likelihood != null && S.impact != null && (
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 12, fontSize: 19, color: C.ink2, ...enter(f, 8, 20, 8) }}>
+              <span>{t.likelihood}</span>
+              <Num size={23} weight={600}>
+                {S.likelihood}
+              </Num>
+              <span style={{ color: C.ink3 }}>×</span>
+              <span>{t.impact}</span>
+              <Num size={23} weight={600}>
+                {S.impact}
+              </Num>
+              <span style={{ color: C.ink3 }}>×</span>
+              <Num size={23} weight={600}>
+                4
+              </Num>
+              <span style={{ color: C.ink3 }}>=</span>
+              <Num size={23} weight={700} color={C.redText}>
+                {S.score}
+              </Num>
+            </div>
+          )}
+          <div style={{ marginTop: 12, fontSize: ar ? 22 : 22.5, lineHeight: 1.55, color: C.ink2, maxWidth: 845, ...enter(f, 12, 22, 10) }}>{ar ? S.explanationAr : S.explanationEn}</div>
+          <div style={{ position: 'absolute', insetInlineStart: 36, insetInlineEnd: 36, bottom: 22, display: 'flex', alignItems: 'baseline', gap: 10, paddingTop: 12, borderTop: `1px solid ${C.border}`, ...enter(f, 18, 20, 8) }}>
+            <span style={{ fontSize: 17, color: C.ink3 }}>{t.detected}</span>
+            <Num size={19} color={C.ink} mono>{`${S.detectedAt.slice(0, 10)} ${S.detectedAt.slice(11, 16)}`}</Num>
+          </div>
+          {/* score dial */}
+          <div style={{ position: 'absolute', top: 18, insetInlineEnd: 26 }}>
+            <RingGauge size={150} r={58} stroke={12} value={score / 100} tone={RING_TONE[tone]} rtl={rtl} id="story-score">
+              <Num size={42} weight={600}>
+                {Math.round(score)}
+              </Num>
+            </RingGauge>
+          </div>
+        </Metal>
+
+        {/* why: model drivers — ring = share of the pipeline's total model weight (weights sum to 1) */}
+        <Metal x={96} y={606} w={920} h={294} rtl={rtl} style={{ padding: '22px 36px', ...enter(f, 22, 22, 14) }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 25, fontWeight: 600 }}>{t.why}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 17, color: C.ink3 }}>
+              {t.modelWeight}
+              <Tag size={14}>{t.illustrativeWeights}</Tag>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', columnGap: 18, marginTop: 14 }}>
+            {S.drivers.map((d, i) => {
+              const p = prog(f, 30 + i * STAGGER * 3, 36, EASE.expo);
+              return (
+                <div key={d.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', ...enter(f, 26 + i * STAGGER * 3, 18, 8) }}>
+                  <RingGauge size={96} r={34} stroke={8} value={d.weight * p} tone={C.primary} rtl={rtl} glow={0.5} id={`drv-${d.key}`}>
+                    <Num size={19} weight={600} mono>
+                      {d.weight.toFixed(2)}
+                    </Num>
+                  </RingGauge>
+                  <div style={{ fontSize: 17, color: C.ink3, marginTop: 6, lineHeight: 1.3, minHeight: 44 }}>{ar ? d.labelAr : d.labelEn}</div>
+                  <div style={{ fontSize: 19, fontWeight: 600, color: C.ink, marginTop: 2, lineHeight: 1.3 }}>{ar ? d.valueAr : d.valueEn}</div>
+                </div>
+              );
+            })}
+          </div>
+        </Metal>
+      </Layer>
+
+      {/* ── layer B: the evidence, a little deeper in the scene ── */}
+      <Layer depth={-40} blur={blurB}>
+        <Metal x={1040} y={150} w={784} h={750} rtl={rtl} comet={{ phase: 0.55, speed: 13, len: 160, opacity: rack }} style={{ padding: '28px 36px', ...enter(f, 14, 24, 16) }}>
+          <Eyebrow>{t.evidence}</Eyebrow>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 27, fontWeight: 600 }}>{ar ? S.evidence.sourceAr : S.evidence.sourceEn}</span>
+            <span style={{ padding: '4px 12px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.raised }}>
+              <Code size={18}>{F.sensorRef}</Code>
+            </span>
+            <span style={{ padding: '4px 12px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.raised }}>
+              <Code size={15} color={C.ink2}>
+                {F.imageRef}
+              </Code>
+            </span>
+          </div>
+          <div style={{ position: 'absolute', top: 120, insetInlineStart: 20 }}>
+            <RateGauge
+              size={330}
+              value={F.weeklyMm}
+              limit={F.limitMm}
+              scaleMax={scaleMax}
+              p={prog(f, 40, 40, EASE.expo)}
+              rtl={rtl}
+              tone={TONE[tone]}
+              unit={t.mmWeek}
+              ratio={`${F.rateRatio}×`}
+              limitLabel={`${t.limit} ${F.limitMm}`}
+            />
+          </div>
+          <div style={{ position: 'absolute', top: 160, insetInlineStart: 380, insetInlineEnd: 36 }}>
+            <div style={{ fontSize: 20, color: C.ink2, ...enter(f, 44, 18, 8) }}>{t.weeklyRate}</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 4, ...enter(f, 46, 18, 8) }}>
+              <Num size={40} weight={600} color={C.redText}>
+                {`${F.rateRatio}×`}
+              </Num>
+              <span style={{ fontSize: 19, color: C.ink2 }}>{t.ofLimit}</span>
+            </div>
+            <div style={{ height: 1, background: C.border, margin: '22px 0' }} />
+            <div style={{ fontSize: 20, color: C.ink2, ...enter(f, 52, 18, 8) }}>{t.cumulative}</div>
+            <div style={{ marginTop: 4, ...enter(f, 54, 18, 8) }}>
+              <Num size={40} weight={600}>
+                {F.cumulativeMm} {t.mm}
+              </Num>
+            </div>
+          </div>
+          <div style={{ position: 'absolute', insetInlineStart: 36, bottom: 22 }}>
+            <div style={{ fontSize: 15, color: C.ink3, marginBottom: 2 }}>{t.schematic}</div>
+            <Section
+              w={712}
+              h={236}
+              rtl={rtl}
+              crestX={290}
+              toeX={420}
+              pxPerM={12}
+              crackM={F.crackDistanceM}
+              sensorX={222}
+              sensorLabel={F.sensorRef}
+              workers={F.workers}
+              excavators={F.excavators}
+              crewX={438}
+              crewCols={11}
+              draw={prog(f, 30, 40, EASE.inOut)}
+              annot={prog(f, 70, 22, EASE.out)}
+              labels={{
+                crest: t.crest,
+                pit: t.pit,
+                crack: `${t.crack} · ${F.crackDistanceM} ${t.m}`,
+                movement: t.movement,
+                crew: COPY[lang].sitecam.crew(F.workers, F.excavators),
               }}
             />
-            {/* limit marker */}
-            <div style={{ position: 'absolute', top: 6, insetInlineStart: xs(F.limitMm) - 1, width: 2, height: 52, background: C.ink, opacity: 0.85 }} />
-            <div style={{ position: 'absolute', top: -20, insetInlineStart: xs(F.limitMm) + 8, fontSize: 16, color: C.ink, whiteSpace: 'nowrap' }}>
-              {t.limit}{' '}
-              <Num size={16}>
-                {F.limitMm} {t.mm}
-              </Num>
-            </div>
-            {/* value label, inside the bar end */}
-            <div
-              style={{
-                position: 'absolute',
-                top: 18,
-                insetInlineEnd: chartW - xs(F.weeklyMm) * barP + 14,
-                height: 28,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                opacity: prog(f, 76, 14),
-                whiteSpace: 'nowrap',
-              }}
-            >
-              <Num size={22} weight={600} color="#FFFFFF">
-                {F.weeklyMm}
-              </Num>
-              <span style={{ fontSize: 16, color: '#FFE9E9' }}>{t.mmWeek}</span>
-            </div>
-            {/* axis */}
-            {Array.from({ length: scaleMax / 4 + 1 }, (_, i) => i * 4).map((v) => (
-              <div key={v} style={{ position: 'absolute', top: 54, insetInlineStart: xs(v) - 20, width: 40, textAlign: 'center' }}>
-                <div style={{ width: 1, height: 6, background: C.ink3, margin: '0 auto' }} />
-                <Num size={14} color={C.ink3} mono>
-                  {v}
-                </Num>
-              </div>
-            ))}
           </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginTop: 4, ...enter(f, 70, 18, 8) }}>
-          <span style={{ fontSize: 20, color: C.ink2 }}>{t.cumulative}</span>
-          <Num size={28} weight={600}>
-            {F.cumulativeMm} {t.mm}
-          </Num>
-        </div>
-
-        <div style={{ position: 'absolute', insetInlineStart: 36, bottom: 26 }}>
-          <div style={{ fontSize: 15, color: C.ink3, marginBottom: 2 }}>{t.schematic}</div>
-          <Section
-            w={732}
-            h={250}
-            rtl={rtl}
-            crestX={300}
-            toeX={430}
-            pxPerM={12}
-            crackM={F.crackDistanceM}
-            sensorX={232}
-            sensorLabel={F.sensorRef}
-            workers={F.workers}
-            excavators={F.excavators}
-            crewX={448}
-            crewCols={11}
-            draw={prog(f, 26, 40, EASE.inOut)}
-            annot={prog(f, 56, 22, EASE.out)}
-            labels={{
-              crest: t.crest,
-              pit: t.pit,
-              crack: `${t.crack} · ${F.crackDistanceM} ${t.m}`,
-              movement: t.movement,
-              crew: ar ? `${F.workers} عاملاً · ${F.excavators} حفارات` : `${F.workers} workers · ${F.excavators} excavators`,
-            }}
-          />
-        </div>
-      </Card>
-    </SceneFrame>
+        </Metal>
+      </Layer>
+    </Shot>
   );
 };

@@ -16,13 +16,14 @@ export function arCount(n: number, one: string, two: string, few: string, many: 
 export type Copy = {
   brandSub: string;
   demo: string;
-  source: { eyebrow: string; title: (n: number) => string; sub: string; records: string; hub: string; lastBatch: string; more: (n: number) => string; recordsUnit: string };
-  validate: { eyebrow: string; title: string; sub: (rules: number, hits: string) => string; recordsIn: string; passed: string; dedup: string; rejected: string; passRate: string; completeness: string; consistency: string; quarantine: string; quarantineOf: (n: number) => string; };
-  analyze: { eyebrow: string; gaugeTitle: string; gaugeSub: (open: number) => string; categories: string; distribution: (open: number) => string; heatTitle: string; heatSub: (n: number) => string; heatTitleHse: string; heatSubHse: (n: number) => string; severityHse: string; likelihood: string; severity: string; formula: string; likelihoodLabels: string[]; severityLabels: string[]; tiers: Record<string, string> };
+  source: { eyebrow: string; title: (n: number) => string; sub: string; feeds: string; records: string; hub: string; lastBatch: string; more: (n: number) => string; recordsUnit: string; radial: string };
+  validate: { eyebrow: string; title: string; sub: (rules: number, hits: string) => string; recordsIn: string; passed: string; dedup: string; rejected: string; passRate: string; completeness: string; consistency: string; quarantine: string; quarantineOf: (n: number) => string; split: string };
+  analyze: { eyebrow: string; gaugeTitle: string; gaugeSub: (open: number) => string; categories: string; weeks: string; distribution: (open: number) => string; heatTitle: string; heatSub: (n: number) => string; heatTitleHse: string; heatSubHse: (n: number) => string; severityHse: string; likelihood: string; severity: string; formula: string; likelihoodLabels: string[]; severityLabels: string[]; tiers: Record<string, string> };
   rating: Record<string, string>;
-  explain: { detected: string; illustrative: string; illustrativeWeights: string; eyebrow: string; why: string; modelWeight: string; evidence: string; weeklyRate: string; limit: string; cumulative: string; schematic: string; crack: string; crest: string; pit: string; movement: string; confidence: string; mmWeek: string; mm: string; m: string };
-  approve: { rationale: string; stakeholders: string; eyebrow: string; recTitle: string; impact: string; effort: string; accept: string; edit: string; dismiss: string; accepted: string; reviewer: string; human: string; detected: string; escalated: string; acknowledged: string; decided: string; min: (n: number) => string };
-  mitigate: { zone: string; eyebrow: string; status: string; source: string; owner: string; due: string; risk: string; criticalPath: string; yes: string; schedule: string; cost: string; controls: string; done: string; inProgress: string; writeback: string; synced: string; days: (n: number) => string; sar: (n: number) => string };
+  explain: { detected: string; illustrative: string; illustrativeWeights: string; eyebrow: string; why: string; modelWeight: string; evidence: string; weeklyRate: string; limit: string; cumulative: string; schematic: string; crack: string; crest: string; pit: string; movement: string; confidence: string; mmWeek: string; mm: string; m: string; ofLimit: string; likelihood: string; impact: string };
+  sitecam: { title: string; zone: string; simulated: string; notConnected: string; note: string; osdSim: string; osdFps: string; evidence: string; photo: string; illustrative: string; site: string; cam: string; crack: (m: number) => string; crew: (w: number, e: number) => string };
+  approve: { rationale: string; stakeholders: string; eyebrow: string; recTitle: string; impact: string; effort: string; accept: string; edit: string; dismiss: string; accepted: string; reviewer: string; human: string; detected: string; escalated: string; acknowledged: string; decided: string; min: (n: number) => string; clock: string; minUnit: string; toDecision: string; scale: string };
+  mitigate: { zone: string; eyebrow: string; status: string; source: string; owner: string; due: string; risk: string; criticalPath: string; yes: string; schedule: string; cost: string; controls: string; done: string; inProgress: string; writeback: string; synced: string; simNote: string; controlsDone: (d: number, n: number) => string; days: (n: number) => string; sar: (n: number) => string };
   close: { eyebrow: string; title: string; verified: string; closure: string; illustrative: string; residual: string; target: string };
 };
 
@@ -32,13 +33,15 @@ export const COPY: Record<Lang, Copy> = {
     demo: 'بيانات توضيحية',
     source: {
       eyebrow: 'مصادر البيانات',
-      title: (n) => `${n} مصدراً متصلاً`,
+      title: (n) => `${n} مصدراً للبيانات`,
       sub: 'وحدات بلتكس · أنظمة مؤسسية · مصادر خارجية',
+      feeds: 'تغذية توضيحية · غير متصلة',
       records: 'سجلاً مُلتقطاً اليوم',
       hub: 'الاستيعاب',
       lastBatch: 'آخر دفعة',
       more: (n) => `و${n} مصادر أخرى`,
       recordsUnit: 'سجل',
+      radial: 'طول كل شعاع = عدد السجلات',
     },
     validate: {
       eyebrow: 'بوابة التحقق',
@@ -53,12 +56,14 @@ export const COPY: Record<Lang, Copy> = {
       consistency: 'الاتساق',
       quarantine: 'في الحجر',
       quarantineOf: (n) => `من ${n} سجلاً`,
+      split: 'نتيجة التحقق',
     },
     analyze: {
       eyebrow: 'تحليل المخاطر',
       gaugeTitle: 'المؤشر الموحد للمحفظة',
       gaugeSub: (open) => `مرجّح عبر 5 فئات · ${open} مخاطرة مفتوحة`,
       categories: 'درجات الفئات',
+      weeks: 'الأشرطة: آخر 12 أسبوعاً',
       distribution: (open) => `${open} مخاطرة مفتوحة حسب التصنيف`,
       heatTitle: 'مصفوفة المخاطر الذكية',
       heatTitleHse: 'مصفوفة سجل السلامة',
@@ -93,6 +98,25 @@ export const COPY: Record<Lang, Copy> = {
       mmWeek: 'مم/أسبوع',
       mm: 'مم',
       m: 'م',
+      ofLimit: 'من الحد',
+      likelihood: 'الاحتمالية',
+      impact: 'الأثر',
+    },
+    sitecam: {
+      title: 'كاميرا الموقع',
+      zone: 'الحفرية الرئيسية · الوجه الشمالي',
+      simulated: 'محاكاة',
+      notConnected: 'الكاميرا غير متصلة',
+      note: 'بث محاكى — لا توجد كاميرا متصلة',
+      osdSim: 'SIMULATED FEED · NO CAMERA CONNECTED',
+      osdFps: '15 FPS SIM',
+      evidence: 'الدليل المرتبط',
+      photo: 'صورة الدليل',
+      illustrative: 'توضيحي',
+      site: 'الموقع',
+      cam: 'SITE CAM',
+      crack: (m) => `شقوق شد ~${m} م`,
+      crew: (w, e) => `${w} عاملاً · ${e} حفارات`,
     },
     approve: {
       eyebrow: 'اعتماد بشري',
@@ -106,12 +130,16 @@ export const COPY: Record<Lang, Copy> = {
       reviewer: 'المراجع',
       human: 'قرار بشري',
       detected: 'اكتشاف',
-      escalated: 'تصعيد فوري',
+      escalated: 'توجيه التصعيد',
       acknowledged: 'تأكيد الاستلام',
       decided: 'القرار',
       rationale: 'الأساس المنطقي',
       stakeholders: 'أصحاب المصلحة المُبلَّغون',
       min: (n) => `بعد ${arCount(n, 'دقيقة واحدة', 'دقيقتين', 'دقائق', 'دقيقة')}`,
+      clock: 'من الاكتشاف إلى القرار',
+      minUnit: 'دقيقة',
+      toDecision: 'حتى القرار البشري',
+      scale: 'المقياس 60 دقيقة',
     },
     mitigate: {
       eyebrow: 'المعالجة',
@@ -128,8 +156,10 @@ export const COPY: Record<Lang, Copy> = {
       controls: 'الضوابط',
       done: 'منجز',
       inProgress: 'جارٍ',
-      writeback: 'كتابة عكسية',
-      synced: 'متزامن',
+      writeback: 'الكتابة العكسية',
+      synced: 'محاكاة',
+      simNote: 'لا اتصال فعلي بـ BILTIX PM في هذه النسخة',
+      controlsDone: (d, n) => `${d} من ${n} ضوابط منجزة`,
       days: (n) => arCount(n, 'يوم واحد', 'يومان', 'أيام', 'يوماً'),
       sar: (n) => `${(n / 1_000_000).toFixed(1)} مليون ريال`,
     },
@@ -148,13 +178,15 @@ export const COPY: Record<Lang, Copy> = {
     demo: 'Demo data',
     source: {
       eyebrow: 'Data sources',
-      title: (n) => `${n} connected sources`,
-      sub: 'Biltix modules · enterprise systems · external feeds',
+      title: (n) => `${n} data sources`,
+      sub: 'BILTIX modules · enterprise systems · external feeds',
+      feeds: 'Demo feeds · not connected',
       records: 'records captured today',
       hub: 'Ingestion',
       lastBatch: 'Last batch',
       more: (n) => `and ${n} more sources`,
       recordsUnit: 'records',
+      radial: 'Spoke length = records in',
     },
     validate: {
       eyebrow: 'Validation gate',
@@ -169,12 +201,14 @@ export const COPY: Record<Lang, Copy> = {
       consistency: 'Consistency',
       quarantine: 'In quarantine',
       quarantineOf: (n) => `of ${n} records`,
+      split: 'Validation result',
     },
     analyze: {
       eyebrow: 'Risk analysis',
       gaugeTitle: 'Consolidated portfolio score',
       gaugeSub: (open) => `Weighted across 5 categories · ${open} open risks`,
       categories: 'Category scores',
+      weeks: 'Bars: last 12 weeks',
       distribution: (open) => `${open} open AI risks by rating`,
       heatTitle: 'AI risk matrix',
       heatTitleHse: 'Safety register matrix',
@@ -209,6 +243,25 @@ export const COPY: Record<Lang, Copy> = {
       mmWeek: 'mm/week',
       mm: 'mm',
       m: 'm',
+      ofLimit: 'of the limit',
+      likelihood: 'Likelihood',
+      impact: 'impact',
+    },
+    sitecam: {
+      title: 'Site camera',
+      zone: 'Main excavation · north face',
+      simulated: 'Simulated',
+      notConnected: 'Camera not connected',
+      note: 'Simulated feed — no camera is connected',
+      osdSim: 'SIMULATED FEED · NO CAMERA CONNECTED',
+      osdFps: '15 FPS SIM',
+      evidence: 'Linked evidence',
+      photo: 'Evidence photo',
+      illustrative: 'Illustrative',
+      site: 'Site',
+      cam: 'SITE CAM',
+      crack: (m) => `Tension cracks ~${m} m`,
+      crew: (w, e) => `${w} workers · ${e} excavators`,
     },
     approve: {
       eyebrow: 'Human approval',
@@ -222,10 +275,14 @@ export const COPY: Record<Lang, Copy> = {
       reviewer: 'Reviewer',
       human: 'Human decision',
       detected: 'Detected',
-      escalated: 'Immediate escalation',
+      escalated: 'Escalation routed',
       acknowledged: 'Acknowledged',
       decided: 'Decision',
       min: (n) => `+${n} min`,
+      clock: 'Detection to decision',
+      minUnit: 'min',
+      toDecision: 'to a human decision',
+      scale: '60-minute scale',
       rationale: 'Rationale',
       stakeholders: 'Notified stakeholders',
     },
@@ -245,7 +302,9 @@ export const COPY: Record<Lang, Copy> = {
       done: 'Done',
       inProgress: 'Ongoing',
       writeback: 'Write-back',
-      synced: 'Synced',
+      synced: 'Simulated',
+      simNote: 'No real connection to BILTIX PM in this version',
+      controlsDone: (d, n) => `${d} of ${n} controls done`,
       days: (n) => `${n} days`,
       sar: (n) => `SAR ${(n / 1_000_000).toFixed(1)}M`,
     },

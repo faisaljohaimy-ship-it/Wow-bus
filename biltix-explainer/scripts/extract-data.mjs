@@ -120,7 +120,11 @@ const categories = cons.categories.map((c) => ({
   red: c.red,
   yellow: c.yellow,
   green: c.green,
+  // 12 weekly scores, oldest first: the cockpit domain dial's radial bars (same psel definition).
+  trend: Array.isArray(c.trend) ? c.trend.slice(-12) : null,
 }));
+if (categories.some((c) => !c.trend || c.trend.length !== 12 || c.trend[11] !== c.score)) fail('category trend missing or not ending at the current score');
+if (!Array.isArray(cons.trend) || cons.trend.length !== 12 || cons.trend[11] !== cons.score) fail('consolidated trend missing or not ending at the current score');
 const ratingDistribution = psel.ratingDistribution(state, state.filters, NOW).map((r) => ({
   rating: r.rating, labelAr: r.label, labelEn: RATING_EN[r.rating].label, value: r.value,
 }));
@@ -171,6 +175,14 @@ if (hasLI) {
   heatmap = { source: 'hse-register', total: heatmapCells.reduce((a, c) => a + c.count, 0), cells: heatmapCells, tiers: TIERS.map((t) => ({ ...t, nameEn: TIER_EN[t.name] })) };
 }
 if (heatmap.source === 'ai-risks' && heatmap.total !== openRisks.length) fail('heatmap does not account for every open AI risk');
+// The matrix colours each cell by the rating of its own score (L × I × 4), so the counts per colour must
+// equal the rating distribution — the legend prints them.
+if (heatmap.source === 'ai-risks') {
+  for (const r of ratingDistribution) {
+    const sum = heatmap.cells.filter((c) => c.rating === r.rating).reduce((a, c) => a + c.count, 0);
+    if (sum !== r.value) fail(`matrix ${r.rating} cells hold ${sum} risks, rating distribution says ${r.value}`);
+  }
+}
 
 /* ── 3. validation summary ── */
 const v = psel.validationSummary(state);
@@ -298,17 +310,18 @@ const auditRows = platformSeed.auditLog
 const TL_EN = {
   // per-risk confidence is a demo value: tagged the way the app tags demo metrics
   detected: () => `Detected — score ${risk.score} (Red), confidence ${Math.round(risk.confidence * 100)}% · Illustrative`,
-  alert: () => `Immediate escalation · ${alert ? alert.channels.length : 0} channels`,
+  // The dataset routes alerts only: nothing is sent in this release (audit detail "توجيه فقط، لم يُرسل").
+  alert: () => `Escalation routed · ${alert ? alert.channels.length : 0} channels, not sent`,
   ack: () => 'Alert acknowledged',
   accept: () => `Recommendation accepted · task ${task.code}`,
   task: () => `Task ${task.code} created`,
-  writeback: () => `Written back to ${task.writeback.target} (${task.code})`,
+  writeback: () => `Write-back to ${task.writeback.target} (simulated) · ${task.code}`,
   onsite: () => 'Geotechnical engineer on site',
 };
 const timeline = [];
 for (const e of detail.timeline) {
   if (e.kind === 'detected') timeline.push({ at: e.at, kind: 'detected', byAr: e.by, byEn: 'Site AI', textAr: `${e.text} · توضيحي`, textEn: TL_EN.detected() });
-  else if (e.kind === 'alert') timeline.push({ at: e.at, kind: 'alert', byAr: e.by, byEn: 'System', textAr: `تصعيد فوري عبر ${alert.channels.length} قنوات`, textEn: TL_EN.alert() });
+  else if (e.kind === 'alert') timeline.push({ at: e.at, kind: 'alert', byAr: e.by, byEn: 'System', textAr: `توجيه التصعيد عبر ${alert.channels.length} قنوات، دون إرسال`, textEn: TL_EN.alert() });
   else if (e.kind === 'ack') timeline.push({ at: e.at, kind: 'ack', byAr: e.by, byEn: enPerson(e.by), textAr: e.text, textEn: TL_EN.ack() });
   else if (e.kind === 'history' && /قبول التوصية/.test(e.text)) timeline.push({ at: e.at, kind: 'accept', byAr: e.by, byEn: enPerson(e.by), textAr: `قبول التوصية · المهمة ${task.code}`, textEn: TL_EN.accept() });
   // the selector's Arabic label hard-codes the PM system name; use the task's own write-back target
@@ -316,6 +329,22 @@ for (const e of detail.timeline) {
   else if (e.kind === 'history' && /الجيوتقني/.test(e.text)) timeline.push({ at: e.at, kind: 'onsite', byAr: e.by, byEn: enPerson(e.by), textAr: 'المهندس الجيوتقني في الموقع', textEn: TL_EN.onsite() });
 }
 timeline.forEach((t) => { t.date = fmtDate(t.at); t.time = fmtTime(t.at); });
+
+const routedOnly = platformSeed.auditLog.some((a) => a.target === risk.code && /لم يُرسل/.test(a.detail || ''));
+if (!routedOnly) fail('the escalation is no longer marked as routing only; review the alert wording');
+if (task.writeback && task.writeback.simulated !== true) fail('the write-back is no longer marked simulated; review the write-back wording');
+
+let siteCamera = null;
+try {
+  const sp = await mod('js/data/spatial-seed.js');
+  const target = typeof sp.spatialTargetForAiRisk === 'function' ? sp.spatialTargetForAiRisk(state, risk) : null;
+  const zoneId = target && target.zoneId;
+  const cams = (sp.CAMERAS || []).filter((c) => c.siteId === site.id && (!zoneId || c.zoneId === zoneId));
+  if (zoneId && cams.length) siteCamera = { code: cams[0].id, zoneId, simulated: cams[0].simulated === true, connected: cams[0].connected === true };
+  if (siteCamera && (!siteCamera.simulated || siteCamera.connected)) fail(`camera ${siteCamera.code} is not marked simulated / not connected`);
+} catch (err) {
+  if (err && err.code !== 'ERR_MODULE_NOT_FOUND') throw err;
+}
 
 const ackMinutes = alert && alert.ackAt ? Math.round((Date.parse(alert.ackAt) - Date.parse(alert.sentAt)) / 60000) : null;
 const acceptEvent = timeline.find((t) => t.kind === 'accept');
@@ -379,8 +408,11 @@ const story = {
   detectedAt: risk.detectedAt,
   alert: alert && {
     code: alert.code, severity: alert.severity, queue: alert.queue, channels: alert.channels.length,
-    sentAt: alert.sentAt, ackAt: alert.ackAt, ackMinutes,
+    sentAt: alert.sentAt, ackAt: alert.ackAt, ackMinutes, routedOnly,
   },
+  // Simulated site camera for the "site camera" beat: only when the app ships a camera record for the
+  // story risk's zone (js/data/spatial-seed.js, SEC-12). Otherwise null and the video names the site only.
+  siteCamera,
   reviewer: {
     nameAr: hseOwner, nameEn: enPerson(hseOwner), roleAr: ROLE_AR.hse, roleEn: ROLE_EN.hse,
     decisionAt: acceptEvent && acceptEvent.at, decisionMinutes,

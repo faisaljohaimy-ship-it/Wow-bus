@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
  * Web exports for biltix-hse/assets/video:
- *   - explainer-<lang>-720p.mp4  H.264 High, yuv420p, +faststart, no audio, ≤ 3.5 MB
+ *   - explainer-<lang>-720p.mp4  H.264 High, yuv420p, +faststart, no audio, ≤ 3.3 MiB
  *     (CRF is raised step by step until the file fits the budget)
  *   - explainer-<lang>-poster.webp  1280×720 still of a representative frame, < 120 KB
  * Also remuxes the 1080p masters with +faststart (stream copy, no re-encode).
  *
- *   node scripts/export-web.mjs [--lang ar|en|both] [--poster-frame 505]
+ *   node scripts/export-web.mjs [--lang ar|en|both] [--poster-frame 420]
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, renameSync, statSync } from 'node:fs';
@@ -23,8 +23,10 @@ const arg = (name, def) => {
   return i > -1 ? process.argv[i + 1] : def;
 };
 const langs = arg('lang', 'both') === 'both' ? ['ar', 'en'] : [arg('lang')];
-const POSTER_FRAME = Number(arg('poster-frame', '505')); // risk analysis: gauge + likelihood × impact matrix
-const MP4_BUDGET = 3.5 * 1024 * 1024;
+const POSTER_FRAME = Number(arg('poster-frame', '420')); // risk analysis: portfolio dial, category dials, likelihood × impact matrix
+// 3.3 MiB keeps the v3.1 recut (a moving camera on every frame) at or below the size of the
+// earlier static cut's web files (3.1 and 3.4 MB).
+const MP4_BUDGET = 3.3 * 1024 * 1024;
 const POSTER_BUDGET = 120 * 1024;
 const kb = (f) => `${(statSync(f).size / 1024).toFixed(0)} KB`;
 const ff = (args) => execFileSync(ffmpegBin, ['-hide_banner', '-v', 'error', '-y', ...args], { stdio: 'inherit' });
@@ -42,7 +44,7 @@ for (const lang of langs) {
 
   // 2. 720p web version within budget
   const web = resolve(WEB, `explainer-${lang}-720p.mp4`);
-  for (let crf = 23; crf <= 34; crf += 1) {
+  for (let crf = 24; crf <= 34; crf += 1) {
     ff([
       '-i', master, '-map', '0:v:0', '-an',
       '-vf', 'scale=1280:720:flags=lanczos',
