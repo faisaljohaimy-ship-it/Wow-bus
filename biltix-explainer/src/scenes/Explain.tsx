@@ -11,6 +11,13 @@ import { arcPath } from '../lib/geom';
 import { C, EASE, RATING_TONE, STAGGER, TONE } from '../theme';
 
 const S = DATA.story;
+
+/** Small dashed tag for demo values (same idea as the app's "Illustrative values" tags). */
+const IllustrativeTag: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <span style={{ display: 'inline-block', fontSize: 15, lineHeight: 1.2, color: C.ink3, padding: '2px 9px', borderRadius: 999, border: `1px dashed ${C.ink3}`, whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
+    {children}
+  </span>
+);
 const F = S.facts;
 
 export const Explain: React.FC<SceneProps> = ({ lang, frames }) => {
@@ -66,6 +73,8 @@ export const Explain: React.FC<SceneProps> = ({ lang, frames }) => {
             <Num size={19} color={C.ink2}>
               {S.confidencePct}%
             </Num>
+            <span style={{ color: C.ink3 }}> · </span>
+            <IllustrativeTag>{t.illustrative}</IllustrativeTag>
           </span>
         </div>
         {S.likelihood != null && S.impact != null && (
@@ -88,8 +97,6 @@ export const Explain: React.FC<SceneProps> = ({ lang, frames }) => {
         <div style={{ position: 'absolute', insetInlineStart: 36, insetInlineEnd: 36, bottom: 26, display: 'flex', gap: 44, paddingTop: 16, borderTop: `1px solid ${C.border}`, ...enter(f, 16, 20, 8) }}>
           {[
             [t.detected, <Num key="d" size={20} color={C.ink} mono>{`${S.detectedAt.slice(0, 10)} ${S.detectedAt.slice(11, 16)}`}</Num>],
-            [t.precision, <Num key="p" size={20} color={C.ink} mono>{S.pipeline.precision.toFixed(2)}</Num>],
-            [t.recall, <Num key="r" size={20} color={C.ink} mono>{S.pipeline.recall.toFixed(2)}</Num>],
           ].map(([k, v], i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
               <span style={{ fontSize: 17, color: C.ink3 }}>{k}</span>
@@ -115,7 +122,10 @@ export const Explain: React.FC<SceneProps> = ({ lang, frames }) => {
       <Card style={{ top: 660, insetInlineStart: 96, width: 900, height: 240, padding: '22px 36px', ...enter(f, 20, 22, 14) }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <div style={{ fontSize: 24, fontWeight: 600 }}>{t.why}</div>
-          <div style={{ fontSize: 17, color: C.ink3 }}>{t.modelWeight}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 17, color: C.ink3 }}>
+            {t.modelWeight}
+            <IllustrativeTag>{t.illustrativeWeights}</IllustrativeTag>
+          </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 40, rowGap: 14, marginTop: 14 }}>
           {S.drivers.map((d, i) => {

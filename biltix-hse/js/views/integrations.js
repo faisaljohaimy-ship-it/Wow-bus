@@ -64,13 +64,14 @@ const STYLE_TEXT = `
 .view-integrations .intg-backend { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--ink-3); min-block-size: 32px; }
 .view-integrations .intg-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .view-integrations .intg-grid.is-list .int-card { display: grid; grid-template-columns: minmax(220px, 1.3fr) minmax(0, 2fr) auto; align-items: center; gap: 10px 16px; padding-block: 12px; }
-.view-integrations .intg-grid.is-list .int-desc, .view-integrations .intg-grid.is-list .int-meta, .view-integrations .intg-grid.is-list .intg-sim { display: none; }
+.view-integrations .intg-grid.is-list .int-desc, .view-integrations .intg-grid.is-list .int-meta { display: none; }
 .view-integrations .intg-grid.is-list .int-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); background: transparent; border: 0; padding: 0; }
 .view-integrations .intg-grid.is-list .int-foot { margin: 0; justify-content: flex-end; }
 .view-integrations .intg-grid.is-list .intg-test { grid-column: 1 / -1; }
 @container main (max-width: 900px) {
-  .view-integrations .intg-grid.is-list .int-card { grid-template-columns: minmax(0, 1fr) auto; }
-  .view-integrations .intg-grid.is-list .int-stats { grid-column: 1 / -1; grid-row: 2; }
+  .view-integrations .intg-grid.is-list .int-card { grid-template-columns: minmax(0, 1fr); }
+  .view-integrations .intg-grid.is-list .int-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .view-integrations .intg-grid.is-list .int-foot { justify-content: flex-start; }
 }
 .view-integrations .intg-ds { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: var(--space-2); margin: 0; }
 .view-integrations .intg-ds .intg-fact { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--bg-2); border: 1px solid var(--line); min-inline-size: 0; }

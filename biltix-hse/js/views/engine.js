@@ -69,6 +69,12 @@ const STYLE_TEXT = `
   .view-engine .eng-metrics-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
   .view-engine .eng-disabled { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; inline-size: 100%; }
   .view-engine .eng-disabled-reason { font-size: var(--fs-xs); color: var(--ink-3); display: inline-flex; align-items: center; gap: 6px; flex: 1 1 220px; }
+  .view-engine .eng-metric { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--bg-2); border: 1px dashed var(--line-2); min-inline-size: 0; }
+  .view-engine .eng-metric-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .view-engine .eng-metric-name { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-1); }
+  .view-engine .eng-metric-value { font-size: var(--fs-lg); font-weight: 600; color: var(--ink-3); }
+  .view-engine .eng-metric-state { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-2); }
+  .view-engine .eng-metric-def { margin: 0; font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.55; }
   .view-engine .eng-anchor { scroll-margin-block-start: var(--space-4); }
   @media (max-width: 959.98px) { .view-engine .eng-anchor { scroll-margin-block-start: calc(var(--appbar-h) + var(--space-4)); } }
   @container card (max-width: 760px) { .view-engine .eng-trio { grid-template-columns: minmax(0, 1fr); } }
@@ -163,7 +169,7 @@ export default {
     let activeId = params.pipeline && fromUrl ? String(params.pipeline) : null;
     let pendingScroll = fromUrl ? (params.pipeline ? 'pipelines' : ({ audit: 'audit', pipelines: 'pipelines', explain: 'explain' }[params.section] || null)) : null;
     let pendingFocusTab = false;
-    const live = { signature: '', gate: null, tabs: new Map(), meta: null, drift: null, audit: null, pipelinesCard: null };
+    const live = { signature: '', gate: null, tabs: new Map(), meta: null, audit: null, pipelinesCard: null };
 
     /* ───────────────────────── helpers ───────────────────────── */
 
@@ -194,35 +200,20 @@ export default {
       return table;
     }
     /**
-     * Illustrative metric meter (.meter chrome from charts.css): label + value, single neutral-brand fill. No
-     * red / amber / green: these are scenario values, not measured model health (risk colours stay for risk states).
+     * Model-accuracy metric that is NOT measured in this version (CONTRACT §5: no fabricated accuracy): name, a
+     * one-line definition, the value "—" and what measuring it needs. No bar, no colour, no number.
      */
-    function meter({ value, max = 100, label, format }) {
-      const valueEl = h('span', { class: 'meter-value num' });
-      const head = h('div', { class: 'meter-head' }, h('span', {}, label), valueEl);
-      const fill = h('div', { class: 'meter-fill', style: { background: 'var(--s1)' } });
-      const el = h('div', { class: ['meter', 'tone-neutral'], role: 'meter', 'aria-valuemin': '0', 'aria-valuemax': String(max), 'aria-label': `${label} (${t('engine.illustrative')})` });
-      el.append(head, h('div', { class: 'meter-track' }, fill));
-      const set = (next) => {
-        const v = Math.max(0, Math.min(max, num(next)));
-        const valueText = format ? format(v) : fmt.num(v, { maximumFractionDigits: 1 });
-        setText(valueEl, valueText);
-        el.setAttribute('aria-valuenow', String(v)); el.setAttribute('aria-valuetext', valueText);
-        const size = `${((v / max) * 100).toFixed(1)}%`;
-        if (fill.style.inlineSize !== size) fill.style.inlineSize = size;
-      };
-      set(value);
-      return { el, set };
+    function notMeasured(key) {
+      const nameId = `eng-metric-${key}-${++metricSeq}`;
+      return h('div', { class: 'eng-metric', role: 'group', 'aria-labelledby': nameId },
+        h('div', { class: 'eng-metric-head' },
+          h('span', { class: 'eng-metric-name', id: nameId }, t(`engine.pipes.metrics.${key}.name`)),
+          h('span', { class: 'eng-metric-value', 'aria-label': t('engine.pipes.metrics.notMeasured') }, '—')),
+        h('span', { class: 'eng-metric-state' }, svgIcon('info', 12), t('engine.pipes.metrics.notMeasured')),
+        h('p', { class: 'eng-metric-def' }, t(`engine.pipes.metrics.${key}.def`)));
     }
-    function healthTone(p) {
-      const tone = p && (p.healthTone || p.health || p.tone);
-      if (['good', 'warning', 'serious', 'critical', 'neutral', 'accent'].includes(tone)) return tone;
-      if (!p) return 'neutral';
-      if (p.status === 'degraded') return 'warning';
-      if (p.status === 'idle') return 'neutral';
-      return 'good';
-    }
-
+    let metricSeq = 0;
+    const simulatedTag = () => h('span', { class: 'sim-tag' }, svgIcon('flask', 11), t('engine.pipes.simulated'));
     /* ── audit text in the active language (seed mirrors, *En fields, then known runtime patterns) ── */
     function auditTarget(e) {
       let s = i18n.L(e, 'target', 'auditLog') || e.target || '';
@@ -262,7 +253,7 @@ export default {
     function collectPipelines(state, plat) {
       let pipelines = safe(() => psel.pipelineHealth(state), null);
       if (!Array.isArray(pipelines) || !pipelines.length) pipelines = arr(plat.pipelines);
-      return pipelines.map((p) => ({ ...p, _tone: healthTone(p) }));
+      return pipelines;
     }
     const structuralSignature = (pipelines) => pipelines.map((p) => `${p.id}|${p.status}|${p.version}`).join(';');
 
@@ -324,7 +315,7 @@ export default {
         const body = h('div', { class: 'pipeline-layer-body' });
         if (layer.engine) {
           data.pipelines.forEach((p) => {
-            body.appendChild(h('button', { type: 'button', class: ['pipeline-node', 'is-model'], 'data-status': p.status || 'idle', onClick: () => selectPipeline(p.id) },
+            body.appendChild(h('button', { type: 'button', class: ['pipeline-node', 'is-model'], 'data-status': pipeStatus(), onClick: () => selectPipeline(p.id) },
               svgIcon(PIPELINE_ICON[p.id] || 'sliders', 14),
               h('span', {}, pipeName(p)),
               h('span', { class: 'mono', dir: 'ltr' }, p.version || '—'),
@@ -368,29 +359,26 @@ export default {
     function buildPipelinePanel(p) {
       const loc = i18n.localize(p, 'pipelines') || p;
       const name = pipeName(p);
-      const precision = asPct(p.precision); const recall = asPct(p.recall);
-      const calib = asPct(p.calibrationError); const drift = Math.max(0, Math.min(100, num(p.driftScore) * 100));
-      const driftMeter = meter({ value: drift, label: t('engine.pipes.drift'), thresholds: [{ upTo: 20, tone: 'good' }, { upTo: 40, tone: 'warning' }, { upTo: 100, tone: 'critical' }], format: (v) => fmt.num(v / 100, { maximumFractionDigits: 2, minimumFractionDigits: 2 }) });
-      live.drift = driftMeter;
-      const meters = h('div', { class: 'engine-meters' },
-        meter({ value: precision, label: t('engine.pipes.precision'), thresholds: [{ upTo: 74.99, tone: 'critical' }, { upTo: 84.99, tone: 'warning' }, { upTo: 100, tone: 'good' }], format: (v) => fmt.pct(v, 1) }).el,
-        meter({ value: recall, label: t('engine.pipes.recall'), thresholds: [{ upTo: 74.99, tone: 'critical' }, { upTo: 84.99, tone: 'warning' }, { upTo: 100, tone: 'good' }], format: (v) => fmt.pct(v, 1) }).el,
-        meter({ value: calib, max: 25, label: t('engine.pipes.ece'), thresholds: [{ upTo: 5, tone: 'good' }, { upTo: 10, tone: 'warning' }, { upTo: 25, tone: 'critical' }], format: (v) => fmt.pct(v, 1) }).el,
-        driftMeter.el);
+      // Model accuracy is not measured in this version: no precision / recall / ECE / drift values are shown.
+      const metrics = h('div', { class: 'engine-meters' }, notMeasured('precision'), notMeasured('recall'), notMeasured('ece'), notMeasured('drift'));
       live.meta = {
         lastRun: h('span', { title: riyadhDateTime(fmt, p.lastRun) }, relSafe(p.lastRun)),
         runs: mono(fmt.num(num(p.runsToday))),
         latency: mono(msText(p.avgLatencyMs)),
-        risks: mono(fmt.num(num(p.risksLast30d))),
+        open: mono(fmt.num(num(p.openRisks))),
       };
-      const meta = h('div', { class: 'engine-meta' },
-        ...[
-          [t('engine.pipes.version'), h('span', { class: 'mono', dir: 'ltr' }, p.version || '—')],
-          [t('engine.pipes.lastRun'), live.meta.lastRun],
-          [t('engine.pipes.runsToday'), live.meta.runs],
-          [t('engine.pipes.latency'), live.meta.latency],
-          [t('engine.pipes.risks30', { n: fmt.num(30) }), live.meta.risks],
-        ].map(([label, value]) => h('div', { class: 'engine-meta-cell' }, h('span', { class: 'engine-meta-label' }, label), h('span', { class: 'engine-meta-value' }, value))));
+      const cell = (label, value, sim) => h('div', { class: 'engine-meta-cell' },
+        h('span', { class: 'engine-meta-label' }, label, sim ? h('span', { class: 'sr-only' }, ` (${t('engine.pipes.simulated')})`) : null),
+        h('span', { class: 'engine-meta-value' }, value));
+      const meta = h('div', { class: 'stack gap-2' },
+        h('div', { class: 'eng-metrics-head' }, h('span', { class: 'text-sm semibold' }, t('engine.pipes.runtimeTitle')), simulatedTag()),
+        h('div', { class: 'engine-meta' },
+          cell(t('engine.pipes.version'), h('span', { class: 'mono', dir: 'ltr' }, p.version || '—'), true),
+          cell(t('engine.pipes.lastRun'), live.meta.lastRun, true),
+          cell(t('engine.pipes.runsToday'), live.meta.runs, true),
+          cell(t('engine.pipes.latency'), live.meta.latency, true),
+          cell(t('engine.pipes.openRisks'), live.meta.open, false)),
+        h('p', { class: 'text-xs muted', style: { margin: 0 } }, t('engine.pipes.runtimeNote')));
 
       const fiLoc = arr(loc.featureImportance);
       const fi = arr(p.featureImportance).map((f, i) => ({ ...f, feature: digitsIn(fmt, (fiLoc[i] && fiLoc[i].feature) || f.feature) })).sort((a, b) => num(b.weight) - num(a.weight)).slice(0, 6);
@@ -434,15 +422,15 @@ export default {
               loc.description ? h('p', {}, digitsIn(fmt, loc.description)) : null),
             h('div', { class: 'eng-state' },
               statusBadge(pipeStatus(), { size: 'sm' }),
-              h('span', {}, `${t('engine.pipes.scenarioState')}: ${i18n.label('pipelineStatus', p.status)}`))),
+              h('span', {}, t('engine.pipes.scenarioState', { state: i18n.label('pipelineStatus', p.status) })))),
           meta,
           techniques.length ? h('ul', { class: 'engine-techniques', 'aria-label': t('engine.pipes.techniques') }, ...techniques.map((x) => h('li', {}, svgIcon('sparkles', 12), h('span', {}, digitsIn(fmt, String(x)))))) : null,
           h('div', { class: 'stack gap-2' },
-            h('div', { class: 'eng-metrics-head' }, h('span', { class: 'text-sm semibold' }, t('engine.pipes.metricsTitle')), illustrative()),
-            meters,
-            h('p', { class: 'text-xs muted', style: { margin: 0 } }, t('engine.pipes.metricsNote'))),
+            h('div', { class: 'eng-metrics-head' }, h('span', { class: 'text-sm semibold' }, t('engine.pipes.metrics.title')), h('span', { class: 'eng-metric-state' }, svgIcon('info', 12), t('engine.pipes.metrics.notMeasured'))),
+            metrics,
+            h('p', { class: 'text-xs muted', style: { margin: 0 } }, t('engine.pipes.metrics.needs'))),
           h('div', { class: 'stack gap-2' },
-            h('div', { class: 'row between wrap' }, h('span', { class: 'text-sm semibold' }, t('engine.pipes.hitl')), h('span', { class: 'text-xs muted' }, t('engine.pipes.hitlNote', { overrides: fmt.num(num(p.overridesLast30d)), risks: fmt.num(num(p.risksLast30d)), days: fmt.num(30) }))),
+            h('div', { class: 'row between wrap' }, h('span', { class: 'row gap-2' }, h('span', { class: 'text-sm semibold' }, t('engine.pipes.hitl')), illustrative()), h('span', { class: 'text-xs muted' }, t('engine.pipes.hitlNote', { overrides: fmt.num(num(p.overridesLast30d)), risks: fmt.num(num(p.risksLast30d)), days: fmt.num(30) }))),
             seg ? seg.el : simpleTable([t('engine.pipes.accept'), t('engine.pipes.override')], [[fmt.pct(segParts[0].value, 0), fmt.pct(segParts[1].value, 0)]])),
           fiFold,
           kriFold),
@@ -452,7 +440,7 @@ export default {
     }
 
     function buildPipelines(data) {
-      live.tabs = new Map(); live.meta = null; live.drift = null;
+      live.tabs = new Map(); live.meta = null;
       if (!data.pipelines.length) return card({ id: 'engine-pipelines', code: 'ENG-01', title: t('engine.pipes.title'), className: 'eng-anchor', body: emptyState({ title: t('engine.pipes.emptyTitle'), text: t('engine.pipes.emptyText') }) });
       if (!activeId || !data.pipelines.some((p) => String(p.id) === activeId)) activeId = String(data.pipelines[0].id);
       const active = data.pipelines.find((p) => String(p.id) === activeId);
@@ -502,8 +490,7 @@ export default {
         setText(live.meta.lastRun, relSafe(p.lastRun)); live.meta.lastRun.title = riyadhDateTime(fmt, p.lastRun);
         setText(live.meta.runs, fmt.num(num(p.runsToday)));
         setText(live.meta.latency, msText(p.avgLatencyMs));
-        setText(live.meta.risks, fmt.num(num(p.risksLast30d)));
-        if (live.drift) live.drift.set(Math.max(0, Math.min(100, num(p.driftScore) * 100)));
+        setText(live.meta.open, fmt.num(num(p.openRisks)));
       }
     }
 

@@ -1,6 +1,6 @@
 import { Easing } from 'remotion';
 
-/** BILTIX precision palette (dark engineering surfaces). */
+/** BILTIX engineering palette (dark surfaces). */
 export const C = {
   bg: '#080F1B',
   surface: '#111D2E',

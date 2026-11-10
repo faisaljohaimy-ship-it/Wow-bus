@@ -369,8 +369,8 @@ export default {
       const actions = h('div', { class: 'quarantine-actions' });
       if (q.status === 'معلّق') {
         actions.append(
-          button(t('dataquality.quarantine.correct'), { variant: 'outline', size: 'sm', icon: glyph('good', 14), onClick: () => { resolveQuarantine(q.id, 'مُصحح'); toast(t('dataquality.quarantine.correctedToast', { ref }), { tone: 'good' }); }, attrs: { 'aria-label': t('dataquality.quarantine.correctAria', { ref }) } }),
-          button(t('dataquality.quarantine.reject'), { variant: 'ghost', size: 'sm', icon: glyph('close', 14), onClick: () => { resolveQuarantine(q.id, 'مرفوض'); toast(t('dataquality.quarantine.rejectedToast', { ref }), { tone: 'neutral' }); }, attrs: { 'aria-label': t('dataquality.quarantine.rejectAria', { ref }) } }));
+          button(t('dataquality.quarantine.correct'), { variant: 'outline', size: 'sm', icon: glyph('good', 14), onClick: () => { restoreFocusId = SECTION_IDS.quarantine; resolveQuarantine(q.id, 'مُصحح'); toast(t('dataquality.quarantine.correctedToast', { ref }), { tone: 'good' }); }, attrs: { 'aria-label': t('dataquality.quarantine.correctAria', { ref }) } }),
+          button(t('dataquality.quarantine.reject'), { variant: 'ghost', size: 'sm', icon: glyph('close', 14), onClick: () => { restoreFocusId = SECTION_IDS.quarantine; resolveQuarantine(q.id, 'مرفوض'); toast(t('dataquality.quarantine.rejectedToast', { ref }), { tone: 'neutral' }); }, attrs: { 'aria-label': t('dataquality.quarantine.rejectAria', { ref }) } }));
       } else {
         actions.appendChild(badge(i18n.label('quarantineStatus', q.status), Q_TONE[q.status] || 'neutral'));
       }
@@ -415,6 +415,7 @@ export default {
         tableView: reasonsSeg ? () => (typeof reasonsSeg.table === 'function' ? safe(() => reasonsSeg.table(), null) : null) || simpleTable([t('dataquality.quarantine.colSource'), t('dataquality.quarantine.colPending')], data.reasons.map((r) => [r.label, fmt.num(r.value)])) : null,
         footer: h('p', { class: 'text-xs muted', style: { margin: 0 } }, t('dataquality.quarantine.footer')),
       });
+      el.tabIndex = -1; // focus target after a decision removes the pressed button
       live.quarantineCard = el;
       return el;
     }

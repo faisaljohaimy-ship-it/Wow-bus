@@ -28,4 +28,5 @@ Config.setPixelFormat('yuv420p');
 Config.setCrf(20);
 Config.setX264Preset('slow');
 Config.setOverwriteOutput(true);
+Config.setConcurrency('100%'); // all cores (the CLI default is half)
 Config.setChromiumOpenGlRenderer('swangle');

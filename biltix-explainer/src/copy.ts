@@ -20,7 +20,7 @@ export type Copy = {
   validate: { eyebrow: string; title: string; sub: (rules: number, hits: string) => string; recordsIn: string; passed: string; dedup: string; rejected: string; passRate: string; completeness: string; consistency: string; quarantine: string; quarantineOf: (n: number) => string; };
   analyze: { eyebrow: string; gaugeTitle: string; gaugeSub: (open: number) => string; categories: string; distribution: (open: number) => string; heatTitle: string; heatSub: (n: number) => string; heatTitleHse: string; heatSubHse: (n: number) => string; severityHse: string; likelihood: string; severity: string; formula: string; likelihoodLabels: string[]; severityLabels: string[]; tiers: Record<string, string> };
   rating: Record<string, string>;
-  explain: { detected: string; precision: string; recall: string; eyebrow: string; why: string; modelWeight: string; evidence: string; weeklyRate: string; limit: string; cumulative: string; schematic: string; crack: string; crest: string; pit: string; movement: string; confidence: string; mmWeek: string; mm: string; m: string };
+  explain: { detected: string; illustrative: string; illustrativeWeights: string; eyebrow: string; why: string; modelWeight: string; evidence: string; weeklyRate: string; limit: string; cumulative: string; schematic: string; crack: string; crest: string; pit: string; movement: string; confidence: string; mmWeek: string; mm: string; m: string };
   approve: { rationale: string; stakeholders: string; eyebrow: string; recTitle: string; impact: string; effort: string; accept: string; edit: string; dismiss: string; accepted: string; reviewer: string; human: string; detected: string; escalated: string; acknowledged: string; decided: string; min: (n: number) => string };
   mitigate: { zone: string; eyebrow: string; status: string; source: string; owner: string; due: string; risk: string; criticalPath: string; yes: string; schedule: string; cost: string; controls: string; done: string; inProgress: string; writeback: string; synced: string; days: (n: number) => string; sar: (n: number) => string };
   close: { eyebrow: string; title: string; verified: string; closure: string; illustrative: string; residual: string; target: string };
@@ -88,8 +88,8 @@ export const COPY: Record<Lang, Copy> = {
       movement: 'اتجاه الحركة',
       confidence: 'الثقة',
       detected: 'الاكتشاف',
-      precision: 'دقة النموذج',
-      recall: 'الاستدعاء',
+      illustrative: 'توضيحي',
+      illustrativeWeights: 'أوزان توضيحية',
       mmWeek: 'مم/أسبوع',
       mm: 'مم',
       m: 'م',
@@ -204,8 +204,8 @@ export const COPY: Record<Lang, Copy> = {
       movement: 'Movement',
       confidence: 'Confidence',
       detected: 'Detected',
-      precision: 'Model precision',
-      recall: 'Recall',
+      illustrative: 'Illustrative',
+      illustrativeWeights: 'Illustrative weights',
       mmWeek: 'mm/week',
       mm: 'mm',
       m: 'm',

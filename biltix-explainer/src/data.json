@@ -602,9 +602,7 @@
       "id": "site-ai",
       "nameAr": "ذكاء الموقع (الصور والتقارير)",
       "nameEn": "Site intelligence (images and reports)",
-      "version": "v2.0.4",
-      "precision": 0.88,
-      "recall": 0.81
+      "version": "v2.0.4"
     },
     "titleAr": "عدم استقرار منحدر الحفر الشمالي — إزاحة 14 مم/أسبوع تتجاوز الحد",
     "titleShortAr": "عدم استقرار منحدر الحفر الشمالي",
@@ -773,8 +771,8 @@
         "kind": "detected",
         "byAr": "ذكاء الموقع (الصور والتقارير)",
         "byEn": "Site AI",
-        "textAr": "اكتشاف تلقائي — الدرجة 100 (أحمر)، الثقة 90%",
-        "textEn": "Detected — score 100 (Red), confidence 90%",
+        "textAr": "اكتشاف تلقائي — الدرجة 100 (أحمر)، الثقة 90% · توضيحي",
+        "textEn": "Detected — score 100 (Red), confidence 90% · Illustrative",
         "date": "2026-11-08",
         "time": "05:30"
       },

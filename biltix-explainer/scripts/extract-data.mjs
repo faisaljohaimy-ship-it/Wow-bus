@@ -293,7 +293,8 @@ const auditRows = platformSeed.auditLog
   .filter((a) => a.target === risk.code || a.target.startsWith(task.code))
   .map((a) => ({ at: a.at, by: a.actor, action: a.action, detail: a.detail }));
 const TL_EN = {
-  detected: () => `Detected — score ${risk.score} (Red), confidence ${Math.round(risk.confidence * 100)}%`,
+  // per-risk confidence is a demo value: tagged the way the app tags demo metrics
+  detected: () => `Detected — score ${risk.score} (Red), confidence ${Math.round(risk.confidence * 100)}% · Illustrative`,
   alert: () => `Immediate escalation · ${alert ? alert.channels.length : 0} channels`,
   ack: () => 'Alert acknowledged',
   accept: () => `Recommendation accepted · task ${task.code}`,
@@ -303,7 +304,7 @@ const TL_EN = {
 };
 const timeline = [];
 for (const e of detail.timeline) {
-  if (e.kind === 'detected') timeline.push({ at: e.at, kind: 'detected', byAr: e.by, byEn: 'Site AI', textAr: e.text, textEn: TL_EN.detected() });
+  if (e.kind === 'detected') timeline.push({ at: e.at, kind: 'detected', byAr: e.by, byEn: 'Site AI', textAr: `${e.text} · توضيحي`, textEn: TL_EN.detected() });
   else if (e.kind === 'alert') timeline.push({ at: e.at, kind: 'alert', byAr: e.by, byEn: 'System', textAr: `تصعيد فوري عبر ${alert.channels.length} قنوات`, textEn: TL_EN.alert() });
   else if (e.kind === 'ack') timeline.push({ at: e.at, kind: 'ack', byAr: e.by, byEn: enPerson(e.by), textAr: e.text, textEn: TL_EN.ack() });
   else if (e.kind === 'history' && /قبول التوصية/.test(e.text)) timeline.push({ at: e.at, kind: 'accept', byAr: e.by, byEn: enPerson(e.by), textAr: `قبول التوصية · المهمة ${task.code}`, textEn: TL_EN.accept() });
@@ -335,7 +336,7 @@ const story = {
   typeAr: detail.typeLabel,
   typeEn: risk.type,
   site: { id: site.id, code: site.code },
-  pipeline: { id: risk.pipeline, nameAr: PIPELINE_META[risk.pipeline].nameAr, nameEn: enLabel('pipeline', risk.pipeline, pipeline.name), version: risk.modelVersion, precision: pipeline.precision, recall: pipeline.recall },
+  pipeline: { id: risk.pipeline, nameAr: PIPELINE_META[risk.pipeline].nameAr, nameEn: enLabel('pipeline', risk.pipeline, pipeline.name), version: risk.modelVersion },
   titleAr: risk.title,
   titleShortAr: risk.title.split(' — ')[0],
   titleEn: en.title,
