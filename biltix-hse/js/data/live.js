@@ -48,6 +48,7 @@
 import { sel } from '../core/selectors.js';
 import { fmt } from '../core/fmt.js';
 import { CATEGORIES } from './seed.js';
+import { enumEn, dataEn, siteEn, zoneEn, personEn, workerEn, courseEn, integrationEn, unitEn, latinOnly } from './vocab-en.js';
 
 export const LIVE_SEED = 20261109;
 
@@ -370,7 +371,12 @@ function emitFeed(partial, { force = false } = {}) {
     // the numerals setting; identifiers (PTW‑5521, H2S, B2070, 2026-11-20) are left alone.
     title: arDigits(String(partial.title || '').trim()),
     detail: arDigits(String(partial.detail || '').trim()),
+    // CONTRACT §8: every generated event is bilingual; English copy keeps Latin digits.
+    titleEn: String(partial.titleEn || '').trim(),
+    detailEn: String(partial.detailEn || '').trim(),
     sourceId,
+    // Everything this engine emits is a demo scenario (status.js / the shell label it as simulated).
+    simulated: true,
   };
   if (partial.refId != null) event.refId = partial.refId;
   if (partial.kind) event.kind = partial.kind;
@@ -391,6 +397,7 @@ function emitBus(name, payload) {
 const FALLBACK_WORKERS = ['أحمد بن سعد', 'محمد إقبال', 'رامي حسن', 'عبدالرحمن يوسف', 'ديبك شارما', 'شهاب الدين', 'ناصر العمري', 'خالد المالكي', 'فيصل الغامدي', 'سلمان الحربي', 'رفيق الإسلام', 'طارق عبدالله'];
 const FALLBACK_COURSES = ['التوعية بالسلامة في الموقع', 'العمل على ارتفاعات', 'الأماكن المغلقة', 'تصاريح العمل', 'الإسعافات الأولية', 'مكافحة الحريق', 'الإجهاد الحراري', 'قيادة المعدات الثقيلة', 'الإشارة والربط (Rigging)', 'قيادة دفاعية'];
 const TOOLBOX_TOPICS = ['العمل الآمن على ارتفاعات', 'الوقاية من الإجهاد الحراري', 'إشارات الرافعات وحبال التوجيه', 'عزل الطاقة وقفلها (LOTO)', 'الدخول إلى الأماكن المغلقة', 'المناولة اليدوية الآمنة', 'السلامة المرورية داخل الموقع', 'الحماية من السقوط', 'التعامل مع المواد الكيميائية'];
+const TOOLBOX_TOPICS_EN = ['Safe work at height', 'Heat-stress prevention', 'Crane signals and tag lines', 'Energy isolation and lockout (LOTO)', 'Confined-space entry', 'Safe manual handling', 'On-site traffic safety', 'Fall protection', 'Handling chemicals'];
 const INSPECTION_TYPES_FALLBACK = ['جولة سلامة', 'تفتيش معدات', 'تدقيق داخلي', 'تفتيش سقالات', 'فحص رافعات', 'تفتيش كهرباء'];
 const SOURCES = Object.freeze({
   pm: 'biltix-pm', dms: 'biltix-dms', iot: 'iot-gateway', cctv: 'cctv-ai', wear: 'wearables',
@@ -403,61 +410,67 @@ const SOURCES = Object.freeze({
  */
 const TEMPLATES = [
   // ── sensors (IoT gateway)
-  { type: 'sensor', tone: 'accent', sourceId: SOURCES.iot, weight: 3, title: 'قراءة {sensor} مستقرة عند {value} {unit}', detail: 'ضمن الحد المسموح ({threshold} {unit}) — {zone}', requires: (c) => c.sensorRatio < 0.7 },
-  { type: 'sensor', tone: 'warning', sourceId: SOURCES.iot, weight: 3, title: 'ارتفاع تدريجي في {sensor} إلى {value} {unit}', detail: 'ما زالت دون عتبة التنبيه ({threshold} {unit}) — {zone}؛ المراقبة مستمرة', requires: (c) => c.sensorRatio >= 0.7 },
-  { type: 'sensor', tone: 'good', sourceId: SOURCES.iot, weight: 1, title: 'معايرة دورية لحسّاس {sensor} — {zone}', detail: 'اكتملت المعايرة الآلية عبر بوابة الحساسات؛ انحراف القراءة أقل من 2%' },
-  { type: 'sensor', tone: 'accent', sourceId: SOURCES.iot, weight: 1, title: 'استعادة الاتصال بحسّاس {sensor} — {zone}', detail: 'انقطاع قصير في بث MQTT لمدة {n} ثانية ثم عودة الإرسال طبيعيًا' },
-  { type: 'sensor', tone: 'warning', sourceId: SOURCES.iot, weight: 1, title: 'بطارية حسّاس {sensor} منخفضة ({pct}%)', detail: 'يُنصح باستبدال البطارية خلال 48 ساعة — {zone}' },
+  { type: 'sensor', tone: 'accent', sourceId: SOURCES.iot, weight: 3, title: 'قراءة {sensor} مستقرة عند {value} {unit}', detail: 'ضمن الحد المسموح ({threshold} {unit}) — {zone}', titleEn: '{sensor} reading steady at {value} {unit}', detailEn: 'Within the permitted limit ({threshold} {unit}) — {zone}', requires: (c) => c.sensorRatio < 0.7 },
+  { type: 'sensor', tone: 'warning', sourceId: SOURCES.iot, weight: 3, title: 'ارتفاع تدريجي في {sensor} إلى {value} {unit}', detail: 'ما زالت دون عتبة التنبيه ({threshold} {unit}) — {zone}؛ المراقبة مستمرة', titleEn: 'Gradual rise in {sensor} to {value} {unit}', detailEn: 'Still below the alert threshold ({threshold} {unit}) — {zone}; monitoring continues', requires: (c) => c.sensorRatio >= 0.7 },
+  { type: 'sensor', tone: 'good', sourceId: SOURCES.iot, weight: 1, title: 'معايرة دورية لحسّاس {sensor} — {zone}', detail: 'اكتملت المعايرة الآلية عبر بوابة الحساسات؛ انحراف القراءة أقل من 2%', titleEn: 'Routine calibration of the {sensor} sensor — {zone}', detailEn: 'Automatic calibration through the sensor gateway completed; reading drift below 2%' },
+  { type: 'sensor', tone: 'accent', sourceId: SOURCES.iot, weight: 1, title: 'عودة بث حسّاس {sensor} — {zone}', detail: 'انقطاع قصير في بث MQTT لمدة {n} ثانية ثم عودة الإرسال طبيعيًا', titleEn: '{sensor} sensor stream back — {zone}', detailEn: 'Short MQTT gap of {n} seconds, then transmission resumed normally' },
+  { type: 'sensor', tone: 'warning', sourceId: SOURCES.iot, weight: 1, title: 'بطارية حسّاس {sensor} منخفضة ({pct}%)', detail: 'يُنصح باستبدال البطارية خلال 48 ساعة — {zone}', titleEn: '{sensor} sensor battery low ({pct}%)', detailEn: 'Replace the battery within 48 hours — {zone}' },
   // ── permits (Biltix PM)
-  { type: 'permit', tone: 'good', sourceId: SOURCES.pm, weight: 2, title: 'اعتماد تصريح {permitPending} — {permitPendingType}', detail: '{permitPendingLocation} · اعتمده {permitPendingApprover}', requires: (c) => Boolean(c.permitPending) },
-  { type: 'permit', tone: 'accent', sourceId: SOURCES.pm, weight: 3, title: 'تسجيل دخول {workersCount} عمال بموجب التصريح {permit}', detail: '{permitType} — {permitLocation}' },
-  { type: 'permit', tone: 'good', sourceId: SOURCES.pm, weight: 2, title: 'اختبار غازات جديد للتصريح {permit}', detail: 'O₂ {o2}% · LEL 0% · H2S {h2s} ppm · CO {co} ppm — القيم ضمن الحدود المقبولة', requires: (c) => c.permitHasGas },
-  { type: 'permit', tone: 'accent', sourceId: SOURCES.pm, weight: 1, title: 'طلب تمديد التصريح {permit} لمدة {hours} ساعات', detail: 'بانتظار موافقة {approver} — {permitLocation}' },
-  { type: 'permit', tone: 'good', sourceId: SOURCES.pm, weight: 1, title: 'إقفال مراقبة الحريق للتصريح {permit}', detail: 'انتهت فترة المراقبة (60 دقيقة) دون ملاحظات — {permitLocation}', requires: (c) => c.permitType === 'أعمال ساخنة' },
-  { type: 'permit', tone: 'accent', sourceId: SOURCES.pm, weight: 1, title: 'جولة تحقق ميدانية على التصريح {permit}', detail: 'تطابق الضوابط المكتوبة مع الواقع الميداني — {permitLocation}' },
+  { type: 'permit', tone: 'good', sourceId: SOURCES.pm, weight: 2, title: 'اعتماد تصريح {permitPending} — {permitPendingType}', detail: '{permitPendingLocation} · اعتمده {permitPendingApprover}', titleEn: 'Permit {permitPending} approved — {permitPendingType}', detailEn: '{permitPendingLocation} · approved by {permitPendingApprover}', requires: (c) => Boolean(c.permitPending) },
+  { type: 'permit', tone: 'accent', sourceId: SOURCES.pm, weight: 3, title: 'تسجيل دخول {workersCount} عمال بموجب التصريح {permit}', detail: '{permitType} — {permitLocation}', titleEn: '{workersCount} workers signed in under permit {permit}', detailEn: '{permitType} — {permitLocation}' },
+  { type: 'permit', tone: 'good', sourceId: SOURCES.pm, weight: 2, title: 'اختبار غازات جديد للتصريح {permit}', detail: 'O₂ {o2}% · LEL 0% · H2S {h2s} ppm · CO {co} ppm — القيم ضمن الحدود المقبولة', titleEn: 'New gas test for permit {permit}', detailEn: 'O₂ {o2}% · LEL 0% · H2S {h2s} ppm · CO {co} ppm — values within acceptable limits', requires: (c) => c.permitHasGas },
+  { type: 'permit', tone: 'accent', sourceId: SOURCES.pm, weight: 1, title: 'طلب تمديد التصريح {permit} لمدة {hours} ساعات', detail: 'بانتظار موافقة {approver} — {permitLocation}', titleEn: 'Extension of permit {permit} requested for {hours} hours', detailEn: 'Awaiting approval by {approver} — {permitLocation}' },
+  { type: 'permit', tone: 'good', sourceId: SOURCES.pm, weight: 1, title: 'إقفال مراقبة الحريق للتصريح {permit}', detail: 'انتهت فترة المراقبة (60 دقيقة) دون ملاحظات — {permitLocation}', titleEn: 'Fire watch closed for permit {permit}', detailEn: 'The 60-minute watch ended with no observations — {permitLocation}', requires: (c) => c.permitType === 'أعمال ساخنة' },
+  { type: 'permit', tone: 'accent', sourceId: SOURCES.pm, weight: 1, title: 'جولة تحقق ميدانية على التصريح {permit}', detail: 'تطابق الضوابط المكتوبة مع الواقع الميداني — {permitLocation}', titleEn: 'Field verification walk on permit {permit}', detailEn: 'Written controls match the conditions on site — {permitLocation}' },
   // ── incidents (field app / wearables)
-  { type: 'incident', tone: 'warning', sourceId: SOURCES.pm, weight: 2, title: 'بلاغ إسعافات أولية — {zone}', detail: 'جرح سطحي أثناء المناولة؛ عولج في عيادة الموقع وعاد العامل إلى عمله بمهام خفيفة' },
-  { type: 'incident', tone: 'warning', sourceId: SOURCES.pm, weight: 1, title: 'بلاغ تلف ممتلكات بسيط — {zone}', detail: 'اصطدام منخفض السرعة بحاجز خرساني دون إصابات؛ فتح سجل تحقيق' },
-  { type: 'incident', tone: 'accent', sourceId: SOURCES.pm, weight: 2, title: 'تحديث تحقيق الحادث {incident}', detail: 'إضافة محضر مقابلة ومرفقات مصورة — {incidentTitle}', requires: (c) => Boolean(c.incident) },
-  { type: 'incident', tone: 'good', sourceId: SOURCES.pm, weight: 1, title: 'إغلاق إجراء تصحيحي للحادث {incident}', detail: 'تم التحقق ميدانيًا من تنفيذ الإجراء — {incidentTitle}', requires: (c) => Boolean(c.incident) },
+  { type: 'incident', tone: 'warning', sourceId: SOURCES.pm, weight: 2, title: 'بلاغ إسعافات أولية — {zone}', detail: 'جرح سطحي أثناء المناولة؛ عولج في عيادة الموقع وعاد العامل إلى عمله بمهام خفيفة', titleEn: 'First-aid report — {zone}', detailEn: 'Superficial cut during handling; treated at the site clinic and the worker returned on light duties' },
+  { type: 'incident', tone: 'warning', sourceId: SOURCES.pm, weight: 1, title: 'بلاغ تلف ممتلكات بسيط — {zone}', detail: 'اصطدام منخفض السرعة بحاجز خرساني دون إصابات؛ فتح سجل تحقيق', titleEn: 'Minor property-damage report — {zone}', detailEn: 'Low-speed contact with a concrete barrier, no injuries; investigation record opened' },
+  { type: 'incident', tone: 'accent', sourceId: SOURCES.pm, weight: 2, title: 'تحديث تحقيق الحادث {incident}', detail: 'إضافة محضر مقابلة ومرفقات مصورة — {incidentTitle}', titleEn: 'Investigation update for incident {incident}', detailEn: 'Interview record and photos added — {incidentTitle}', requires: (c) => Boolean(c.incident) },
+  { type: 'incident', tone: 'good', sourceId: SOURCES.pm, weight: 1, title: 'إغلاق إجراء تصحيحي للحادث {incident}', detail: 'تم التحقق ميدانيًا من تنفيذ الإجراء — {incidentTitle}', titleEn: 'Corrective action closed for incident {incident}', detailEn: 'Implementation verified in the field — {incidentTitle}', requires: (c) => Boolean(c.incident) },
   // ── near-miss observations
-  { type: 'nearmiss', tone: 'warning', sourceId: SOURCES.pm, weight: 2, title: 'بلاغ حادث وشيك عبر تطبيق بلتكس — {zone}', detail: 'سقوط أداة يدوية من ارتفاع {n} م دون إصابات؛ البلاغ بانتظار التصنيف' },
-  { type: 'nearmiss', tone: 'good', sourceId: SOURCES.pm, weight: 2, title: 'ملاحظة سلامة إيجابية — {zone}', detail: 'أوقف العامل {worker} العمل عند رصد سقالة دون بطاقة فحص سارية' },
-  { type: 'nearmiss', tone: 'warning', sourceId: SOURCES.wear, weight: 1, title: 'حادث وشيك: مركبة تقترب من ممر المشاة — {zone}', detail: 'تفعيل تنبيه الاقتراب في جهاز السائق؛ لا إصابات' },
-  { type: 'nearmiss', tone: 'warning', sourceId: SOURCES.pm, weight: 1, title: 'ملاحظة: مواد مخزنة قرب حافة البلاطة — {zone}', detail: 'إزالة المواد فورًا وتثبيت لوحات تحذير؛ إبلاغ مشرف المنطقة' },
+  { type: 'nearmiss', tone: 'warning', sourceId: SOURCES.pm, weight: 2, title: 'بلاغ حادث وشيك عبر تطبيق بلتكس — {zone}', detail: 'سقوط أداة يدوية من ارتفاع {n} م دون إصابات؛ البلاغ بانتظار التصنيف', titleEn: 'Near miss reported through the BILTIX app — {zone}', detailEn: 'A hand tool fell from {n} m with no injuries; the report awaits classification' },
+  { type: 'nearmiss', tone: 'good', sourceId: SOURCES.pm, weight: 2, title: 'ملاحظة سلامة إيجابية — {zone}', detail: 'أوقف العامل {worker} العمل عند رصد سقالة دون بطاقة فحص سارية', titleEn: 'Positive safety observation — {zone}', detailEn: 'Worker {worker} stopped work on spotting a scaffold without a valid inspection tag' },
+  { type: 'nearmiss', tone: 'warning', sourceId: SOURCES.wear, weight: 1, title: 'حادث وشيك: مركبة تقترب من ممر المشاة — {zone}', detail: 'تفعيل تنبيه الاقتراب في جهاز السائق؛ لا إصابات', titleEn: 'Near miss: vehicle approaching the pedestrian walkway — {zone}', detailEn: "Proximity alert triggered on the driver's device; no injuries" },
+  { type: 'nearmiss', tone: 'warning', sourceId: SOURCES.pm, weight: 1, title: 'ملاحظة: مواد مخزنة قرب حافة البلاطة — {zone}', detail: 'إزالة المواد فورًا وتثبيت لوحات تحذير؛ إبلاغ مشرف المنطقة', titleEn: 'Observation: materials stored near the slab edge — {zone}', detailEn: 'Materials removed at once and warning signs installed; area supervisor informed' },
   // ── inspections
-  { type: 'inspection', tone: 'good', sourceId: SOURCES.pm, weight: 3, title: 'اعتماد {inspectionType} — {site}', detail: 'المفتش {inspector} · اكتمال قائمة التحقق ({checklist} بندًا)' },
-  { type: 'inspection', tone: 'accent', sourceId: SOURCES.pm, weight: 2, title: 'بدء {inspectionType} — {zone}', detail: 'المفتش {inspector} · قائمة تحقق من {checklist} بندًا' },
-  { type: 'inspection', tone: 'accent', sourceId: SOURCES.dms, weight: 2, title: 'رفع تقرير {inspectionType} إلى Biltix DMS', detail: 'المستند {doc} · {site} · نسخة معتمدة إلكترونيًا' },
-  { type: 'inspection', tone: 'good', sourceId: SOURCES.pm, weight: 1, title: 'إغلاق ملاحظة تفتيش — {zone}', detail: 'تم التحقق من تنفيذ الإجراء التصحيحي ميدانيًا وإرفاق صورة قبل/بعد' },
-  { type: 'inspection', tone: 'warning', sourceId: SOURCES.pm, weight: 1, title: 'تذكير: {inspectionType} مستحق غدًا — {site}', detail: 'المفتش {inspector} · يُرجى تجهيز سجلات المعدات' },
+  { type: 'inspection', tone: 'good', sourceId: SOURCES.pm, weight: 3, title: 'اعتماد {inspectionType} — {site}', detail: 'المفتش {inspector} · اكتمال قائمة التحقق ({checklist} بندًا)', titleEn: '{inspectionType} approved — {site}', detailEn: 'Inspector {inspector} · checklist complete ({checklist} items)' },
+  { type: 'inspection', tone: 'accent', sourceId: SOURCES.pm, weight: 2, title: 'بدء {inspectionType} — {zone}', detail: 'المفتش {inspector} · قائمة تحقق من {checklist} بندًا', titleEn: '{inspectionType} started — {zone}', detailEn: 'Inspector {inspector} · {checklist}-item checklist' },
+  { type: 'inspection', tone: 'accent', sourceId: SOURCES.dms, weight: 2, title: 'رفع تقرير {inspectionType} إلى Biltix DMS', detail: 'المستند {doc} · {site} · نسخة معتمدة إلكترونيًا', titleEn: '{inspectionType} report filed in BILTIX DMS', detailEn: 'Document {doc} · {site} · electronically approved copy' },
+  { type: 'inspection', tone: 'good', sourceId: SOURCES.pm, weight: 1, title: 'إغلاق ملاحظة تفتيش — {zone}', detail: 'تم التحقق من تنفيذ الإجراء التصحيحي ميدانيًا وإرفاق صورة قبل/بعد', titleEn: 'Inspection finding closed — {zone}', detailEn: 'Corrective action verified in the field with before/after photos attached' },
+  { type: 'inspection', tone: 'warning', sourceId: SOURCES.pm, weight: 1, title: 'تذكير: {inspectionType} مستحق غدًا — {site}', detail: 'المفتش {inspector} · يُرجى تجهيز سجلات المعدات', titleEn: 'Reminder: {inspectionType} due tomorrow — {site}', detailEn: 'Inspector {inspector} · please prepare the equipment records' },
   // ── training (HRMS)
-  { type: 'training', tone: 'good', sourceId: SOURCES.hrms, weight: 3, title: 'إتمام دورة «{course}» — {worker}', detail: 'شهادة سارية 12 شهرًا · {site}' },
-  { type: 'training', tone: 'warning', sourceId: SOURCES.hrms, weight: 2, title: 'تذكير بانتهاء شهادة «{course}»', detail: 'العامل {worker} — تنتهي خلال {days} يومًا · {site}' },
-  { type: 'training', tone: 'accent', sourceId: SOURCES.hrms, weight: 1, title: 'تسجيل {n} عمال في دورة «{course}»', detail: 'جلسة صباحية في مركز التدريب — {site}' },
-  { type: 'training', tone: 'accent', sourceId: SOURCES.pm, weight: 2, title: 'اجتماع صندوق الأدوات (Toolbox Talk) — {zone}', detail: 'موضوع اليوم: {topic} · حضور {n2} عاملًا' },
-  // ── integrations
-  { type: 'integration', tone: 'good', weight: 3, title: 'مزامنة ناجحة مع {integration}', detail: 'معالجة {n2} حدثًا خلال آخر 10 دقائق · زمن الاستجابة {latency} مللي ثانية' },
-  { type: 'integration', tone: 'accent', weight: 1, title: 'تجديد رموز الوصول لـ {integration}', detail: 'تم تجديد الرمز تلقائيًا؛ الاتصال مستقر' },
-  { type: 'integration', tone: 'warning', weight: 1, title: 'تأخر طفيف في مزامنة {integration}', detail: 'زمن الاستجابة {latencyHigh} مللي ثانية — ضمن حدود اتفاقية مستوى الخدمة' },
+  { type: 'training', tone: 'good', sourceId: SOURCES.hrms, weight: 3, title: 'إتمام دورة «{course}» — {worker}', detail: 'شهادة سارية 12 شهرًا · {site}', titleEn: 'Course "{course}" completed — {worker}', detailEn: 'Certificate valid for 12 months · {site}' },
+  { type: 'training', tone: 'warning', sourceId: SOURCES.hrms, weight: 2, title: 'تذكير بانتهاء شهادة «{course}»', detail: 'العامل {worker} — تنتهي خلال {days} يومًا · {site}', titleEn: 'Certificate expiry reminder: "{course}"', detailEn: 'Worker {worker} — expires in {days} days · {site}' },
+  { type: 'training', tone: 'accent', sourceId: SOURCES.hrms, weight: 1, title: 'تسجيل {n} عمال في دورة «{course}»', detail: 'جلسة صباحية في مركز التدريب — {site}', titleEn: '{n} workers enrolled in "{course}"', detailEn: 'Morning session at the training centre — {site}' },
+  { type: 'training', tone: 'accent', sourceId: SOURCES.pm, weight: 2, title: 'اجتماع صندوق الأدوات (Toolbox Talk) — {zone}', detail: 'موضوع اليوم: {topic} · حضور {n2} عاملًا', titleEn: 'Toolbox talk — {zone}', detailEn: "Today's topic: {topic} · {n2} workers attended" },
+  // ── integrations (demo build: every sync is SIMULATED — no external system is called; CONTRACT §5)
+  { type: 'integration', tone: 'accent', weight: 3, title: 'محاكاة: مزامنة {integration}', detail: 'حدث تجريبي — {n2} حدثًا افتراضيًا خلال آخر 10 دقائق · زمن استجابة افتراضي {latency} مللي ثانية', titleEn: 'Simulated: {integration} sync', detailEn: 'Demo event — {n2} illustrative events in the last 10 minutes · illustrative latency {latency} ms' },
+  { type: 'integration', tone: 'accent', weight: 1, title: 'محاكاة: تجديد رمز الوصول لـ {integration}', detail: 'حدث تجريبي — لا يوجد اتصال فعلي في العرض التجريبي', titleEn: 'Simulated: access-token refresh for {integration}', detailEn: 'Demo event — there is no real connection in the demo build' },
+  { type: 'integration', tone: 'warning', weight: 1, title: 'محاكاة: تأخر مزامنة {integration}', detail: 'زمن استجابة افتراضي {latencyHigh} مللي ثانية — قيمة توضيحية', titleEn: 'Simulated: {integration} sync delayed', detailEn: 'Illustrative latency {latencyHigh} ms' },
   // ── PPE (smart cameras)
-  { type: 'ppe', tone: 'serious', sourceId: SOURCES.cctv, weight: 2, title: 'كاميرا ذكية: رصد عامل بدون خوذة — {zone}', detail: 'إشعار فوري للمشرف المناوب وتوثيق اللقطة' },
-  { type: 'ppe', tone: 'good', sourceId: SOURCES.cctv, weight: 3, title: 'كاميرا ذكية: التحقق من ارتداء أحزمة الأمان — {zone}', detail: 'العمال على المنصة ({n}) مربوطون بنقاط التثبيت المعتمدة' },
-  { type: 'ppe', tone: 'warning', sourceId: SOURCES.cctv, weight: 2, title: 'كاميرا ذكية: سترة عاكسة مفقودة قرب طريق المعدات — {zone}', detail: 'تنبيه صوتي عبر السماعة الميدانية وتصحيح فوري' },
-  { type: 'ppe', tone: 'good', sourceId: SOURCES.cctv, weight: 3, title: 'كاميرا ذكية: التزام كامل بمعدات الوقاية — {zone}', detail: 'فحص {n2} عاملًا خلال آخر 15 دقيقة دون مخالفات' },
-  { type: 'ppe', tone: 'warning', sourceId: SOURCES.cctv, weight: 1, title: 'نظارات واقية غير مستخدمة أثناء القطع — {zone}', detail: 'إيقاف العمل مؤقتًا حتى تصحيح الوضع وإعادة التوجيه' },
+  { type: 'ppe', tone: 'serious', sourceId: SOURCES.cctv, weight: 2, title: 'كاميرا ذكية: رصد عامل بدون خوذة — {zone}', detail: 'إشعار فوري للمشرف المناوب وتوثيق اللقطة', titleEn: 'Smart camera: worker without a helmet — {zone}', detailEn: 'Duty supervisor notified and the frame recorded' },
+  { type: 'ppe', tone: 'good', sourceId: SOURCES.cctv, weight: 3, title: 'كاميرا ذكية: التحقق من ارتداء أحزمة الأمان — {zone}', detail: 'العمال على المنصة ({n}) مربوطون بنقاط التثبيت المعتمدة', titleEn: 'Smart camera: harness use verified — {zone}', detailEn: 'Workers on the platform ({n}) are tied off to approved anchor points' },
+  { type: 'ppe', tone: 'warning', sourceId: SOURCES.cctv, weight: 2, title: 'كاميرا ذكية: سترة عاكسة مفقودة قرب طريق المعدات — {zone}', detail: 'تنبيه صوتي عبر السماعة الميدانية وتصحيح فوري', titleEn: 'Smart camera: missing hi-vis vest near the equipment road — {zone}', detailEn: 'Audio warning through the field speaker and immediate correction' },
+  { type: 'ppe', tone: 'good', sourceId: SOURCES.cctv, weight: 3, title: 'كاميرا ذكية: التزام كامل بمعدات الوقاية — {zone}', detail: 'فحص {n2} عاملًا خلال آخر 15 دقيقة دون مخالفات', titleEn: 'Smart camera: full PPE compliance — {zone}', detailEn: '{n2} workers checked in the last 15 minutes with no violations' },
+  { type: 'ppe', tone: 'warning', sourceId: SOURCES.cctv, weight: 1, title: 'نظارات واقية غير مستخدمة أثناء القطع — {zone}', detail: 'إيقاف العمل مؤقتًا حتى تصحيح الوضع وإعادة التوجيه', titleEn: 'Safety glasses not worn during cutting — {zone}', detailEn: 'Work paused until corrected and the crew re-briefed' },
   // ── weather (NCM)
-  { type: 'weather', tone: 'accent', sourceId: SOURCES.weather, weight: 3, title: 'تحديث الأرصاد — {site}', detail: 'الحرارة {temp}° · الرطوبة {humidity}% · WBGT {wbgt}° · رياح {wind} كم/س' },
-  { type: 'weather', tone: 'warning', sourceId: SOURCES.weather, weight: 2, title: 'تنبيه رياح: {windHigh} كم/س — {site}', detail: 'إيقاف عمليات الرفع بالرافعات البرجية عند تجاوز 38 كم/س وتأمين الأحمال المعلقة' },
-  { type: 'weather', tone: 'warning', sourceId: SOURCES.weather, weight: 1, title: 'تنبيه إجهاد حراري — WBGT {wbgtHigh}°', detail: 'تفعيل جدول الراحة 15 دقيقة كل ساعة وتوفير مياه باردة — {site}' },
-  { type: 'weather', tone: 'warning', sourceId: SOURCES.weather, weight: 1, title: 'تنبيه غبار — انخفاض مدى الرؤية قرب {site}', detail: 'توصية بإيقاف حركة المعدات الثقيلة حتى تحسّن الرؤية وارتداء كمامات N95' },
+  { type: 'weather', tone: 'accent', sourceId: SOURCES.weather, weight: 3, title: 'تحديث الأرصاد — {site}', detail: 'الحرارة {temp}° · الرطوبة {humidity}% · WBGT {wbgt}° · رياح {wind} كم/س', titleEn: 'Weather update — {site}', detailEn: 'Temperature {temp}° · humidity {humidity}% · WBGT {wbgt}° · wind {wind} km/h' },
+  { type: 'weather', tone: 'warning', sourceId: SOURCES.weather, weight: 2, title: 'تنبيه رياح: {windHigh} كم/س — {site}', detail: 'إيقاف عمليات الرفع بالرافعات البرجية عند تجاوز 38 كم/س وتأمين الأحمال المعلقة', titleEn: 'Wind warning: {windHigh} km/h — {site}', detailEn: 'Tower-crane lifting stops above 38 km/h and suspended loads are secured' },
+  { type: 'weather', tone: 'warning', sourceId: SOURCES.weather, weight: 1, title: 'تنبيه إجهاد حراري — WBGT {wbgtHigh}°', detail: 'تفعيل جدول الراحة 15 دقيقة كل ساعة وتوفير مياه باردة — {site}', titleEn: 'Heat-stress warning — WBGT {wbgtHigh}°', detailEn: 'Rest schedule of 15 minutes per hour activated and cold water provided — {site}' },
+  { type: 'weather', tone: 'warning', sourceId: SOURCES.weather, weight: 1, title: 'تنبيه غبار — انخفاض مدى الرؤية قرب {site}', detail: 'توصية بإيقاف حركة المعدات الثقيلة حتى تحسّن الرؤية وارتداء كمامات N95', titleEn: 'Dust warning — reduced visibility near {site}', detailEn: 'Stop heavy-equipment movement until visibility improves and wear N95 masks' },
   // ── alerts (access control / wearables)
-  { type: 'alert', tone: 'warning', sourceId: SOURCES.wear, weight: 2, title: 'جهاز قابل للارتداء: نبض مرتفع للعامل {worker}', detail: 'توجيه إلى منطقة الراحة المكيفة — {zone}' },
-  { type: 'alert', tone: 'serious', sourceId: SOURCES.access, weight: 1, title: 'بوابة الدخول: محاولة دخول بشهادة منتهية', detail: 'رُفض الدخول وتم إشعار المشرف — {site}' },
-  { type: 'alert', tone: 'accent', sourceId: SOURCES.access, weight: 3, title: 'عدد العاملين داخل الموقع: {headcount}', detail: 'تحديث بوابات الحضور — {site}' },
-  { type: 'alert', tone: 'good', sourceId: SOURCES.wear, weight: 1, title: 'زر الطوارئ: اختبار دوري ناجح — {zone}', detail: 'زمن استجابة غرفة التحكم {n} ثانية' },
-  { type: 'alert', tone: 'accent', sourceId: SOURCES.wear, weight: 1, title: 'رصد سقوط محتمل — تم التحقق: إنذار كاذب', detail: 'العامل {worker} بخير؛ الجهاز اهتز أثناء النزول من السلم — {zone}' },
+  { type: 'alert', tone: 'warning', sourceId: SOURCES.wear, weight: 2, title: 'جهاز قابل للارتداء: نبض مرتفع للعامل {worker}', detail: 'توجيه إلى منطقة الراحة المكيفة — {zone}', titleEn: 'Wearable: high heart rate for worker {worker}', detailEn: 'Sent to the air-conditioned rest area — {zone}' },
+  { type: 'alert', tone: 'serious', sourceId: SOURCES.access, weight: 1, title: 'بوابة الدخول: محاولة دخول بشهادة منتهية', detail: 'رُفض الدخول وتم إشعار المشرف — {site}', titleEn: 'Access gate: entry attempt with an expired certificate', detailEn: 'Entry refused and the supervisor notified — {site}' },
+  { type: 'alert', tone: 'accent', sourceId: SOURCES.access, weight: 3, title: 'عدد العاملين داخل الموقع: {headcount}', detail: 'تحديث بوابات الحضور — {site}', titleEn: 'Workers on site: {headcount}', detailEn: 'Attendance gates update — {site}' },
+  { type: 'alert', tone: 'good', sourceId: SOURCES.wear, weight: 1, title: 'زر الطوارئ: اختبار دوري — {zone}', detail: 'زمن استجابة غرفة التحكم {n} ثانية', titleEn: 'Emergency button: routine test — {zone}', detailEn: 'Control-room response time {n} seconds' },
+  { type: 'alert', tone: 'accent', sourceId: SOURCES.wear, weight: 1, title: 'رصد سقوط محتمل — تم التحقق: إنذار كاذب', detail: 'العامل {worker} بخير؛ الجهاز اهتز أثناء النزول من السلم — {zone}', titleEn: 'Possible fall detected — verified: false alarm', detailEn: 'Worker {worker} is fine; the device was jolted on the stairs — {zone}' },
 ];
+
+/** Generic English label per feed type (fallback when a seed phrase has no dictionary twin). */
+const FEED_TYPE_EN = Object.freeze({
+  sensor: 'Sensor update', permit: 'Permit update', incident: 'Incident update', nearmiss: 'Near-miss report', inspection: 'Inspection update',
+  training: 'Training update', integration: 'Simulated integration update', ppe: 'PPE observation', weather: 'Weather update', alert: 'Site alert',
+});
 
 /** Relative frequency of each feed type. */
 const TYPE_WEIGHTS = Object.freeze({
@@ -468,10 +481,14 @@ const TYPE_WEIGHTS = Object.freeze({
 function seedTemplates() {
   const list = arr(state().feedTemplates);
   const out = [];
-  for (const t of list) {
+  for (let index = 0; index < list.length; index += 1) {
+    const t = list[index];
     if (!t) continue;
+    // English twin from the data dictionary mirror (feedTemplates.<index>.title/detail) — same placeholders.
+    const titleEn = dataEn('feedTemplates', String(index), 'title') || dataEn('feedTemplates', index, 'title');
+    const detailEn = dataEn('feedTemplates', String(index), 'detail') || dataEn('feedTemplates', index, 'detail');
     if (typeof t === 'string') {
-      out.push({ type: 'alert', tone: 'accent', title: t, detail: '', weight: 1, fromSeed: true });
+      out.push({ type: 'alert', tone: 'accent', title: t, detail: '', titleEn, detailEn: '', weight: 1, fromSeed: true });
       continue;
     }
     if (typeof t !== 'object') continue;
@@ -483,6 +500,8 @@ function seedTemplates() {
       sourceId: t.sourceId || t.source || undefined,
       title,
       detail: typeof t.detail === 'string' ? t.detail : '',
+      titleEn,
+      detailEn,
       weight: num(t.weight, 1),
       fromSeed: true,
     });
@@ -494,7 +513,7 @@ let templateCache = { key: null, byType: null };
 
 function templatesByType() {
   const seedList = seedTemplates();
-  const key = seedList.length;
+  const key = `${seedList.length}:${seedList.filter((t) => t.titleEn).length}`;
   if (templateCache.byType && templateCache.key === key) return templateCache.byType;
   const byType = new Map();
   for (const t of [...TEMPLATES, ...seedList]) {
@@ -550,13 +569,20 @@ function workersOf(siteId) {
 }
 
 function workerName(siteId) {
-  const w = pick(workersOf(siteId));
-  return (w && w.name) || pick(FALLBACK_WORKERS);
+  return pickWorker(siteId).name;
 }
 
-function courseName() {
+/** Worker record + display names in both languages (English: dictionary name, else the badge code). */
+function pickWorker(siteId) {
+  const w = pick(workersOf(siteId));
+  if (w && w.name) return { name: w.name, nameEn: workerEn(w), rec: w };
+  return { name: pick(FALLBACK_WORKERS), nameEn: 'a site worker', rec: null };
+}
+
+function pickCourse() {
   const c = pick(arr(state().courses));
-  return (c && c.name) || pick(FALLBACK_COURSES);
+  if (c && c.name) return { name: c.name, nameEn: courseEn(c), rec: c };
+  return { name: pick(FALLBACK_COURSES), nameEn: 'a safety course', rec: null };
 }
 
 function openIncidentOf(siteId) {
@@ -633,7 +659,8 @@ function buildContext() {
     minutes: randInt(10, 55),
     headcount: Math.round(num(site && site.workers, 300) * randBetween(0.78, 0.97)),
   };
-  return {
+  const R = {};
+  const ctx = {
     // raw entities (used by the seed-template resolver)
     raw: {
       site,
@@ -692,8 +719,8 @@ function buildContext() {
     integrationId: integration ? integration.id : SOURCES.pm,
     latency: n0(numbers.latency),
     latencyHigh: n0(numbers.latencyHigh),
-    worker: workerName(siteId),
-    course: courseName(),
+    worker: (R.worker = pickWorker(siteId)).name,
+    course: (R.course = pickCourse()).name,
     inspection: inspection ? nbh(inspection.code) : '',
     inspectionCode: inspection ? inspection.code : '',
     inspectionId: inspection ? inspection.id : null,
@@ -712,23 +739,100 @@ function buildContext() {
     minutes: n0(numbers.minutes),
     headcount: n0(numbers.headcount),
     temp: n0(temp),
-    humidity: n0(randInt(18, 62)),
+    humidity: n0(R.humidity = randInt(18, 62)),
     wind: n0(wind),
-    windHigh: n0(randInt(39, 52)),
+    windHigh: n0(R.windHigh = randInt(39, 52)),
     wbgt: n0(wbgt),
-    wbgtHigh: n1(randBetween(30.5, 33.5)),
-    o2: n1(randBetween(20.6, 20.9)),
-    h2s: n0(randInt(0, 2)),
-    co: n0(randInt(0, 3)),
-    topic: pick(TOOLBOX_TOPICS),
-    doc: nbh(`DMS-${randInt(10_000, 99_999)}`),
+    wbgtHigh: n1(R.wbgtHigh = randBetween(30.5, 33.5)),
+    o2: n1(R.o2 = randBetween(20.6, 20.9)),
+    h2s: n0(R.h2s = randInt(0, 2)),
+    co: n0(R.co = randInt(0, 3)),
+    topic: TOOLBOX_TOPICS[R.topic = Math.floor(rand() * TOOLBOX_TOPICS.length)],
+    doc: nbh(R.doc = `DMS-${randInt(10_000, 99_999)}`),
   };
+  ctx.en = englishContext(ctx, R, { temp, wind, wbgt, displayValue });
+  return ctx;
+}
+
+/** Latin-digit number for English copy. */
+function enNum(v, digits = 0) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '';
+  return n.toLocaleString('en-US', { maximumFractionDigits: digits, minimumFractionDigits: 0 });
+}
+
+/**
+ * English values for every placeholder of buildContext() (CONTRACT §8: every event is bilingual).
+ * Names come from the data dictionaries via vocab-en.js; never Arabic.
+ */
+function englishContext(ctx, R, extra) {
+  const raw = ctx.raw || {};
+  const nums = raw.numbers || {};
+  const site = raw.site;
+  const zone = raw.zone;
+  const permit = raw.permit;
+  const pending = raw.pending;
+  const sensor = raw.sensor;
+  const inspection = raw.inspection;
+  const incident = raw.incident;
+  const integration = raw.integration;
+  const permitLoc = (p) => (p ? dataEn('permits', p.id, 'location') || zoneEn((site && arr(site.zones).find((z) => z.id === p.zoneId)) || null, site) || p.code : '');
+  return {
+    site: site ? siteEn(site) : '',
+    zone: zone ? zoneEn(zone, site) : (site ? siteEn(site) : ''),
+    permitType: permit ? enumEn('permitType', permit.type, 'permit') : '',
+    permitLocation: permitLoc(permit),
+    approver: personEn(permit ? permit.approver : (site ? site.hseLead || site.manager : ''), 'the approver'),
+    requester: personEn(permit ? permit.requester : '', 'the requester'),
+    workersCount: enNum(nums.workersCount),
+    permitPendingType: pending ? enumEn('permitType', pending.type, 'permit') : '',
+    permitPendingLocation: permitLoc(pending),
+    permitPendingApprover: personEn(pending ? pending.approver : '', 'the approver'),
+    sensor: sensor ? enumEn('sensorKind', sensor.kind, 'Sensor') : 'Dust (PM2.5)',
+    value: enNum(sensor ? extra.displayValue : nums.value, 1),
+    unit: sensor ? unitEn(sensor.unit) : '',
+    threshold: sensor ? enNum(sensor.threshold, 1) : '',
+    integration: integration ? integrationEn(integration) : 'BILTIX project management platform',
+    latency: enNum(nums.latency),
+    latencyHigh: enNum(nums.latencyHigh),
+    worker: R.worker ? R.worker.nameEn : 'a site worker',
+    course: R.course ? R.course.nameEn : 'a safety course',
+    inspectionType: enumEn('inspectionType', ctx.inspectionType, 'Inspection'),
+    inspector: personEn(inspection ? inspection.inspector : (site ? site.hseLead || site.manager : ''), 'the inspector'),
+    checklist: enNum(nums.checklist),
+    incidentTitle: incident ? dataEn('incidents', incident.id, 'title') || latinOnly(incident.titleEn) || incident.code : '',
+    n: enNum(nums.n),
+    n2: enNum(nums.n2),
+    pct: enNum(nums.pct),
+    days: enNum(nums.days),
+    hours: enNum(nums.hours),
+    minutes: enNum(nums.minutes),
+    headcount: enNum(nums.headcount),
+    temp: enNum(extra.temp),
+    humidity: enNum(R.humidity),
+    wind: enNum(extra.wind),
+    windHigh: enNum(R.windHigh),
+    wbgt: enNum(extra.wbgt),
+    wbgtHigh: enNum(R.wbgtHigh, 1),
+    o2: enNum(R.o2, 1),
+    h2s: enNum(R.h2s),
+    co: enNum(R.co),
+    topic: TOOLBOX_TOPICS_EN[R.topic] || 'site safety',
+    doc: R.doc || '',
+  };
+}
+
+/** fill() for the English twin: English values override the Arabic ones key by key. */
+function fillEn(text, ctx) {
+  if (!text) return '';
+  return fill(text, { ...ctx, ...(ctx.en || {}) });
 }
 
 /** Raw-number helper for seed-template contexts: formatted text + raw payload in one go. */
 function setValue(ctx, raw, unit, digits = 0) {
   ctx.value = digits ? n1(raw) : n0(raw);
   ctx.unit = unit;
+  if (ctx.en) { ctx.en.value = enNum(raw, digits ? 1 : 0); ctx.en.unit = unitEn(unit); }
   if (!ctx.payload) ctx.payload = {};
   ctx.payload.value = raw;
   if (unit) ctx.payload.unit = unit;
@@ -739,6 +843,7 @@ function setCode(ctx, entity) {
   ctx.code = nbh(entity.code);
   ctx.rawCode = String(entity.code || '');
   ctx.refId = entity.id ?? null;
+  if (ctx.en) ctx.en.code = nbh(entity.code);
   return ctx;
 }
 
@@ -773,7 +878,9 @@ function kindCompatible(phrase, kind) {
 function seedContext(t, base) {
   const raw = base.raw || {};
   const phrase = `${t.title} ${t.detail}`;
-  const ctx = { ...base, payload: { ...(base.payload || {}) } };
+  const ctx = { ...base, payload: { ...(base.payload || {}) }, en: { ...(base.en || {}) } };
+  const siteOf = (id) => siteById(id);
+  const zoneOf = (siteId, zoneId) => { const st = siteOf(siteId); return st ? arr(st.zones).find((z) => z && z.id === zoneId) || null : null; };
   // State-changing "critical" phrases are produced by the engine itself with real data.
   if (t.tone === 'critical') return null;
   switch (t.type) {
@@ -783,8 +890,9 @@ function seedContext(t, base) {
       if (t.tone === 'warning' && base.sensorRatio < 0.7) return null;
       if (/عودة|الطبيعي/.test(phrase) && base.sensorRatio > 0.6) return null;
       ctx.code = m.kind; ctx.rawCode = m.code || m.id; ctx.refId = m.id;
+      ctx.en.code = enumEn('sensorKind', m.kind, 'Sensor');
       setValue(ctx, round(raw.displayValue, 2), m.unit, 1);
-      if (m.zoneId) ctx.zone = zoneName(m.siteId, m.zoneId) || ctx.zone;
+      if (m.zoneId) { ctx.zone = zoneName(m.siteId, m.zoneId) || ctx.zone; ctx.en.zone = zoneEn(zoneOf(m.siteId, m.zoneId), siteOf(m.siteId)) || ctx.en.zone; }
       break;
     }
     case 'permit': {
@@ -806,6 +914,8 @@ function seedContext(t, base) {
       setCode(ctx, p); ctx.siteId = p.siteId;
       ctx.site = (siteById(p.siteId) || {}).name || ctx.site;
       ctx.zone = p.location || zoneName(p.siteId, p.zoneId) || ctx.zone;
+      ctx.en.site = siteEn(siteOf(p.siteId)) || ctx.en.site;
+      ctx.en.zone = dataEn('permits', p.id, 'location') || zoneEn(zoneOf(p.siteId, p.zoneId), siteOf(p.siteId)) || ctx.en.zone;
       break;
     }
     case 'incident': {
@@ -814,6 +924,8 @@ function seedContext(t, base) {
       setCode(ctx, i); ctx.siteId = i.siteId;
       ctx.site = (siteById(i.siteId) || {}).name || ctx.site;
       ctx.zone = i.location || zoneName(i.siteId, i.zoneId) || ctx.zone;
+      ctx.en.site = siteEn(siteOf(i.siteId)) || ctx.en.site;
+      ctx.en.zone = dataEn('incidents', i.id, 'location') || latinOnly(i.locationEn) || zoneEn(zoneOf(i.siteId, i.zoneId), siteOf(i.siteId)) || ctx.en.site;
       break;
     }
     case 'inspection': {
@@ -825,6 +937,8 @@ function seedContext(t, base) {
       setCode(ctx, ins); ctx.siteId = ins.siteId;
       ctx.site = (siteById(ins.siteId) || {}).name || ctx.site;
       ctx.zone = zoneName(ins.siteId, ins.zoneId) || ctx.zone;
+      ctx.en.site = siteEn(siteOf(ins.siteId)) || ctx.en.site;
+      ctx.en.zone = zoneEn(zoneOf(ins.siteId, ins.zoneId), siteOf(ins.siteId)) || ctx.en.zone;
       break;
     }
     case 'training': {
@@ -838,6 +952,7 @@ function seedContext(t, base) {
       if (!g) return null;
       if (/استعادة/.test(phrase) && g.status !== 'connected') return null;
       ctx.code = g.name; ctx.rawCode = g.id; ctx.siteId = null;
+      ctx.en.code = integrationEn(g);
       if (/الاستجابة/.test(phrase)) { const ms = Math.max(20, num(g.latencyMs, 120)); setValue(ctx, ms, 'مللي ثانية'); ctx.payload.ms = ms; }
       else setValue(ctx, randInt(12, 180), '');
       ctx.sourceId = g.id;
@@ -856,7 +971,7 @@ function seedContext(t, base) {
     case 'alert': {
       if (/تجاوز الحد/.test(phrase)) setValue(ctx, randInt(22, 40), '');
       const ap = `AP-${randInt(1, 4)}`;
-      ctx.code = nbh(ap); ctx.rawCode = ap;
+      ctx.code = nbh(ap); ctx.rawCode = ap; ctx.en.code = nbh(ap);
       break;
     }
     default:
@@ -900,12 +1015,21 @@ function emitRandomFeed() {
       else if (/\{inspection\}/.test(text)) { code = ctx.inspectionCode; refId = ctx.inspectionId; }
       else if (/\{sensor\}|\{value\}/.test(text) && ctx.sensorId) { refId = ctx.sensorId; }
     }
+    let titleEn = fillEn(template.titleEn, ctx) || `${FEED_TYPE_EN[type] || 'Site update'}${code ? ` — ${code}` : ''}`;
+    // Connector phrases from the seed describe syncs that never happen in the demo build: say so (CONTRACT §5).
+    let titleOut = title;
+    if (type === 'integration' && template.fromSeed) {
+      if (!/^محاكاة/.test(titleOut)) titleOut = `محاكاة: ${titleOut}`;
+      if (!/^Simulated/i.test(titleEn)) titleEn = `Simulated: ${titleEn}`;
+    }
     return emitFeed({
       type,
       tone: template.tone,
       siteId: ctx.siteId,
-      title,
+      title: titleOut,
+      titleEn,
       detail: fill(template.detail, ctx),
+      detailEn: fillEn(template.detailEn, ctx) || (ctx.en && ctx.en.site) || '',
       sourceId: sourceId || null,
       code: code || undefined,
       refId: refId || undefined,
@@ -1099,12 +1223,21 @@ function raiseSensorAlert(m, now) {
   const direction = low ? 'انخفضت دون الحد الأدنى' : 'تجاوزت الحد المسموح';
   const title = `قراءة ${m.kind} ${direction} (${n1(limit)} ${m.unit})`;
   const detail = `القيمة الحالية ${n1(m.value)} ${m.unit} — ${where || 'الموقع'} · حسّاس ${nbh(m.code)} · إخلاء احترازي للمنطقة والتحقق الميداني`;
+  const zoneRec = site ? arr(site.zones).find((z) => z && z.id === m.zoneId) || null : null;
+  const zoneEnName = zoneRec ? zoneEn(zoneRec, site) : '';
+  const whereEn = [dataEn('sensors', m.id, 'location') || zoneEnName, site ? siteEn(site) : ''].filter(Boolean).join(' · ');
+  const kindEn = enumEn('sensorKind', m.kind, 'Sensor');
+  const titleEn = `Simulated: ${kindEn} reading ${low ? 'fell below the minimum' : 'exceeded the limit'} (${enNum(limit, 1)} ${unitEn(m.unit)})`;
+  const detailEn = `Current value ${enNum(m.value, 1)} ${unitEn(m.unit)} — ${whereEn || 'site'} · sensor ${nbh(m.code)} · precautionary area clearance and field check`;
   emitBus('alert', {
     severity: 'critical',
     tone: 'critical',
     kind: 'sensor',
+    simulated: true,
     title,
     detail,
+    titleEn,
+    detailEn,
     siteId: m.siteId,
     zoneId: m.zoneId,
     sensorId: m.id,
@@ -1121,7 +1254,9 @@ function raiseSensorAlert(m, now) {
     tone: 'critical',
     siteId: m.siteId,
     title: `${title} — ${zone || (site ? site.name : '')}`,
+    titleEn: `${titleEn} — ${zoneEnName || (site ? siteEn(site) : '')}`,
     detail,
+    detailEn,
     sourceId: SOURCES.iot,
     refId: m.id,
     code: m.code,
@@ -1134,6 +1269,7 @@ function raiseSensorAlert(m, now) {
     id: `det-${m.id}-${now.toString(36)}`,
     code: m.id,
     label: `${m.kind} — ${zone || (site ? site.name : '')}`,
+    labelEn: `${kindEn} — ${zoneEnName || (site ? siteEn(site) : '')}`,
     categoryId: m.categoryId,
     tone: 'critical',
     r: randBetween(0.16, 0.3),
@@ -1182,6 +1318,7 @@ function addTransient(blip, now = Date.now()) {
     id: blip.id,
     code: blip.code,
     label: blip.label,
+    labelEn: blip.labelEn || blip.code || '',
     angle: round(((sectorAngle(blip.categoryId) + randBetween(-11, 11)) % 360 + 360) % 360, 2),
     r: round(clamp(blip.r, 0.1, 0.94), 4),
     tier: blip.tone === 'critical' ? 'حرج' : (blip.tone === 'serious' ? 'عالٍ' : 'متوسط'),
@@ -1221,7 +1358,9 @@ function permitStep(now = Date.now()) {
         tone: 'warning',
         siteId: p.siteId,
         title: `تصريح ${nbh(p.code)} يقترب من الانتهاء خلال ${n0(minutes)} دقيقة`,
+        titleEn: `Permit ${nbh(p.code)} expires in ${enNum(minutes)} minutes`,
         detail: `${p.type} — ${p.location || ''} · ينتهي ${safeTime(p.expiresAt)} · يلزم الإقفال أو التمديد قبل الموعد`,
+        detailEn: `${enumEn('permitType', p.type, 'Permit')} — ${dataEn('permits', p.id, 'location') || siteEn(siteById(p.siteId))} · close out or extend before expiry`,
         sourceId: SOURCES.pm,
         refId: p.id,
         code: p.code,
@@ -1280,7 +1419,9 @@ function issueReplacement(p, now) {
       gasTest,
       replaces: p.code,
       simulated: true,
+      locationEn: dataEn('permits', p.id, 'location') || p.locationEn || '',
       source: 'المحاكاة الحية — تصريح بديل',
+      sourceEn: 'Live simulation — replacement permit',
     });
   } catch (err) {
     warn('addPermit', err);
@@ -1291,7 +1432,9 @@ function issueReplacement(p, now) {
     tone: 'accent',
     siteId: p.siteId,
     title: `انتهاء صلاحية التصريح ${nbh(p.code)} — إغلاق تلقائي`,
+    titleEn: `Permit ${nbh(p.code)} expired — closed automatically`,
     detail: `تم إصدار تصريح جديد ${nbh(created.code)} (${p.type}) بديلاً عنه حتى ${safeTime(created.expiresAt)} · ${p.location || ''}`,
+    detailEn: `Simulated replacement permit ${nbh(created.code)} (${enumEn('permitType', p.type, 'permit')}) issued · ${dataEn('permits', p.id, 'location') || siteEn(siteById(p.siteId))}`,
     sourceId: SOURCES.pm,
     refId: created.id,
     code: created.code,
@@ -1369,8 +1512,10 @@ function integrationStep(now = Date.now()) {
         type: 'integration',
         tone: 'good',
         siteId: null,
-        title: `استعادة الاتصال الكامل مع ${g.name}`,
-        detail: `عاد زمن الاستجابة إلى ${n0(latency)} مللي ثانية بعد فترة تدهور استمرت نحو دقيقتين · اكتملت إعادة مزامنة الأحداث المتأخرة`,
+        title: `محاكاة: انتهاء حالة التدهور في ${g.name}`,
+        titleEn: `Simulated: ${integrationEn(g)} back to normal`,
+        detail: `قيمة توضيحية: زمن الاستجابة ${n0(latency)} مللي ثانية بعد نحو دقيقتين من التدهور — لا يوجد اتصال فعلي في العرض التجريبي`,
+        detailEn: `Illustrative value: latency ${enNum(latency)} ms after about two minutes degraded — there is no real connection in the demo build`,
         sourceId: g.id,
         ms: latency,
         value: latency,
@@ -1394,8 +1539,10 @@ function integrationStep(now = Date.now()) {
         type: 'integration',
         tone: 'warning',
         siteId: null,
-        title: `تدهور أداء ${victim.name}`,
-        detail: `ارتفاع زمن الاستجابة إلى ${n0(latency)} مللي ثانية — إعادة المحاولة تلقائيًا كل 30 ثانية`,
+        title: `محاكاة: تدهور أداء ${victim.name}`,
+        titleEn: `Simulated: ${integrationEn(victim)} degraded`,
+        detail: `قيمة توضيحية: زمن الاستجابة ${n0(latency)} مللي ثانية — سيناريو تجريبي يعود إلى طبيعته خلال دقيقتين تقريباً`,
+        detailEn: `Illustrative value: latency ${enNum(latency)} ms — a demo scenario that recovers in about two minutes`,
         sourceId: victim.id,
         ms: latency,
         value: latency,
@@ -1410,18 +1557,18 @@ function integrationStep(now = Date.now()) {
 /* ────────────────────────────── near-miss generator ────────────────────────────── */
 
 const NEAR_MISS_SCENARIOS = [
-  { categoryId: 'height', severity: 3, title: 'سقوط مطرقة من الطابق {floor} قرب ممر العمال', description: 'انزلقت مطرقة من حزام عامل أثناء العمل على المنصة في {zone} وسقطت على بعد نحو متر من عاملين يمران أسفل المنطقة. لم تُسجّل إصابات، ولم تكن منطقة السقوط محاطة بحواجز.', location: '{zone} — الطابق {floor}', immediateCause: 'أدوات يدوية غير مربوطة بحبال تثبيت وغياب منطقة محظورة أسفل العمل', rootCause: 'إجراء عمل غير كافٍ', action: 'إلزام جميع العاملين على ارتفاع بحبال ربط الأدوات وتحديد مناطق محظورة أسفل مناطق العمل' },
-  { categoryId: 'lifting', severity: 4, title: 'تأرجح حمولة الرافعة فوق مسار المشاة', description: 'أثناء رفع رزمة حديد تسليح بوزن {weight} طن في {zone} انحرفت الحمولة بفعل هبة رياح ومرت فوق مسار المشاة المؤقت دون تفعيل منطقة الحظر. توقف المشغل فور إشارة المُشير.', location: '{zone}', immediateCause: 'عدم إغلاق مسار المشاة أثناء الرفع وعدم استخدام حبال التوجيه', rootCause: 'ضعف الإشراف', action: 'إغلاق مسارات المشاة أسفل مسار الرفع وتفعيل حبال التوجيه في كل عملية رفع' },
-  { categoryId: 'traffic', severity: 4, title: 'شاحنة ترجع للخلف قرب عامل في النقطة العمياء', description: 'لم يلاحظ سائق شاحنة خلاطة عاملًا يقف خلف المركبة في {zone}. توقفت الشاحنة على بعد أقل من متر بعد صراخ منظم الحركة. كان جرس الرجوع للخلف يعمل لكن بصوت منخفض.', location: '{zone} — طريق المعدات', immediateCause: 'وقوف العامل في النطاق الخلفي للمركبة دون منظم حركة مخصص', rootCause: 'غياب التدريب', action: 'فصل حركة المشاة عن المعدات بحواجز وتعيين منظمي حركة لكل منطقة تفريغ' },
-  { categoryId: 'electrical', severity: 3, title: 'كابل تمديد مكشوف العزل في منطقة رطبة', description: 'رُصد كابل كهربائي مؤقت بعزل متآكل يمر عبر تجمع مياه في {zone} ومتصل بلوحة توزيع مؤقتة. فُصل التيار فورًا دون وقوع إصابة.', location: '{zone}', immediateCause: 'تمديد مؤقت متضرر لم يُفحص في الجولة اليومية', rootCause: 'عطل معدات', action: 'فحص أسبوعي موثق لجميع التمديدات المؤقتة ورفعها عن الأرض على حوامل معزولة' },
-  { categoryId: 'excavation', severity: 4, title: 'انهيار جزئي لجانب خندق بعد خروج العمال', description: 'انهار جزء من الجانب الجنوبي للخندق في {zone} بطول نحو {n} أمتار بعد دقائق من خروج الفريق للاستراحة. لم يكن الجزء المنهار مدعومًا بصناديق الخنادق.', location: '{zone} — الخندق T-{n}', immediateCause: 'امتداد الحفر خارج نطاق الدعامات بعد هطول أمطار خفيفة', rootCause: 'إجراء عمل غير كافٍ', action: 'إعادة تقييم الخندق من الشخص المختص بعد كل تغير جوي ومنع الدخول خارج الجزء المدعوم' },
-  { categoryId: 'confined', severity: 4, title: 'ارتفاع قراءة الغاز أثناء العمل داخل غرفة تفتيش', description: 'أطلق جهاز قياس الغازات إنذارًا عند 9 ppm من H2S داخل غرفة التفتيش في {zone}. خرج العاملان خلال 40 ثانية وفق خطة الإنقاذ، وتم رفع التهوية القسرية.', location: '{zone}', immediateCause: 'انخفاض كفاءة مروحة التهوية القسرية بسبب انسداد خرطوم الهواء', rootCause: 'عطل معدات', action: 'فحص مروحة التهوية وخرطومها قبل كل دخول وتسجيل معدل التهوية في التصريح' },
-  { categoryId: 'hotwork', severity: 3, title: 'شرر لحام يصل إلى مواد قابلة للاشتعال', description: 'أثناء أعمال اللحام في {zone} تطاير شرر إلى كيس حماية بلاستيكي على بعد ثلاثة أمتار وبدأ بالاحتراق البطيء. أطفأه مراقب الحريق فورًا بطفاية البودرة.', location: '{zone}', immediateCause: 'عدم إزالة المواد القابلة للاشتعال من نطاق 11 مترًا', rootCause: 'إجراء عمل غير كافٍ', action: 'قائمة تحقق إلزامية قبل بدء الأعمال الساخنة تشمل تنظيف نطاق 11 مترًا' },
-  { categoryId: 'scaffold', severity: 3, title: 'عامل يصعد سقالة دون بطاقة فحص سارية', description: 'رُصد عامل يعمل على المستوى الثالث لسقالة في {zone} تحمل بطاقة حمراء بعد تعديل تمّ عليها صباحًا دون إعادة فحص. أُنزل العامل وأُغلقت السقالة.', location: '{zone}', immediateCause: 'تجاهل بطاقة السقالة الحمراء', rootCause: 'غياب التدريب', action: 'جلسة توعية ببطاقات Scafftag وتثبيت أقفال على مداخل السقالات غير المعتمدة' },
-  { categoryId: 'heat', severity: 3, title: 'أعراض إجهاد حراري لعامل في فترة الظهيرة', description: 'شعر عامل في {zone} بدوار وتشنجات عند الساعة 13:40 مع WBGT {wbgt}°. نُقل إلى منطقة الراحة المكيفة وتعافى دون الحاجة إلى علاج طبي.', location: '{zone}', immediateCause: 'العمل تحت الشمس مع استهلاك غير كافٍ للمياه', rootCause: 'ظروف بيئية', action: 'تطبيق جدول العمل/الراحة بحسب WBGT وتوزيع عبوات الأملاح الفموية' },
-  { categoryId: 'chemical', severity: 2, title: 'انسكاب محدود لمادة مذيبة دون حاوية احتواء', description: 'انقلبت عبوة مذيب سعة 20 لترًا في {zone} أثناء نقلها يدويًا وتسرب نحو 5 لترات. احتُوي الانسكاب بمواد ماصة خلال دقائق ولم يتعرض أحد للأبخرة.', location: '{zone} — منطقة تخزين المواد', immediateCause: 'نقل العبوة يدويًا دون عربة وعدم وجود حاوية احتواء ثانوية', rootCause: 'إجراء عمل غير كافٍ', action: 'توفير حاويات احتواء ثانوية وعربات نقل مخصصة للمواد الكيميائية' },
-  { categoryId: 'structural', severity: 4, title: 'تشوه في دعامة شدّات مؤقتة قبل الصب', description: 'لاحظ مشرف النجارة انبعاج دعامة معدنية في منظومة الشدات في {zone} قبل ساعة من الصب المجدول. أُوقف الصب وأُعيد تدعيم المنطقة.', location: '{zone}', immediateCause: 'تحميل مواد على الشدات فوق الحد المصمم', rootCause: 'تصميم غير آمن', action: 'تفتيش مهندس الشدات قبل كل صب ولوحات تحديد حدود التحميل على المنصات' },
-  { categoryId: 'ergonomic', severity: 2, title: 'انزلاق لوح ثقيل أثناء المناولة اليدوية', description: 'انزلق لوح جبس بوزن {weightKg} كجم من أيدي عاملين في {zone} وسقط على بعد سنتيمترات من قدم أحدهما. لم تُستخدم عربة النقل المتوفرة.', location: '{zone}', immediateCause: 'مناولة يدوية لحمل ثقيل في ممر ضيق', rootCause: 'ضغط الجدول الزمني', action: 'تخطيط مسارات نقل المواد واستخدام العربات والرافعات اليدوية للأحمال فوق 25 كجم' },
+  { categoryId: 'height', severity: 3, title: 'سقوط مطرقة من الطابق {floor} قرب ممر العمال', description: 'انزلقت مطرقة من حزام عامل أثناء العمل على المنصة في {zone} وسقطت على بعد نحو متر من عاملين يمران أسفل المنطقة. لم تُسجّل إصابات، ولم تكن منطقة السقوط محاطة بحواجز.', location: '{zone} — الطابق {floor}', immediateCause: 'أدوات يدوية غير مربوطة بحبال تثبيت وغياب منطقة محظورة أسفل العمل', rootCause: 'إجراء عمل غير كافٍ', action: 'إلزام جميع العاملين على ارتفاع بحبال ربط الأدوات وتحديد مناطق محظورة أسفل مناطق العمل', en: { title: 'Hammer fell from level {floor} near the workers\' walkway', description: 'A hammer slipped from a worker\'s belt on the platform in {zone} and landed about a metre from two workers passing below. No injuries were recorded, and the drop zone was not barricaded.', location: '{zone} — level {floor}', immediateCause: 'Hand tools not tethered and no exclusion zone below the work', action: 'Require tool lanyards for everyone working at height and mark exclusion zones below work areas' } },
+  { categoryId: 'lifting', severity: 4, title: 'تأرجح حمولة الرافعة فوق مسار المشاة', description: 'أثناء رفع رزمة حديد تسليح بوزن {weight} طن في {zone} انحرفت الحمولة بفعل هبة رياح ومرت فوق مسار المشاة المؤقت دون تفعيل منطقة الحظر. توقف المشغل فور إشارة المُشير.', location: '{zone}', immediateCause: 'عدم إغلاق مسار المشاة أثناء الرفع وعدم استخدام حبال التوجيه', rootCause: 'ضعف الإشراف', action: 'إغلاق مسارات المشاة أسفل مسار الرفع وتفعيل حبال التوجيه في كل عملية رفع', en: { title: 'Crane load swung over the pedestrian route', description: 'While lifting a {weight} t bundle of rebar in {zone}, a gust pushed the load over the temporary pedestrian route with no exclusion zone in force. The operator stopped at once on the banksman\'s signal.', location: '{zone}', immediateCause: 'Pedestrian route not closed during the lift and no tag lines used', action: 'Close pedestrian routes below the lift path and use tag lines on every lift' } },
+  { categoryId: 'traffic', severity: 4, title: 'شاحنة ترجع للخلف قرب عامل في النقطة العمياء', description: 'لم يلاحظ سائق شاحنة خلاطة عاملًا يقف خلف المركبة في {zone}. توقفت الشاحنة على بعد أقل من متر بعد صراخ منظم الحركة. كان جرس الرجوع للخلف يعمل لكن بصوت منخفض.', location: '{zone} — طريق المعدات', immediateCause: 'وقوف العامل في النطاق الخلفي للمركبة دون منظم حركة مخصص', rootCause: 'غياب التدريب', action: 'فصل حركة المشاة عن المعدات بحواجز وتعيين منظمي حركة لكل منطقة تفريغ', en: { title: 'Reversing truck close to a worker in the blind spot', description: 'A mixer-truck driver did not see a worker standing behind the vehicle in {zone}. The truck stopped less than a metre away after the traffic marshal shouted. The reversing alarm worked but was quiet.', location: '{zone} — equipment road', immediateCause: 'Worker standing in the vehicle\'s rear zone with no dedicated traffic marshal', action: 'Separate pedestrians from equipment with barriers and assign traffic marshals to every unloading area' } },
+  { categoryId: 'electrical', severity: 3, title: 'كابل تمديد مكشوف العزل في منطقة رطبة', description: 'رُصد كابل كهربائي مؤقت بعزل متآكل يمر عبر تجمع مياه في {zone} ومتصل بلوحة توزيع مؤقتة. فُصل التيار فورًا دون وقوع إصابة.', location: '{zone}', immediateCause: 'تمديد مؤقت متضرر لم يُفحص في الجولة اليومية', rootCause: 'عطل معدات', action: 'فحص أسبوعي موثق لجميع التمديدات المؤقتة ورفعها عن الأرض على حوامل معزولة', en: { title: 'Damaged extension cable in a wet area', description: 'A temporary cable with worn insulation was found running through standing water in {zone}, connected to a temporary distribution board. Power was isolated immediately with no injury.', location: '{zone}', immediateCause: 'Damaged temporary cable missed in the daily walk', action: 'Documented weekly inspection of all temporary cabling, raised off the ground on insulated stands' } },
+  { categoryId: 'excavation', severity: 4, title: 'انهيار جزئي لجانب خندق بعد خروج العمال', description: 'انهار جزء من الجانب الجنوبي للخندق في {zone} بطول نحو {n} أمتار بعد دقائق من خروج الفريق للاستراحة. لم يكن الجزء المنهار مدعومًا بصناديق الخنادق.', location: '{zone} — الخندق T-{n}', immediateCause: 'امتداد الحفر خارج نطاق الدعامات بعد هطول أمطار خفيفة', rootCause: 'إجراء عمل غير كافٍ', action: 'إعادة تقييم الخندق من الشخص المختص بعد كل تغير جوي ومنع الدخول خارج الجزء المدعوم', en: { title: 'Partial trench-wall collapse after workers left', description: 'Part of the south wall of the trench in {zone} collapsed over about {n} metres minutes after the crew left for a break. The collapsed section was not supported by trench boxes.', location: '{zone} — trench T-{n}', immediateCause: 'Digging extended beyond the shoring after light rain', action: 'Competent-person re-assessment after every weather change and no entry outside the supported section' } },
+  { categoryId: 'confined', severity: 4, title: 'ارتفاع قراءة الغاز أثناء العمل داخل غرفة تفتيش', description: 'أطلق جهاز قياس الغازات إنذارًا عند 9 ppm من H2S داخل غرفة التفتيش في {zone}. خرج العاملان خلال 40 ثانية وفق خطة الإنقاذ، وتم رفع التهوية القسرية.', location: '{zone}', immediateCause: 'انخفاض كفاءة مروحة التهوية القسرية بسبب انسداد خرطوم الهواء', rootCause: 'عطل معدات', action: 'فحص مروحة التهوية وخرطومها قبل كل دخول وتسجيل معدل التهوية في التصريح', en: { title: 'Gas reading rose during work inside a manhole', description: 'The gas detector alarmed at 9 ppm H2S inside the manhole in {zone}. Both workers exited within 40 seconds per the rescue plan and forced ventilation was increased.', location: '{zone}', immediateCause: 'Forced-ventilation fan underperforming because of a blocked air hose', action: 'Check the ventilation fan and hose before every entry and record the airflow on the permit' } },
+  { categoryId: 'hotwork', severity: 3, title: 'شرر لحام يصل إلى مواد قابلة للاشتعال', description: 'أثناء أعمال اللحام في {zone} تطاير شرر إلى كيس حماية بلاستيكي على بعد ثلاثة أمتار وبدأ بالاحتراق البطيء. أطفأه مراقب الحريق فورًا بطفاية البودرة.', location: '{zone}', immediateCause: 'عدم إزالة المواد القابلة للاشتعال من نطاق 11 مترًا', rootCause: 'إجراء عمل غير كافٍ', action: 'قائمة تحقق إلزامية قبل بدء الأعمال الساخنة تشمل تنظيف نطاق 11 مترًا', en: { title: 'Welding sparks reached combustible material', description: 'During welding in {zone}, sparks reached a plastic protection sheet three metres away and it started to smoulder. The fire watch put it out at once with a powder extinguisher.', location: '{zone}', immediateCause: 'Combustibles not cleared from the 11-metre radius', action: 'Mandatory pre-start checklist for hot work, including clearing the 11-metre radius' } },
+  { categoryId: 'scaffold', severity: 3, title: 'عامل يصعد سقالة دون بطاقة فحص سارية', description: 'رُصد عامل يعمل على المستوى الثالث لسقالة في {zone} تحمل بطاقة حمراء بعد تعديل تمّ عليها صباحًا دون إعادة فحص. أُنزل العامل وأُغلقت السقالة.', location: '{zone}', immediateCause: 'تجاهل بطاقة السقالة الحمراء', rootCause: 'غياب التدريب', action: 'جلسة توعية ببطاقات Scafftag وتثبيت أقفال على مداخل السقالات غير المعتمدة', en: { title: 'Worker climbed a scaffold without a valid inspection tag', description: 'A worker was seen on the third lift of a scaffold in {zone} that carried a red tag after a morning modification without re-inspection. The worker was brought down and the scaffold closed.', location: '{zone}', immediateCause: 'Red scaffold tag ignored', action: 'Scafftag awareness session and locks on the access points of unapproved scaffolds' } },
+  { categoryId: 'heat', severity: 3, title: 'أعراض إجهاد حراري لعامل في فترة الظهيرة', description: 'شعر عامل في {zone} بدوار وتشنجات عند الساعة 13:40 مع WBGT {wbgt}°. نُقل إلى منطقة الراحة المكيفة وتعافى دون الحاجة إلى علاج طبي.', location: '{zone}', immediateCause: 'العمل تحت الشمس مع استهلاك غير كافٍ للمياه', rootCause: 'ظروف بيئية', action: 'تطبيق جدول العمل/الراحة بحسب WBGT وتوزيع عبوات الأملاح الفموية', en: { title: 'Heat-stress symptoms during the midday period', description: 'A worker in {zone} felt dizzy and had cramps at 13:40 with WBGT at {wbgt}°. He was moved to the air-conditioned rest area and recovered without medical treatment.', location: '{zone}', immediateCause: 'Working in the sun with insufficient water intake', action: 'Apply the WBGT work/rest schedule and distribute oral rehydration salts' } },
+  { categoryId: 'chemical', severity: 2, title: 'انسكاب محدود لمادة مذيبة دون حاوية احتواء', description: 'انقلبت عبوة مذيب سعة 20 لترًا في {zone} أثناء نقلها يدويًا وتسرب نحو 5 لترات. احتُوي الانسكاب بمواد ماصة خلال دقائق ولم يتعرض أحد للأبخرة.', location: '{zone} — منطقة تخزين المواد', immediateCause: 'نقل العبوة يدويًا دون عربة وعدم وجود حاوية احتواء ثانوية', rootCause: 'إجراء عمل غير كافٍ', action: 'توفير حاويات احتواء ثانوية وعربات نقل مخصصة للمواد الكيميائية', en: { title: 'Small solvent spill without secondary containment', description: 'A 20-litre solvent container tipped over in {zone} while being carried by hand and about 5 litres leaked. The spill was contained with absorbents within minutes and nobody was exposed to vapours.', location: '{zone} — materials storage area', immediateCause: 'Container carried by hand with no trolley and no secondary containment', action: 'Provide secondary containment and dedicated trolleys for chemicals' } },
+  { categoryId: 'structural', severity: 4, title: 'تشوه في دعامة شدّات مؤقتة قبل الصب', description: 'لاحظ مشرف النجارة انبعاج دعامة معدنية في منظومة الشدات في {zone} قبل ساعة من الصب المجدول. أُوقف الصب وأُعيد تدعيم المنطقة.', location: '{zone}', immediateCause: 'تحميل مواد على الشدات فوق الحد المصمم', rootCause: 'تصميم غير آمن', action: 'تفتيش مهندس الشدات قبل كل صب ولوحات تحديد حدود التحميل على المنصات', en: { title: 'Deformed temporary formwork prop before the pour', description: 'The carpentry supervisor noticed a buckled steel prop in the formwork system in {zone} an hour before the scheduled pour. The pour was stopped and the area re-propped.', location: '{zone}', immediateCause: 'Materials stacked on the formwork above its design load', action: 'Formwork engineer inspection before every pour and load-limit signs on the decks' } },
+  { categoryId: 'ergonomic', severity: 2, title: 'انزلاق لوح ثقيل أثناء المناولة اليدوية', description: 'انزلق لوح جبس بوزن {weightKg} كجم من أيدي عاملين في {zone} وسقط على بعد سنتيمترات من قدم أحدهما. لم تُستخدم عربة النقل المتوفرة.', location: '{zone}', immediateCause: 'مناولة يدوية لحمل ثقيل في ممر ضيق', rootCause: 'ضغط الجدول الزمني', action: 'تخطيط مسارات نقل المواد واستخدام العربات والرافعات اليدوية للأحمال فوق 25 كجم', en: { title: 'Heavy board slipped during manual handling', description: 'A {weightKg} kg gypsum board slipped from two workers\' hands in {zone} and fell centimetres from one worker\'s foot. The available trolley was not used.', location: '{zone}', immediateCause: 'Manual handling of a heavy load in a narrow corridor', action: 'Plan material routes and use trolleys and hand hoists for loads above 25 kg' } },
 ];
 
 function nearMissStep(now = Date.now()) {
@@ -1441,7 +1588,14 @@ function nearMissStep(now = Date.now()) {
     n: String(randInt(3, 9)),
     wbgt: String(round(randBetween(30, 33), 1)),
   };
-  const reporter = pick(['مشرف المنطقة', 'منظم الحركة', 'مراقب السلامة', 'مشرف الوردية']) + ' — ' + workerName(site.id);
+  const ROLES = ['مشرف المنطقة', 'منظم الحركة', 'مراقب السلامة', 'مشرف الوردية'];
+  const ROLES_EN = ['Area supervisor', 'Traffic marshal', 'Safety observer', 'Shift supervisor'];
+  const roleIdx = Math.floor(rand() * ROLES.length);
+  const reporterWorker = pickWorker(site.id);
+  const reporter = `${ROLES[roleIdx]} — ${reporterWorker.name}`;
+  const reporterEn = `${ROLES_EN[roleIdx]} — ${reporterWorker.nameEn}`;
+  const ctxEn = { ...ctx, zone: zone ? zoneEn(zone, site) : siteEn(site), site: siteEn(site) };
+  const sen = scenario.en || {};
   const owner = site.hseLead || site.manager || 'مسؤول السلامة';
   const dueMs = now + randInt(3, 14) * 24 * HOUR;
   const due = `${new Date(dueMs).getFullYear()}-${pad2(new Date(dueMs).getMonth() + 1)}-${pad2(new Date(dueMs).getDate())}`;
@@ -1455,6 +1609,13 @@ function nearMissStep(now = Date.now()) {
       title: fill(scenario.title, ctx),
       description: fill(scenario.description, ctx),
       location: fill(scenario.location, ctx),
+      // Runtime records carry their English copy (CONTRACT §4/§8 — no dictionary entry exists for them).
+      titleEn: fill(sen.title, ctxEn),
+      descriptionEn: fill(sen.description, ctxEn),
+      locationEn: fill(sen.location, ctxEn),
+      immediateCauseEn: fill(sen.immediateCause, ctxEn),
+      reporterEn,
+      sourceEn: 'Field report — live simulation',
       bodyPart: null,
       immediateCause: fill(scenario.immediateCause, ctx),
       rootCause: scenario.rootCause,
@@ -1463,7 +1624,7 @@ function nearMissStep(now = Date.now()) {
       reporter,
       categoryId: scenario.categoryId,
       investigationStep: 0,
-      actions: [{ text: fill(scenario.action, ctx), owner, due, done: false }],
+      actions: [{ text: fill(scenario.action, ctx), textEn: fill(sen.action, ctxEn), owner, due, done: false }],
       source: 'بلاغ ميداني — المحاكاة الحية',
       simulated: true,
     });
@@ -1476,6 +1637,7 @@ function nearMissStep(now = Date.now()) {
       id: `det-${incident.id}-${now.toString(36)}`,
       code: incident.code,
       label: incident.title,
+      labelEn: incident.titleEn || incident.code,
       categoryId: scenario.categoryId,
       tone: scenario.severity >= 4 ? 'serious' : 'warning',
       r: randBetween(0.42, 0.62),
@@ -1653,12 +1815,12 @@ function getHazards(siteId) {
     try { tier = sel.riskTier(sel.riskScore(r)); tone = sel.tierTone(tier); } catch { continue; }
     if (!HIGH_TIERS.has(tier)) continue;
     const zone = zoneFor(r.zoneId, r.id);
-    out.push({ id: r.id, code: r.code, ...placeIn(zone, r.id), tone, tier, label: `${r.code} — ${r.hazard || r.activity || ''}`, zoneId: zone.id, kind: 'risk' });
+    out.push({ id: r.id, code: r.code, ...placeIn(zone, r.id), tone, tier, label: `${r.code} — ${r.hazard || r.activity || ''}`, labelEn: `${r.code}${dataEn('risks', r.id, 'hazard') ? ` — ${dataEn('risks', r.id, 'hazard')}` : ''}`, zoneId: zone.id, kind: 'risk' });
   }
   for (const m of E.sensors.values()) {
     if (m.siteId !== site.id || !m.over) continue;
     const zone = zoneFor(m.zoneId, m.id);
-    out.push({ id: `sensor-${m.id}`, code: m.id, ...placeIn(zone, m.id), tone: 'critical', tier: 'حرج', label: `${m.kind}: ${n1(m.value)} ${m.unit}`, zoneId: zone.id, kind: 'sensor' });
+    out.push({ id: `sensor-${m.id}`, code: m.id, ...placeIn(zone, m.id), tone: 'critical', tier: 'حرج', label: `${m.kind}: ${n1(m.value)} ${m.unit}`, labelEn: `${enumEn('sensorKind', m.kind, 'Sensor')}: ${enNum(m.value, 1)} ${unitEn(m.unit)}`, zoneId: zone.id, kind: 'sensor' });
   }
   out.sort((a, b) => (a.tone === 'critical' ? 0 : 1) - (b.tone === 'critical' ? 0 : 1));
   return out.slice(0, 16);

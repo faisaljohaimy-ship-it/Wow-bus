@@ -22,6 +22,9 @@ import { status as statusApi, STATUSES } from '../core/status.js';
 import { t, tn, isRtl, locale } from './i18n-bridge.js';
 import { motion } from './motion.js';
 
+/* Re-exported so `import * as components` consumers (app.js) reach the motion helpers as components.motion. */
+export { motion };
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 const TONES = ['neutral', 'good', 'warning', 'serious', 'critical', 'brand', 'accent'];
@@ -240,7 +243,7 @@ const STATUS_KEYS = Array.isArray(STATUSES) && STATUSES.length ? STATUSES : Obje
  * Unknown keys render as 'not_connected' (never as a success). The one-line description becomes the
  * tooltip and the accessible description.
  * @param {'demo'|'live'|'offline'|'stale'|'error'|'not_connected'} statusKey
- * @param {{label?:string, title?:string|false, size?:'sm'|'md'}} [opts]
+ * @param {{label?:string, title?:string|false, size?:'sm'|'md'|'lg'}} [opts]
  */
 export function statusBadge(statusKey, { label = null, title = null, size = 'md' } = {}) {
   const key = STATUS_KEYS.includes(statusKey) ? statusKey : 'not_connected';
@@ -259,14 +262,16 @@ export function statusBadge(statusKey, { label = null, title = null, size = 'md'
     try { desc = statusApi && typeof statusApi.desc === 'function' ? statusApi.desc(key) : ''; } catch { desc = ''; }
     if (desc === `status.${key}Desc`) desc = '';
   }
+  // .status-badge owns its look per data-status (css/components.css); no generic .badge / tone classes,
+  // so a status can never inherit a success colour by accident.
   const el = h('span', {
-    class: ['badge', 'status-badge', `status-${key.replace(/_/g, '-')}`, `tone-${tone}`, size === 'sm' ? 'is-sm' : null],
+    class: ['status-badge', `is-${key}`, size === 'sm' ? 'is-sm' : (size === 'lg' ? 'is-lg' : null)],
     'data-status': key, 'data-tone': tone, title: desc || undefined,
   });
-  const ic = svgIcon(iconName, size === 'sm' ? 12 : 14);
-  ic.classList.add('badge-icon');
+  const ic = svgIcon(iconName, 12);
+  ic.classList.add('status-badge-icon');
   el.appendChild(ic);
-  el.appendChild(h('span', { class: 'badge-text' }, String(text)));
+  el.appendChild(h('span', { class: 'status-badge-label badge-text' }, String(text)));
   if (desc) el.appendChild(h('span', { class: 'sr-only' }, ` — ${desc}`));
   return el;
 }
@@ -1021,22 +1026,20 @@ export function emptyState({ icon = null, title = '', text = '', action = null }
  */
 export function skeleton(lines = 3, { widths = null, className = '' } = {}) {
   const n = Math.max(1, Math.min(24, Number(lines) | 0 || 3));
-  const pattern = ['100%', '92%', '78%', '86%', '64%', '96%'];
   const el = h('div', { class: ['skeleton', className || null], 'aria-hidden': 'true' });
   for (let i = 0; i < n; i += 1) {
-    const w = Array.isArray(widths) && widths[i] ? widths[i] : pattern[i % pattern.length];
-    el.appendChild(h('span', { class: 'skeleton-line', style: { inlineSize: w } }));
+    const w = Array.isArray(widths) && widths[i] ? widths[i] : null;   // default widths come from CSS (nth-child)
+    el.appendChild(h('span', { class: 'skeleton-line', style: w ? { inlineSize: w } : undefined }));
   }
   return el;
 }
 
+/* .state[.state-loading|.state-error|.state-offline] > .state-icon + .state-title + .state-text + .state-actions */
 function stateShell(kind, { role, icon, title, text, live = null }) {
   const el = h('div', { class: ['state', `state-${kind}`], role, 'aria-live': live || undefined });
   if (icon) el.appendChild(h('div', { class: 'state-icon', 'aria-hidden': 'true' }, icon));
-  const copy = h('div', { class: 'state-copy' });
-  if (title) copy.appendChild(h('p', { class: 'state-title' }, String(title)));
-  if (text) copy.appendChild(h('p', { class: 'state-text' }, String(text)));
-  el.appendChild(copy);
+  if (title) el.appendChild(h('p', { class: 'state-title' }, String(title)));
+  if (text) el.appendChild(h('p', { class: 'state-text' }, String(text)));
   return el;
 }
 
@@ -1046,7 +1049,7 @@ function stateShell(kind, { role, icon, title, text, live = null }) {
  * @param {{title?:string, text?:string, lines?:number, onCancel?:Function, inline?:boolean}} [opts]
  */
 export function loadingState({ title = null, text = null, lines = 0, onCancel = null, inline = false } = {}) {
-  const spinner = h('span', { class: 'state-spinner' });
+  const spinner = h('span', { class: 'spinner' });
   const el = stateShell('loading', { role: 'status', icon: spinner, title: title || t('ui.state.loading'), text: text === null ? (inline ? '' : t('ui.state.loadingText')) : text, live: 'polite' });
   el.setAttribute('aria-busy', 'true');
   if (inline) el.classList.add('is-inline');
@@ -1077,8 +1080,7 @@ export function loadingState({ title = null, text = null, lines = 0, onCancel = 
 export function errorState({ title = null, text = null, retry = null, retryLabel = null, detail = null } = {}) {
   const el = stateShell('error', { role: 'alert', icon: glyph('critical', 28), title: title || t('ui.state.errorTitle'), text: text || t('ui.state.errorText') });
   if (detail) {
-    const d = h('p', { class: 'state-detail mono', dir: 'auto' }, String(detail));
-    el.querySelector('.state-copy').appendChild(d);
+    el.appendChild(h('p', { class: 'state-detail mono', dir: 'auto' }, String(detail)));
   }
   if (typeof retry === 'function') {
     const label = retryLabel || t('ui.state.retry');
@@ -1146,13 +1148,12 @@ const sameValue = (a, b) => {
  */
 export function filterBar({ filters = [], value = {}, onChange = null, onReset = null, label = null, className = '' } = {}) {
   const defs = (Array.isArray(filters) ? filters : []).filter((f) => f && f.id !== undefined && f.id !== null);
+  // Flat structure (css/components.css): .filter-bar > .filter-bar-group* + .filter-bar-search
+  //   + .filter-bar-spacer + .filter-bar-count + .filter-bar-reset
   const el = h('div', { class: ['filter-bar', className || null], role: 'group', 'aria-label': label || t('ui.filter.label') });
-  const fields = h('div', { class: 'filter-bar-fields' });
-  const meta = h('div', { class: 'filter-bar-meta' });
+  const spacer = h('span', { class: 'filter-bar-spacer', 'aria-hidden': 'true' });
   const countEl = h('span', { class: 'filter-bar-count', 'aria-live': 'polite' });
   const resetBtn = button(t('ui.filter.reset'), { variant: 'ghost', size: 'sm', icon: 'refresh', onClick: () => reset(), attrs: { class: 'filter-bar-reset', 'aria-label': t('ui.filter.resetAria') } });
-  meta.append(countEl, resetBtn);
-  el.append(fields, meta);
 
   const state = {};
   const slots = new Map();
@@ -1176,10 +1177,10 @@ export function filterBar({ filters = [], value = {}, onChange = null, onReset =
     const type = ['chips', 'select', 'segmented', 'search'].includes(f.type) ? f.type : 'select';
     const fieldId = uid(`flt-${id.replace(/[^\w-]/g, '')}`);
     const labelId = `${fieldId}-label`;
-    const wrap = h('div', { class: ['filter', `filter-${type}`], 'data-filter': id });
+    const wrap = h('div', { class: type === 'search' ? ['filter-bar-search'] : ['filter-bar-group', 'filter-group', `is-${type}`], 'data-filter': id, 'data-type': type });
     const labelText = String(f.label ?? '');
     const showLabel = labelText && !f.hideLabel && type !== 'search';
-    if (showLabel) wrap.appendChild(h(type === 'select' ? 'label' : 'span', { class: 'filter-label', id: labelId, for: type === 'select' ? fieldId : undefined }, labelText));
+    if (showLabel) wrap.appendChild(h(type === 'select' ? 'label' : 'span', { class: ['filter-bar-label', 'filter-label'], id: labelId, for: type === 'select' ? fieldId : undefined }, labelText));
     state[id] = value && value[id] !== undefined ? (Array.isArray(value[id]) ? value[id].slice() : value[id]) : defaultOf(f);
     let slot;
 
@@ -1241,8 +1242,6 @@ export function filterBar({ filters = [], value = {}, onChange = null, onReset =
       wrap.appendChild(seg.el);
       slot = { paint: () => seg.set(state[id]) };
     } else {
-      const box = h('div', { class: 'filter-search' });
-      box.appendChild(svgIcon('search', 16));
       const input = h('input', { id: fieldId, type: 'search', class: ['field-control', 'filter-search-input'], 'aria-label': labelText || t('ui.filter.search'), placeholder: f.placeholder || labelText || t('ui.filter.search'), autocomplete: 'off', spellcheck: 'false', enterkeyhint: 'search' });
       let timer = 0;
       const commit = () => { clearTimeout(timer); timer = 0; if (state[id] !== input.value) { state[id] = input.value; emit(id); } };
@@ -1252,15 +1251,15 @@ export function filterBar({ filters = [], value = {}, onChange = null, onReset =
         else if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); input.value = ''; commit(); }
       });
       input.addEventListener('search', commit);
-      box.appendChild(input);
-      wrap.appendChild(box);
+      wrap.appendChild(input);
       slot = { paint: () => { if (input.value !== String(state[id] ?? '')) input.value = String(state[id] ?? ''); } };
     }
     slot.def = f;
     slot.wrap = wrap;
     slots.set(id, slot);
-    fields.appendChild(wrap);
+    el.appendChild(wrap);
   });
+  el.append(spacer, countEl, resetBtn);
 
   function activeCount() {
     let n = 0;
@@ -1274,6 +1273,7 @@ export function filterBar({ filters = [], value = {}, onChange = null, onReset =
   function paintMeta() {
     const n = activeCount();
     countEl.textContent = n ? tn('ui.filter.active', n) : '';
+    countEl.dataset.count = String(n);
     countEl.hidden = n === 0;
     resetBtn.disabled = n === 0;
     el.classList.toggle('has-active', n > 0);
@@ -1304,7 +1304,7 @@ export function filterBar({ filters = [], value = {}, onChange = null, onReset =
     for (const [id, slot] of slots) { state[id] = defaultOf(slot.def); slot.paint(); }
     if (typeof onReset === 'function') { try { onReset(); } catch { /* noop */ } }
     emit(null, { reset: true });
-    const first = fields.querySelector('button,select,input');
+    const first = el.querySelector('.filter-bar-group button, .filter-bar-group select, .filter-bar-search input');
     if (first && document.activeElement === resetBtn) { try { first.focus({ preventScroll: true }); } catch { first.focus(); } }
     return api;
   }
@@ -1358,7 +1358,8 @@ function overlayHost() {
 }
 
 function focusables(root) {
-  return Array.from(root.querySelectorAll(FOCUSABLE)).filter((n) => (!n.hasAttribute('hidden') && n.getClientRects().length > 0) || n === document.activeElement);
+  // Roving-tabindex children (tabindex="-1": inactive tabs, chart marks) are not tab stops.
+  return Array.from(root.querySelectorAll(FOCUSABLE)).filter((n) => ((!n.hasAttribute('hidden') && n.getClientRects().length > 0 && n.tabIndex >= 0) || n === document.activeElement));
 }
 
 /** Last active tab per drawer kind (CONTRACT §7: "remembers the last tab per kind"). In-memory only. */
@@ -1536,9 +1537,10 @@ function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', 
       if (!isModal) motion.drawer(dialog, true);
       requestAnimationFrame(() => {
         backdrop.classList.add('is-open');
-        const list = focusables(dialog).filter((n) => !n.classList.contains(`${kind}-close`) && !n.classList.contains('drawer-tab') && !n.classList.contains('drawer-panel'));
+        // Tabbed drawers land on the selected tab (announces "Overview, tab 1 of 4"); others on the first control.
         const selectedTab = currentTab !== null && tabMap.get(currentTab) ? tabMap.get(currentTab).tab : null;
-        const target = list[0] || selectedTab || closeBtn;
+        const list = focusables(dialog).filter((n) => !n.classList.contains(`${kind}-close`) && !n.classList.contains('drawer-panel'));
+        const target = selectedTab || list[0] || closeBtn;
         try { target.focus({ preventScroll: true }); } catch { target.focus(); }
       });
       return api;
@@ -1615,14 +1617,14 @@ export function modal({ title = '', subtitle = '', body = null, actions = [], si
 /**
  * Side drawer (inline-end edge). CONTRACT §7:
  *   drawer({ title, subtitle, tabs: [{ id, label, render(panel, api), icon?, count? }], activeTab, actions,
- *            size: 'md'|'lg', onClose(reason), returnFocus, kind, body, onTabChange })
+ *            size: 'md'|'lg'|'xl', onClose(reason), returnFocus, kind, body, onTabChange })
  *   → { open, close, el, body, setTab(id), refreshTab(id), setTabCount(id, n), panel(id), activeTab, setTitle, setSubtitle }
  * `kind` (e.g. 'airisk') remembers the last tab across drawers of that kind; an explicit activeTab wins.
  * `body` (optional) renders above the tab panels. Focus returns to `returnFocus` (default: the element
  * focused before opening) without scrolling, so closing keeps the reader's place.
  */
 export function drawer({ title = '', subtitle = '', body = null, tabs = null, activeTab = null, actions = [], size = 'md', onClose = null, returnFocus = null, kind = null, onTabChange = null, className = '' } = {}) {
-  const api = overlay({ kind: 'drawer', title, subtitle, body, tabs, activeTab, tabsKind: kind, actions, size: size === 'lg' ? 'lg' : 'md', onClose, returnFocus, className });
+  const api = overlay({ kind: 'drawer', title, subtitle, body, tabs, activeTab, tabsKind: kind, actions, size: ['lg', 'xl'].includes(size) ? size : 'md', onClose, returnFocus, className });
   if (typeof onTabChange === 'function') api.onTabChange = onTabChange;
   return api;
 }
@@ -1758,9 +1760,9 @@ function kanbanCardName(item, card) {
     const titleEl = card.querySelector('.kanban-card-title, h3, h4, strong');
     const codeEl = card.querySelector('.mono');
     const c = codeEl ? pick(codeEl.textContent) : '';
-    const t = titleEl ? pick(titleEl.textContent) : '';
+    const ttl = titleEl ? pick(titleEl.textContent) : '';
     if (c) parts.push(c);
-    if (t) parts.push(t);
+    if (ttl) parts.push(ttl);
   }
   if (!parts.length) {
     const text = pick(Array.from(card.childNodes).filter((n) => !(n.classList && n.classList.contains('kanban-card-bar'))).map((n) => n.textContent || '').join(' '));

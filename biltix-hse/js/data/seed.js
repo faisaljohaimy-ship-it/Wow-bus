@@ -2668,8 +2668,15 @@ const feedTemplates = [
 // 14. كائن التهيئة الافتراضي
 // ------------------------------------------------------------------
 
+/*
+ * Honest status (CONTRACT §5): the integration statuses, sync times, latencies and event rates above are a
+ * demo scenario, not measurements. `simulated: true` lets status.js classify them as Demo; an integration
+ * still 'configurable' was never set up (status.js → Not connected).
+ */
+for (const g of integrations) g.simulated = g.status !== 'configurable';
+
 const seed = {
-  meta: { version: 1, anchorDate: ANCHOR_DATE, anchorNow: ANCHOR_NOW, timezone: 'Asia/Riyadh' },
+  meta: { version: 1, anchorDate: ANCHOR_DATE, anchorNow: ANCHOR_NOW, timezone: 'Asia/Riyadh', simulated: { integrations: true, sensors: true, feed: true } },
   company,
   sites,
   risks,

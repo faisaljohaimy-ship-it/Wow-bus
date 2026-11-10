@@ -22,7 +22,7 @@
 import { fmt } from './fmt.js';
 import {
   PLATFORM_CATEGORIES, RISK_TYPES, RATINGS, TASK_STATUS, STAKEHOLDER_ROLES, FLOW_STAGES,
-  PIPELINE_META, DEFAULT_WEIGHTS,
+  PIPELINE_META, DEFAULT_WEIGHTS, deriveDataQuality,
 } from '../data/platform-seed.js';
 
 const DAY_MS = 86_400_000;
@@ -373,14 +373,30 @@ function categoryScoreOf(scores) {
 
 /* ────────────────────────────── filtered collections ────────────────────────────── */
 
+/**
+ * The ONE filtered AI-risk list every cockpit section, register, report and export derives from.
+ * Global filters: siteId (project), range (closed/dismissed risks fade out after it), search. Optional
+ * register filters (all no-ops when absent): category (alias `domain`), type, rating, status, pipeline,
+ * owner, l / likelihood and i / impact (inherent position — or residual when `view: 'residual'`),
+ * overdue (true → open risks past their due date).
+ */
 function filteredAiRisks(state, filters, now) {
   const f = normalizeFilters(filters);
   const at = resolveNow(filters, now);
   const fromMs = addDays(startOfDay(at), -(f.range - 1)).getTime();
   const toMs = endOfDay(at).getTime();
+  const todayMs = startOfDay(at).getTime();
+  const category = f.category != null && f.category !== '' ? f.category : f.domain;
+  const residualView = f.view === 'residual' || f.residual === true || f.residual === 'true';
+  const lWant = f.l != null && f.l !== '' && f.l !== 'all' ? num(f.l, NaN) : (f.likelihood != null && f.likelihood !== '' && f.likelihood !== 'all' ? num(f.likelihood, NaN) : NaN);
+  const iWant = f.i != null && f.i !== '' && f.i !== 'all' ? num(f.i, NaN) : (f.impact != null && f.impact !== '' && f.impact !== 'all' ? num(f.impact, NaN) : NaN);
   return arr(platform(state).aiRisks).filter((r) => {
     if (!r || !matchesProject(r, f.siteId)) return false;
-    if (!matchesEnum(r.category, f.category)) return false;
+    if (!matchesEnum(r.category, category)) return false;
+    if (f.owner && f.owner !== 'all' && r.owner !== f.owner) return false;
+    if (Number.isFinite(lWant) && num(residualView ? r.residualLikelihood : r.likelihood, NaN) !== lWant) return false;
+    if (Number.isFinite(iWant) && num(residualView ? r.residualImpact : r.impact, NaN) !== iWant) return false;
+    if ((f.overdue === true || f.overdue === 'true' || f.overdue === '1') && !isAiRiskOverdue(r, todayMs)) return false;
     if (!matchesEnum(r.type, f.type)) return false;
     if (!matchesEnum(rating(r.score), f.rating)) return false;
     if (!matchesEnum(r.status, f.status)) return false;
@@ -421,7 +437,7 @@ function openAsOf(r, atMs) {
   const det = ms(r.detectedAt);
   if (!Number.isFinite(det) || det > atMs) return false;
   if (isOpenRisk(r)) return true;
-  const upd = ms(r.updatedAt || r.detectedAt);
+  const upd = ms(r.closedAt || r.updatedAt || r.detectedAt);
   return Number.isFinite(upd) ? upd > atMs : false;
 }
 
@@ -1216,7 +1232,8 @@ function roadmapSummary(state) {
   const milestones = arr(r.milestones).map((m) => {
     const p = saved[m.id];
     const paymentPct = Number.isFinite(Number(p)) && p !== null && p !== '' ? Number(p) : (m.paymentPct == null ? null : num(m.paymentPct));
-    return { ...m, paymentPct, tone: m.status === 'منجز' ? 'good' : m.status === 'جارٍ' ? 'accent' : 'neutral', endMonth: num(m.month) + num(m.durationMonths) };
+    const known = m.durationMonths != null && Number.isFinite(Number(m.durationMonths));
+    return { ...m, paymentPct, tone: m.status === 'منجز' ? 'good' : m.status === 'جارٍ' ? 'accent' : 'neutral', durationKnown: known, endMonth: known ? num(m.month) + num(m.durationMonths) : null };
   });
   const filled = milestones.filter((m) => m.paymentPct != null);
   const total = round(sum(filled.map((m) => m.paymentPct)), 1);
@@ -1226,7 +1243,10 @@ function roadmapSummary(state) {
     paymentTotal: total,
     paymentComplete: filled.length === milestones.length && milestones.length > 0,
     paymentValid: filled.length === milestones.length && Math.abs(total - 100) < 0.01,
-    totalMonths: num(r.totalMonths, milestones.length ? Math.max(...milestones.map((m) => m.endMonth)) : 0),
+    // Durations are not in the proposal: totalMonths stays null ("to be agreed") unless every duration is known.
+    totalMonths: r.totalMonths != null ? num(r.totalMonths) : (milestones.length && milestones.every((m) => m.durationKnown) ? Math.max(...milestones.map((m) => m.endMonth)) : null),
+    monthsSpan: Array.isArray(r.monthsSpan) ? r.monthsSpan : (milestones.length ? [Math.min(...milestones.map((m) => num(m.month))), Math.max(...milestones.map((m) => num(m.month)))] : [0, 0]),
+    durationsKnown: milestones.length > 0 && milestones.every((m) => m.durationKnown),
   };
 }
 
@@ -1292,30 +1312,32 @@ function riskTimeline(risk, state) {
   const out = [];
   const history = arr(risk.history);
   if (risk.detectedAt && !history.some((h) => h && h.at === risk.detectedAt)) {
-    out.push({ at: risk.detectedAt, kind: 'detected', by: pipelineLabel(risk.pipeline), text: `اكتشاف تلقائي — الدرجة ${fmt.num(num(risk.score))} (${ratingLabel(rating(risk.score))})`, tone: ratingTone(rating(risk.score)) });
+    out.push({ at: risk.detectedAt, kind: 'detected', by: pipelineLabel(risk.pipeline), text: `اكتشاف تلقائي — الدرجة ${fmt.num(num(risk.score))} (${ratingLabel(rating(risk.score))})`, textEn: `Automatic detection — score ${num(risk.score)}`, tone: ratingTone(rating(risk.score)) });
   }
   history.forEach((h, i) => {
     if (!h) return;
-    out.push({ at: h.at, kind: i === 0 && h.at === risk.detectedAt ? 'detected' : 'history', by: h.by || '—', text: h.text || '', tone: i === 0 ? ratingTone(rating(risk.score)) : 'neutral' });
+    // historyIndex lets views localise seed history through the aiRisks mirror (history[i].text); runtime entries carry textEn.
+    out.push({ at: h.at, kind: i === 0 && h.at === risk.detectedAt ? 'detected' : 'history', by: h.by || '—', text: h.text || '', textEn: h.textEn || '', historyIndex: i, tone: i === 0 ? ratingTone(rating(risk.score)) : 'neutral' });
   });
   for (const o of arr(risk.overrides)) {
     if (!o) continue;
-    out.push({ at: o.at, kind: 'override', by: o.by || '—', text: `تعديل التوصية: «${o.toAction || ''}» — السبب: ${o.reason || '—'}`, fromAction: o.fromAction, toAction: o.toAction, reason: o.reason, tone: 'warning' });
+    out.push({ at: o.at, kind: 'override', by: o.by || '—', text: `تعديل التوصية: «${o.toAction || ''}» — السبب: ${o.reason || '—'}`, textEn: 'Recommendation overridden — reason recorded', fromAction: o.fromAction, toAction: o.toAction, reason: o.reason, tone: 'warning' });
   }
   if (state) {
     const tasks = arr(platform(state).tasks).filter((t) => t && (t.riskId === risk.id || t.id === risk.taskId));
     for (const t of tasks) {
-      out.push({ at: t.createdAt, kind: 'task', by: t.owner || '—', text: `إنشاء مهمة ${t.code} — ${t.title}`, task: t, tone: 'brand' });
+      out.push({ at: t.createdAt, kind: 'task', by: t.owner || '—', text: `إنشاء مهمة ${t.code} — ${t.title}`, textEn: `Task ${t.code} created`, task: t, tone: 'brand' });
       const wb = obj(t.writeback);
       if (wb.at) {
         const label = wb.status === 'synced' ? 'تمت الكتابة العكسية إلى Biltix PM' : wb.status === 'failed' ? 'فشلت الكتابة العكسية إلى Biltix PM' : 'الكتابة العكسية إلى Biltix PM قيد الانتظار';
-        out.push({ at: wb.at, kind: 'writeback', by: 'النظام', text: `${label} (${t.code})`, status: wb.status, tone: wb.status === 'synced' ? 'good' : wb.status === 'failed' ? 'critical' : 'warning' });
+        const labelEn = wb.status === 'synced' ? 'Write-back to Biltix PM (simulated)' : wb.status === 'failed' ? 'Write-back to Biltix PM failed (simulated)' : 'Write-back to Biltix PM pending (simulated)';
+        out.push({ at: wb.at, kind: 'writeback', by: 'النظام', text: `${label} (${t.code})`, textEn: `${labelEn} (${t.code})`, status: wb.status, simulated: true, tone: wb.status === 'synced' ? 'good' : wb.status === 'failed' ? 'critical' : 'warning' });
       }
-      if (t.closedAt) out.push({ at: t.closedAt, kind: 'task-closed', by: t.owner || '—', text: `إغلاق المهمة ${t.code}${t.outcome ? ` — ${t.outcome}` : ''}`, task: t, tone: 'good' });
+      if (t.closedAt) out.push({ at: t.closedAt, kind: 'task-closed', by: t.owner || '—', text: `إغلاق المهمة ${t.code}${t.outcome ? ` — ${t.outcome}` : ''}`, textEn: `Task ${t.code} closed`, task: t, tone: 'good' });
     }
     for (const a of alertsForRisk(state, risk.id)) {
-      out.push({ at: a.sentAt, kind: 'alert', by: 'النظام', text: `${a.queue === 'immediate' ? 'تصعيد فوري' : 'تنبيه قياسي'} عبر ${arr(a.channels).join('، ') || '—'}`, alert: a, tone: a.severity === 'critical' ? 'critical' : 'warning' });
-      if (a.acknowledged && a.ackAt) out.push({ at: a.ackAt, kind: 'ack', by: a.ackBy || '—', text: 'تأكيد استلام التنبيه', tone: 'good' });
+      out.push({ at: a.sentAt, kind: 'alert', by: 'النظام', text: `${a.queue === 'immediate' ? 'تصعيد فوري' : 'تنبيه قياسي'} عبر ${arr(a.channels).join('، ') || '—'}`, textEn: `${a.queue === 'immediate' ? 'Immediate escalation' : 'Standard alert'} via ${arr(a.channels).join(', ') || '—'}`, alert: a, tone: a.severity === 'critical' ? 'critical' : 'warning' });
+      if (a.acknowledged && a.ackAt) out.push({ at: a.ackAt, kind: 'ack', by: a.ackBy || '—', text: 'تأكيد استلام التنبيه', textEn: 'Alert acknowledged', tone: 'good' });
     }
   }
   // De-duplicate identical (at, text) pairs that can arise when history already logs an event.
@@ -1354,6 +1376,360 @@ function riskDetail(state, id, now) {
   };
 }
 
+/* ══════════════════ v3 — shared metric definitions (CONTRACT §8) ══════════════════
+ * One definition per metric, used by the cockpit, the register, reports and exports. All derive from
+ * filteredAiRisks(state, filters) so every filter changes metrics, charts and rows consistently.
+ */
+
+/** Severity = likelihood × impact × 4 (spec D5); legacy records without L/I fall back to their stored score. */
+function severityOf(r) {
+  const l = num(r && r.likelihood, NaN);
+  const i = num(r && r.impact, NaN);
+  return Number.isFinite(l) && Number.isFinite(i) && l >= 1 && i >= 1 ? l * i * 4 : num(r && r.score);
+}
+
+/** Residual severity (null = not assessed). */
+function residualOf(r) {
+  const l = num(r && r.residualLikelihood, NaN);
+  const i = num(r && r.residualImpact, NaN);
+  return Number.isFinite(l) && Number.isFinite(i) && l >= 1 && i >= 1 ? l * i * 4 : null;
+}
+
+/** An AI risk is overdue when it is open and its due date (calendar date) is before today. */
+function isAiRiskOverdue(r, todayStartMs) {
+  if (!isOpenRisk(r) || !r.dueDate) return false;
+  const due = ms(r.dueDate);
+  return Number.isFinite(due) && due < todayStartMs;
+}
+
+/** Register filters that narrow the risk list (anything but project / period / search). */
+const RISK_LEVEL_FILTERS = ['category', 'domain', 'type', 'rating', 'status', 'pipeline', 'owner', 'l', 'i', 'likelihood', 'impact', 'overdue', 'search'];
+
+function hasRiskLevelFilter(f) {
+  return RISK_LEVEL_FILTERS.some((k) => f[k] != null && f[k] !== '' && f[k] !== 'all' && f[k] !== false);
+}
+
+/** Mitigation tasks in scope: tasks linked to a risk of the filtered list (all periods); unlinked manual tasks of the project when no risk-level filter is active. */
+function tasksInScope(state, filters, now) {
+  const f = normalizeFilters(filters);
+  const risks = filteredAiRisks(state, { ...f, range: 3650 }, now);
+  const ids = new Set(risks.map((r) => r.id));
+  const riskFilters = hasRiskLevelFilter(f);
+  return arr(platform(state).tasks).filter((t) => t && matchesProject(t, f.siteId) && (t.riskId ? ids.has(t.riskId) : !riskFilters));
+}
+
+/** Task state "as of" an instant: created by then, closed by then. */
+function taskOpenAsOf(t, atMs) {
+  const created = ms(t.createdAt);
+  if (Number.isFinite(created) && created > atMs) return null; // did not exist yet
+  const closed = ms(t.closedAt);
+  return !(t.status === TASK_CLOSED && (!Number.isFinite(closed) || closed <= atMs));
+}
+
+function metricsAsOf(state, filters, at, isCurrent) {
+  const atMs = endOfDay(at).getTime();
+  const dayStart = startOfDay(at).getTime();
+  const risks = filteredAiRisks(state, { ...normalizeFilters(filters), range: 3650 }, at);
+  const open = isCurrent ? risks.filter(isOpenRisk) : risks.filter((r) => openAsOf(r, atMs));
+  const critical = open.filter((r) => rating(severityOf(r)) === 'red');
+  const tasks = tasksInScope(state, filters, at).filter((t) => taskOpenAsOf(t, atMs) !== null);
+  const openTasks = tasks.filter((t) => taskOpenAsOf(t, atMs));
+  const overdue = openTasks.filter((t) => {
+    if (isCurrent && t.status === TASK_OVERDUE) return true;
+    const due = ms(t.dueDate);
+    return Number.isFinite(due) && due < dayStart;
+  });
+  const closed = tasks.length - openTasks.length;
+  return {
+    openRisks: open.length,
+    criticalRisks: critical.length,
+    overdueMitigations: overdue.length,
+    mitigationCompletion: { pct: tasks.length ? Math.round((closed / tasks.length) * 100) : 0, closed, total: tasks.length },
+    ids: { open: open.map((r) => r.id), critical: critical.map((r) => r.id), overdueTasks: overdue.map((t) => t.id) },
+  };
+}
+
+/**
+ * Executive metrics (cockpit row B, reports, exports):
+ *   openRisks            open AI risks (not closed / dismissed) in the filtered list
+ *   criticalRisks        open risks rated red (L×I×4 ≥ 70)
+ *   overdueMitigations   open mitigation tasks in scope past their due date (or flagged متأخرة)
+ *   mitigationCompletion { pct, closed, total } over the mitigation tasks in scope
+ *   deltas / previous    the same metrics "as of" one period (filters.range days) earlier; deltas are
+ *                        current − previous (completion in percentage points)
+ */
+function metrics(state, filters, now) {
+  const f = normalizeFilters(filters);
+  const at = resolveNow(filters, now);
+  const current = metricsAsOf(state, f, at, true);
+  const prevAt = addDays(at, -f.range);
+  const previous = metricsAsOf(state, f, prevAt, false);
+  return {
+    openRisks: current.openRisks,
+    criticalRisks: current.criticalRisks,
+    overdueMitigations: current.overdueMitigations,
+    mitigationCompletion: current.mitigationCompletion,
+    deltas: {
+      openRisks: current.openRisks - previous.openRisks,
+      criticalRisks: current.criticalRisks - previous.criticalRisks,
+      overdueMitigations: current.overdueMitigations - previous.overdueMitigations,
+      mitigationCompletion: current.mitigationCompletion.pct - previous.mitigationCompletion.pct,
+    },
+    goodWhen: { openRisks: 'down', criticalRisks: 'down', overdueMitigations: 'down', mitigationCompletion: 'up' },
+    previous: { openRisks: previous.openRisks, criticalRisks: previous.criticalRisks, overdueMitigations: previous.overdueMitigations, mitigationCompletion: previous.mitigationCompletion },
+    ids: current.ids,
+    period: { from: startOfDay(addDays(at, -(f.range - 1))).toISOString(), to: endOfDay(at).toISOString(), days: f.range, previousTo: endOfDay(prevAt).toISOString() },
+  };
+}
+
+/** Open risks by rating band (red → green) with counts and shares. */
+function severityDistribution(state, filters, now) {
+  const open = openAiRisks(state, filters, now);
+  const total = open.length;
+  return ['red', 'yellow', 'green'].map((id) => {
+    const value = open.filter((r) => rating(severityOf(r)) === id).length;
+    return { rating: id, label: ratingLabel(id), tone: ratingTone(id), value, pct: total ? Math.round((value / total) * 100) : 0, total };
+  });
+}
+
+/**
+ * Likelihood × impact matrix of the OPEN risks in the filtered list: counts[impact-1][likelihood-1].
+ * `{ residual: true }` places each risk at its residual position (only risks with a residual assessment).
+ * Non-enumerable extras on the returned array: total, notAssessed (residual view), ids[impact-1][likelihood-1].
+ */
+function heatmapLI(state, filters, opts = {}) {
+  const o = opts && typeof opts === 'object' && !(opts instanceof Date) ? opts : { now: opts };
+  const residual = Boolean(o.residual);
+  const open = openAiRisks(state, { ...normalizeFilters(filters), view: undefined, l: undefined, i: undefined, likelihood: undefined, impact: undefined }, o.now);
+  const counts = Array.from({ length: 5 }, () => Array(5).fill(0));
+  const ids = Array.from({ length: 5 }, () => Array.from({ length: 5 }, () => []));
+  let notAssessed = 0;
+  for (const r of open) {
+    const l = num(residual ? r.residualLikelihood : r.likelihood, NaN);
+    const i = num(residual ? r.residualImpact : r.impact, NaN);
+    if (!(l >= 1 && l <= 5 && i >= 1 && i <= 5)) { if (residual) notAssessed += 1; continue; }
+    counts[i - 1][l - 1] += 1;
+    ids[i - 1][l - 1].push(r.id);
+  }
+  const total = counts.reduce((a, row) => a + row.reduce((b, c) => b + c, 0), 0);
+  Object.defineProperties(counts, {
+    total: { value: total, enumerable: false },
+    notAssessed: { value: notAssessed, enumerable: false },
+    ids: { value: ids, enumerable: false },
+    residual: { value: residual, enumerable: false },
+  });
+  return counts;
+}
+
+/**
+ * Weekly trend (oldest → newest; last point = now): open risks, critical risks and the consolidated score.
+ * Open/critical counts are real "as of" counts from detection and closure dates; the score series is the
+ * consolidated-score trend (same values as the cockpit gauge sparkline) when weeks = 12.
+ */
+function trend(state, filters, weeks = 12, now) {
+  const n = clamp(Math.round(num(weeks, 12)), 2, 52);
+  const at = resolveNow(filters, now);
+  const f = normalizeFilters(filters);
+  const risks = filteredAiRisks(state, { ...f, range: 3650 }, at);
+  const labels = [];
+  const openRisks = [];
+  const critical = [];
+  for (let k = n - 1; k >= 0; k -= 1) {
+    const end = k === 0 ? at : endOfDay(addDays(at, -7 * k));
+    const endMs = k === 0 ? endOfDay(at).getTime() : end.getTime();
+    const open = k === 0 ? risks.filter(isOpenRisk) : risks.filter((r) => openAsOf(r, endMs));
+    labels.push(`${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`);
+    openRisks.push(open.length);
+    critical.push(open.filter((r) => rating(severityOf(r)) === 'red').length);
+  }
+  let score;
+  if (n === WEEKS) score = consolidatedScore(state, f, at).trend.slice();
+  else {
+    const w = weights(state);
+    score = labels.map((_, idx) => {
+      const k = n - 1 - idx;
+      const endMs = endOfDay(addDays(at, -7 * k)).getTime();
+      const open = risks.filter((r) => (k === 0 ? isOpenRisk(r) : openAsOf(r, endMs)));
+      return clamp(Math.round(sum(PLATFORM_CATEGORIES.map((c) => w[c.id] * categoryScoreOf(open.filter((r) => r.category === c.id).map(severityOf))))), 0, 100);
+    });
+  }
+  return { labels, openRisks, critical, score };
+}
+
+/** Inherent vs residual for risks WITH a residual assessment (open and recently closed), largest reduction first. */
+function inherentVsResidual(state, filters, now) {
+  return filteredAiRisks(state, filters, now)
+    .filter((r) => residualOf(r) != null && r.status !== RISK_DISMISSED)
+    .map((r) => {
+      const from = severityOf(r);
+      const to = residualOf(r);
+      return {
+        id: r.id, code: r.code, label: r.title, titleEn: r.titleEn || '', status: r.status, projectId: r.projectId,
+        from, to, reduction: from - to,
+        likelihood: r.likelihood, impact: r.impact, residualLikelihood: r.residualLikelihood, residualImpact: r.residualImpact,
+        rating: rating(from), residualRating: rating(to), tone: ratingTone(rating(from)), residualTone: ratingTone(rating(to)),
+        assessedAt: r.residualAssessment ? r.residualAssessment.at : null,
+      };
+    })
+    .sort((a, b) => b.reduction - a.reduction || b.from - a.from || String(a.code).localeCompare(String(b.code)));
+}
+
+/** Live input-data quality of a risk (validation layer of its source system), same definition as the seed. */
+function dataQuality(state, risk) {
+  if (!risk) return null;
+  const ev = risk.evidence || {};
+  return deriveDataQuality(platform(state).validation, ev.sourceSystem, ev.kind);
+}
+
+export const LIFECYCLE_STAGES = Object.freeze([
+  'source', 'validation', 'identification', 'analysis', 'evaluation', 'recommendation',
+  'review', 'assignment', 'escalation', 'evidence', 'residual', 'closure',
+]);
+
+function historyAt(risk, re) {
+  const h = arr(risk && risk.history).find((x) => x && re.test(String(x.text || '')));
+  return h ? { at: h.at, by: h.by } : null;
+}
+
+/**
+ * The 12-stage lifecycle of a risk (source → validation → identification → analysis → evaluation →
+ * recommendation → human review → assignment → escalation → treatment evidence → residual assessment →
+ * closure & audit). Each stage: { key, state: 'done'|'current'|'pending'|'skipped', at, by }. For an open
+ * risk exactly one stage is 'current' (the first unfinished one); a dismissed risk skips 8–11.
+ */
+function lifecycle(risk, state) {
+  if (!risk) return [];
+  const p = state ? platform(state) : EMPTY_PLATFORM;
+  const th = state ? thresholds(state) : { alertThreshold: DEFAULT_ALERT_THRESHOLD, criticalThreshold: DEFAULT_CRITICAL_THRESHOLD };
+  const detected = risk.detectedAt || null;
+  const engineBy = pipelineLabel(risk.pipeline);
+  const sourceBy = (risk.evidence && risk.evidence.sourceSystem) || (risk.origin === 'manual' ? 'إدخال يدوي' : null);
+  const tasks = arr(p.tasks).filter((t) => t && (t.riskId === risk.id || t.id === risk.taskId)).sort((a, b) => ms(a.createdAt) - ms(b.createdAt));
+  const task = tasks[0] || null;
+  const alerts = arr(p.alerts).filter((a) => a && a.riskId === risk.id).sort((a, b) => ms(a.sentAt) - ms(b.sentAt));
+  const firstCritical = alerts.find((a) => a.severity === 'critical' || a.queue === 'immediate') || null;
+  const dismissed = risk.status === RISK_DISMISSED;
+  const closed = risk.status === RISK_CLOSED;
+  const override = arr(risk.overrides)[0] || null;
+  const accepted = historyAt(risk, /^قبول/);
+  const reviewedAt = dismissed ? (override ? { at: override.at, by: override.by } : { at: risk.updatedAt, by: risk.owner }) : (accepted || (override ? { at: override.at, by: override.by } : (task ? { at: task.createdAt, by: task.owner } : null)));
+  const evidence = arr(risk.treatment && risk.treatment.evidence);
+  const lastEvidence = evidence.length ? evidence.slice().sort((a, b) => ms(b.addedAt) - ms(a.addedAt))[0] : null;
+  const ra = risk.residualAssessment || null;
+  const hasResidual = residualOf(risk) != null;
+  const needsEscalation = severityOf(risk) >= th.criticalThreshold;
+  const stages = {
+    source: { done: true, at: detected, by: sourceBy },
+    validation: { done: risk.origin !== 'manual', at: detected, by: risk.dataQuality && risk.dataQuality.sourceName ? risk.dataQuality.sourceName : null, skip: risk.origin === 'manual' },
+    identification: { done: true, at: detected, by: risk.origin === 'manual' ? (arr(risk.history)[0] || {}).by || null : engineBy },
+    analysis: { done: Number.isFinite(num(risk.likelihood, NaN)) && Number.isFinite(num(risk.impact, NaN)), at: detected, by: risk.origin === 'manual' ? (arr(risk.history)[0] || {}).by || null : engineBy },
+    evaluation: { done: true, at: alerts[0] ? alerts[0].sentAt : detected, by: alerts[0] ? 'النظام' : engineBy },
+    recommendation: { done: Boolean(risk.recommendation && risk.recommendation.action), at: detected, by: engineBy, skip: !(risk.recommendation && risk.recommendation.action) && risk.origin === 'manual' },
+    review: { done: Boolean(reviewedAt) || closed, at: reviewedAt ? reviewedAt.at : null, by: reviewedAt ? reviewedAt.by : null },
+    assignment: { done: Boolean(task) || (Boolean(risk.owner) && Boolean(risk.dueDate) && !['مكتشف', 'تنبيه'].includes(risk.status)), at: task ? task.createdAt : null, by: task ? task.owner : risk.owner || null, skip: dismissed },
+    escalation: { done: Boolean(risk.escalated || firstCritical), at: firstCritical ? firstCritical.sentAt : null, by: firstCritical ? 'النظام' : null, skip: dismissed || (!needsEscalation && !risk.escalated && !firstCritical) },
+    evidence: { done: evidence.length > 0, at: lastEvidence ? lastEvidence.addedAt : null, by: lastEvidence ? lastEvidence.by : null, skip: dismissed || (closed && !evidence.length) },
+    residual: { done: hasResidual, at: ra ? ra.at : null, by: ra ? ra.by : null, skip: dismissed },
+    closure: { done: closed || dismissed, at: closed ? (risk.closedAt || risk.updatedAt) : (dismissed ? risk.updatedAt : null), by: closed || dismissed ? (arr(risk.history).slice(-1)[0] || {}).by || null : null },
+  };
+  let currentSet = closed || dismissed;
+  return LIFECYCLE_STAGES.map((key) => {
+    const st = stages[key];
+    let s;
+    if (st.done) s = 'done';
+    else if (st.skip) s = 'skipped';
+    else if (!currentSet) { s = 'current'; currentSet = true; } else s = 'pending';
+    return { key, state: s, at: s === 'done' ? st.at || null : null, by: s === 'done' ? st.by || null : null };
+  });
+}
+
+/**
+ * The single next action for a risk (cockpit priority list, drawer button). Keys:
+ * none · reopen? (closed → 'none') · review · escalate · assign · start-treatment · follow-up-overdue ·
+ * add-evidence · assess-residual · close. Labels are convenience copies; views may map `key` to dictionaries.
+ */
+const NEXT_ACTIONS = Object.freeze({
+  none: { label: 'لا إجراء مطلوب', labelEn: 'No action needed', tone: 'neutral' },
+  review: { label: 'مراجعة التوصية واتخاذ قرار', labelEn: 'Review the recommendation and decide', tone: 'warning' },
+  escalate: { label: 'تصعيد فوري', labelEn: 'Escalate now', tone: 'critical' },
+  assign: { label: 'تحديد المسؤول وتاريخ الاستحقاق', labelEn: 'Assign an owner and a due date', tone: 'warning' },
+  'start-treatment': { label: 'بدء تنفيذ المعالجة', labelEn: 'Start the treatment', tone: 'accent' },
+  'follow-up-overdue': { label: 'متابعة المعالجة المتأخرة', labelEn: 'Follow up the overdue treatment', tone: 'critical' },
+  'add-evidence': { label: 'إرفاق دليل المعالجة', labelEn: 'Attach treatment evidence', tone: 'accent' },
+  'assess-residual': { label: 'تقييم المخاطر المتبقية', labelEn: 'Assess the residual risk', tone: 'accent' },
+  close: { label: 'إغلاق المخاطرة بالنتيجة', labelEn: 'Close the risk with its outcome', tone: 'good' },
+});
+
+function nextAction(risk, state, now) {
+  const make = (key) => ({ key, ...NEXT_ACTIONS[key] });
+  if (!risk || risk.status === RISK_CLOSED || risk.status === RISK_DISMISSED) return make('none');
+  const at = resolveNow(null, now);
+  const th = state ? thresholds(state) : { criticalThreshold: DEFAULT_CRITICAL_THRESHOLD };
+  const tasks = state ? arr(platform(state).tasks).filter((t) => t && (t.riskId === risk.id || t.id === risk.taskId)) : [];
+  const openTask = tasks.find((t) => t.status !== TASK_CLOSED) || null;
+  if (severityOf(risk) >= th.criticalThreshold && !risk.escalated) return make('escalate');
+  if ((risk.status === 'مكتشف' || risk.status === RISK_ALERTED) && !risk.taskId && !tasks.length) return make('review');
+  if (!risk.owner || !risk.dueDate) return make('assign');
+  const overdue = isAiRiskOverdue(risk, startOfDay(at).getTime()) || (openTask && isTaskOverdue(openTask, at));
+  if (overdue) return make('follow-up-overdue');
+  if (risk.status === RISK_TASKED && openTask && openTask.status === 'جديدة') return make('start-treatment');
+  if (!arr(risk.treatment && risk.treatment.evidence).length) return make('add-evidence');
+  if (residualOf(risk) == null) return make('assess-residual');
+  return make('close');
+}
+
+/**
+ * Register rows (cockpit section F, AI register, exports): the filtered list enriched with every column the
+ * register shows. `extra`: { sort: 'score'|'due'|'detected'|'code'|'residual', dir: 'desc'|'asc', now }.
+ */
+function registerRows(state, filters, extra = {}) {
+  const x = extra && typeof extra === 'object' ? extra : {};
+  const at = resolveNow(filters, x.now);
+  const todayMs = startOfDay(at).getTime();
+  const rows = filteredAiRisks(state, filters, at).map((r) => {
+    const score = severityOf(r);
+    const res = residualOf(r);
+    const rt = rating(score);
+    const dq = r.dataQuality || null;
+    return {
+      id: r.id, code: r.code, title: r.title, titleEn: r.titleEn || '', projectId: r.projectId, projectName: siteNameOf(state, r.projectId),
+      category: r.category, categoryLabel: categoryLabel(r.category), categoryIcon: categoryIcon(r.category), type: r.type, typeLabel: typeLabel(r.type),
+      score, likelihood: r.likelihood, impact: r.impact, rating: rt, ratingLabel: ratingLabel(rt), tone: ratingTone(rt),
+      residualLikelihood: r.residualLikelihood ?? null, residualImpact: r.residualImpact ?? null, residualScore: res,
+      residualRating: res == null ? null : rating(res),
+      confidence: r.confidence == null ? null : num(r.confidence), dataQualityLevel: dq ? dq.level : null, dataQualityScore: dq ? dq.score : null,
+      owner: r.owner || null, dueDate: r.dueDate || null, daysToDue: r.dueDate ? dayDiff(at, r.dueDate) : null, overdue: isAiRiskOverdue(r, todayMs),
+      status: r.status, statusTone: statusTone(r.status), pipeline: r.pipeline, origin: r.origin || 'engine', detectedAt: r.detectedAt, updatedAt: r.updatedAt,
+      nextAction: nextAction(r, state, at), risk: r,
+    };
+  });
+  const dir = x.dir === 'asc' ? 1 : -1;
+  const key = x.sort || 'score';
+  const val = (row) => {
+    switch (key) {
+      case 'due': return row.dueDate ? ms(row.dueDate) : Infinity * -dir;
+      case 'detected': return ms(row.detectedAt) || 0;
+      case 'code': return row.code;
+      case 'residual': return row.residualScore == null ? -1 : row.residualScore;
+      default: return row.score;
+    }
+  };
+  return rows.sort((a, b) => {
+    const va = val(a); const vb = val(b);
+    const c = typeof va === 'string' ? va.localeCompare(vb) : (va === vb ? 0 : (va < vb ? -1 : 1));
+    if (c) return c * dir;
+    return (ms(a.dueDate) || Infinity) - (ms(b.dueDate) || Infinity) || String(a.code).localeCompare(String(b.code));
+  });
+}
+
+/** Priority actions (cockpit row E): top open risks by score, then the earliest due date. */
+function priorityActions(state, filters, limit = 6, now) {
+  return registerRows(state, filters, { now })
+    .filter((row) => isOpenRisk(row.risk))
+    .sort((a, b) => b.score - a.score || (ms(a.dueDate) || Infinity) - (ms(b.dueDate) || Infinity) || String(a.code).localeCompare(String(b.code)))
+    .slice(0, Math.max(0, limit));
+}
+
 /* ────────────────────────────── export ────────────────────────────── */
 
 export const psel = {
@@ -1377,6 +1753,9 @@ export const psel = {
   validationSummary, pipelineHealth, flowCounters, connectorSummary, auditEntries, roadmapSummary,
   // risk drawer
   responseParams, riskFlowStage, flowStageLabel, riskTimeline, riskDetail,
+  // v3 shared definitions (CONTRACT §8)
+  metrics, severityDistribution, heatmapLI, trend, inherentVsResidual, lifecycle, nextAction, registerRows, priorityActions,
+  dataQuality, severityOf, residualOf, isAiRiskOverdue, tasksInScope, LIFECYCLE_STAGES, NEXT_ACTIONS,
   // helpers exposed for tests/tooling
   dayDiff, daysLabel, sarLabel,
   FLOW_STAGES, ROLE_ORDER,

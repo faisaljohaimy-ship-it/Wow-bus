@@ -64,6 +64,16 @@ export function dataEn(ns, id, field) {
   return typeof v === 'string' ? v : '';
 }
 
+/** A nested value of a record's English mirror: dataAt('contracts', 'CT1', 'clauses', 2, 'title'). '' when absent. */
+export function dataAt(ns, id, ...path) {
+  let node = own(DATA && DATA[ns], id);
+  for (const key of path) {
+    if (node == null) return '';
+    node = Array.isArray(node) ? node[Number(key)] : own(node, key);
+  }
+  return typeof node === 'string' ? node : '';
+}
+
 export function siteEn(site) {
   if (!site) return '';
   if (typeof site.nameEn === 'string' && site.nameEn) return site.nameEn;
@@ -139,6 +149,6 @@ export function unitEn(unit) {
 }
 
 export default {
-  vocabReady, vocabLoaded, hasArabic, latinOnly, enumEn, dataEn, siteEn, siteEnById, zoneEn, personEn, workerEn, courseEn,
+  vocabReady, vocabLoaded, hasArabic, latinOnly, enumEn, dataEn, dataAt, siteEn, siteEnById, zoneEn, personEn, workerEn, courseEn,
   integrationEn, sourceSystemEn, unitEn,
 };

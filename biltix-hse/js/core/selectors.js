@@ -265,6 +265,50 @@ function isOpenRisk(r) {
   return r && r.status !== CLOSED;
 }
 
+/**
+ * THE overdue definition (CONTRACT §8 — used by kpis, urgentActions, the overview and every report section):
+ * an HSE risk is overdue when it is not closed (مغلق) and its due date (a calendar date) is before today.
+ * Controlled (مُسيطر عليه) risks still count: their mitigation deadline passed without closure.
+ */
+function isOverdueRisk(r, todayStartMs) {
+  if (!isOpenRisk(r)) return false;
+  const due = ms(r.dueDate);
+  return Number.isFinite(due) && due < todayStartMs;
+}
+
+/**
+ * Overdue HSE risks for the site filter (other filters do not narrow this stock metric), most severe
+ * first, then the longest overdue. Each row: the risk plus { score, tier, tone, daysOverdue }.
+ */
+function overdueRisks(state, filters, now) {
+  const f = normalizeFilters(filters);
+  const at = resolveNow(filters, now);
+  const todayStartMs = startOfDay(at).getTime();
+  return arr(state.risks)
+    .filter((r) => r && matchesSite(r, f.siteId) && isOverdueRisk(r, todayStartMs))
+    .map((r) => {
+      const score = riskScore(r);
+      const tier = riskTier(score);
+      return { ...r, risk: r, score, tier, tone: tierTone(tier), daysOverdue: Math.max(1, dayDiff(r.dueDate, at)) };
+    })
+    .sort((a, b) => b.score - a.score || b.daysOverdue - a.daysOverdue || String(a.code).localeCompare(String(b.code)));
+}
+
+/**
+ * Direction of a signed delta for narratives (text comes from dictionaries):
+ *   { direction: 'up'|'down'|'flat', good: boolean, neutral: boolean }
+ * `goodWhen` = 'down' (fewer is better, default) | 'up' (more is better) | 'none' (no judgement).
+ * A flat change is neutral and reported as good (nothing got worse). Non-numbers are flat.
+ */
+function describeDelta(delta, goodWhen = 'down') {
+  const d = Number(delta);
+  if (!Number.isFinite(d) || Math.abs(d) < 1e-9) return { direction: 'flat', good: true, neutral: true };
+  const direction = d > 0 ? 'up' : 'down';
+  if (goodWhen === 'none' || goodWhen === 'neutral') return { direction, good: true, neutral: true };
+  const good = goodWhen === 'up' ? d > 0 : d < 0;
+  return { direction, good, neutral: false };
+}
+
 /* ────────────────────────────── filtered collections ────────────────────────────── */
 
 function filteredRisks(state, filters, now) {
@@ -441,7 +485,7 @@ function metricsAt(state, f, at, isCurrent) {
     const tier = riskTier(riskScore(r));
     if (tier === 'حرج') criticalRisks += 1;
     else if (tier === 'عالٍ') highRisks += 1;
-    if (Number.isFinite(ms(r.dueDate)) && ms(r.dueDate) < todayStartMs) overdueRisks += 1;
+    if (isOverdueRisk(r, todayStartMs)) overdueRisks += 1;
   }
 
   /* permits */
@@ -559,6 +603,7 @@ function incidentTrend(state, weeks = 12, filters, now) {
     const start = addDays(firstMonday, 7 * i);
     return {
       label: `أسبوع ${isoWeek(start)}`,
+      labelEn: `Week ${isoWeek(start)}`,
       week: isoWeek(start),
       start: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`,
       incidents: 0,
@@ -865,9 +910,7 @@ function urgentActions(state, now, { limit = Infinity, siteId = 'all' } = {}) {
   const out = [];
 
   for (const r of arr(state.risks)) {
-    if (!isOpenRisk(r) || !matchesSite(r, siteId)) continue;
-    const due = ms(r.dueDate);
-    if (!Number.isFinite(due) || due >= todayStartMs) continue;
+    if (!matchesSite(r, siteId) || !isOverdueRisk(r, todayStartMs)) continue;
     const tier = riskTier(riskScore(r));
     out.push({
       kind: 'risk', id: r.id, code: r.code, siteId: r.siteId,
@@ -1065,6 +1108,10 @@ export const sel = {
   sensorExtras,
   // actions
   urgentActions,
+  // v3 shared definitions (CONTRACT §8)
+  isOverdueRisk,
+  overdueRisks,
+  describeDelta,
   // convenience
   siteById,
   categoryById,

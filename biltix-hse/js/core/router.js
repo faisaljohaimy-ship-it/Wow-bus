@@ -430,6 +430,9 @@ async function mount(view, params, { scroll = null, transition = null } = {}) {
   firstMount = false;
   userNavigation = false;
   if (restoreCancel) restoreCancel();
+  // A refresh (language / numerals) replaces the focused node: hand focus to the new heading instead of <body>.
+  const active = typeof document !== 'undefined' ? document.activeElement : null;
+  const focusWasInside = Boolean(active && active !== root && root.contains(active));
 
   bus.emit('ui:route-leave', { from: previousId, to: view.id, params: { ...params } });
   runCleanup();
@@ -484,7 +487,7 @@ async function mount(view, params, { scroll = null, transition = null } = {}) {
     scrollByKey.set(entryKey, { main: 0, win: 0 });
   }
   bus.emit('route:change', { id: view.id, params: { ...params }, view: resolved || view, previousId });
-  applyFocus(root, focusMode);
+  applyFocus(root, focusMode === 'none' && focusWasInside ? 'heading' : focusMode);
   if (animate) pageTransition(root);
 }
 

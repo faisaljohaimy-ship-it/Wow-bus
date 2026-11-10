@@ -2761,7 +2761,8 @@ export function deriveDataQuality(validationIn, sourceSystem, evidenceKind) {
   }
   return {
     score, level, sourceId: src.id, sourceName: src.name,
-    checks: { validityPct: validity, completenessPct: completeness, consistencyPct: consistency, quarantineOpen: open.length, lastBatch: src.lastBatch || null },
+    // (the batch time lives on the validation source — sourceId — so it is re-anchored with it, never copied here)
+    checks: { validityPct: validity, completenessPct: completeness, consistencyPct: consistency, quarantineOpen: open.length },
     issues,
   };
 }

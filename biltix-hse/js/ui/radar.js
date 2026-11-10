@@ -25,7 +25,7 @@
  * html[lang], so Arabic-first or Latin-first stacks follow the language). Side-effect free on
  * import: global listeners are attached only while at least one radar is running.
  *
- * Language (v3): canvas strings come from t('radar.*') at draw time; ctx.direction follows html[dir];
+ * Language (v3): canvas strings come from tr('radar.*') at draw time; ctx.direction follows html[dir];
  * the site plan mirrors its chrome in LTR (zone names at the inline-start corner, legend at the
  * bottom inline-start, compass at the top inline-end). A change of html[lang|dir] invalidates the
  * palette (fonts, direction) through the shared MutationObserver.
@@ -42,7 +42,7 @@
  */
 
 import { bus } from '../core/bus.js';
-import { t } from './i18n-bridge.js';
+import { t as tr } from './i18n-bridge.js';
 
 /* ------------------------------------------------------------------ */
 /* Constants & small math helpers                                      */
@@ -1440,7 +1440,7 @@ export class SensorRadar extends RadarBase {
     showValues: true,
     showThreshold: true,
     formatValue: null,     // (value, axis) => string
-    emptyText: null,       // default: t('radar.noSensors') at draw time
+    emptyText: null,       // default: tr('radar.noSensors') at draw time
   };
 
   constructor(canvas, opts) {
@@ -1524,7 +1524,7 @@ export class SensorRadar extends RadarBase {
       ctx.fillStyle = p.ink3;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(o.emptyText || t('radar.noSensors'), cx, cy);
+      ctx.fillText(o.emptyText || tr('radar.noSensors'), cx, cy);
       return;
     }
 
@@ -1710,7 +1710,7 @@ export class SensorRadar extends RadarBase {
 
 const HAZARD_PERIOD = { critical: 1.1, serious: 1.5, warning: 1.9, good: 2.6 };
 /** Localized names of moving things on the site plan (resolved at draw time). */
-const kindLabel = (kind) => t(`radar.kinds.${kind}`);
+const kindLabel = (kind) => tr(`radar.kinds.${kind}`);
 
 export class SitePlanRadar extends RadarBase {
   static defaults = {
@@ -1907,12 +1907,15 @@ export class SitePlanRadar extends RadarBase {
     const zoneLineH = g.W >= 300 ? 13 : 12;
     const codeFont = `500 9px ${p.fontMono}`;
     const occ = (this._occ || (this._occ = new Occupancy(w, h))).reset(w, h);
-    // Reserve the fixed chrome: compass (top inline-end), legend strip (bottom inline-start) and the DOM chips
-    // that overlay the frame (status top-inline-start, caption bottom-inline-end). RTL: compass top-left,
-    // legend bottom-right, status top-right, caption bottom-left; LTR mirrors every one of them.
+    // Reserve the fixed chrome: compass, legend strip and the DOM chips that overlay the frame (status
+    // top-inline-start, caption bottom-inline-end). The plan itself is a physical map and never mirrors, so the
+    // compass stays in the plan's empty top-left triangle in both directions (below the status chip in LTR);
+    // the legend takes the bottom inline-start corner. RTL: legend bottom-right, status top-right, caption
+    // bottom-left. LTR: legend bottom-left, status top-left, caption bottom-right.
     const rtl = p.rtl !== false;
     const mx = (x, width) => (rtl ? x : w - x - width);   // mirror a box's x for LTR
-    if (o.showCompass) occ.take(mx(g.m - 2, 30), g.m - 2, 30, 40);
+    const compassDy = rtl ? 0 : 34;
+    if (o.showCompass) occ.take(g.m - 2, g.m - 2 + compassDy, 30, 40);
     if (o.showLegend) occ.take(mx(Math.max(0, w - g.m - 250), 250), h - g.m - 16, 250, 20);
     occ.take(mx(Math.max(0, w - 170), 170), 0, 170, 26);
     occ.take(mx(0, 190), h - 24, 190, 24);
@@ -2297,10 +2300,10 @@ export class SitePlanRadar extends RadarBase {
       for (let li = 0; li < lines.length; li++) ctx.fillText(lines[li], px + pw / 2, py + 4 + zoneLineH / 2 + li * zoneLineH);
     }
 
-    /* compass (top inline-end: the .radar-status chip lives top-inline-start — top-right in RTL, top-left in LTR) */
+    /* compass: top-left (the plan's empty corner); in LTR below the .radar-status chip that sits top-inline-start */
     if (o.showCompass) {
-      const cxp = rtl ? g.m + 12 : w - g.m - 12;
-      const cyp = g.m + 12;
+      const cxp = g.m + 12;
+      const cyp = g.m + 12 + compassDy;
       ctx.strokeStyle = rgba(p.line2, 0.95);
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -2326,7 +2329,7 @@ export class SitePlanRadar extends RadarBase {
       ctx.fillStyle = p.ink3;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.fillText(t('radar.north'), cxp, cyp + 13);
+      ctx.fillText(tr('radar.north'), cxp, cyp + 13);
     }
 
     /* legend (bottom inline-start; .radar-caption lives bottom-inline-end). RTL: drawn from the right edge
@@ -2448,7 +2451,7 @@ export class ComplianceRadar extends RadarBase {
     pollMs: 500,
     ease: 0.06,
     showScores: true,
-    targetLabel: null,    // default: t('radar.target') at draw time
+    targetLabel: null,    // default: tr('radar.target') at draw time
   };
 
   constructor(canvas, opts) {
@@ -2527,7 +2530,7 @@ export class ComplianceRadar extends RadarBase {
       ctx.fillStyle = p.ink3;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(t('radar.noItems'), cx, cy);
+      ctx.fillText(tr('radar.noItems'), cx, cy);
       return;
     }
 
@@ -2598,7 +2601,7 @@ export class ComplianceRadar extends RadarBase {
 
     /* target label pill: rides the target ring midway between two axes (never over a score) */
     {
-      const text = `${o.targetLabel || t('radar.target')} ${localizeDigits(String(Math.round(target)), p.numerals)}`;
+      const text = `${o.targetLabel || tr('radar.target')} ${localizeDigits(String(Math.round(target)), p.numerals)}`;
       ctx.font = `500 9.5px ${p.fontMono}`;
       const tw = ctx.measureText(text).width;
       const pw = tw + 12;

@@ -14,10 +14,12 @@
  *   i18n.tn(key, count, params) plural object { zero, one, two, few, many, other } chosen with
  *                               Intl.PluralRules(lang); {count} is preformatted with fmt.num.
  *   i18n.has(key, lang?)        true when the key resolves in `lang` (default: active) or in Arabic.
- *   i18n.label(enumNs, value)   enum display: t(`enum.${enumNs}.${value}`) falling back to the value.
+ *   i18n.label(enumNs, value)   enum display: dict.enum[enumNs][value] (direct lookup — values may contain
+ *                               dots), falling back to the Arabic label, then to the value itself.
  *   i18n.registerData(ns, map)  map = { [recordId]: mirror }   (ns 'terms' = { arabic: english }).
- *   i18n.L(record, field, ns)   data value in the active language (en: original deep-merged with the
- *                               mirror; else record[field + 'En']; else the original). ar: original.
+ *   i18n.L(record, field, ns, key?)  data value in the active language (en: original deep-merged with
+ *                               the mirror; else record[field + 'En']; else terms; else the original).
+ *                               Mirror key: key ?? record.id ?? record.code ?? '_' (singletons). ar: original.
  *   i18n.localize(record, ns)   the whole record deep-merged with its mirror (en) — for views.
  *   i18n.term(str)              free repeated strings (people, organisations, roles, places).
  *   i18n.missing()              Set of 'lang:key' strings that fell back (diagnostics; no console output).
@@ -45,7 +47,8 @@ const PARAM_RE = /\{(\w+)\}/g;
  * Add a new file here when it lands (a missing path would surface as a 404 in the console).
  */
 export const DATA_DICTIONARY_FILES = Object.freeze([
-  /* filled from the files present in js/i18n/data/ — see docs/i18n.md §4 */
+  // Merged entry point of js/i18n/data/*.js (hse, platform, platform-domains, platform-risks).
+  '../i18n/data/index.js',
 ]);
 
 /** @type {{ ar: Record<string, object>, en: Record<string, object> }} namespace → nested dictionary */
@@ -209,17 +212,33 @@ export function mergeMirror(original, mirror) {
   return original;
 }
 
+/** Mirror key of a record: id → code (currencies) → '_' (singletons: company, product, roadmap). */
 function recordKey(record) {
   if (!record || typeof record !== 'object') return '_';
   if (record.id !== undefined && record.id !== null && record.id !== '') return String(record.id);
+  if (typeof record.code === 'string' && record.code) return record.code;
   return '_';
 }
 
-function mirrorFor(ns, record) {
+function mirrorFor(ns, record, key) {
   if (!ns) return undefined;
   const table = dataDicts[ns];
   if (!table) return undefined;
-  return table[recordKey(record)];
+  if (key !== undefined && key !== null && key !== '') return table[String(key)];
+  const k = recordKey(record);
+  if (table[k] !== undefined) return table[k];
+  // Records that carry both an id and a code may be keyed by either.
+  if (record && typeof record.code === 'string' && table[record.code] !== undefined) return table[record.code];
+  return undefined;
+}
+
+/** Direct enum lookup: dict.enum[enumNs][value] (stored values may contain dots — never split them). */
+function enumLookup(lang, enumNs, value) {
+  const root = dicts[lang] && dicts[lang].enum;
+  if (!root || typeof root !== 'object') return undefined;
+  const table = Object.prototype.hasOwnProperty.call(root, enumNs) ? root[enumNs] : undefined;
+  if (!table || typeof table !== 'object') return undefined;
+  return Object.prototype.hasOwnProperty.call(table, value) ? table[value] : undefined;
 }
 
 /* ────────────────────────────── language application ────────────────────────────── */
@@ -367,16 +386,16 @@ export const i18n = {
   label(enumNs, value) {
     if (value === undefined || value === null || value === '') return '';
     const raw = String(value);
-    const key = `enum.${enumNs}.${raw}`;
-    const own = lookup(current, key);
-    if (typeof own === 'string') return own;
+    const ns = String(enumNs);
+    const own = enumLookup(current, ns, raw);
+    if (typeof own === 'string' && own) return own;
     if (current !== 'ar') {
-      noteMissing(current, key);
+      noteMissing(current, `enum.${ns}.${raw}`);
       // English without a translation: an English stored value (red, connected …) reads better than an Arabic label.
       if (!/[؀-ۿ]/.test(raw)) return raw;
     }
-    const ar = lookup('ar', key);
-    return typeof ar === 'string' ? ar : raw;
+    const ar = enumLookup('ar', ns, raw);
+    return typeof ar === 'string' && ar ? ar : raw;
   },
 
   /** Register English data mirrors for a collection (merged record by record). */
@@ -391,12 +410,15 @@ export const i18n = {
     return i18n;
   },
 
-  /** A data field in the active language (see contract §4). */
-  L(record, field, ns) {
+  /**
+   * A data field in the active language (see contract §4). Optional `key` overrides the mirror key
+   * (feedTemplates are keyed by array index).
+   */
+  L(record, field, ns, key) {
     if (!record || typeof record !== 'object') return record;
     const original = record[field];
     if (current === 'ar') return original;
-    const mirror = mirrorFor(ns, record);
+    const mirror = mirrorFor(ns, record, key);
     if (mirror && typeof mirror === 'object' && mirror[field] !== undefined && mirror[field] !== null) {
       return mergeMirror(original, mirror[field]);
     }
@@ -410,10 +432,10 @@ export const i18n = {
   },
 
   /** Whole record in the active language (en: deep-merged with its mirror; '<field>En' fields applied). */
-  localize(record, ns) {
+  localize(record, ns, key) {
     if (!record || typeof record !== 'object' || current === 'ar') return record;
     let out = record;
-    const mirror = mirrorFor(ns, record);
+    const mirror = mirrorFor(ns, record, key);
     if (mirror && typeof mirror === 'object') out = mergeMirror(record, mirror);
     let copied = out !== record;
     for (const key of Object.keys(record)) {
@@ -466,6 +488,6 @@ export const i18n = {
 
 export const t = (key, params) => i18n.t(key, params);
 export const tn = (key, count, params) => i18n.tn(key, count, params);
-export const L = (record, field, ns) => i18n.L(record, field, ns);
+export const L = (record, field, ns, key) => i18n.L(record, field, ns, key);
 
 export default i18n;

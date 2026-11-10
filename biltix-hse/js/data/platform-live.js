@@ -29,6 +29,7 @@
  */
 
 import { fmt } from '../core/fmt.js';
+import { enumEn, dataEn, dataAt, siteEnById, personEn, integrationEn, sourceSystemEn, unitEn, latinOnly } from './vocab-en.js';
 
 const RNG_SEED = (20261109 ^ 0x5bd1e995) >>> 0;
 const FEED_MIN_MS = 4000;
@@ -197,12 +198,29 @@ function pipelineLabel(id) {
 
 function emit(event) {
   if (!S || !event) return null;
-  const ev = S.pushFeed({ ts: localISO(new Date()), ...event, title: arDigits(event.title), detail: arDigits(event.detail) });
+  const ev = S.pushFeed({ ts: localISO(new Date()), ...event, title: arDigits(event.title), detail: arDigits(event.detail), titleEn: String(event.titleEn || ''), detailEn: String(event.detailEn || ''), simulated: true });
   if (ev && B) B.emit('feed:event', ev);
   return ev;
 }
 
 /* ────────────────────────────── feed event generators ────────────────────────────── */
+/*
+ * Every event is bilingual (title/detail + titleEn/detailEn, CONTRACT §8) and tagged `simulated: true`:
+ * in this demo build the pipelines, connectors and write-backs are scenarios, so the copy never claims a
+ * real connection or a confirmed delivery ("محاكاة" / "Simulated").
+ */
+
+const enN = (n, digits = 0) => { const v = Number(n); return Number.isFinite(v) ? v.toLocaleString('en-US', { maximumFractionDigits: digits }) : ''; };
+const enPct = (n, digits = 0) => `${enN(n, digits)}%`;
+const enSignedPct = (n, digits = 1) => `${n >= 0 ? '+' : '−'}${enN(Math.abs(n), digits)}%`;
+const sarEn = (n) => { const v = Number(n) || 0; if (Math.abs(v) >= 1e6) return `SAR ${enN(v / 1e6, 1)}M`; if (Math.abs(v) >= 1e3) return `SAR ${enN(v / 1e3)}k`; return `SAR ${enN(v)}`; };
+const PIPELINE_UNIT_EN = {
+  'contract-nlp': 'contract clauses', 'bom-forecast': 'supply items and price series', 'schedule-model': `critical activities (Monte Carlo, ${enN(MONTE_CARLO_RUNS)} runs)`,
+  'site-ai': 'photos and daily reports', 'cost-forecast': 'cost lines (EVM)',
+};
+const pipelineEn = (id) => enumEn('pipeline', id, 'Risk engine');
+const projectEn = (id) => siteEnById(sites(), id);
+const codeEn = (c) => nbh(c);
 
 function aiEvent() {
   const pipes = arr('pipelines');
@@ -213,16 +231,17 @@ function aiEvent() {
 
   if (risks.length && chance(0.6)) {
     const r = pick(risks);
-    const base = Number(r.score) || 50;
-    // Small drift inside the current rating band so no silent threshold crossing happens here.
-    const band = base >= 70 ? [70, 100] : base >= 40 ? [40, 69] : [0, 39];
-    const score = clamp(base + int(-3, 3), band[0], band[1]);
-    if (score !== base && chance(0.5)) S.updateAiRisk(r.id, { score, confidence: clamp((Number(r.confidence) || 0.8) + (rand() - 0.5) * 0.04, 0.5, 0.99) });
+    const score = Number(r.score) || 0;
+    // Severity is likelihood × impact × 4 and only changes through an explicit re-assessment, so a
+    // simulated re-run refreshes the model confidence only — the score stays put (no silent threshold crossing).
+    if (chance(0.5)) S.updateAiRisk(r.id, { confidence: clamp(Math.round(((Number(r.confidence) || 0.8) + (rand() - 0.5) * 0.04) * 100) / 100, 0.5, 0.99) });
     const rating = ratingOf(score);
     return {
       type: 'ai', tone: RATING_TONE[rating], siteId: r.projectId, sourceId: pipeId, refId: r.id,
-      title: `${label}: إعادة تقييم ${nbh(r.code)} — الدرجة ${num(score)} (${RATING_LABEL[rating]})`,
+      title: `${label} (محاكاة): إعادة تقييم ${nbh(r.code)} — الدرجة ${num(score)} (${RATING_LABEL[rating]}) دون تغيير`,
+      titleEn: `${pipelineEn(pipeId)} (simulated): ${codeEn(r.code)} re-evaluated — score ${enN(score)} (${enumEn('rating', rating)}) unchanged`,
       detail: [r.title, siteName(r.projectId)].filter(Boolean).join(' · '),
+      detailEn: [dataEn('aiRisks', r.id, 'title') || latinOnly(r.titleEn), projectEn(r.projectId)].filter(Boolean).join(' · '),
       code: r.code, score, rating, source: label,
     };
   }
@@ -231,15 +250,16 @@ function aiEvent() {
   const ms = int(180, 2400);
   const overrides = int(3, 14);
   const variants = [
-    { title: `${label}: اكتمال دورة تحليل — ${num(n)} ${unitOf(pipeId)} خلال ${num(ms)} م.ث`, count: n, ms },
-    { title: `${label}: لا مخاطر جديدة فوق العتبة في الدورة الأخيرة (${num(n)} ${unitOf(pipeId)})`, count: n },
-    { title: `${label}: تحديث أهمية السمات بعد ${num(overrides)} تجاوزاً بشرياً — إعادة معايرة مُجدولة`, count: overrides },
+    { title: `${label} (محاكاة): اكتمال دورة تحليل — ${num(n)} ${unitOf(pipeId)} خلال ${num(ms)} م.ث`, titleEn: `${pipelineEn(pipeId)} (simulated): analysis cycle finished — ${enN(n)} ${PIPELINE_UNIT_EN[pipeId] || 'records'} in ${enN(ms)} ms`, count: n, ms },
+    { title: `${label} (محاكاة): لا مخاطر جديدة فوق العتبة في الدورة الأخيرة (${num(n)} ${unitOf(pipeId)})`, titleEn: `${pipelineEn(pipeId)} (simulated): no new risk above the threshold in the last cycle (${enN(n)} ${PIPELINE_UNIT_EN[pipeId] || 'records'})`, count: n },
+    { title: `${label} (محاكاة): ${num(overrides)} تجاوزاً بشرياً مسجلاً — إعادة المعايرة تتطلب خدمة نماذج متصلة`, titleEn: `${pipelineEn(pipeId)} (simulated): ${enN(overrides)} human overrides recorded — recalibration needs a connected model service`, count: overrides },
   ];
   const v = pick(variants);
   const version = (pipes.find((p) => p.id === pipeId) || {}).version || 'v2.3.1';
   return {
     type: 'ai', tone: 'accent', siteId: randomProjectId(), sourceId: pipeId,
-    title: v.title, detail: `الإصدار ${version} · طبقة التفسير مفعّلة`,
+    title: v.title, titleEn: v.titleEn,
+    detail: `الإصدار ${version} · قيم توضيحية`, detailEn: `Version ${version} · illustrative values`,
     count: v.count, ms: v.ms, source: label,
   };
 }
@@ -249,6 +269,7 @@ function validationEvent() {
   const sources = Array.isArray(v.sources) ? v.sources : [];
   const src = sources.length ? pick(sources) : null;
   const name = (src && src.name) || pick(['Oracle ERP', 'Primavera P6', 'Biltix — العقود', 'Autodesk APS']);
+  const nameEn = (src && dataEn('validationSources', src.id, 'name')) || latinOnly(name) || sourceSystemEn(name);
   const batch = int(40, 900);
   const rejected = int(0, 6);
   const dedup = int(0, 5);
@@ -269,52 +290,57 @@ function validationEvent() {
     });
   }
   const variants = [
-    `طبقة التحقق: معالجة دفعة ${num(batch)} سجلاً من ${name} · رفض ${num(rejected)} · حذف ${num(dedup)} مكرراً · اكتمال ${pct(completeness, 1)}`,
+    [`طبقة التحقق (محاكاة): دفعة ${num(batch)} سجلاً من ${name} · رفض ${num(rejected)} · حذف ${num(dedup)} مكرراً · اكتمال ${pct(completeness, 1)}`,
+      `Validation layer (simulated): batch of ${enN(batch)} records from ${nameEn} · ${enN(rejected)} rejected · ${enN(dedup)} duplicates removed · completeness ${enPct(completeness, 1)}`],
     rejected > 0
-      ? `طبقة التحقق: ${num(rejected)} سجلات فشلت فحص المخطط من ${name} — تحويلها إلى قائمة الحجر`
-      : `طبقة التحقق: دفعة ${name} اجتازت فحوص المخطط والاكتمال بالكامل (${num(batch)} سجلاً)`,
-    `طبقة التحقق: اتساق ${pct(consistency, 1)} لدفعة ${name} — عبرت البوابة إلى بحيرة البيانات`,
+      ? [`طبقة التحقق (محاكاة): ${num(rejected)} سجلات لم تجتز فحص المخطط من ${name} — تحويلها إلى قائمة الحجر`, `Validation layer (simulated): ${enN(rejected)} records from ${nameEn} failed schema checks — moved to quarantine`]
+      : [`طبقة التحقق (محاكاة): دفعة ${name} اجتازت فحوص المخطط والاكتمال (${num(batch)} سجلاً)`, `Validation layer (simulated): the ${nameEn} batch passed schema and completeness checks (${enN(batch)} records)`],
+    [`طبقة التحقق (محاكاة): اتساق ${pct(consistency, 1)} لدفعة ${name}`, `Validation layer (simulated): consistency ${enPct(consistency, 1)} for the ${nameEn} batch`],
   ];
+  const [title, titleEn] = pick(variants);
   return {
     type: 'validation', tone: rejected >= 4 ? 'warning' : 'accent', siteId: null, sourceId: src ? src.id : null,
-    title: pick(variants), detail: 'لا يصل أي سجل إلى المحرك قبل اجتياز التحقق · التكرار والاكتمال والاتساق',
+    title, titleEn,
+    detail: 'لا يصل أي سجل إلى المحرك قبل اجتياز التحقق · قيم توضيحية', detailEn: 'No record reaches the engine before passing validation · illustrative values',
     count: batch, rejected, deduplicated: dedup, pct: completeness, consistencyPct: consistency, source: name,
   };
 }
 
-/** Title + raw payload for a connector sync event (numbers formatted with fmt, raw copies kept). */
+/** Title (ar + en) + raw payload for a simulated connector sync event. */
 function connectorTitle(c) {
   const id = String(c.id || '');
   const name = c.name || id;
+  const nameEn = integrationEn(c);
   const n = int(24, 960);
-  const t = (title, extra = {}) => ({ title, count: n, ...extra });
-  if (id.startsWith('primavera')) return t(`${name}: مزامنة ${num(n)} نشاطاً · المسار الحرج محدّث · الطفو الكلي أُعيد حسابه`);
-  if (id.startsWith('autodesk')) return t(`${name}: استخراج كميات من النموذج (Model Derivative) — ${num(n)} عنصراً · فروقات BoQ↔BIM محدّثة`);
-  if (id.startsWith('oracle-erp') || id.startsWith('sap')) return t(`${name}: ${num(n)} قيداً مالياً جديداً · الالتزامات والفعلي محدّثان`);
-  if (id.includes('crm') || id.startsWith('hubspot') || id.startsWith('zoho')) { const k = int(3, 40); return t(`${name}: تحديث ${num(k)} سجلاً للعملاء والعقود`, { count: k }); }
-  if (id === 'biltix-contracts') { const k = int(1, 9); return t(`${name}: ${num(k)} مستندات جديدة أُرسلت إلى محرك NLP`, { count: k }); }
-  if (id === 'biltix-boq') return t(`${name}: تحديث ${num(n)} بنداً · أسعار الوحدة ومهل التوريد محدّثة`);
-  if (id === 'biltix-schedule') return t(`${name}: ${num(n)} نشاطاً متزامناً مع P6 · نسب الإنجاز محدّثة`);
-  if (id === 'biltix-site-reports') { const k = int(4, 28); return t(`${name}: ${num(k)} تقريراً يومياً أُرسلت إلى ذكاء الموقع`, { count: k }); }
-  if (id === 'biltix-images') { const k = int(40, 420); return t(`${name}: ${num(k)} صورة موقع جديدة · كشف معدات الوقاية والحواجز`, { count: k }); }
-  if (id === 'biltix-cost') { const k = int(6, 60); return t(`${name}: تحديث ${num(k)} سطر ميزانية · EV/AC محدّثان`, { count: k }); }
+  const t = (title, titleEn, extra = {}) => ({ title: `محاكاة: ${title}`, titleEn: `Simulated: ${titleEn}`, count: n, ...extra });
+  if (id.startsWith('primavera')) return t(`${name}: مزامنة ${num(n)} نشاطاً · المسار الحرج محدّث`, `${nameEn}: ${enN(n)} activities synced · critical path refreshed`);
+  if (id.startsWith('autodesk')) return t(`${name}: استخراج كميات من النموذج — ${num(n)} عنصراً`, `${nameEn}: model quantities extracted — ${enN(n)} elements`);
+  if (id.startsWith('oracle-erp') || id.startsWith('sap')) return t(`${name}: ${num(n)} قيداً مالياً جديداً`, `${nameEn}: ${enN(n)} new financial entries`);
+  if (id.includes('crm') || id.startsWith('hubspot') || id.startsWith('zoho')) { const k = int(3, 40); return t(`${name}: تحديث ${num(k)} سجلاً للعملاء والعقود`, `${nameEn}: ${enN(k)} customer and contract records updated`, { count: k }); }
+  if (id === 'biltix-contracts') { const k = int(1, 9); return t(`${name}: ${num(k)} مستندات جديدة إلى محرك NLP`, `${nameEn}: ${enN(k)} new documents sent to the NLP engine`, { count: k }); }
+  if (id === 'biltix-boq') return t(`${name}: تحديث ${num(n)} بنداً`, `${nameEn}: ${enN(n)} items updated`);
+  if (id === 'biltix-schedule') return t(`${name}: ${num(n)} نشاطاً متزامناً مع P6`, `${nameEn}: ${enN(n)} activities aligned with P6`);
+  if (id === 'biltix-site-reports') { const k = int(4, 28); return t(`${name}: ${num(k)} تقريراً يومياً إلى ذكاء الموقع`, `${nameEn}: ${enN(k)} daily reports sent to site intelligence`, { count: k }); }
+  if (id === 'biltix-images') { const k = int(40, 420); return t(`${name}: ${num(k)} صورة موقع جديدة`, `${nameEn}: ${enN(k)} new site photos`, { count: k }); }
+  if (id === 'biltix-cost') { const k = int(6, 60); return t(`${name}: تحديث ${num(k)} سطر ميزانية`, `${nameEn}: ${enN(k)} budget lines updated`, { count: k }); }
   if (id === 'feed-commodities') {
     const com = pick(arr('commodities')) || { name: 'حديد التسليح' };
     const change = round1((rand() - 0.45) * 4);
-    return { title: `مؤشرات السلع: تحديث سعر ${com.name} (${signedPct(change)})`, pct: change, subject: com.name };
+    const comEn = (com.id && dataEn('commodities', com.id, 'name')) || 'rebar';
+    return { title: `محاكاة: مؤشرات السلع — سعر ${com.name} (${signedPct(change)})`, titleEn: `Simulated: commodity indices — ${comEn} price (${enSignedPct(change)})`, pct: change, subject: com.name };
   }
   if (id === 'feed-fx-sama') {
     const eur = round1(4.05 + rand() * 0.1);
     const cny = Number((0.51 + rand() * 0.02).toFixed(3));
-    return { title: `أسعار الصرف (ساما): EUR ${num(eur, 2)} · CNY ${num(cny, 3)} · USD ${num(3.75, 2)} (مثبّت)`, value: eur, unit: 'ر.س/EUR', rates: { EUR: eur, CNY: cny, USD: 3.75 } };
+    return { title: `محاكاة: أسعار الصرف (ساما) — EUR ${num(eur, 2)} · CNY ${num(cny, 3)} · USD ${num(3.75, 2)} (مثبّت)`, titleEn: `Simulated: exchange rates (SAMA) — EUR ${enN(eur, 2)} · CNY ${enN(cny, 3)} · USD 3.75 (pegged)`, value: eur, unit: 'ر.س/EUR', rates: { EUR: eur, CNY: cny, USD: 3.75 } };
   }
   if (id === 'feed-weather-ncm') {
     const wind = int(14, 48);
-    const days = 7;
-    return { title: `المركز الوطني للأرصاد: تحديث توقعات ${num(days)} أيام — رياح ${num(wind)} كم/س في ${siteName(randomProjectId()) || 'المواقع'}`, value: wind, unit: 'كم/س', days };
+    const pid = randomProjectId();
+    return { title: `محاكاة: المركز الوطني للأرصاد — توقعات 7 أيام · رياح ${num(wind)} كم/س في ${siteName(pid) || 'المواقع'}`, titleEn: `Simulated: National Center for Meteorology — 7-day forecast · wind ${enN(wind)} km/h at ${projectEn(pid) || 'the sites'}`, value: wind, unit: 'كم/س', days: 7 };
   }
-  if (id === 'feed-gis') { const k = int(2, 9); return t(`طبقات GIS: تحديث حدود المواقع والمناطق المحظورة (${num(k)} طبقات)`, { count: k }); }
-  return t(`${name}: مزامنة ${num(n)} سجلاً — اكتملت دون أخطاء`);
+  if (id === 'feed-gis') { const k = int(2, 9); return t(`طبقات GIS: تحديث ${num(k)} طبقات`, `GIS layers: ${enN(k)} layers updated`, { count: k }); }
+  return t(`${name}: مزامنة ${num(n)} سجلاً`, `${nameEn}: ${enN(n)} records synced`);
 }
 
 function connectorEvent() {
@@ -329,15 +355,17 @@ function connectorEvent() {
   if (c.status === 'degraded') {
     return {
       type: 'connector', tone: 'warning', siteId: null, sourceId: c.id,
-      title: `${c.name}: زمن استجابة مرتفع (${num(latency)} م.ث) — إعادة المحاولة التلقائية`,
-      detail: 'الموصل في وضع متدهور · البيانات الواردة تُعاد معالجتها بعد الاستقرار',
+      title: `محاكاة: ${c.name} — زمن استجابة مرتفع (${num(latency)} م.ث)`,
+      titleEn: `Simulated: ${integrationEn(c)} — high latency (${enN(latency)} ms)`,
+      detail: 'سيناريو تجريبي لموصل متدهور · قيمة توضيحية', detailEn: 'Demo scenario of a degraded connector · illustrative value',
       ms: latency, source: c.name,
     };
   }
-  const { title, ...payload } = connectorTitle(c);
+  const { title, titleEn, ...payload } = connectorTitle(c);
   return {
-    type: 'connector', tone: 'accent', siteId: null, sourceId: c.id, title,
-    detail: `${c.mode === 'read+writeback' ? 'قراءة + كتابة عكسية' : 'قراءة فقط'} · ${num(latency)} م.ث`,
+    type: 'connector', tone: 'accent', siteId: null, sourceId: c.id, title, titleEn,
+    detail: `${c.mode === 'read+writeback' ? 'قراءة + كتابة عكسية' : 'قراءة فقط'} · ${num(latency)} م.ث (قيمة توضيحية)`,
+    detailEn: `${c.mode === 'read+writeback' ? 'Read + write-back' : 'Read only'} · ${enN(latency)} ms (illustrative)`,
     ms: latency, source: c.name, ...payload,
   };
 }
@@ -348,18 +376,23 @@ function writebackEvent() {
   if (!t) {
     return {
       type: 'writeback', tone: 'accent', siteId: null, sourceId: 'biltix-pm',
-      title: `${PM_NAME}: مزامنة أعلام المخاطر والتنبيهات — لا تغييرات معلّقة`,
-      detail: 'الكتابة العكسية تقتصر على الأعلام والدرجات والتنبيهات ومهام المعالجة',
+      title: `محاكاة: ${PM_NAME} — لا تغييرات معلّقة للكتابة العكسية`,
+      titleEn: 'Simulated: BILTIX PM — no pending write-back changes',
+      detail: 'الكتابة العكسية تقتصر على الأعلام والدرجات والتنبيهات ومهام المعالجة', detailEn: 'Write-back is limited to risk flags, scores, alerts and mitigation tasks',
       source: PM_SOURCE,
     };
   }
   const risk = arr('aiRisks').find((r) => r && r.id === t.riskId);
   return {
-    type: 'writeback', tone: 'good', siteId: t.projectId, sourceId: 'biltix-pm', refId: t.id,
+    type: 'writeback', tone: 'accent', siteId: t.projectId, sourceId: 'biltix-pm', refId: t.id,
     title: risk
-      ? `${PM_NAME}: تحديث علم المخاطرة ${nbh(risk.code)} ودرجتها (${num(risk.score)}) — مرتبط بالمهمة ${nbh(t.code)}`
-      : `${PM_NAME}: تأكيد الكتابة العكسية للمهمة ${nbh(t.code)}`,
+      ? `محاكاة: ${PM_NAME} — علم المخاطرة ${nbh(risk.code)} ودرجتها (${num(risk.score)}) للمهمة ${nbh(t.code)}`
+      : `محاكاة: ${PM_NAME} — الكتابة العكسية للمهمة ${nbh(t.code)}`,
+    titleEn: risk
+      ? `Simulated: BILTIX PM — risk flag ${codeEn(risk.code)} and score (${enN(risk.score)}) for task ${codeEn(t.code)}`
+      : `Simulated: BILTIX PM — write-back for task ${codeEn(t.code)}`,
     detail: [t.title, siteName(t.projectId)].filter(Boolean).join(' · '),
+    detailEn: [dataEn('tasks', t.id, 'title') || latinOnly(t.titleEn), projectEn(t.projectId)].filter(Boolean).join(' · '),
     source: PM_SOURCE, code: t.code, riskCode: risk ? risk.code : undefined, score: risk ? Number(risk.score) : undefined,
   };
 }
@@ -369,25 +402,28 @@ function taskEvent() {
   const fresh = open.filter((t) => t.status === 'جديدة');
   if (fresh.length && chance(0.35)) {
     const t = pick(fresh);
-    S.updateTask(t.id, { status: 'قيد التنفيذ', by: t.owner }); // the store emits the feed event
+    S.updateTask(t.id, { status: 'قيد التنفيذ', by: t.owner }); // the store emits the (bilingual) feed event
     return null;
   }
   const t = pick(open);
   if (!t) {
-    return { type: 'task', tone: 'accent', siteId: null, sourceId: 'biltix-pm', title: 'مهام المعالجة: لا مهام مفتوحة — جميع التوصيات المقبولة أُغلقت', detail: 'يُنشئ المحرك مهمة جديدة تلقائياً عند قبول أي توصية' };
+    return { type: 'task', tone: 'accent', siteId: null, sourceId: 'biltix-pm', title: 'مهام المعالجة: لا مهام مفتوحة', titleEn: 'Mitigation tasks: none open', detail: 'يُنشئ المحرك مهمة جديدة عند قبول أي توصية', detailEn: 'A new task is created whenever a recommendation is accepted' };
   }
   const notes = [
-    'تم التواصل مع المقاول من الباطن وتحديد موعد التنفيذ',
-    'بانتظار اعتماد الإدارة القانونية على الصياغة البديلة',
-    'أُرسل طلب الشراء البديل إلى المورد الثاني',
-    'تم تحديث الجدول الزمني في Primavera P6',
-    'جولة تحقق ميدانية مجدولة صباح الغد',
-    'رُفعت الأدلة والصور إلى سجل المهمة',
+    ['تم التواصل مع المقاول من الباطن وتحديد موعد التنفيذ', 'subcontractor contacted and the work date set'],
+    ['بانتظار اعتماد الإدارة القانونية على الصياغة البديلة', 'awaiting legal approval of the alternative wording'],
+    ['أُرسل طلب الشراء البديل إلى المورد الثاني', 'alternative purchase request sent to the second supplier'],
+    ['تم تحديث الجدول الزمني في Primavera P6', 'schedule updated in Primavera P6'],
+    ['جولة تحقق ميدانية مجدولة صباح الغد', 'field verification walk scheduled for tomorrow morning'],
+    ['رُفعت الأدلة والصور إلى سجل المهمة', 'evidence and photos uploaded to the task record'],
   ];
+  const [note, noteEn] = pick(notes);
   return {
     type: 'task', tone: t.status === 'متأخرة' ? 'serious' : 'accent', siteId: t.projectId, sourceId: 'biltix-pm', refId: t.id,
-    title: `${t.owner || 'المسؤول'} أضاف تحديثاً على ${nbh(t.code)}: ${pick(notes)}`,
+    title: `محاكاة: ${t.owner || 'المسؤول'} أضاف تحديثاً على ${nbh(t.code)} — ${note}`,
+    titleEn: `Simulated: ${personEn(t.owner, 'the owner')} updated ${codeEn(t.code)} — ${noteEn}`,
     detail: [t.title, `الحالة: ${t.status}`].filter(Boolean).join(' · '),
+    detailEn: [dataEn('tasks', t.id, 'title') || latinOnly(t.titleEn), `Status: ${enumEn('taskStatus', t.status)}`].filter(Boolean).join(' · '),
     code: t.code, source: PM_SOURCE,
   };
 }
@@ -410,63 +446,80 @@ function oneFeedEvent(kind) {
 
 /* ────────────────────────────── AI risk detection (~3 min) ────────────────────────────── */
 
-function scoreForBand() {
+/** Likelihood × impact pairs per rating band (severity = L × I × 4; red ≥ 70, yellow 40–69, green < 40). */
+const LI_BANDS = {
+  red: [[4, 5], [5, 4], [5, 5]],
+  yellow: [[4, 4], [3, 4], [4, 3], [3, 5], [5, 3], [2, 5], [5, 2]],
+  green: [[3, 3], [2, 4], [4, 2], [2, 3], [3, 2], [2, 2], [1, 5], [5, 1], [1, 4], [1, 3]],
+};
+
+function liForBand() {
   const band = weightedPick([['red', 35], ['yellow', 40], ['green', 25]]);
-  if (band === 'red') return int(70, 92);
-  if (band === 'yellow') return int(40, 69);
-  return int(15, 39);
+  const [likelihood, impact] = pick(LI_BANDS[band]);
+  return { likelihood, impact, score: likelihood * impact * 4 };
 }
 
 function contractContext(projectId) {
   const list = arr('contracts').filter((c) => c && c.projectId === projectId);
   const c = pick(list.length ? list : arr('contracts')) || { code: `CT-2026-0${int(10, 99)}`, title: 'عقد مقاولة رئيسي', counterparty: 'شركة الإنشاءات الحديثة', valueSAR: 48_000_000, clauses: [] };
-  const clause = pick(Array.isArray(c.clauses) ? c.clauses : []) || { ref: `${int(8, 20)}.${int(1, 6)}`, title: 'غرامات التأخير' };
-  return { c, clause };
+  const clauses = Array.isArray(c.clauses) ? c.clauses : [];
+  const idx = clauses.length ? Math.floor(rand() * clauses.length) : -1;
+  const clause = idx >= 0 ? clauses[idx] : { ref: `${int(8, 20)}.${int(1, 6)}`, title: 'غرامات التأخير' };
+  const clauseTitleEn = (c.id && idx >= 0 && dataAt('contracts', c.id, 'clauses', idx, 'title')) || 'delay damages';
+  const counterpartyEn = (c.id && dataEn('contracts', c.id, 'counterparty')) || personEn(c.counterparty, 'the counterparty');
+  return { c, clause, clauseTitleEn, counterpartyEn };
 }
 
 const DETECTORS = {
   contract(projectId, score) {
-    const { c, clause } = contractContext(projectId);
+    const { c, clause, clauseTitleEn, counterpartyEn } = contractContext(projectId);
     const exposure = Math.round((Number(c.valueSAR) || 40_000_000) * (0.04 + rand() * 0.08));
+    const k = clamp(score - int(28, 40), 10, 45);
+    const k2 = clamp(score - int(30, 45), 8, 40);
+    const k3 = clamp(score - int(20, 35), 10, 45);
+    const other = `${int(20, 24)}.${int(1, 4)}`;
     const variants = [
       {
-        title: `بند غرامات تأخير بلا سقف في ${c.code} §${clause.ref}`,
+        title: `بند غرامات تأخير بلا سقف في ${c.code} §${clause.ref}`, titleEn: `Uncapped delay damages in ${c.code} §${clause.ref}`,
         type: 'Conflict',
         driver: `البند ${clause.ref} («${clause.title}») في ${c.code} لا يضع سقفاً لغرامات التأخير بينما المعيار السوقي 10% من قيمة العقد؛ التعرض المقدّر عند تأخر 45 يوماً يبلغ ${sar(exposure)} ويرتبط بنشاطين على المسار الحرج.`,
-        excerpt: 'يلتزم المقاول بدفع غرامة تأخير قدرها 0.5% من قيمة العقد عن كل أسبوع تأخير دون حد أقصى.',
-        action: `طلب تعديل البند ${clause.ref} بسقف 10% وربط الغرامات بالمسار الحرج فقط`,
-        rationale: 'تحويل التزام مفتوح إلى تعرض محدود يمكن تسعيره وتأمينه.',
-        impact: `خفض الدرجة إلى ~${clamp(score - int(28, 40), 10, 45)}`,
-        alternatives: ['إدراج فترة سماح 14 يوماً قبل سريان الغرامة', 'الاتفاق على برنامج تعويضي زمني بدل الغرامة المالية'],
+        driverEn: `Clause ${clause.ref} ("${clauseTitleEn}") of ${c.code} sets no cap on delay damages while the market benchmark is 10% of the contract value; the estimated exposure for a 45-day delay is ${sarEn(exposure)} and is tied to two critical-path activities.`,
+        excerpt: 'يلتزم المقاول بدفع غرامة تأخير قدرها 0.5% من قيمة العقد عن كل أسبوع تأخير دون حد أقصى.', excerptEn: 'The contractor shall pay delay damages of 0.5% of the contract value for each week of delay, without a maximum.',
+        action: `طلب تعديل البند ${clause.ref} بسقف 10% وربط الغرامات بالمسار الحرج فقط`, actionEn: `Request an amendment to clause ${clause.ref} with a 10% cap and damages tied to the critical path only`,
+        rationale: 'تحويل التزام مفتوح إلى تعرض محدود يمكن تسعيره وتأمينه.', rationaleEn: 'Turns an open-ended liability into a bounded exposure that can be priced and insured.',
+        impact: `خفض الدرجة إلى ~${k}`, impactEn: `Reduce the score to ~${k}`,
+        alternatives: ['إدراج فترة سماح 14 يوماً قبل سريان الغرامة', 'الاتفاق على برنامج تعويضي زمني بدل الغرامة المالية'], alternativesEn: ['Add a 14-day grace period before damages apply', 'Agree a time-based recovery programme instead of financial damages'],
         stakeholders: ['PM', 'Legal', 'Finance'],
       },
       {
-        title: `غياب شرط التأمين ضد مسؤولية الغير لدى ${c.counterparty}`,
+        title: `غياب شرط التأمين ضد مسؤولية الغير لدى ${c.counterparty}`, titleEn: `No third-party liability insurance clause for ${counterpartyEn}`,
         type: 'Financial',
         driver: `لا يتضمن ${c.code} بنداً يلزم ${c.counterparty} بتأمين مسؤولية الغير أو تأمين جميع أخطار المقاولين؛ أي حادث في الموقع ينقل التعرض (${sar(exposure)}) إلى المالك مباشرة.`,
-        excerpt: 'تنتهي التزامات الطرف الثاني عند تسليم الأعمال المنفذة وفق المواصفات.',
-        action: 'إضافة بند تأمين CAR وتأمين مسؤولية الغير بحد أدنى 10 ملايين ر.س قبل بدء الأعمال',
-        rationale: 'إغلاق فجوة تأمينية تُعد من أعلى مصادر النزاعات في عقود الإنشاء.',
-        impact: `خفض الدرجة إلى ~${clamp(score - int(30, 45), 8, 40)}`,
-        alternatives: ['إدراج المقاول من الباطن تحت وثيقة المالك مقابل خصم'],
+        driverEn: `${c.code} has no clause requiring ${counterpartyEn} to carry third-party liability or contractors' all-risk insurance; any site accident moves the exposure (${sarEn(exposure)}) straight to the owner.`,
+        excerpt: 'تنتهي التزامات الطرف الثاني عند تسليم الأعمال المنفذة وفق المواصفات.', excerptEn: "The second party's obligations end upon handover of the executed works per the specifications.",
+        action: 'إضافة بند تأمين CAR وتأمين مسؤولية الغير بحد أدنى 10 ملايين ر.س قبل بدء الأعمال', actionEn: 'Add CAR and third-party liability insurance clauses with a minimum of SAR 10M before work starts',
+        rationale: 'إغلاق فجوة تأمينية تُعد من أعلى مصادر النزاعات في عقود الإنشاء.', rationaleEn: 'Closes an insurance gap that is one of the most common sources of construction disputes.',
+        impact: `خفض الدرجة إلى ~${k2}`, impactEn: `Reduce the score to ~${k2}`,
+        alternatives: ['إدراج المقاول من الباطن تحت وثيقة المالك مقابل خصم'], alternativesEn: ["Endorse the subcontractor on the owner's policy against a deduction"],
         stakeholders: ['Legal', 'Procurement', 'Finance'],
       },
       {
-        title: `تعارض في مدد الإشعار بين §${clause.ref} و§${int(20, 24)}.${int(1, 4)} في ${c.code}`,
+        title: `تعارض في مدد الإشعار بين §${clause.ref} و§${other} في ${c.code}`, titleEn: `Conflicting notice periods between §${clause.ref} and §${other} in ${c.code}`,
         type: 'Conflict',
         driver: `يحدد البند ${clause.ref} مهلة إشعار 7 أيام بينما يشترط بند التحكيم 28 يوماً؛ الغموض يرفع احتمال النزاع عند أول مطالبة تمديد.`,
-        excerpt: 'يُقدَّم الإشعار خلال سبعة أيام من وقوع الحدث… ولا تُقبل المطالبات بعد ثمانية وعشرين يوماً.',
-        action: 'توحيد مدد الإشعار في ملحق توضيحي يوقّعه الطرفان',
-        rationale: 'إزالة الغموض قبل أن يتحول إلى مطالبة.',
-        impact: `خفض الدرجة إلى ~${clamp(score - int(20, 35), 10, 45)}`,
-        alternatives: ['اعتماد المدة الأطول تفسيرياً عبر خطاب متبادل'],
+        driverEn: `Clause ${clause.ref} sets a 7-day notice period while the arbitration clause requires 28 days; the ambiguity raises the chance of a dispute at the first extension claim.`,
+        excerpt: 'يُقدَّم الإشعار خلال سبعة أيام من وقوع الحدث… ولا تُقبل المطالبات بعد ثمانية وعشرين يوماً.', excerptEn: 'Notice shall be given within seven days of the event… and no claim is accepted after twenty-eight days.',
+        action: 'توحيد مدد الإشعار في ملحق توضيحي يوقّعه الطرفان', actionEn: 'Align the notice periods in a clarification addendum signed by both parties',
+        rationale: 'إزالة الغموض قبل أن يتحول إلى مطالبة.', rationaleEn: 'Removes the ambiguity before it turns into a claim.',
+        impact: `خفض الدرجة إلى ~${k3}`, impactEn: `Reduce the score to ~${k3}`,
+        alternatives: ['اعتماد المدة الأطول تفسيرياً عبر خطاب متبادل'], alternativesEn: ['Adopt the longer period by exchange of letters'],
         stakeholders: ['PM', 'Legal'],
       },
     ];
     const v = pick(variants);
     return {
       ...v, score, projectId, category: 'contract',
-      evidence: { kind: 'clause', ref: `${c.code} §${clause.ref}`, excerpt: v.excerpt, sourceSystem: 'Biltix — العقود' },
+      evidence: { kind: 'clause', ref: `${c.code} §${clause.ref}`, excerpt: v.excerpt, excerptEn: v.excerptEn, sourceSystem: 'Biltix — العقود' },
       responseParams: {
         PM: { scheduleImpactDays: int(5, 40), costImpactSAR: exposure, criticalPath: chance(0.6) },
         Legal: { clauseRef: `§${clause.ref}`, exposureSAR: exposure, disputeLikelihood: round1(0.2 + rand() * 0.6) },
@@ -478,51 +531,67 @@ const DETECTORS = {
 
   bom(projectId, score) {
     const com = pick(arr('commodities')) || { name: 'حديد التسليح', volatilityPct: 14, exposureSAR: 6_500_000, unit: 'طن' };
+    const comEn = (com.id && dataEn('commodities', com.id, 'name')) || 'rebar';
     const items = arr('boqItems').filter((b) => b && b.projectId === projectId);
     const boq = pick(items.length ? items : arr('boqItems')) || { code: `BOQ-${int(100, 999)}`, description: 'حديد تسليح قطر 16 مم', leadTimeDays: 45, variancePct: 8 };
+    const boqEn = (boq.id && dataEn('boqItems', boq.id, 'description')) || boq.code;
     const supplier = pick(arr('suppliers')) || { name: 'مصنع الصلب الوطني', leadTimeDays: 60, singleSource: true };
-    const pct = int(4, 14);
+    const supplierEn = (supplier.id && dataEn('suppliers', supplier.id, 'name')) || personEn(supplier.name, 'the supplier');
+    const pctUp = int(4, 14);
+    const site = siteName(projectId);
+    const siteEn = projectEn(projectId);
+    const lead = supplier.leadTimeDays || 60;
+    const k = clamp(score - int(25, 40), 8, 40);
+    const k2 = clamp(score - int(22, 38), 10, 42);
+    const k3 = clamp(score - int(20, 35), 8, 38);
+    const variance = Math.abs(boq.variancePct || int(6, 15));
+    const boqQty = boq.boqQty || int(800, 3000);
+    const bimQty = boq.bimQty || int(900, 3300);
+    const unitAr = boq.unit || 'م³';
+    const unitEnS = unitEn(unitAr) || unitAr;
     const variants = [
       {
-        title: `ارتفاع متوقع في سعر ${com.name} بنسبة ${pct}% خلال 90 يوماً`,
-        driver: `سلسلة الأسعار لـ24 شهراً تُظهر تقلباً ${com.volatilityPct || 12}% واتجاهاً صاعداً؛ التعرض غير المُغطّى للبند ${boq.code} في ${siteName(projectId)} يبلغ ${sar(com.exposureSAR || 4_000_000)}.`,
-        action: `تثبيت سعر 60% من كمية ${com.name} عبر أمر شراء مبكر خلال 10 أيام`,
-        rationale: 'تحويل تعرض سعري متقلب إلى التزام ثابت قبل موجة الارتفاع.',
-        impact: `خفض الدرجة إلى ~${clamp(score - int(25, 40), 8, 40)}`,
-        alternatives: ['عقد توريد بسقف سعري مع المورد البديل', 'إعادة جدولة الصبات لتأجيل 20% من الكمية'],
-        kind: 'boq', ref: boq.code, excerpt: `${boq.description} — مهلة ${boq.leadTimeDays || 45} يوماً`, sourceSystem: 'مؤشرات السلع',
+        title: `ارتفاع متوقع في سعر ${com.name} بنسبة ${pctUp}% خلال 90 يوماً`, titleEn: `${comEn} price expected to rise ${pctUp}% within 90 days`,
+        driver: `سلسلة الأسعار لـ24 شهراً تُظهر تقلباً ${com.volatilityPct || 12}% واتجاهاً صاعداً؛ التعرض غير المُغطّى للبند ${boq.code} في ${site} يبلغ ${sar(com.exposureSAR || 4_000_000)}.`,
+        driverEn: `The 24-month price series shows ${com.volatilityPct || 12}% volatility and an upward trend; the unhedged exposure of item ${boq.code} at ${siteEn} is ${sarEn(com.exposureSAR || 4_000_000)}.`,
+        action: `تثبيت سعر 60% من كمية ${com.name} عبر أمر شراء مبكر خلال 10 أيام`, actionEn: `Lock the price of 60% of the ${comEn} quantity with an early purchase order within 10 days`,
+        rationale: 'تحويل تعرض سعري متقلب إلى التزام ثابت قبل موجة الارتفاع.', rationaleEn: 'Turns a volatile price exposure into a fixed commitment before the rise.',
+        impact: `خفض الدرجة إلى ~${k}`, impactEn: `Reduce the score to ~${k}`,
+        alternatives: ['عقد توريد بسقف سعري مع المورد البديل', 'إعادة جدولة الصبات لتأجيل 20% من الكمية'], alternativesEn: ['Price-capped supply contract with the alternate supplier', 'Re-sequence pours to defer 20% of the quantity'],
+        kind: 'boq', ref: boq.code, excerpt: `${boq.description} — مهلة ${boq.leadTimeDays || 45} يوماً`, excerptEn: `${boqEn} — lead time ${boq.leadTimeDays || 45} days`, sourceSystem: 'مؤشرات السلع',
         stakeholders: ['Procurement', 'Finance', 'PM'],
       },
       {
-        title: `مورد وحيد المصدر للبند ${boq.code}: ${supplier.name} بمهلة ${supplier.leadTimeDays || 60} يوماً`,
+        title: `مورد وحيد المصدر للبند ${boq.code}: ${supplier.name} بمهلة ${lead} يوماً`, titleEn: `Single-source supplier for item ${boq.code}: ${supplierEn}, ${lead}-day lead time`,
         driver: `${supplier.name} هو المصدر الوحيد لـ«${boq.description}» وتصنيفه الائتماني ${supplier.creditRating || 'B'}؛ أي تعثر يؤخر الطلب المطلوب بتاريخ ${boq.requiredBy || plusDays(35)} بما لا يقل عن ${int(20, 45)} يوماً.`,
-        action: `تأهيل مورد بديل وتقسيم الكمية 70/30 قبل تاريخ الطلب ${boq.orderBy || plusDays(12)}`,
-        rationale: 'كسر الاعتماد على مصدر واحد في بند على المسار الحرج.',
-        impact: `خفض الدرجة إلى ~${clamp(score - int(22, 38), 10, 42)}`,
-        alternatives: ['اتفاقية مخزون احتياطي لدى المورد الحالي'],
-        kind: 'supplier', ref: supplier.name, excerpt: `حصة الإنفاق ${supplier.shareOfSpendPct || 18}% · أداء التسليم ${supplier.deliveryPerformancePct || 82}%`, sourceSystem: 'Oracle ERP',
+        driverEn: `${supplierEn} is the only source of "${boqEn}" with credit rating ${supplier.creditRating || 'B'}; any default delays the order needed on ${boq.requiredBy || plusDays(35)} by at least ${int(20, 45)} days.`,
+        action: `تأهيل مورد بديل وتقسيم الكمية 70/30 قبل تاريخ الطلب ${boq.orderBy || plusDays(12)}`, actionEn: `Qualify an alternate supplier and split the quantity 70/30 before the order date ${boq.orderBy || plusDays(12)}`,
+        rationale: 'كسر الاعتماد على مصدر واحد في بند على المسار الحرج.', rationaleEn: 'Breaks the dependence on a single source for a critical-path item.',
+        impact: `خفض الدرجة إلى ~${k2}`, impactEn: `Reduce the score to ~${k2}`,
+        alternatives: ['اتفاقية مخزون احتياطي لدى المورد الحالي'], alternativesEn: ['Safety-stock agreement with the current supplier'],
+        kind: 'supplier', ref: supplier.name, excerpt: `حصة الإنفاق ${supplier.shareOfSpendPct || 18}% · أداء التسليم ${supplier.deliveryPerformancePct || 82}%`, excerptEn: `Share of spend ${supplier.shareOfSpendPct || 18}% · delivery performance ${supplier.deliveryPerformancePct || 82}%`, sourceSystem: 'Oracle ERP',
         stakeholders: ['Procurement', 'PM'],
       },
       {
-        title: `فرق كمية BoQ↔BIM بنسبة ${Math.abs(boq.variancePct || int(6, 15))}% في البند ${boq.code}`,
-        driver: `كمية جدول الكميات ${boq.boqQty || int(800, 3000)} ${boq.unit || 'م³'} مقابل ${boq.bimQty || int(900, 3300)} ${boq.unit || 'م³'} من النموذج (Autodesk APS)؛ الفرق يعني طلب شراء ناقصاً أو زائداً في ${siteName(projectId)}.`,
-        action: 'مراجعة الكميات مع الاستشاري وتصحيح أمر الشراء قبل الإصدار',
-        rationale: 'منع نقص المواد في الموقع أو هدر رأس المال العامل.',
-        impact: `خفض الدرجة إلى ~${clamp(score - int(20, 35), 8, 38)}`,
-        alternatives: ['إصدار أمر الشراء على الكمية الأقل مع خيار زيادة'],
-        kind: 'boq', ref: boq.code, excerpt: boq.description || 'بند جدول كميات', sourceSystem: 'Autodesk APS',
+        title: `فرق كمية BoQ↔BIM بنسبة ${variance}% في البند ${boq.code}`, titleEn: `BoQ↔BIM quantity variance of ${variance}% on item ${boq.code}`,
+        driver: `كمية جدول الكميات ${boqQty} ${unitAr} مقابل ${bimQty} ${unitAr} من النموذج (Autodesk APS)؛ الفرق يعني طلب شراء ناقصاً أو زائداً في ${site}.`,
+        driverEn: `The BoQ quantity is ${enN(boqQty)} ${unitEnS} against ${enN(bimQty)} ${unitEnS} in the model (Autodesk APS); the gap means an under- or over-sized purchase order at ${siteEn}.`,
+        action: 'مراجعة الكميات مع الاستشاري وتصحيح أمر الشراء قبل الإصدار', actionEn: 'Review the quantities with the consultant and correct the purchase order before issue',
+        rationale: 'منع نقص المواد في الموقع أو هدر رأس المال العامل.', rationaleEn: 'Prevents material shortages on site or tied-up working capital.',
+        impact: `خفض الدرجة إلى ~${k3}`, impactEn: `Reduce the score to ~${k3}`,
+        alternatives: ['إصدار أمر الشراء على الكمية الأقل مع خيار زيادة'], alternativesEn: ['Issue the order for the lower quantity with an increase option'],
+        kind: 'boq', ref: boq.code, excerpt: boq.description || 'بند جدول كميات', excerptEn: boqEn, sourceSystem: 'Autodesk APS',
         stakeholders: ['PM', 'Procurement'],
       },
     ];
     const v = pick(variants);
     return {
-      title: v.title, type: 'Financial', score, projectId, category: 'bom', driver: v.driver,
-      action: v.action, rationale: v.rationale, impact: v.impact, alternatives: v.alternatives, stakeholders: v.stakeholders,
-      evidence: { kind: v.kind, ref: v.ref, excerpt: v.excerpt, sourceSystem: v.sourceSystem },
+      ...v, type: 'Financial', score, projectId, category: 'bom',
+      evidence: { kind: v.kind, ref: v.ref, excerpt: v.excerpt, excerptEn: v.excerptEn, sourceSystem: v.sourceSystem },
       responseParams: {
-        Procurement: { supplier: supplier.name, leadTimeDays: supplier.leadTimeDays || 60, alternates: int(0, 2) },
-        Finance: { budgetImpactSAR: Math.round((com.exposureSAR || 4_000_000) * pct / 100), cashflowMonth: plusDays(60).slice(0, 7) },
-        PM: { scheduleImpactDays: int(5, 30), costImpactSAR: Math.round((com.exposureSAR || 4_000_000) * pct / 100), criticalPath: chance(0.5) },
+        Procurement: { supplier: supplier.name, leadTimeDays: lead, alternates: int(0, 2) },
+        Finance: { budgetImpactSAR: Math.round((com.exposureSAR || 4_000_000) * pctUp / 100), cashflowMonth: plusDays(60).slice(0, 7) },
+        PM: { scheduleImpactDays: int(5, 30), costImpactSAR: Math.round((com.exposureSAR || 4_000_000) * pctUp / 100), criticalPath: chance(0.5) },
       },
     };
   },
@@ -530,50 +599,62 @@ const DETECTORS = {
   schedule(projectId, score) {
     const tasks = arr('scheduleTasks').filter((t) => t && t.projectId === projectId);
     const t = pick(tasks.length ? tasks : arr('scheduleTasks')) || { code: `A${int(1000, 1990)}`, name: 'صب بلاطة الطابق 23', floatDays: 2, baselineFinish: plusDays(20) };
+    const tEn = (t.id && dataEn('scheduleTasks', t.id, 'name')) || t.code;
     const approvals = arr('approvals').filter((a) => a && a.projectId === projectId);
     const ap = pick(approvals.length ? approvals : arr('approvals')) || { authority: 'الدفاع المدني', type: 'موافقة أنظمة الحريق', elapsedDays: 26, statutoryDays: 30 };
+    const apAuthEn = (ap.id && dataEn('approvals', ap.id, 'authority')) || personEn(ap.authority, 'the authority');
+    const apTypeEn = (ap.id && dataEn('approvals', ap.id, 'type')) || 'approval';
     const prob = int(55, 92);
     const days = int(6, 28);
+    const site = siteName(projectId);
+    const siteEn = projectEn(projectId);
+    const k = clamp(score - int(25, 40), 8, 40);
+    const k2 = clamp(score - int(20, 35), 10, 42);
+    const k3 = clamp(score - int(20, 32), 8, 38);
+    const wind = int(38, 60);
+    const lifts = int(2, 5);
     const variants = [
       {
-        title: `احتمال تأخير ${prob}% للنشاط الحرج ${t.code} — ${t.name}`,
-        driver: `نموذج الجدول (Monte Carlo 5,000 تشغيل) يقدّر تأخيراً متوقعاً ${days} يوماً للنشاط ${t.code} بطفو ${t.floatDays ?? 2} أيام فقط؛ المحركات: تأخر توريد المواد وأداء المقاول من الباطن ${t.subcontractorId ? 'المرتبط' : 'الحالي'}.`,
-        action: 'إضافة وردية مسائية للمقاول من الباطن وتقديم طلب المواد أسبوعين',
-        rationale: 'استعادة الطفو قبل أن ينتقل التأخير إلى الأنشطة اللاحقة.',
-        impact: `خفض الدرجة إلى ~${clamp(score - int(25, 40), 8, 40)}`,
-        alternatives: ['تجزئة النشاط وتنفيذه بالتوازي', 'تحويل الموارد من نشاط غير حرج'],
-        kind: 'task', ref: t.code, excerpt: `${t.name} — الانتهاء الأساسي ${t.baselineFinish || plusDays(20)}`, sourceSystem: 'Primavera P6',
+        title: `احتمال تأخير ${prob}% للنشاط الحرج ${t.code} — ${t.name}`, titleEn: `${prob}% delay probability for critical activity ${t.code} — ${tEn}`,
+        driver: `نموذج الجدول (Monte Carlo 5,000 تشغيل) يقدّر تأخيراً متوقعاً ${days} يوماً للنشاط ${t.code} بطفو ${t.floatDays ?? 2} أيام فقط؛ المحركات: تأخر توريد المواد وأداء المقاول من الباطن.`,
+        driverEn: `The schedule model (Monte Carlo, 5,000 runs) estimates an expected ${days}-day delay for activity ${t.code} with only ${t.floatDays ?? 2} days of float; drivers: late material deliveries and subcontractor performance.`,
+        action: 'إضافة وردية مسائية للمقاول من الباطن وتقديم طلب المواد أسبوعين', actionEn: 'Add an evening shift for the subcontractor and bring the material order forward by two weeks',
+        rationale: 'استعادة الطفو قبل أن ينتقل التأخير إلى الأنشطة اللاحقة.', rationaleEn: 'Recovers float before the delay passes to successor activities.',
+        impact: `خفض الدرجة إلى ~${k}`, impactEn: `Reduce the score to ~${k}`,
+        alternatives: ['تجزئة النشاط وتنفيذه بالتوازي', 'تحويل الموارد من نشاط غير حرج'], alternativesEn: ['Split the activity and run the parts in parallel', 'Move resources from a non-critical activity'],
+        kind: 'task', ref: t.code, excerpt: `${t.name} — الانتهاء الأساسي ${t.baselineFinish || plusDays(20)}`, excerptEn: `${tEn} — baseline finish ${t.baselineFinish || plusDays(20)}`, sourceSystem: 'Primavera P6',
         stakeholders: ['PM', 'Site', 'PMO'],
       },
       {
-        title: `موافقة ${ap.authority} (${ap.type}) تجاوزت 80% من المدة النظامية`,
-        driver: `مضى ${ap.elapsedDays || 26} يوماً من أصل ${ap.statutoryDays || 30} على طلب ${ap.type} لدى ${ap.authority}؛ أي تأخير يوقف نشاطات ${siteName(projectId)} المعتمدة على الموافقة.`,
-        action: 'تصعيد الطلب عبر مدير العلاقات الحكومية وتجهيز المستندات التكميلية',
-        rationale: 'تقليص زمن الانتظار قبل انقضاء المدة النظامية.',
-        impact: `خفض الدرجة إلى ~${clamp(score - int(20, 35), 10, 42)}`,
-        alternatives: ['إعادة ترتيب الأنشطة غير المعتمدة على الموافقة'],
-        kind: 'approval', ref: `${ap.authority} — ${ap.type}`, excerpt: `${ap.elapsedDays || 26}/${ap.statutoryDays || 30} يوماً`, sourceSystem: 'Biltix — تقارير الموقع',
+        title: `موافقة ${ap.authority} (${ap.type}) تجاوزت 80% من المدة النظامية`, titleEn: `${apAuthEn} approval (${apTypeEn}) past 80% of the statutory period`,
+        driver: `مضى ${ap.elapsedDays || 26} يوماً من أصل ${ap.statutoryDays || 30} على طلب ${ap.type} لدى ${ap.authority}؛ أي تأخير يوقف نشاطات ${site} المعتمدة على الموافقة.`,
+        driverEn: `${ap.elapsedDays || 26} of ${ap.statutoryDays || 30} days have passed on the ${apTypeEn} request with ${apAuthEn}; any delay stops the ${siteEn} activities that depend on it.`,
+        action: 'تصعيد الطلب عبر مدير العلاقات الحكومية وتجهيز المستندات التكميلية', actionEn: 'Escalate the request through the government-relations manager and prepare the supporting documents',
+        rationale: 'تقليص زمن الانتظار قبل انقضاء المدة النظامية.', rationaleEn: 'Shortens the wait before the statutory period runs out.',
+        impact: `خفض الدرجة إلى ~${k2}`, impactEn: `Reduce the score to ~${k2}`,
+        alternatives: ['إعادة ترتيب الأنشطة غير المعتمدة على الموافقة'], alternativesEn: ['Re-sequence the activities that do not depend on the approval'],
+        kind: 'approval', ref: `${ap.authority} — ${ap.type}`, excerpt: `${ap.elapsedDays || 26}/${ap.statutoryDays || 30} يوماً`, excerptEn: `${ap.elapsedDays || 26}/${ap.statutoryDays || 30} days`, sourceSystem: 'Biltix — تقارير الموقع',
         stakeholders: ['PM', 'Legal', 'PMO'],
       },
       {
-        title: `عاصفة غبار متوقعة توقف أعمال الرفع في ${siteName(projectId) || 'الموقع'} خلال 72 ساعة`,
-        driver: `توقعات المركز الوطني للأرصاد: رياح ${int(38, 60)} كم/س وغبار عالٍ لمدة يومين؛ ${int(2, 5)} أنشطة رفع حرجة مجدولة في النافذة نفسها.`,
-        action: 'إعادة جدولة أعمال الرفع إلى ما بعد النافذة وتثبيت الحمولات والرافعات',
-        rationale: 'منع تأخير قسري مع تقليل مخاطر السلامة.',
-        impact: `خفض الدرجة إلى ~${clamp(score - int(20, 32), 8, 38)}`,
-        alternatives: ['تقديم أعمال داخلية غير حساسة للطقس'],
-        kind: 'task', ref: t.code, excerpt: 'نشاط حساس للطقس على المسار الحرج', sourceSystem: 'المركز الوطني للأرصاد',
+        title: `عاصفة غبار متوقعة توقف أعمال الرفع في ${site || 'الموقع'} خلال 72 ساعة`, titleEn: `Forecast dust storm halts lifting at ${siteEn || 'the site'} within 72 hours`,
+        driver: `توقعات المركز الوطني للأرصاد: رياح ${wind} كم/س وغبار عالٍ لمدة يومين؛ ${lifts} أنشطة رفع حرجة مجدولة في النافذة نفسها.`,
+        driverEn: `National Center for Meteorology forecast: ${wind} km/h winds and heavy dust for two days; ${lifts} critical lifting activities are scheduled in the same window.`,
+        action: 'إعادة جدولة أعمال الرفع إلى ما بعد النافذة وتثبيت الحمولات والرافعات', actionEn: 'Reschedule the lifts after the window and secure loads and cranes',
+        rationale: 'منع تأخير قسري مع تقليل مخاطر السلامة.', rationaleEn: 'Avoids a forced delay while reducing the safety risk.',
+        impact: `خفض الدرجة إلى ~${k3}`, impactEn: `Reduce the score to ~${k3}`,
+        alternatives: ['تقديم أعمال داخلية غير حساسة للطقس'], alternativesEn: ['Bring forward indoor work that is not weather-sensitive'],
+        kind: 'task', ref: t.code, excerpt: 'نشاط حساس للطقس على المسار الحرج', excerptEn: 'Weather-sensitive activity on the critical path', sourceSystem: 'المركز الوطني للأرصاد',
         stakeholders: ['PM', 'Site'],
       },
     ];
     const v = pick(variants);
     return {
-      title: v.title, type: 'Delay', score, projectId, category: 'schedule', driver: v.driver,
-      action: v.action, rationale: v.rationale, impact: v.impact, alternatives: v.alternatives, stakeholders: v.stakeholders,
-      evidence: { kind: v.kind, ref: v.ref, excerpt: v.excerpt, sourceSystem: v.sourceSystem },
+      ...v, type: 'Delay', score, projectId, category: 'schedule',
+      evidence: { kind: v.kind, ref: v.ref, excerpt: v.excerpt, excerptEn: v.excerptEn, sourceSystem: v.sourceSystem },
       responseParams: {
         PM: { scheduleImpactDays: days, costImpactSAR: days * int(60_000, 140_000), criticalPath: true },
-        Site: { location: siteName(projectId), hazard: 'توقف/ازدحام أنشطة', controls: 'إعادة تسلسل الأعمال' },
+        Site: { location: site, hazard: 'توقف/ازدحام أنشطة', controls: 'إعادة تسلسل الأعمال' },
         PMO: { trend: 'صاعد', kpi: 'SPI', portfolioRank: int(1, 6) },
         Legal: { clauseRef: '§8.4 تمديد المدة', exposureSAR: days * int(60_000, 140_000), disputeLikelihood: round1(0.1 + rand() * 0.4) },
       },
@@ -581,44 +662,61 @@ const DETECTORS = {
   },
 
   site(projectId, score) {
-    const zone = pick(['المنطقة أ — الحافة الشرقية', 'المنطقة ب — بئر المصعد', 'المنطقة ج — المستوى 12', 'ساحة الرافعة البرجية', 'المستودع 3']);
+    const ZONES = [
+      ['المنطقة أ — الحافة الشرقية', 'Zone A — east edge'], ['المنطقة ب — بئر المصعد', 'Zone B — lift shaft'], ['المنطقة ج — المستوى 12', 'Zone C — level 12'],
+      ['ساحة الرافعة البرجية', 'Tower-crane yard'], ['المستودع 3', 'Warehouse 3'],
+    ];
+    const [zone, zoneEnName] = pick(ZONES);
+    const site = siteName(projectId);
+    const siteEn = projectEn(projectId);
+    const k = clamp(score - int(30, 45), 8, 35);
+    const k2 = clamp(score - int(25, 40), 10, 40);
+    const k3 = clamp(score - int(25, 38), 8, 36);
+    const photos = int(40, 300);
+    const cases = int(2, 6);
+    const nm = int(3, 7);
+    const lti = int(18, 42);
+    const wbgt = round1(30 + rand() * 3);
+    const heatCases = int(1, 4);
     const variants = [
       {
-        title: `كشف صوري: عمال بدون حزام أمان على الحافة — ${zone}`,
-        driver: `حلّل ذكاء الموقع ${int(40, 300)} صورة من تقارير اليوم ورصد ${int(2, 6)} حالات عمل على الحافة دون تثبيت، مع تكرار النمط في 3 أيام من أصل 5 في ${siteName(projectId)}.`,
-        action: 'إيقاف العمل على الحافة فوراً وتركيب خطوط حياة ثم جلسة توعية قبل الاستئناف',
-        rationale: 'السقوط من ارتفاع هو السبب الأول للوفيات في مواقع الإنشاء.',
-        impact: `خفض الدرجة إلى ~${clamp(score - int(30, 45), 8, 35)}`,
-        alternatives: ['حواجز حافة مؤقتة معتمدة بدل خطوط الحياة'],
-        kind: 'image', ref: `IMG-${int(10_000, 99_999)}`, excerpt: 'ثقة الكشف 0.91 · 4 أشخاص داخل منطقة الحافة', sourceSystem: 'Biltix — تقارير الموقع',
+        title: `كشف صوري: عمال بدون حزام أمان على الحافة — ${zone}`, titleEn: `Image detection: workers without a harness at the edge — ${zoneEnName}`,
+        driver: `حلّل ذكاء الموقع ${photos} صورة من تقارير اليوم ورصد ${cases} حالات عمل على الحافة دون تثبيت، مع تكرار النمط في 3 أيام من أصل 5 في ${site}.`,
+        driverEn: `Site intelligence analysed ${photos} photos from today's reports and found ${cases} cases of edge work without tie-off, a pattern seen on 3 of the last 5 days at ${siteEn}.`,
+        action: 'إيقاف العمل على الحافة فوراً وتركيب خطوط حياة ثم جلسة توعية قبل الاستئناف', actionEn: 'Stop edge work immediately, install lifelines and hold a briefing before restarting',
+        rationale: 'السقوط من ارتفاع هو السبب الأول للوفيات في مواقع الإنشاء.', rationaleEn: 'Falls from height are the leading cause of fatalities on construction sites.',
+        impact: `خفض الدرجة إلى ~${k}`, impactEn: `Reduce the score to ~${k}`,
+        alternatives: ['حواجز حافة مؤقتة معتمدة بدل خطوط الحياة'], alternativesEn: ['Approved temporary edge barriers instead of lifelines'],
+        kind: 'image', ref: `IMG-${int(10_000, 99_999)}`, excerpt: 'ثقة الكشف 0.91 · 4 أشخاص داخل منطقة الحافة', excerptEn: 'Detection confidence 0.91 · 4 people inside the edge zone', sourceSystem: 'Biltix — تقارير الموقع',
         hazard: 'السقوط من ارتفاع', controls: 'خطوط حياة + حواجز حافة',
       },
       {
-        title: `نمط متكرر من الحوادث الوشيكة في ${zone} خلال 14 يوماً`,
-        driver: `${int(3, 7)} حوادث وشيكة من النوع نفسه (حركة معدات ثقيلة قرب العمال) في نطاق 30 م؛ النموذج التنبؤي يرفع احتمال إصابة مضيعة للوقت خلال 30 يوماً إلى ${int(18, 42)}%.`,
-        action: 'فصل مسارات المشاة عن المعدات بحواجز صلبة وتعيين مراقب حركة',
-        rationale: 'معالجة السبب المشترك بدل الاستجابة لكل حادث وشيك على حدة.',
-        impact: `خفض الدرجة إلى ~${clamp(score - int(25, 40), 10, 40)}`,
-        alternatives: ['جدولة حركة المعدات خارج أوقات الذروة'],
-        kind: 'inspection', ref: `INS-${int(900, 999)}`, excerpt: 'تكرار السبب الجذري: ضعف الإشراف', sourceSystem: 'Biltix — تقارير الموقع',
+        title: `نمط متكرر من الحوادث الوشيكة في ${zone} خلال 14 يوماً`, titleEn: `Recurring near-miss pattern in ${zoneEnName} over 14 days`,
+        driver: `${nm} حوادث وشيكة من النوع نفسه (حركة معدات ثقيلة قرب العمال) في نطاق 30 م؛ النموذج التنبؤي يرفع احتمال إصابة مضيعة للوقت خلال 30 يوماً إلى ${lti}%.`,
+        driverEn: `${nm} near misses of the same kind (heavy equipment moving close to workers) within 30 m; the predictive model raises the probability of a lost-time injury within 30 days to ${lti}%.`,
+        action: 'فصل مسارات المشاة عن المعدات بحواجز صلبة وتعيين مراقب حركة', actionEn: 'Separate pedestrian routes from equipment with hard barriers and assign a traffic marshal',
+        rationale: 'معالجة السبب المشترك بدل الاستجابة لكل حادث وشيك على حدة.', rationaleEn: 'Treats the common cause instead of reacting to each near miss separately.',
+        impact: `خفض الدرجة إلى ~${k2}`, impactEn: `Reduce the score to ~${k2}`,
+        alternatives: ['جدولة حركة المعدات خارج أوقات الذروة'], alternativesEn: ['Schedule equipment movements outside peak hours'],
+        kind: 'inspection', ref: `INS-${int(900, 999)}`, excerpt: 'تكرار السبب الجذري: ضعف الإشراف', excerptEn: 'Recurring root cause: weak supervision', sourceSystem: 'Biltix — تقارير الموقع',
         hazard: 'المركبات وحركة المرور', controls: 'فصل مسارات + مراقب حركة',
       },
       {
-        title: `قراءات WBGT فوق الحد ثلاثة أيام متتالية في ${siteName(projectId) || 'الموقع'}`,
-        driver: `الحساسات سجلت WBGT ${round1(30 + rand() * 3)}°م بين 11:00 و15:00 لثلاثة أيام، وتقارير الموقع تُظهر ${int(1, 4)} حالات إجهاد حراري؛ جدول العمل/الراحة الحالي غير كافٍ.`,
-        action: 'تفعيل جدول 20/40 ونقل الأعمال الثقيلة إلى الفترة الصباحية حتى انخفاض الموجة',
-        rationale: 'الامتثال لقرار حظر العمل تحت الشمس وتقليل إصابات الإجهاد الحراري.',
-        impact: `خفض الدرجة إلى ~${clamp(score - int(25, 38), 8, 36)}`,
-        alternatives: ['محطات تبريد إضافية في كل منطقة'],
-        kind: 'sensor', ref: `WBGT-${int(1, 14)}`, excerpt: 'تجاوز الحد 30°م لمدة 4 ساعات/يوم', sourceSystem: 'بوابة الحساسات',
+        title: `قراءات WBGT فوق الحد ثلاثة أيام متتالية في ${site || 'الموقع'}`, titleEn: `WBGT above the limit for three consecutive days at ${siteEn || 'the site'}`,
+        driver: `الحساسات سجلت WBGT ${wbgt}°م بين 11:00 و15:00 لثلاثة أيام، وتقارير الموقع تُظهر ${heatCases} حالات إجهاد حراري؛ جدول العمل/الراحة الحالي غير كافٍ.`,
+        driverEn: `Sensors recorded WBGT ${wbgt}°C between 11:00 and 15:00 for three days and site reports show ${heatCases} heat-stress cases; the current work/rest schedule is not enough.`,
+        action: 'تفعيل جدول 20/40 ونقل الأعمال الثقيلة إلى الفترة الصباحية حتى انخفاض الموجة', actionEn: 'Apply a 20/40 schedule and move heavy work to the morning until the heat wave eases',
+        rationale: 'الامتثال لقرار حظر العمل تحت الشمس وتقليل إصابات الإجهاد الحراري.', rationaleEn: 'Complies with the midday work ban and reduces heat-stress injuries.',
+        impact: `خفض الدرجة إلى ~${k3}`, impactEn: `Reduce the score to ~${k3}`,
+        alternatives: ['محطات تبريد إضافية في كل منطقة'], alternativesEn: ['Extra cooling stations in every zone'],
+        kind: 'sensor', ref: `WBGT-${int(1, 14)}`, excerpt: 'تجاوز الحد 30°م لمدة 4 ساعات/يوم', excerptEn: 'Above the 30°C limit for 4 hours a day', sourceSystem: 'بوابة الحساسات',
         hazard: 'الإجهاد الحراري', controls: 'جدول عمل/راحة + تبريد',
       },
     ];
     const v = pick(variants);
     return {
-      title: v.title, type: 'Safety', score, projectId, category: 'site', driver: v.driver,
-      action: v.action, rationale: v.rationale, impact: v.impact, alternatives: v.alternatives, stakeholders: ['Site', 'PM'],
-      evidence: { kind: v.kind, ref: v.ref, excerpt: v.excerpt, sourceSystem: v.sourceSystem },
+      ...v, type: 'Safety', score, projectId, category: 'site', stakeholders: ['Site', 'PM'],
+      evidence: { kind: v.kind, ref: v.ref, excerpt: v.excerpt, excerptEn: v.excerptEn, sourceSystem: v.sourceSystem },
       responseParams: {
         Site: { location: zone, hazard: v.hazard, controls: v.controls },
         PM: { scheduleImpactDays: int(1, 6), costImpactSAR: int(40_000, 220_000), criticalPath: chance(0.3) },
@@ -629,45 +727,57 @@ const DETECTORS = {
   cost(projectId, score) {
     const lines = arr('costLines').filter((l) => l && l.projectId === projectId);
     const line = pick(lines.length ? lines : arr('costLines')) || { wbs: '1.3.2', name: 'الأعمال الكهروميكانيكية', budget: 12_000_000, forecast: 13_400_000 };
+    const lineEn = (line.id && dataEn('costLines', line.id, 'name')) || `WBS ${line.wbs}`;
     const cos = arr('changeOrders').filter((c) => c && c.projectId === projectId && (c.status === 'مقترح' || c.status === 'قيد الاعتماد'));
     const cur = pick(arr('currencies').filter((c) => c && c.code !== 'USD')) || { code: 'EUR', nameAr: 'اليورو', exposureSAR: 9_000_000, change30dPct: 2.4 };
     const cpi = round1(0.84 + rand() * 0.08);
     const over = Math.round((Number(line.forecast) || 13_000_000) - (Number(line.budget) || 12_000_000));
     const coTotal = cos.reduce((s, c) => s + (Number(c.amountSAR) || 0), 0) || int(900_000, 4_800_000);
+    const coCount = cos.length || int(3, 7);
+    const coShare = round1(1 + rand() * 4);
+    const site = siteName(projectId);
+    const siteEn = projectEn(projectId);
+    const k = clamp(score - int(22, 36), 10, 42);
+    const k2 = clamp(score - int(18, 32), 10, 44);
+    const k3 = clamp(score - int(25, 40), 8, 38);
+    const ch = cur.change30dPct || 2.4;
+    const coRef = cos[0] ? cos[0].code : `CO-0${int(30, 59)}`;
     const variants = [
       {
-        title: `CPI عند ${cpi} في حزمة ${line.wbs} — ${line.name}`,
-        driver: `القيمة المكتسبة أقل من الفعلي بفارق ${sar(Math.abs(over))} مع التزامات غير مُدرجة في التوقع؛ EAC المحدّث يتجاوز الميزانية في ${siteName(projectId)}.`,
-        action: 'تجميد الالتزامات الجديدة في الحزمة ومراجعة EAC مع مدير التكلفة خلال 5 أيام',
-        rationale: 'إيقاف النزيف قبل أن ينعكس على VAC للمشروع كله.',
-        impact: `خفض الدرجة إلى ~${clamp(score - int(22, 36), 10, 42)}`,
-        alternatives: ['إعادة تسعير الأعمال المتبقية مع المقاول من الباطن'],
-        kind: 'cost', ref: `WBS ${line.wbs}`, excerpt: `${line.name} — CPI ${cpi}`, sourceSystem: 'Oracle ERP',
+        title: `CPI عند ${cpi} في حزمة ${line.wbs} — ${line.name}`, titleEn: `CPI at ${cpi} on package ${line.wbs} — ${lineEn}`,
+        driver: `القيمة المكتسبة أقل من الفعلي بفارق ${sar(Math.abs(over))} مع التزامات غير مُدرجة في التوقع؛ EAC المحدّث يتجاوز الميزانية في ${site}.`,
+        driverEn: `Earned value trails actual cost by ${sarEn(Math.abs(over))} with commitments missing from the forecast; the updated EAC exceeds the budget at ${siteEn}.`,
+        action: 'تجميد الالتزامات الجديدة في الحزمة ومراجعة EAC مع مدير التكلفة خلال 5 أيام', actionEn: 'Freeze new commitments on the package and review the EAC with the cost manager within 5 days',
+        rationale: 'إيقاف النزيف قبل أن ينعكس على VAC للمشروع كله.', rationaleEn: "Stops the overrun before it hits the whole project's VAC.",
+        impact: `خفض الدرجة إلى ~${k}`, impactEn: `Reduce the score to ~${k}`,
+        alternatives: ['إعادة تسعير الأعمال المتبقية مع المقاول من الباطن'], alternativesEn: ['Re-price the remaining work with the subcontractor'],
+        kind: 'cost', ref: `WBS ${line.wbs}`, excerpt: `${line.name} — CPI ${cpi}`, excerptEn: `${lineEn} — CPI ${cpi}`, sourceSystem: 'Oracle ERP',
       },
       {
-        title: `زحف أوامر التغيير: ${cos.length || int(3, 7)} أوامر قيد الاعتماد بقيمة ${sar(coTotal)}`,
-        driver: `أوامر التغيير المعلّقة تعادل ${round1(1 + rand() * 4)}% من قيمة العقد وتشترك في محرك واحد (تغييرات تصميمية متأخرة)؛ اعتمادها يرفع EAC ويؤخر الإغلاق المالي.`,
-        action: 'جلسة تحكم تغيير أسبوعية وربط كل أمر بأثره الزمني قبل الاعتماد',
-        rationale: 'كبح الزحف عند مصدره بدل معالجته في نهاية المشروع.',
-        impact: `خفض الدرجة إلى ~${clamp(score - int(18, 32), 10, 44)}`,
-        alternatives: ['تجميع الأوامر الصغيرة في أمر واحد بسعر إجمالي'],
-        kind: 'changeOrder', ref: cos[0] ? cos[0].code : `CO-0${int(30, 59)}`, excerpt: cos[0] ? cos[0].title : 'تعديلات تصميمية على الواجهات', sourceSystem: 'Biltix — التكلفة',
+        title: `زحف أوامر التغيير: ${coCount} أوامر قيد الاعتماد بقيمة ${sar(coTotal)}`, titleEn: `Change-order creep: ${coCount} orders pending approval worth ${sarEn(coTotal)}`,
+        driver: `أوامر التغيير المعلّقة تعادل ${coShare}% من قيمة العقد وتشترك في محرك واحد (تغييرات تصميمية متأخرة)؛ اعتمادها يرفع EAC ويؤخر الإغلاق المالي.`,
+        driverEn: `Pending change orders equal ${coShare}% of the contract value and share one driver (late design changes); approving them raises the EAC and delays financial close.`,
+        action: 'جلسة تحكم تغيير أسبوعية وربط كل أمر بأثره الزمني قبل الاعتماد', actionEn: 'Hold a weekly change-control board and tie every order to its time impact before approval',
+        rationale: 'كبح الزحف عند مصدره بدل معالجته في نهاية المشروع.', rationaleEn: 'Curbs the creep at its source instead of at the end of the project.',
+        impact: `خفض الدرجة إلى ~${k2}`, impactEn: `Reduce the score to ~${k2}`,
+        alternatives: ['تجميع الأوامر الصغيرة في أمر واحد بسعر إجمالي'], alternativesEn: ['Bundle small orders into one lump-sum order'],
+        kind: 'changeOrder', ref: coRef, excerpt: cos[0] ? cos[0].title : 'تعديلات تصميمية على الواجهات', excerptEn: (cos[0] && cos[0].id && dataEn('changeOrders', cos[0].id, 'title')) || 'Façade design changes', sourceSystem: 'Biltix — التكلفة',
       },
       {
-        title: `تعرض ${cur.nameAr || cur.code} غير مُحوَّط بقيمة ${sar(cur.exposureSAR || 9_000_000)}`,
-        driver: `تغيّر سعر ${cur.code} بنسبة ${cur.change30dPct >= 0 ? '+' : ''}${cur.change30dPct || 2.4}% خلال 30 يوماً وتوقع استمرار الاتجاه؛ دفعات التوريد المستحقة خلال 90 يوماً مقوّمة بـ${cur.code} دون تحوّط.`,
-        action: 'عقد تحوّط آجل لـ60% من الدفعات المستحقة خلال 90 يوماً',
-        rationale: 'تثبيت تكلفة التوريد المستورد ضمن الميزانية.',
-        impact: `خفض الدرجة إلى ~${clamp(score - int(25, 40), 8, 38)}`,
-        alternatives: ['تقديم الدفعات مبكراً مقابل خصم من المورد'],
-        kind: 'cost', ref: `FX ${cur.code}`, excerpt: `سعر ${cur.rate || '—'} · التغير 30 يوماً ${cur.change30dPct || 2.4}%`, sourceSystem: 'أسعار الصرف',
+        title: `تعرض ${cur.nameAr || cur.code} غير مُحوَّط بقيمة ${sar(cur.exposureSAR || 9_000_000)}`, titleEn: `Unhedged ${cur.code} exposure of ${sarEn(cur.exposureSAR || 9_000_000)}`,
+        driver: `تغيّر سعر ${cur.code} بنسبة ${ch >= 0 ? '+' : ''}${ch}% خلال 30 يوماً وتوقع استمرار الاتجاه؛ دفعات التوريد المستحقة خلال 90 يوماً مقوّمة بـ${cur.code} دون تحوّط.`,
+        driverEn: `${cur.code} moved ${ch >= 0 ? '+' : ''}${ch}% in 30 days and the trend is expected to continue; supply payments due within 90 days are in ${cur.code} with no hedge.`,
+        action: 'عقد تحوّط آجل لـ60% من الدفعات المستحقة خلال 90 يوماً', actionEn: 'Forward hedge for 60% of the payments due within 90 days',
+        rationale: 'تثبيت تكلفة التوريد المستورد ضمن الميزانية.', rationaleEn: 'Keeps the cost of imported supply within budget.',
+        impact: `خفض الدرجة إلى ~${k3}`, impactEn: `Reduce the score to ~${k3}`,
+        alternatives: ['تقديم الدفعات مبكراً مقابل خصم من المورد'], alternativesEn: ['Pay early against a supplier discount'],
+        kind: 'cost', ref: `FX ${cur.code}`, excerpt: `سعر ${cur.rate || '—'} · التغير 30 يوماً ${ch}%`, excerptEn: `Rate ${cur.rate || '—'} · 30-day change ${ch}%`, sourceSystem: 'أسعار الصرف',
       },
     ];
     const v = pick(variants);
     return {
-      title: v.title, type: 'Financial', score, projectId, category: 'cost', driver: v.driver,
-      action: v.action, rationale: v.rationale, impact: v.impact, alternatives: v.alternatives, stakeholders: ['Finance', 'PM', 'PMO'],
-      evidence: { kind: v.kind, ref: v.ref, excerpt: v.excerpt, sourceSystem: v.sourceSystem },
+      ...v, type: 'Financial', score, projectId, category: 'cost', stakeholders: ['Finance', 'PM', 'PMO'],
+      evidence: { kind: v.kind, ref: v.ref, excerpt: v.excerpt, excerptEn: v.excerptEn, sourceSystem: v.sourceSystem },
       responseParams: {
         Finance: { budgetImpactSAR: Math.abs(over) || coTotal, cashflowMonth: plusDays(45).slice(0, 7) },
         PM: { scheduleImpactDays: int(0, 12), costImpactSAR: Math.abs(over) || coTotal, criticalPath: chance(0.3) },
@@ -677,23 +787,35 @@ const DETECTORS = {
   },
 };
 
+/** Response SLA per rating (engine policy, stated — not a silent default): red 7 days, amber 14, green 28. */
+const SLA_DAYS = { red: 7, yellow: 14, green: 28 };
+
 function buildRisk(category = pick(CATEGORIES)) {
   const projectId = randomProjectId();
-  const score = scoreForBand();
+  const { likelihood, impact, score } = liForBand();
   const cat = CATEGORIES.includes(category) ? category : 'site';
   const draft = DETECTORS[cat](projectId, score);
   const pipeline = PIPELINE_OF[cat];
   const pipe = arr('pipelines').find((p) => p && p.id === pipeline);
+  const effort = pick([['منخفض', 'Low'], ['متوسط', 'Medium'], ['عالٍ', 'High']]);
+  const stakeholders = draft.stakeholders || ['PM'];
   return {
-    projectId, category: cat, type: draft.type, score, title: draft.title,
-    driverExplanation: draft.driver,
+    projectId, category: cat, type: draft.type, likelihood, impact, title: draft.title, titleEn: draft.titleEn,
+    driverExplanation: draft.driver, driverExplanationEn: draft.driverEn,
     evidence: draft.evidence,
-    recommendation: { action: draft.action, rationale: draft.rationale, effort: pick(['منخفض', 'متوسط', 'عالٍ']), impact: draft.impact, alternatives: draft.alternatives || [] },
+    recommendation: {
+      action: draft.action, actionEn: draft.actionEn, rationale: draft.rationale, rationaleEn: draft.rationaleEn,
+      effort: effort[0], effortEn: effort[1], impact: draft.impact, impactEn: draft.impactEn,
+      alternatives: draft.alternatives || [], alternativesEn: draft.alternativesEn || [],
+    },
     pipeline, modelVersion: (pipe && pipe.version) || 'v2.3.1',
     confidence: round1(0.62 + rand() * 0.33),
-    status: 'مكتشف', owner: '', dueDate: plusDays(int(7, 28)),
-    stakeholders: draft.stakeholders || ['PM'],
-    responseParams: Object.fromEntries(Object.entries(draft.responseParams || {}).filter(([role]) => (draft.stakeholders || ['PM']).includes(role))),
+    status: 'مكتشف',
+    // Engine detections are unassigned until a human accepts them (owner null — never invented); the due date
+    // follows the stated response SLA of the rating band.
+    owner: null, dueDate: plusDays(SLA_DAYS[ratingOf(score)] || 14),
+    stakeholders,
+    responseParams: Object.fromEntries(Object.entries(draft.responseParams || {}).filter(([role]) => stakeholders.includes(role))),
     simulated: true,
   };
 }
@@ -701,7 +823,11 @@ function buildRisk(category = pick(CATEGORIES)) {
 function detectRisk(category) {
   if (!S || typeof S.addAiRisk !== 'function') return null;
   try {
-    const risk = S.addAiRisk(buildRisk(category));
+    const risk = S.addAiRisk(buildRisk(category), { engine: true });
+    if (risk && risk.ok === false) {
+      console.warn('[بلتكس Risk AI] رُفضت مخاطرة المحاكاة في التحقق:', (risk.errors || []).map((e) => e.field).join(', '));
+      return null;
+    }
     if (risk) pruneSimulated();
     return risk;
   } catch (error) {

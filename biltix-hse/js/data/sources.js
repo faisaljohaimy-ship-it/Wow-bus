@@ -28,6 +28,7 @@
 import seed, { CATEGORIES, RISK_STATUS } from './seed.js';
 import { sel } from '../core/selectors.js';
 import { fmt } from '../core/fmt.js';
+import { latinOnly, enumEn, siteEn, courseEn, workerEn } from './vocab-en.js';
 
 export const TIMEOUT_MS = 8000;
 export const IMPORT_LIMIT = 1000;
@@ -58,10 +59,39 @@ export const MESSAGES = Object.freeze({
   supabaseTable: 'يلزم تحديد اسم الجدول في Supabase (مثال: risks).',
   supabaseKey: 'يلزم إدخال مفتاح API (anon key) للاتصال بـ Supabase.',
   unknownType: 'نوع المصدر غير مدعوم. الأنواع المتاحة: JSON API، Google Sheets CSV، Supabase، Webhook.',
-  simulation: 'وضع المحاكاة لا يحتاج إلى اتصال خارجي — البيانات تُولَّد محليًا.',
-  webhookOpaque: 'تم إرسال الطلب، لكن المتصفح لم يتمكن من قراءة الاستجابة بسبب سياسة CORS لدى الخدمة المستقبِلة (استجابة مبهمة).',
+  simulation: 'وضع العرض التجريبي: لا يوجد اتصال خارجي لاختباره — البيانات تُولَّد في هذا المتصفح.',
+  webhookOpaque: 'تم إرسال الطلب، لكن المتصفح لم يتمكن من قراءة الاستجابة بسبب سياسة CORS لدى الخدمة المستقبِلة (استجابة مبهمة)؛ لا يمكن تأكيد الاستلام.',
   noRows: 'لم يُعثر على أي صف يحتوي على وصف للخطر. تحقق من عناوين الأعمدة (الكود، الموقع، الفئة، الخطر…).',
+  requiresBackend: 'غير متصل — يتطلب هذا الموصل خادماً خلفياً (بيانات اعتماد وطلبات من جهة الخادم)؛ لا يمكن اختباره من المتصفح.',
 });
+
+/** English copies of MESSAGES (same keys) — every result carries `message` (ar) and `messageEn` (en) + `reason` (key). */
+export const MESSAGES_EN = Object.freeze({
+  invalidUrl: 'The link is not valid. It must start with https:// (http is allowed only for a local server such as localhost).',
+  timeout: 'The connection timed out (8 seconds) without a response. Check the link and that the service is available.',
+  network: 'The server could not be reached. Check the internet connection and the CORS settings of the target server.',
+  noFetch: 'This browser does not support network requests (fetch). Please use a modern browser.',
+  notJson: 'The response is not valid JSON. Make sure the link returns an array of records.',
+  notArray: 'The response contains no array of records. Expected a JSON array or an object with a data, items or rows field.',
+  htmlNotCsv: 'We received a web page instead of a CSV file. In Google Sheets use File → Share → Publish to the web as CSV, then copy the resulting link.',
+  scriptNotCsv: 'We received program code (JavaScript) instead of a CSV file. Make sure the link points to a published CSV file, not a page or a script.',
+  jsonNotCsv: 'We received a JSON response instead of a CSV file. Choose the "JSON API" source type for this link or use the CSV export link.',
+  htmlNotJson: 'We received a web page (HTML) instead of JSON. Check that the link points to an API endpoint that returns JSON.',
+  emptyCsv: 'The CSV file is empty or has no header row.',
+  unmappedColumns: 'The risk-register columns could not be recognised: a "hazard" column and at least two other known columns are required (site, category, likelihood, severity, owner…).',
+  supabaseTable: 'Enter the Supabase table name (for example: risks).',
+  supabaseKey: 'Enter the API key (anon key) to connect to Supabase.',
+  unknownType: 'Unsupported source type. Available types: JSON API, Google Sheets CSV, Supabase, Webhook.',
+  simulation: 'Demo mode: there is no external connection to test — the data is generated in this browser.',
+  webhookOpaque: 'The request was sent, but the browser could not read the response because of the receiving service\'s CORS policy (opaque response). Delivery cannot be confirmed.',
+  noRows: 'No row with a hazard description was found. Check the column headers (code, site, category, hazard…).',
+  requiresBackend: 'Not connected — this connector requires a backend (server-side credentials and requests); it cannot be tested from the browser.',
+});
+
+/** Bilingual result fields for a MESSAGES key. */
+function msg(key, extra = {}) {
+  return { reason: key, message: MESSAGES[key] || key, messageEn: MESSAGES_EN[key] || key, ...extra };
+}
 
 function httpMessage(status) {
   if (status === 401 || status === 403) return `رُفض الوصول (HTTP ${status}). تحقق من مفتاح API والصلاحيات.`;
@@ -71,6 +101,14 @@ function httpMessage(status) {
   return `استجابة غير متوقعة من الخادم (HTTP ${status}).`;
 }
 
+function httpMessageEn(status) {
+  if (status === 401 || status === 403) return `Access denied (HTTP ${status}). Check the API key and permissions.`;
+  if (status === 404) return 'Path not found (HTTP 404). Check the link or the table name.';
+  if (status === 429) return 'Too many requests (HTTP 429). Try again shortly.';
+  if (status >= 500) return `The server reported an internal error (HTTP ${status}). Try again later.`;
+  return `Unexpected response from the server (HTTP ${status}).`;
+}
+
 const TYPE_LABELS = Object.freeze({
   json: 'JSON API',
   sheets: 'Google Sheets CSV',
@@ -78,6 +116,7 @@ const TYPE_LABELS = Object.freeze({
   webhook: 'Webhook',
   simulation: 'المحاكاة',
 });
+const TYPE_LABELS_EN = Object.freeze({ json: 'JSON API', sheets: 'Google Sheets CSV', supabase: 'Supabase', webhook: 'Webhook', simulation: 'Demo data' });
 
 /* ────────────────────────────── small helpers ────────────────────────────── */
 
@@ -187,6 +226,14 @@ function failureMessage(result) {
   if (result.error === 'timeout') return MESSAGES.timeout;
   if (result.error === 'network') return MESSAGES.network;
   return httpMessage(result.status);
+}
+
+/** Bilingual failure fields for a fetch result. */
+function failure(result) {
+  if (result.error === 'nofetch' || result.error === 'timeout' || result.error === 'network') {
+    return msg(result.error === 'nofetch' ? 'noFetch' : result.error);
+  }
+  return { reason: `http-${result.status}`, message: httpMessage(result.status), messageEn: httpMessageEn(result.status) };
 }
 
 async function readText(response) {
@@ -422,6 +469,12 @@ const FIELD_LABELS = Object.freeze({
   description: 'الوصف', controls: 'الضوابط', residualLikelihood: 'الاحتمالية المتبقية', residualSeverity: 'الشدة المتبقية',
   legalRef: 'المرجع القانوني', source: 'المصدر', zoneId: 'المنطقة',
 });
+const FIELD_LABELS_EN = Object.freeze({
+  code: 'Code', siteId: 'Site', categoryId: 'Category', hazard: 'Hazard', activity: 'Activity',
+  likelihood: 'Likelihood', severity: 'Severity', owner: 'Owner', dueDate: 'Due date', status: 'Status',
+  description: 'Description', controls: 'Controls', residualLikelihood: 'Residual likelihood', residualSeverity: 'Residual severity',
+  legalRef: 'Legal reference', source: 'Source', zoneId: 'Zone',
+});
 /** A source is accepted only when «الخطر» plus at least this many other known columns are recognised. */
 export const MIN_KNOWN_COLUMNS = 2;
 
@@ -443,7 +496,10 @@ export function describeMapping(headersOrRecords) {
   const detected = labels.length ? `الأعمدة المتعرَّف عليها: ${labels.join('، ')}` : 'لم يُتعرَّف على أي عمود';
   const received = headers.length ? ` · الأعمدة المستلمة: ${headers.slice(0, 8).join('، ')}${headers.length > 8 ? '…' : ''}` : '';
   const message = ok ? detected : `${MESSAGES.unmappedColumns} ${detected}${received}.`;
-  return { ok, headers, fields, labels, unknown, hasHazard, message };
+  const detectedEn = fields.length ? `Recognised columns: ${fields.map((f) => FIELD_LABELS_EN[f] || f).join(', ')}` : 'No column was recognised';
+  const receivedEn = headers.length ? ` · columns received: ${headers.slice(0, 8).join(', ')}${headers.length > 8 ? '…' : ''}` : '';
+  const messageEn = ok ? detectedEn : `${MESSAGES_EN.unmappedColumns} ${detectedEn}${receivedEn}.`;
+  return { ok, headers, fields, labels, labelsEn: fields.map((f) => FIELD_LABELS_EN[f] || f), unknown, hasHazard, message, messageEn };
 }
 
 /** Body sniffing: a CSV/JSON endpoint that answers with a web page or a script is not a data source. */
@@ -515,12 +571,13 @@ const SEVERITY_WORDS = [
   [1, /لا يذكر|طفيف|ضئيل|negligible|insignificant|very low|trivial/],
 ];
 
-function parseScale(value, words, fallback) {
+function parseScale(value, words, fallback, { strict = false } = {}) {
   const raw = latinDigits(text(value));
   if (!raw) return { value: fallback, ok: false };
   const m = /(\d+(?:\.\d+)?)/.exec(raw);
   if (m) {
     const n = Number(m[1]);
+    if (strict && (!Number.isInteger(n) || n < 1 || n > 5)) return { value: fallback, ok: false };
     if (Number.isFinite(n)) return { value: clamp(Math.round(n), 1, 5), ok: true };
   }
   const n = norm(raw);
@@ -642,20 +699,214 @@ export function mapRiskRows(records, { sites = arr(seed && seed.sites), categori
   return { risks, skipped, warnings: warnings.slice(0, 40) };
 }
 
+/* ────────────────────────────── v3: import preview (strict, per-row) ────────────────────────────── */
+
+const SITE_HINT = 'RUH-01 / JED-02 / NEOM-03 / DMM-04 / QID-05 / MED-06';
+
+function rowError(row, field, message, messageEn) {
+  return { row, field, message, messageEn };
+}
+
+/**
+ * Turn an import input into raw records. Accepts { text, format?: 'csv'|'json' } (pasted / uploaded file
+ * content), { records: [...] } (already parsed) or a plain array. Returns { records, error? }.
+ */
+function recordsFromInput(input) {
+  if (Array.isArray(input)) return { records: input.filter(isObj) };
+  const src = isObj(input) ? input : {};
+  if (Array.isArray(src.records)) return { records: src.records.filter(isObj) };
+  const body = typeof src.text === 'string' ? src.text : (typeof input === 'string' ? input : '');
+  if (!body.trim()) return { records: [], error: msg('emptyCsv') };
+  const fmtHint = text(src.format).toLowerCase() || (/\.json$/i.test(text(src.fileName)) ? 'json' : (/\.csv$/i.test(text(src.fileName)) ? 'csv' : ''));
+  if (fmtHint === 'json' || (!fmtHint && looksLikeJson(body))) {
+    const json = parseJsonText(body);
+    if (json.error) return { records: [], error: msg('notJson') };
+    const recs = recordsFromJson(json.value);
+    return recs ? { records: recs } : { records: [], error: msg('notArray') };
+  }
+  if (looksLikeHtml(body)) return { records: [], error: msg('htmlNotCsv') };
+  const csv = parseCSV(body);
+  if (!csv.headers.length) return { records: [], error: msg('emptyCsv') };
+  return { records: csv.records };
+}
+
+/**
+ * Validate raw records as HSE risk-register rows — no silent defaults: an unknown site, an unresolved
+ * category, a missing/unparseable likelihood or severity, a missing hazard or an invalid/missing due date
+ * is an ERROR for that row; an unknown status or a missing owner is a warning. Row numbers follow the
+ * source (header = row 1, first data row = 2).
+ */
+function previewRecords(records, { sites = arr(seed && seed.sites), categories = CATEGORIES, sourceLabel = 'استيراد' } = {}) {
+  const list = arr(records).filter(isObj);
+  const headers = Array.from(new Set(list.flatMap((r) => Object.keys(r))));
+  const mapping = mapHeaders(headers);
+  const described = describeMapping(headers);
+  const rows = [];
+  const errors = [];
+  const warnings = [];
+  const seenCodes = new Set();
+  list.forEach((record, index) => {
+    const rowNo = index + 2;
+    const raw = {};
+    for (const [hd, field] of mapping) {
+      if (record[hd] === undefined || text(record[hd]) === '') continue;
+      if (raw[field] === undefined || text(raw[field]) === '') raw[field] = record[hd];
+    }
+    const rowErrors = [];
+    const rowWarnings = [];
+    const hazard = text(raw.hazard);
+    if (!hazard) rowErrors.push(rowError(rowNo, 'hazard', 'وصف الخطر مطلوب.', 'The hazard description is required.'));
+    const siteId = resolveSite(raw.siteId, sites);
+    if (!text(raw.siteId)) rowErrors.push(rowError(rowNo, 'siteId', `الموقع مطلوب (${SITE_HINT}).`, `The site is required (${SITE_HINT}).`));
+    else if (!siteId) rowErrors.push(rowError(rowNo, 'siteId', `الموقع «${text(raw.siteId)}» غير معروف (${SITE_HINT}).`, `Unknown site "${text(raw.siteId)}" (${SITE_HINT}).`));
+    const categoryId = resolveCategory(raw.categoryId, categories) || (text(raw.categoryId) ? null : resolveCategory(hazard, categories));
+    if (!categoryId) rowErrors.push(rowError(rowNo, 'categoryId', text(raw.categoryId) ? `الفئة «${text(raw.categoryId)}» غير معروفة.` : 'الفئة مطلوبة.', text(raw.categoryId) ? `Unknown category "${text(raw.categoryId)}".` : 'The category is required.'));
+    const likelihood = parseScale(raw.likelihood, LIKELIHOOD_WORDS, null, { strict: true });
+    if (!text(raw.likelihood)) rowErrors.push(rowError(rowNo, 'likelihood', 'الاحتمالية مطلوبة (1–5).', 'Likelihood is required (1–5).'));
+    else if (!likelihood.ok) rowErrors.push(rowError(rowNo, 'likelihood', `قيمة الاحتمالية «${text(raw.likelihood)}» غير مفهومة (1–5).`, `Likelihood "${text(raw.likelihood)}" is not understood (1–5).`));
+    const severity = parseScale(raw.severity, SEVERITY_WORDS, null, { strict: true });
+    if (!text(raw.severity)) rowErrors.push(rowError(rowNo, 'severity', 'الشدة مطلوبة (1–5).', 'Severity is required (1–5).'));
+    else if (!severity.ok) rowErrors.push(rowError(rowNo, 'severity', `قيمة الشدة «${text(raw.severity)}» غير مفهومة (1–5).`, `Severity "${text(raw.severity)}" is not understood (1–5).`));
+    const dueDate = parseDate(raw.dueDate);
+    if (!text(raw.dueDate)) rowErrors.push(rowError(rowNo, 'dueDate', 'تاريخ الاستحقاق مطلوب.', 'The due date is required.'));
+    else if (!dueDate) rowErrors.push(rowError(rowNo, 'dueDate', `تاريخ الاستحقاق «${text(raw.dueDate)}» غير صالح.`, `The due date "${text(raw.dueDate)}" is not valid.`));
+    const code = text(raw.code);
+    if (code && seenCodes.has(code)) rowErrors.push(rowError(rowNo, 'code', `الكود ${code} مكرر في الملف.`, `Code ${code} appears twice in the file.`));
+    if (code) seenCodes.add(code);
+    const statusRaw = text(raw.status);
+    const status = resolveStatus(raw.status);
+    if (statusRaw && norm(status) !== norm(statusRaw) && !STATUS_RULES.some(([st, re]) => st === status && re.test(norm(statusRaw)))) {
+      rowWarnings.push(rowError(rowNo, 'status', `الحالة «${statusRaw}» غير معروفة — ستُسجّل «مفتوح».`, `Unknown status "${statusRaw}" — it will be recorded as Open.`));
+    }
+    if (!text(raw.owner)) rowWarnings.push(rowError(rowNo, 'owner', 'لا يوجد مالك — ستبقى المخاطرة دون مسؤول.', 'No owner — the risk will stay unassigned.'));
+    const lv = likelihood.ok ? likelihood.value : null;
+    const sv = severity.ok ? severity.value : null;
+    const rl = parseScale(raw.residualLikelihood, LIKELIHOOD_WORDS, lv);
+    const rs = parseScale(raw.residualSeverity, SEVERITY_WORDS, sv);
+    const data = {
+      code: code || undefined,
+      siteId: siteId || null,
+      categoryId: categoryId || null,
+      hazard,
+      activity: text(raw.activity),
+      description: text(raw.description),
+      likelihood: lv,
+      severity: sv,
+      residualLikelihood: lv ? clamp(rl.value || lv, 1, lv) : null,
+      residualSeverity: sv ? clamp(rs.value || sv, 1, sv) : null,
+      controls: splitControls(raw.controls),
+      owner: text(raw.owner),
+      dueDate: dueDate || null,
+      status,
+      source: text(raw.source) || sourceLabel,
+      legalRef: text(raw.legalRef),
+    };
+    if (text(raw.zoneId)) data.zoneId = text(raw.zoneId);
+    const valid = rowErrors.length === 0;
+    rows.push({ row: rowNo, valid, data, errors: rowErrors, warnings: rowWarnings, raw: record });
+    errors.push(...rowErrors);
+    warnings.push(...rowWarnings);
+  });
+  const validRows = rows.filter((r) => r.valid);
+  return {
+    ok: validRows.length > 0,
+    rows,
+    valid: validRows.map((r) => r.data),
+    validCount: validRows.length,
+    invalidCount: rows.length - validRows.length,
+    total: rows.length,
+    errors,
+    warnings,
+    mapping: { ok: described.ok, fields: described.fields, labels: described.labels, labelsEn: described.labelsEn, unknown: described.unknown, message: described.message, messageEn: described.messageEn },
+  };
+}
+
+/**
+ * Import preview (CONTRACT §8 / AC-11) → { rows, valid, errors: [{ row, field, message, messageEn }], warnings,
+ * validCount, invalidCount, total, mapping, reason?, message, messageEn }. Nothing is stored here.
+ *   • local input — { text, format? | fileName? } or { records } or an array — returns the result directly;
+ *   • a remote source — { type: 'json'|'sheets'|'supabase', url, apiKey, table } — returns a Promise of it.
+ * Callers may always `await` it.
+ */
+function importPreview(input = {}) {
+  const src = isObj(input) ? input : {};
+  const isRemote = !Array.isArray(input) && typeof src.text !== 'string' && !Array.isArray(src.records) && text(src.type);
+  const finish = (records, extra = {}) => {
+    const p = previewRecords(records, { sourceLabel: extra.sourceLabel || 'استيراد' });
+    const summary = p.total
+      ? { message: `${safeNum(p.validCount)} صفاً صالحاً من ${safeNum(p.total)}${p.invalidCount ? ` — ${safeNum(p.invalidCount)} بأخطاء لن تُستورد` : ''}.`, messageEn: `${p.validCount} valid row${p.validCount === 1 ? '' : 's'} of ${p.total}${p.invalidCount ? ` — ${p.invalidCount} with errors will not be imported` : ''}.` }
+      : msg('noRows');
+    return { ...p, ...summary, ...extra, reason: p.total ? (p.validCount ? 'ok' : 'no-valid-rows') : 'noRows' };
+  };
+  if (isRemote) {
+    const kind = text(src.type).toLowerCase();
+    return fetchRecords(src, IMPORT_LIMIT).then((res) => {
+      if (!res.ok) return { ok: false, rows: [], valid: [], errors: [], warnings: [], validCount: 0, invalidCount: 0, total: 0, mapping: null, reason: res.reason, message: res.message, messageEn: res.messageEn, latencyMs: res.latencyMs, real: true };
+      return finish(res.records, { latencyMs: res.latencyMs, real: true, sourceLabel: `استيراد — ${TYPE_LABELS[kind] || kind}` });
+    }).catch((err) => ({ ok: false, rows: [], valid: [], errors: [], warnings: [], validCount: 0, invalidCount: 0, total: 0, mapping: null, ...msg('network'), error: err && err.message ? err.message : String(err) }));
+  }
+  const parsed = recordsFromInput(input);
+  if (parsed.error) return { ok: false, rows: [], valid: [], errors: [], warnings: [], validCount: 0, invalidCount: 0, total: 0, mapping: null, ...parsed.error };
+  return finish(parsed.records, { sourceLabel: text(src.sourceLabel) || (text(src.fileName) ? `استيراد — ${text(src.fileName)}` : 'استيراد') });
+}
+
+/**
+ * Commit previewed rows: only VALID rows are added (store.addRisk, one summary feed event instead of one per
+ * row). Accepts the preview result, its `rows`, or its `valid` records. `opts.store` overrides the store
+ * (tests); `opts.source` labels the batch. Returns { ok, count, ids, skipped, reason, message, messageEn }.
+ */
+async function commitImport(rowsOrPreview, opts = {}) {
+  let list;
+  if (isObj(rowsOrPreview) && Array.isArray(rowsOrPreview.rows)) list = rowsOrPreview.rows;
+  else if (Array.isArray(rowsOrPreview)) list = rowsOrPreview;
+  else list = [];
+  let target = opts.store || null;
+  if (!target) {
+    try { target = (await import('../core/store.js')).store; } catch { target = null; }
+  }
+  if (!target || typeof target.addRisk !== 'function') return { ok: false, count: 0, ids: [], skipped: list.length, reason: 'no-store', message: 'تعذّر الوصول إلى مخزن البيانات.', messageEn: 'The data store is not available.' };
+  const ids = [];
+  let skipped = 0;
+  for (const item of list) {
+    const isRow = isObj(item) && isObj(item.data) && 'valid' in item;
+    if (isRow && !item.valid) { skipped += 1; continue; }
+    const data = isRow ? item.data : item;
+    if (!isObj(data) || !text(data.hazard) || !data.siteId || !data.categoryId || !data.likelihood || !data.severity || !data.dueDate) { skipped += 1; continue; }
+    const risk = target.addRisk({ ...data, source: text(opts.source) || data.source || 'استيراد' }, { silent: true });
+    if (risk && risk.id) ids.push(risk.id); else skipped += 1;
+  }
+  if (ids.length && typeof target.pushFeed === 'function') {
+    const ev = target.pushFeed({
+      type: 'risk', tone: 'accent', siteId: null,
+      title: `استيراد ${safeNum(ids.length)} مخاطرة إلى سجل المخاطر${skipped ? ` (استُبعد ${safeNum(skipped)} صفاً غير صالح)` : ''}`,
+      titleEn: `${ids.length} risk${ids.length === 1 ? '' : 's'} imported into the risk register${skipped ? ` (${skipped} invalid row${skipped === 1 ? '' : 's'} excluded)` : ''}`,
+      detail: text(opts.source) || 'استيراد ملف', detailEn: latinOnly(text(opts.source)) || 'File import',
+      sourceId: 'biltix-hse',
+    });
+    if (ev && opts.bus && typeof opts.bus.emit === 'function') opts.bus.emit('feed:event', ev);
+  }
+  return {
+    ok: ids.length > 0, count: ids.length, ids, skipped, reason: ids.length ? 'ok' : 'nothing-imported',
+    message: ids.length ? `تم استيراد ${safeNum(ids.length)} مخاطرة${skipped ? ` واستُبعد ${safeNum(skipped)} صفاً` : ''}.` : 'لم يُستورد أي صف — لا توجد صفوف صالحة.',
+    messageEn: ids.length ? `${ids.length} risk${ids.length === 1 ? '' : 's'} imported${skipped ? `; ${skipped} row${skipped === 1 ? '' : 's'} excluded` : ''}.` : 'Nothing was imported — there are no valid rows.',
+  };
+}
+
 /* ────────────────────────────── adapters ────────────────────────────── */
 
 async function fetchRecords({ type, url, apiKey, table }, limit) {
   const kind = text(type).toLowerCase();
-  if (kind === 'simulation' || !kind) return { ok: false, message: MESSAGES.simulation, records: [], latencyMs: 0, status: 0 };
-  if (!['json', 'sheets', 'supabase'].includes(kind)) return { ok: false, message: MESSAGES.unknownType, records: [], latencyMs: 0, status: 0 };
+  const none = { records: [], latencyMs: 0, status: 0 };
+  if (kind === 'simulation' || !kind) return { ok: false, ...msg('simulation'), ...none };
+  if (!['json', 'sheets', 'supabase'].includes(kind)) return { ok: false, ...msg('unknownType'), ...none };
   const parsed = validateUrl(url);
-  if (!parsed) return { ok: false, message: MESSAGES.invalidUrl, records: [], latencyMs: 0, status: 0 };
+  if (!parsed) return { ok: false, ...msg('invalidUrl'), ...none };
 
   let target = parsed.href;
   const headers = { Accept: kind === 'sheets' ? 'text/csv, text/plain, */*' : 'application/json' };
   if (kind === 'supabase') {
-    if (!text(table)) return { ok: false, message: MESSAGES.supabaseTable, records: [], latencyMs: 0, status: 0 };
-    if (!text(apiKey)) return { ok: false, message: MESSAGES.supabaseKey, records: [], latencyMs: 0, status: 0 };
+    if (!text(table)) return { ok: false, ...msg('supabaseTable'), ...none };
+    if (!text(apiKey)) return { ok: false, ...msg('supabaseKey'), ...none };
     target = supabaseEndpoint(parsed, table, limit);
     headers.apikey = text(apiKey);
     headers.Authorization = `Bearer ${text(apiKey)}`;
@@ -666,107 +917,128 @@ async function fetchRecords({ type, url, apiKey, table }, limit) {
   }
 
   const result = await request(target, { method: 'GET', headers, mode: 'cors', credentials: 'omit' });
-  if (!result.ok) return { ok: false, message: failureMessage(result), records: [], latencyMs: result.latencyMs, status: result.status };
+  if (!result.ok) return { ok: false, ...failure(result), records: [], latencyMs: result.latencyMs, status: result.status };
 
   const body = await readText(result.response);
-  const fail = (message) => ({ ok: false, message, records: [], latencyMs: result.latencyMs, status: result.status });
+  const fail = (key, extra = {}) => ({ ok: false, ...(typeof key === 'string' ? msg(key) : key), records: [], latencyMs: result.latencyMs, status: result.status, ...extra });
   if (kind === 'sheets') {
-    if (looksLikeHtml(body)) return fail(MESSAGES.htmlNotCsv);
-    if (looksLikeScript(body)) return fail(MESSAGES.scriptNotCsv);
-    if (looksLikeJson(body)) return fail(MESSAGES.jsonNotCsv);
+    if (looksLikeHtml(body)) return fail('htmlNotCsv');
+    if (looksLikeScript(body)) return fail('scriptNotCsv');
+    if (looksLikeJson(body)) return fail('jsonNotCsv');
     const csv = parseCSV(body);
-    if (!csv.headers.length) return fail(MESSAGES.emptyCsv);
+    if (!csv.headers.length) return fail('emptyCsv');
     // C-14: a CSV is accepted only when its header row reads as a risk register.
     const mapping = describeMapping(csv.headers);
-    if (!mapping.ok) return fail(mapping.message);
-    return { ok: true, message: '', records: csv.records.slice(0, limit), latencyMs: result.latencyMs, status: result.status, mapping };
+    if (!mapping.ok) return fail({ reason: 'unmappedColumns', message: mapping.message, messageEn: mapping.messageEn });
+    return { ok: true, message: '', messageEn: '', records: csv.records.slice(0, limit), latencyMs: result.latencyMs, status: result.status, mapping };
   }
-  if (looksLikeHtml(body)) return fail(MESSAGES.htmlNotJson);
-  if (!looksLikeJson(body) && looksLikeScript(body)) return fail(MESSAGES.notJson);
+  if (looksLikeHtml(body)) return fail('htmlNotJson');
+  if (!looksLikeJson(body) && looksLikeScript(body)) return fail('notJson');
   const json = parseJsonText(body);
-  if (json.error) return fail(json.error);
+  if (json.error) return fail('notJson');
   const records = recordsFromJson(json.value);
-  if (!records) return fail(MESSAGES.notArray);
+  if (!records) return fail('notArray');
   // Same mapping gate for JSON / Supabase rows (an empty result set is still a valid connection).
   const mapping = records.length ? describeMapping(records) : null;
-  if (mapping && !mapping.ok) return fail(mapping.message);
-  return { ok: true, message: '', records: records.slice(0, limit), latencyMs: result.latencyMs, status: result.status, mapping };
+  if (mapping && !mapping.ok) return fail({ reason: 'unmappedColumns', message: mapping.message, messageEn: mapping.messageEn });
+  return { ok: true, message: '', messageEn: '', records: records.slice(0, limit), latencyMs: result.latencyMs, status: result.status, mapping };
 }
 
 async function pingWebhook(url) {
   const parsed = validateUrl(url);
-  if (!parsed) return { ok: false, latencyMs: 0, message: MESSAGES.invalidUrl, status: 0 };
+  if (!parsed) return { ok: false, latencyMs: 0, status: 0, ...msg('invalidUrl') };
   const started = nowMs();
   const res = await postWebhook(parsed.href, {
     type: 'ping',
-    source: 'Biltix Risk AI',
-    text: 'اختبار اتصال من بلتكس Risk AI — ركيزة السلامة والصحة المهنية',
+    source: 'BILTIX Risk AI',
+    text: 'اختبار اتصال من بلتكس Risk AI — Connection test from BILTIX Risk AI',
     sentAt: new Date().toISOString(),
   });
   const latencyMs = Math.round(nowMs() - started);
   return { ...res, latencyMs: res.latencyMs ?? latencyMs };
 }
 
+/** Source types that a browser can genuinely test over HTTP; everything else needs a backend. */
+export const REAL_TEST_TYPES = Object.freeze(['json', 'sheets', 'supabase', 'webhook']);
+
 /**
- * Probe a data source. Never rejects.
- * @returns {Promise<{ok:boolean, latencyMs:number, message:string, status?:number, count?:number}>}
+ * Probe a data source. Never rejects. HONEST by design (CONTRACT §5): `ok: true` only after a real HTTP
+ * request succeeded (json / sheets / supabase GET, webhook POST with a readable 2xx). Demo mode and
+ * connectors without a browser-testable endpoint return ok:false with `skipped: true` and a reason
+ * ('simulation' | 'requiresBackend'); an opaque webhook response is `ok: false, opaque: true` (delivery
+ * unconfirmed). Every result: { ok, latencyMs, status, reason, message, messageEn, real }.
  */
 async function testConnection(config = {}) {
   try {
     const kind = text(config.type).toLowerCase();
-    if (kind === 'webhook') return await pingWebhook(config.url);
-    if (kind === 'simulation' || !kind) return { ok: true, latencyMs: 0, message: MESSAGES.simulation, status: 0 };
+    if (kind === 'simulation' || !kind) return { ok: false, skipped: true, real: false, latencyMs: 0, status: 0, ...msg('simulation') };
+    if (!REAL_TEST_TYPES.includes(kind)) return { ok: false, skipped: true, real: false, latencyMs: 0, status: 0, ...msg('requiresBackend') };
+    if (kind === 'webhook') {
+      const res = await pingWebhook(config.url);
+      return { ...res, ok: Boolean(res.ok && !res.opaque), real: true };
+    }
     const res = await fetchRecords(config, 1);
-    if (!res.ok) return { ok: false, latencyMs: res.latencyMs, message: res.message, status: res.status };
+    if (!res.ok) return { ok: false, real: true, latencyMs: res.latencyMs, status: res.status, reason: res.reason, message: res.message, messageEn: res.messageEn };
     const label = TYPE_LABELS[kind] || kind;
-    const sample = res.records.length ? ` — تم استلام ${safeNum(res.records.length)} سجل تجريبي` : ' — الاستجابة صحيحة لكنها فارغة';
+    const labelEn = TYPE_LABELS_EN[kind] || kind;
+    const n = res.records.length;
+    const sample = n ? ` — تم استلام ${safeNum(n)} سجل تجريبي` : ' — الاستجابة صحيحة لكنها فارغة';
+    const sampleEn = n ? ` — ${n} sample record${n === 1 ? '' : 's'} received` : ' — the response is valid but empty';
     const mapped = res.mapping && res.mapping.labels && res.mapping.labels.length ? ` · ${res.mapping.message}` : '';
+    const mappedEn = res.mapping && res.mapping.labels && res.mapping.labels.length ? ` · ${res.mapping.messageEn}` : '';
     return {
-      ok: true, latencyMs: res.latencyMs, status: res.status, count: res.records.length,
-      mapping: res.mapping ? { fields: res.mapping.fields, labels: res.mapping.labels, unknown: res.mapping.unknown } : null,
+      ok: true, real: true, latencyMs: res.latencyMs, status: res.status, count: n, reason: 'ok',
+      mapping: res.mapping ? { fields: res.mapping.fields, labels: res.mapping.labels, labelsEn: res.mapping.labelsEn, unknown: res.mapping.unknown } : null,
       message: `تم الاتصال بنجاح بـ ${label} خلال ${safeNum(res.latencyMs)} مللي ثانية${sample}${mapped}.`,
+      messageEn: `Connected to ${labelEn} in ${res.latencyMs} ms${sampleEn}${mappedEn}.`,
     };
   } catch (err) {
-    return { ok: false, latencyMs: 0, message: MESSAGES.network, status: 0, error: err && err.message ? err.message : String(err) };
+    return { ok: false, real: true, latencyMs: 0, status: 0, ...msg('network'), error: err && err.message ? err.message : String(err) };
   }
 }
 
 /**
- * Fetch rows from the source and map them to the Risk schema. Never rejects.
- * @returns {Promise<{count:number, risks:object[], skipped:number, warnings:string[], ok:boolean, message:string}>}
+ * Fetch rows from the source and map them to the Risk schema (lenient legacy mapper, see importPreview for
+ * the strict per-row validation used before committing). Never rejects.
+ * @returns {Promise<{count:number, risks:object[], skipped:number, warnings:string[], ok:boolean, message:string, messageEn:string}>}
  */
 async function importRisks(config = {}, options = {}) {
   try {
     const kind = text(config.type).toLowerCase();
     const res = await fetchRecords(config, IMPORT_LIMIT);
-    if (!res.ok) return { count: 0, risks: [], skipped: 0, warnings: [], ok: false, message: res.message, latencyMs: res.latencyMs };
+    if (!res.ok) return { count: 0, risks: [], skipped: 0, warnings: [], ok: false, reason: res.reason, message: res.message, messageEn: res.messageEn, latencyMs: res.latencyMs };
     const mapped = mapRiskRows(res.records, { ...options, sourceLabel: `استيراد — ${TYPE_LABELS[kind] || kind}` });
     const ok = mapped.risks.length > 0;
     const columns = res.mapping && res.mapping.labels && res.mapping.labels.length ? ` · ${res.mapping.message}` : '';
     const message = ok
       ? `تم استيراد ${safeNum(mapped.risks.length)} مخاطرة من ${TYPE_LABELS[kind] || kind}${mapped.skipped ? ` وتجاهل ${safeNum(mapped.skipped)} صفًا دون وصف للخطر` : ''}${columns}.`
       : MESSAGES.noRows;
+    const messageEn = ok
+      ? `${mapped.risks.length} risk${mapped.risks.length === 1 ? '' : 's'} read from ${TYPE_LABELS_EN[kind] || kind}${mapped.skipped ? `; ${mapped.skipped} row(s) without a hazard skipped` : ''}.`
+      : MESSAGES_EN.noRows;
     return {
-      count: mapped.risks.length, risks: mapped.risks, skipped: mapped.skipped, warnings: mapped.warnings, ok, message, latencyMs: res.latencyMs,
-      mapping: res.mapping ? { fields: res.mapping.fields, labels: res.mapping.labels, unknown: res.mapping.unknown } : null,
+      count: mapped.risks.length, risks: mapped.risks, skipped: mapped.skipped, warnings: mapped.warnings, ok, reason: ok ? 'ok' : 'noRows', message, messageEn, latencyMs: res.latencyMs,
+      records: res.records,
+      mapping: res.mapping ? { fields: res.mapping.fields, labels: res.mapping.labels, labelsEn: res.mapping.labelsEn, unknown: res.mapping.unknown } : null,
     };
   } catch (err) {
-    return { count: 0, risks: [], skipped: 0, warnings: [], ok: false, message: MESSAGES.network, error: err && err.message ? err.message : String(err) };
+    return { count: 0, risks: [], skipped: 0, warnings: [], ok: false, ...msg('network'), error: err && err.message ? err.message : String(err) };
   }
 }
 
 /**
- * POST a JSON payload to a webhook (Slack / Teams / n8n / Zapier…). Tries a CORS request
- * first; if the browser blocks it, falls back to an opaque no-cors request. Never rejects.
- * @returns {Promise<{ok:boolean, status:number, message:string, opaque?:boolean, latencyMs?:number}>}
+ * POST a JSON payload to a webhook (Slack / Teams / n8n / Zapier…). Tries a CORS request first; if the
+ * browser blocks it, falls back to an opaque no-cors request — then `ok: true, opaque: true` means "sent,
+ * delivery NOT confirmed" (callers must not show a success claim for it). Never rejects.
+ * @returns {Promise<{ok:boolean, status:number, message:string, messageEn:string, opaque?:boolean, latencyMs?:number}>}
  */
 async function postWebhook(url, payload = {}) {
   try {
     const parsed = validateUrl(url);
-    if (!parsed) return { ok: false, status: 0, message: MESSAGES.invalidUrl };
+    if (!parsed) return { ok: false, status: 0, ...msg('invalidUrl') };
     const bodyObj = isObj(payload) ? payload : { text: text(payload) };
     let body;
-    try { body = JSON.stringify(bodyObj); } catch { return { ok: false, status: 0, message: 'تعذّر تحويل الحمولة إلى JSON.' }; }
+    try { body = JSON.stringify(bodyObj); } catch { return { ok: false, status: 0, reason: 'payload', message: 'تعذّر تحويل الحمولة إلى JSON.', messageEn: 'The payload could not be converted to JSON.' }; }
 
     const first = await request(parsed.href, { method: 'POST', mode: 'cors', credentials: 'omit', headers: { 'Content-Type': 'application/json' }, body });
     if (first.response) {
@@ -774,18 +1046,20 @@ async function postWebhook(url, payload = {}) {
         ok: first.ok,
         status: first.status,
         latencyMs: first.latencyMs,
-        message: first.ok ? `تم استلام التنبيه من الخدمة (HTTP ${first.status}).` : httpMessage(first.status),
+        reason: first.ok ? 'ok' : `http-${first.status}`,
+        message: first.ok ? `استلمت الخدمة الطلب (HTTP ${first.status}).` : httpMessage(first.status),
+        messageEn: first.ok ? `The service accepted the request (HTTP ${first.status}).` : httpMessageEn(first.status),
       };
     }
-    if (first.error === 'timeout') return { ok: false, status: 0, latencyMs: first.latencyMs, message: MESSAGES.timeout };
-    if (first.error === 'nofetch') return { ok: false, status: 0, message: MESSAGES.noFetch };
+    if (first.error === 'timeout') return { ok: false, status: 0, latencyMs: first.latencyMs, ...msg('timeout') };
+    if (first.error === 'nofetch') return { ok: false, status: 0, ...msg('noFetch') };
 
     // CORS-blocked endpoints (Slack, Teams…) still accept an opaque request without a preflight.
     const second = await request(parsed.href, { method: 'POST', mode: 'no-cors', credentials: 'omit', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body });
-    if (second.response) return { ok: true, status: 0, opaque: true, latencyMs: second.latencyMs, message: MESSAGES.webhookOpaque };
-    return { ok: false, status: 0, latencyMs: second.latencyMs, message: second.error === 'timeout' ? MESSAGES.timeout : MESSAGES.network };
+    if (second.response) return { ok: true, status: 0, opaque: true, latencyMs: second.latencyMs, ...msg('webhookOpaque') };
+    return { ok: false, status: 0, latencyMs: second.latencyMs, ...msg(second.error === 'timeout' ? 'timeout' : 'network') };
   } catch (err) {
-    return { ok: false, status: 0, message: MESSAGES.network, error: err && err.message ? err.message : String(err) };
+    return { ok: false, status: 0, ...msg('network'), error: err && err.message ? err.message : String(err) };
   }
 }
 
@@ -946,11 +1220,13 @@ function buildReport(state, opts = {}) {
   const matrix = safe(() => sel.riskMatrix(s, filters, at), []);
   const tiers = safe(() => tierCounts(s, filters, at), { 'منخفض': 0, 'متوسط': 0, 'عالٍ': 0, 'حرج': 0 });
   const byCategory = safe(() => sel.risksByCategory(s, filters, at), []).slice(0, 6);
-  const overdueRisks = arr(s.risks)
-    .filter((r) => r && r.status !== RISK_CLOSED && (filters.siteId === 'all' || r.siteId === filters.siteId) && Date.parse(r.dueDate) < new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime())
-    .sort((a, b) => sel.riskScore(b) - sel.riskScore(a))
+  // ONE overdue definition (sel.overdueRisks) — the same list feeds kpis.overdueRisks, the urgent actions,
+  // the overview and every sentence of this report; `overdue` lists the top 6, `overdueCount` is the total.
+  const overdueAll = safe(() => sel.overdueRisks(s, filters, at), []);
+  const overdueCount = overdueAll.length;
+  const overdueRisks = overdueAll
     .slice(0, 6)
-    .map((r) => ({ id: r.id, code: r.code, hazard: r.hazard, owner: r.owner, dueDate: r.dueDate, score: sel.riskScore(r), tier: sel.riskTier(sel.riskScore(r)), tone: sel.tierTone(sel.riskTier(sel.riskScore(r))) }));
+    .map((r) => ({ id: r.id, code: r.code, hazard: r.hazard, owner: r.owner, dueDate: r.dueDate, score: r.score, tier: r.tier, tone: r.tone, daysOverdue: r.daysOverdue }));
   const permitsByStatus = safe(() => sel.permitsByStatus(s, filters, at), []);
   const permitsByType = (() => {
     const counts = new Map();
@@ -981,7 +1257,7 @@ function buildReport(state, opts = {}) {
     `سجّل مؤشر السلامة ${num(k.safetyIndex)} من 100 لنطاق «${scopeLabel}» خلال الفترة ${period.label}، ${versusPrevious(d.safetyIndex, F.point)}.`,
     `بلغ عدد الحوادث المسجلة ${count(k.incidentsInPeriod || 0, F.incident)} (${versusPrevious(d.incidentsInPeriod, F.incident)})، منها ${count(k.nearMisses30d || 0, F.nearMiss)} خلال آخر 30 يومًا، وما زال ${count(k.openIncidents || 0, F.incident)} قيد المتابعة.`,
     `معدل تكرار الإصابات المضيعة للوقت LTIFR بلغ ${num(k.ltifr, 2)} ومعدل الحوادث المسجلة TRIR ${num(k.trir, 2)}، مع ${count(k.daysSinceLTI || 0, F.day)} دون إصابة مضيعة للوقت.`,
-    `يضم سجل المخاطر ${count(k.openRisks || 0, F.risk)} مفتوحة، منها ${count(k.criticalRisks || 0, F.risk)} حرجة و${count(k.highRisks || 0, F.risk)} عالية، و${count(k.overdueRisks || 0, F.risk)} تجاوزت موعد المعالجة.`,
+    `يضم سجل المخاطر ${count(k.openRisks || 0, F.risk)} مفتوحة، منها ${count(k.criticalRisks || 0, F.risk)} حرجة و${count(k.highRisks || 0, F.risk)} عالية، و${count(overdueCount, F.risk)} تجاوزت موعد المعالجة.`,
     `التصاريح النشطة ${count(k.activePermits || 0, F.permit)}، والامتثال التدريبي ${pct(k.trainingCompliance)} (${versusPrevious(d.trainingCompliance, null, { pctUnit: true })})، ونسبة إغلاق الإجراءات التصحيحية ${pct(k.capaClosure)}.`,
     `متوسط الامتثال لمتطلبات ISO 45001 بلغ ${pct(isoOverall)}${isoBelow.length ? `، مع ${count(isoBelow.length, F.clause)} دون المستهدف (${pct(ISO_TARGET)})` : ' وجميع البنود فوق المستهدف'}.`,
   ];
@@ -1000,8 +1276,19 @@ function buildReport(state, opts = {}) {
     { id: 'inspectionsDue', label: 'تفتيشات مستحقة', value: k.inspectionsDue, unit: '', delta: d.inspectionsDue, deltaGoodWhen: 'down', tone: deltaTone(d.inspectionsDue, 'down') },
   ];
 
+  // Direction words come from sel.describeDelta so an increase is never described as a decrease.
+  const moveAr = (delta, goodWhen, name, value, before) => {
+    const dd = sel.describeDelta(delta, goodWhen);
+    if (dd.direction === 'flat') return `استقر ${name} عند ${value} دون تغيّر عن الفترة السابقة`;
+    return `${dd.direction === 'up' ? 'ارتفع' : 'انخفض'} ${name} إلى ${value} مقابل ${before} في الفترة السابقة (${dd.good ? 'تحسّن في الأداء' : 'تراجع في الأداء'})`;
+  };
+  const moveEn = (delta, goodWhen, name, value, before) => {
+    const dd = sel.describeDelta(delta, goodWhen);
+    if (dd.direction === 'flat') return `${name} held at ${value}, unchanged from the previous period`;
+    return `${name} ${dd.direction === 'up' ? 'rose' : 'fell'} to ${value} from ${before} in the previous period (${dd.good ? 'an improvement' : 'a deterioration'})`;
+  };
   const kpiNarrative = [
-    `${(d.ltifr || 0) <= 0 ? 'تحسّن' : 'تراجع'} مؤشر LTIFR إلى ${num(k.ltifr, 2)} مقابل ${num(prev.ltifr, 2)} في الفترة السابقة، فيما ${(d.trir || 0) <= 0 ? 'تحسّن' : 'تراجع'} TRIR إلى ${num(k.trir, 2)} مقابل ${num(prev.trir, 2)}.`,
+    `${moveAr(d.ltifr, 'down', 'مؤشر LTIFR', num(k.ltifr, 2), num(prev.ltifr, 2))}، و${moveAr(d.trir, 'down', 'مؤشر TRIR', num(k.trir, 2), num(prev.trir, 2))}.`,
     `${k.inspectionsDue ? `هناك ${count(k.inspectionsDue, F.inspection)} مستحقة خلال الأسبوع القادم أو متأخرة` : 'لا توجد تفتيشات متأخرة أو مستحقة خلال الأسبوع القادم'}، ونسبة إغلاق الإجراءات التصحيحية ${pct(k.capaClosure)} (${versusPrevious(d.capaClosure, null, { pctUnit: true })}).`,
   ];
 
@@ -1015,7 +1302,7 @@ function buildReport(state, opts = {}) {
   const riskNarrative = [
     `يتوزع سجل المخاطر المفتوحة على ${count(tiers['حرج'], F.risk)} حرجة، و${count(tiers['عالٍ'], F.risk)} عالية، و${count(tiers['متوسط'], F.risk)} متوسطة، و${count(tiers['منخفض'], F.risk)} منخفضة؛ وعدد المخاطر الحرجة ${versusPrevious(d.criticalRisks, F.risk)}.`,
     byCategory[0] ? `أكثر الفئات تركّزًا هي «${byCategory[0].label}» (${count(byCategory[0].value, F.risk)})${byCategory[1] ? ` تليها «${byCategory[1].label}» (${count(byCategory[1].value, F.risk)})` : ''}.` : 'لا توجد مخاطر مفتوحة ضمن النطاق المحدد.',
-    overdueRisks.length ? `تجاوزت ${count(overdueRisks.length, F.risk)} موعد المعالجة المقرر، أبرزها ${overdueRisks.slice(0, 2).map((r) => `${r.code} (${r.tier})`).join(' و')}.` : 'جميع المخاطر المفتوحة ضمن مواعيد المعالجة المقررة.',
+    overdueCount ? `تجاوزت ${count(overdueCount, F.risk)} موعد المعالجة المقرر، أبرزها ${overdueRisks.slice(0, 2).map((r) => `${r.code} (${r.tier})`).join(' و')}.` : 'جميع المخاطر المفتوحة ضمن مواعيد المعالجة المقررة.',
   ];
 
   const activeCount = (permitsByStatus.find((p) => p.id === 'active') || {}).value || 0;
@@ -1039,7 +1326,7 @@ function buildReport(state, opts = {}) {
   /* ── recommendations ── */
   const recommendations = [];
   if (k.criticalRisks > 0) recommendations.push({ tone: 'critical', text: `معالجة ${count(k.criticalRisks, F.risk)} حرجة عبر ضوابط هندسية أو إلغاء النشاط قبل استئنافه، ومراجعة التقييم أسبوعيًا حتى تنخفض الدرجة المتبقية دون 10.` });
-  if (k.overdueRisks > 0) recommendations.push({ tone: 'serious', text: `إغلاق ${count(k.overdueRisks, F.risk)} متأخرة عن موعد المعالجة وتصعيد المتأخر منها لمدير الموقع مع تواريخ مستهدفة جديدة.` });
+  if (overdueCount > 0) recommendations.push({ tone: 'serious', text: `إغلاق ${count(overdueCount, F.risk)} متأخرة عن موعد المعالجة وتصعيد المتأخر منها لمدير الموقع مع تواريخ مستهدفة جديدة.` });
   if (openHigh.length) recommendations.push({ tone: 'serious', text: `استكمال التحقيق في ${count(openHigh.length, F.incident)} عالية الخطورة وإغلاق إجراءاتها التصحيحية خلال 14 يومًا.` });
   if (topCause) recommendations.push({ tone: 'warning', text: `استهداف السبب الجذري «${topCause.label}» ببرنامج وقائي مخصص (تدريب، إشراف، إجراءات عمل) لكونه يفسر ${pct(topCause.pct)} من الحوادث.` });
   if (k.trainingCompliance < 90) recommendations.push({ tone: 'warning', text: `رفع الامتثال التدريبي من ${pct(k.trainingCompliance)} إلى 90% على الأقل بجدولة ${count(expiring30.length + expiring60.length, F.cert)} قريبة الانتهاء وتغطية الفجوات في ${weakestCourses.map((c) => `«${c.label}»`).join(' و') || 'الدورات الإلزامية'}.` });
@@ -1050,21 +1337,96 @@ function buildReport(state, opts = {}) {
   if (k.capaClosure < 80) recommendations.push({ tone: 'warning', text: `رفع نسبة إغلاق الإجراءات التصحيحية من ${pct(k.capaClosure)} إلى 80% عبر مراجعة أسبوعية للإجراءات المتأخرة.` });
   if (!recommendations.length) recommendations.push({ tone: 'good', text: 'الأداء ضمن المستهدفات؛ يُوصى بالحفاظ على وتيرة الجولات الميدانية واجتماعات صندوق الأدوات وتحديث تقييمات المخاطر قبل كل مرحلة جديدة.' });
 
+  /* ── English narrative (same facts, same definitions; numbers formatted by the view) ── */
+  const n0 = (v, digits = 0) => (Number(v) || 0).toFixed(digits);
+  const pe = (v) => `${Math.round(Number(v) || 0)}%`;
+  const plural = (v, one, many) => `${Math.abs(Math.round(Number(v) || 0))} ${Math.abs(Math.round(Number(v) || 0)) === 1 ? one : many}`;
+  const vsPrevEn = (delta, one, many, { pp = false, digits = 0 } = {}) => {
+    const dd = sel.describeDelta(Math.abs(Number(delta) || 0) < (digits ? 0.005 : 0.5) ? 0 : delta, 'none');
+    if (dd.direction === 'flat') return 'unchanged from the previous period';
+    const amount = pp ? `${n0(Math.abs(delta), digits)} percentage point${Math.abs(delta) === 1 ? '' : 's'}` : (one ? plural(delta, one, many) : n0(Math.abs(delta), digits));
+    return `${dd.direction === 'up' ? 'up' : 'down'} ${amount} on the previous period`;
+  };
+  const scopeEn = site ? siteEn(site) : 'all sites';
+  const catEn = (c) => enumEn('hseCategory', c.id, c.label);
+  const tierEn = (t) => enumEn('tier', t, t);
+  const periodLabelEn = kind === 'month' ? `${fromDate.toLocaleString('en-GB', { month: 'long', year: 'numeric' })}` : (kind === 'quarter' ? `Q${Math.floor(fromDate.getMonth() / 3) + 1} ${fromDate.getFullYear()}` : `Last ${filters.range} days`);
+  const nearMissShare = incidents.length ? Math.round((incidents.filter((i) => i.type === 'حادث وشيك').length / incidents.length) * 100) : 0;
+  const summaryEn = [
+    `The safety index scored ${n0(k.safetyIndex)} out of 100 for ${scopeEn} ${kind === 'month' || kind === 'quarter' ? `in ${periodLabelEn}` : `over the last ${filters.range} days`}, ${vsPrevEn(d.safetyIndex, 'point', 'points')}.`,
+    `${plural(k.incidentsInPeriod || 0, 'incident was', 'incidents were')} recorded (${vsPrevEn(d.incidentsInPeriod, 'incident', 'incidents')}), including ${plural(k.nearMisses30d || 0, 'near miss', 'near misses')} in the last 30 days; ${plural(k.openIncidents || 0, 'incident remains', 'incidents remain')} open.`,
+    `LTIFR stands at ${n0(k.ltifr, 2)} and TRIR at ${n0(k.trir, 2)}, with ${plural(k.daysSinceLTI || 0, 'day', 'days')} since the last lost-time injury.`,
+    `The risk register holds ${plural(k.openRisks || 0, 'open risk', 'open risks')}: ${n0(k.criticalRisks)} critical, ${n0(k.highRisks)} high, and ${plural(overdueCount, 'risk', 'risks')} past the treatment due date.`,
+    `${plural(k.activePermits || 0, 'permit is', 'permits are')} active; training compliance is ${pe(k.trainingCompliance)} (${vsPrevEn(d.trainingCompliance, null, null, { pp: true })}) and corrective-action closure ${pe(k.capaClosure)}.`,
+    `Average ISO 45001 compliance is ${pe(isoOverall)}${isoBelow.length ? `, with ${plural(isoBelow.length, 'clause', 'clauses')} below the ${pe(ISO_TARGET)} target` : ' and every clause is above target'}.`,
+  ];
+  const kpiNarrativeEn = [
+    `${moveEn(d.ltifr, 'down', 'LTIFR', n0(k.ltifr, 2), n0(prev.ltifr, 2))}; ${moveEn(d.trir, 'down', 'TRIR', n0(k.trir, 2), n0(prev.trir, 2))}.`,
+    `${k.inspectionsDue ? `${plural(k.inspectionsDue, 'inspection is', 'inspections are')} due within the next week or overdue` : 'No inspection is overdue or due within the next week'}; corrective-action closure is ${pe(k.capaClosure)} (${vsPrevEn(d.capaClosure, null, null, { pp: true })}).`,
+  ];
+  const incidentNarrativeEn = [
+    `${plural(k.incidentsInPeriod || 0, 'incident', 'incidents')} occurred in the period, ${vsPrevEn(d.incidentsInPeriod, 'incident', 'incidents')}; near misses make up ${pe(nearMissShare)} of reports, ${nearMissShare >= 50 ? 'a sign of a healthy reporting culture' : 'so reporting culture needs strengthening'}.`,
+    topCause ? `The most frequent root cause is "${enumEn('rootCause', topCause.label, topCause.label)}" at ${pe(topCause.pct)} of classified incidents${pareto[1] ? `, followed by "${enumEn('rootCause', pareto[1].label, pareto[1].label)}" (${pe(pareto[1].pct)})` : ''}.` : 'No classified root causes are available for this period.',
+    openHigh.length ? `${plural(openHigh.length, 'high-severity incident (4+) is', 'high-severity incidents (4+) are')} still open and need the investigation and corrective actions completed.` : 'There are no open high-severity incidents.',
+  ];
+  const riskNarrativeEn = [
+    `Open risks: ${n0(tiers['حرج'])} critical, ${n0(tiers['عالٍ'])} high, ${n0(tiers['متوسط'])} medium and ${n0(tiers['منخفض'])} low; the number of critical risks is ${vsPrevEn(d.criticalRisks, 'risk', 'risks')}.`,
+    byCategory[0] ? `The largest concentration is "${catEn(byCategory[0])}" (${plural(byCategory[0].value, 'risk', 'risks')})${byCategory[1] ? `, followed by "${catEn(byCategory[1])}" (${plural(byCategory[1].value, 'risk', 'risks')})` : ''}.` : 'There are no open risks in the selected scope.',
+    overdueCount ? `${plural(overdueCount, 'risk is', 'risks are')} past the treatment due date, led by ${overdueRisks.slice(0, 2).map((r) => `${r.code} (${tierEn(r.tier)})`).join(' and ')}.` : 'Every open risk is within its treatment due date.',
+  ];
+  const permitNarrativeEn = [
+    `${plural(activeCount, 'permit is', 'permits are')} active and ${plural(pendingCount, 'is', 'are')} awaiting approval${permitsByType[0] ? `; the most common type is "${enumEn('permitType', permitsByType[0].label, permitsByType[0].label)}"` : ''}.`,
+    expiringPermits.length ? `${plural(expiringPermits.length, 'permit expires', 'permits expire')} within the next hour and need a documented close-out or extension.` : 'No active permit expires within the next hour.',
+  ];
+  const trainingNarrativeEn = [
+    `Mandatory training compliance is ${pe(k.trainingCompliance)}, ${vsPrevEn(d.trainingCompliance, null, null, { pp: true })}.`,
+    weakestCourses.length ? `Lowest coverage: ${weakestCourses.map((c) => `"${courseEn((s.courses || []).find((x) => x.id === c.id) || { id: c.id, name: c.label })}" (${pe(c.pct)})`).join(', ')}.` : 'No course data is available.',
+    `${plural(expiring30.length, 'certificate expires', 'certificates expire')} within 30 days and ${n0(expiring60.length)} within 60 days; requalification must be scheduled before they lapse.`,
+  ];
+  const complianceNarrativeEn = [
+    `ISO 45001 clauses 4–10 average ${pe(isoOverall)} against a ${pe(ISO_TARGET)} target${isoBelow.length ? `; clauses below target: ${isoBelow.map((c) => `${c.id} (${pe(c.score)})`).join(', ')}` : ', and every clause meets the target'}.`,
+    `The legal register holds ${n0(legal.length)} requirements: ${n0(legalCounts['ممتثل'])} compliant, ${n0(legalCounts['جزئي'])} partial, ${n0(legalCounts['فجوة'])} gap${isoGaps ? `; documented gaps across the standard's clauses: ${n0(isoGaps)}` : ''}.`,
+  ];
+  const recEn = [];
+  if (k.criticalRisks > 0) recEn.push({ tone: 'critical', text: `Treat ${plural(k.criticalRisks, 'critical risk', 'critical risks')} with engineering controls or by stopping the activity before it resumes, and review the assessment weekly until the residual score is below 10.` });
+  if (overdueCount > 0) recEn.push({ tone: 'serious', text: `Close ${plural(overdueCount, 'overdue risk', 'overdue risks')} and escalate the late ones to the site manager with new target dates.` });
+  if (openHigh.length) recEn.push({ tone: 'serious', text: `Complete the investigation of ${plural(openHigh.length, 'high-severity incident', 'high-severity incidents')} and close their corrective actions within 14 days.` });
+  if (topCause) recEn.push({ tone: 'warning', text: `Target the root cause "${enumEn('rootCause', topCause.label, topCause.label)}" with a dedicated prevention programme (training, supervision, work procedures) — it explains ${pe(topCause.pct)} of incidents.` });
+  if (k.trainingCompliance < 90) recEn.push({ tone: 'warning', text: `Raise training compliance from ${pe(k.trainingCompliance)} to at least 90% by scheduling ${plural(expiring30.length + expiring60.length, 'expiring certificate', 'expiring certificates')} and closing the gaps in the weakest courses.` });
+  if (k.inspectionsDue > 0) recEn.push({ tone: 'warning', text: `Carry out ${plural(k.inspectionsDue, 'due or overdue inspection', 'due or overdue inspections')} and record the results this week.` });
+  if (isoBelow.length) recEn.push({ tone: 'warning', text: `Improvement plan for the ISO 45001 clauses below target (${isoBelow.map((c) => c.id).join(', ')}) with an owner and a deadline for each gap before the next internal audit.` });
+  if (legalCounts['فجوة'] > 0 || legalCounts['جزئي'] > 0) recEn.push({ tone: 'warning', text: `Address ${plural(legalCounts['فجوة'] + legalCounts['جزئي'], 'regulatory requirement', 'regulatory requirements')} that are not fully compliant and update the review dates.` });
+  if (integ.degraded > 0 || integ.disconnected > 0) recEn.push({ tone: 'warning', text: `Restore ${plural(integ.degraded + integ.disconnected, 'degraded or disconnected integration', 'degraded or disconnected integrations')} (simulated in this demo) so sensor and attendance data stay complete.` });
+  if (k.capaClosure < 80) recEn.push({ tone: 'warning', text: `Raise corrective-action closure from ${pe(k.capaClosure)} to 80% through a weekly review of late actions.` });
+  if (!recEn.length) recEn.push({ tone: 'good', text: 'Performance is on target; keep the cadence of field walks and toolbox talks and refresh risk assessments before each new phase.' });
+  recommendations.forEach((r, i) => { if (recEn[i]) r.textEn = recEn[i].text; });
+  const kpiLabelsEn = { safetyIndex: 'Safety index', ltifr: 'LTIFR', trir: 'TRIR', daysSinceLTI: 'Days without a lost-time injury', openIncidents: 'Open incidents', nearMisses30d: 'Near misses (30 days)', activePermits: 'Active permits', criticalRisks: 'Critical risks', capaClosure: 'Corrective-action closure', trainingCompliance: 'Training compliance', inspectionsDue: 'Inspections due' };
+  for (const item of kpiItems) {
+    item.labelEn = kpiLabelsEn[item.id] || item.label;
+    const dd = sel.describeDelta(item.delta, item.id === 'activePermits' ? 'none' : item.deltaGoodWhen);
+    item.direction = dd.direction;
+    item.good = dd.good;
+  }
+
   const sections = [
-    { id: 'summary', code: 'RPT-01', title: 'الملخص التنفيذي', narrative: summary, highlights: kpiItems.slice(0, 4) },
-    { id: 'kpis', code: 'RPT-02', title: 'مؤشرات الأداء', narrative: kpiNarrative, items: kpiItems, siteScores: siteScores.map((row) => ({ siteId: row.site.id, site: row.site.name, city: row.site.city, score: row.score, openRisks: row.openRisks, openIncidents: row.openIncidents, trend: row.trend })) },
-    { id: 'incidents', code: 'RPT-03', title: 'الحوادث', narrative: incidentNarrative, trend, byType, pareto, openHigh: openHigh.map((i) => ({ id: i.id, code: i.code, title: i.title, type: i.type, severity: i.severity, status: i.status, siteId: i.siteId, date: i.date })) },
-    { id: 'risks', code: 'RPT-04', title: 'المخاطر', narrative: riskNarrative, matrix, tiers, byCategory, overdue: overdueRisks },
-    { id: 'permits', code: 'RPT-05', title: 'التصاريح', narrative: permitNarrative, byStatus: permitsByStatus, byType: permitsByType, expiringSoon: expiringPermits },
-    { id: 'training', code: 'RPT-06', title: 'التدريب', narrative: trainingNarrative, byCourse: trainingByCourse, expiring30: expiring30.length, expiring60: expiring60.length, expiring: expiring60.slice(0, 12).map((e) => ({ worker: e.worker.name, workerId: e.worker.id, course: e.course.name, expiresAt: e.expiresAt, daysLeft: e.daysLeft, tone: e.tone })) },
-    { id: 'compliance', code: 'RPT-07', title: 'الامتثال', narrative: complianceNarrative, isoOverall, target: ISO_TARGET, isoScores: isoScores.map((c) => ({ id: c.id, title: c.title, score: c.score, gaps: c.gaps })), legal: legalCounts, legalRegister: legal.map((l) => ({ id: l.id, title: l.title, authority: l.authority, status: l.status, nextReview: l.nextReview })) },
-    { id: 'recommendations', code: 'RPT-08', title: 'التوصيات', narrative: recommendations.map((r) => r.text), items: recommendations, urgent: urgent.map((u) => ({ kind: u.kind, code: u.code, text: u.text, due: u.due, tone: u.tone, href: u.href })) },
+    { id: 'summary', code: 'RPT-01', title: 'الملخص التنفيذي', titleEn: 'Executive summary', narrative: summary, narrativeEn: summaryEn, highlights: kpiItems.slice(0, 4) },
+    { id: 'kpis', code: 'RPT-02', title: 'مؤشرات الأداء', titleEn: 'Performance indicators', narrative: kpiNarrative, narrativeEn: kpiNarrativeEn, items: kpiItems, siteScores: siteScores.map((row) => ({ siteId: row.site.id, site: row.site.name, city: row.site.city, score: row.score, openRisks: row.openRisks, openIncidents: row.openIncidents, trend: row.trend })) },
+    { id: 'incidents', code: 'RPT-03', title: 'الحوادث', titleEn: 'Incidents', narrative: incidentNarrative, narrativeEn: incidentNarrativeEn, trend, byType, pareto, openHigh: openHigh.map((i) => ({ id: i.id, code: i.code, title: i.title, type: i.type, severity: i.severity, status: i.status, siteId: i.siteId, date: i.date })) },
+    { id: 'risks', code: 'RPT-04', title: 'المخاطر', titleEn: 'Risks', narrative: riskNarrative, narrativeEn: riskNarrativeEn, matrix, tiers, byCategory, overdue: overdueRisks, overdueCount },
+    { id: 'permits', code: 'RPT-05', title: 'التصاريح', titleEn: 'Permits to work', narrative: permitNarrative, narrativeEn: permitNarrativeEn, byStatus: permitsByStatus, byType: permitsByType, expiringSoon: expiringPermits },
+    { id: 'training', code: 'RPT-06', title: 'التدريب', titleEn: 'Training', narrative: trainingNarrative, narrativeEn: trainingNarrativeEn, byCourse: trainingByCourse, expiring30: expiring30.length, expiring60: expiring60.length, expiring: expiring60.slice(0, 12).map((e) => ({ worker: e.worker.name, workerId: e.worker.id, course: e.course.name, expiresAt: e.expiresAt, daysLeft: e.daysLeft, tone: e.tone })) },
+    { id: 'compliance', code: 'RPT-07', title: 'الامتثال', titleEn: 'Compliance', narrative: complianceNarrative, narrativeEn: complianceNarrativeEn, isoOverall, target: ISO_TARGET, isoScores: isoScores.map((c) => ({ id: c.id, title: c.title, score: c.score, gaps: c.gaps })), legal: legalCounts, legalRegister: legal.map((l) => ({ id: l.id, title: l.title, authority: l.authority, status: l.status, nextReview: l.nextReview })) },
+    { id: 'recommendations', code: 'RPT-08', title: 'التوصيات', titleEn: 'Recommendations', narrative: recommendations.map((r) => r.text), narrativeEn: recommendations.map((r) => r.textEn || ''), items: recommendations, urgent: urgent.map((u) => ({ kind: u.kind, code: u.code, text: u.text, due: u.due, tone: u.tone, href: u.href })) },
   ];
 
   const cadence = kind === 'quarter' ? 'الربعي' : 'الشهري';
   return {
     title: `تقرير السلامة والصحة المهنية ${cadence} — ${company.name || 'بلتكس'} — ${kind === 'quarter' ? windowLabel : period.month}`,
     subtitle: `${company.product || BRAND.product} · ${company.pillar || BRAND.pillar} · ${scopeLabel} · ${rangeLabel}`,
+    titleEn: `BILTIX Risk AI — Health, Safety & Environment ${kind === 'quarter' ? 'quarterly' : 'monthly'} report — ${periodLabelEn}`,
+    subtitleEn: `BILTIX Risk AI · HSE pillar · ${scopeEn} · ${period.from} – ${period.to}`,
+    periodEn: `${periodLabelEn} (${period.from} – ${period.to})`,
+    overdueCount,
     company: { name: company.name, product: company.product || BRAND.product, hseProduct: company.hseProduct || BRAND.hseProduct, pillar: company.pillar || BRAND.pillar, tagline: company.tagline },
     generatedAt: new Date().toISOString(),
     period: period.label,
@@ -1079,6 +1441,11 @@ function buildReport(state, opts = {}) {
 export const sources = {
   testConnection,
   importRisks,
+  // v3 (CONTRACT §8 / AC-11)
+  importPreview,
+  commitImport,
+  REAL_TEST_TYPES,
+  MESSAGES_EN,
   exportCSV,
   exportJSON,
   downloadTemplateCSV,

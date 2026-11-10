@@ -233,16 +233,18 @@ export function drawer(el, open) {
   const off = sheet ? 'translateY(100%)' : `translateX(${isRtl() ? '-100%' : '100%'})`;
   const snap = snapshot([el], ['transform', 'opacity', 'transition']);
   el.style.setProperty('transition', 'none');
+  el.setAttribute('data-motion-owned', '');            // css/components.css: dialog.drawer[data-motion-owned] { transition: none }
   const keyframes = open
     ? { transform: [off, 'none'] }
     : { transform: [null, off], opacity: [null, 0.6] };
   const controls = run([el], keyframes, open
     ? { duration: timing.main, ease: timing.ease }
     : { duration: 0.2, ease: timing.easeInOut });
-  if (!controls) { restore(snap); return done(); }
+  const release = () => { restore(snap); el.removeAttribute('data-motion-owned'); };
+  if (!controls) { release(); return done(); }
   // Inline styles are always restored: after a close the caller removes the panel in the same microtask
   // chain (no frame is painted in between), and a re-opened panel starts from clean inline styles.
-  return settle(controls).then(() => restore(snap));
+  return settle(controls).then(release);
 }
 
 /* ---- page ---- */

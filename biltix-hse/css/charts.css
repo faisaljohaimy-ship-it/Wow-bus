@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Biltix HSE — chart chrome (css/charts.css)
+   BILTIX Risk AI — chart chrome (css/charts.css) — v3 tokens
    SVG chart text, gridlines, axes, legends, the singleton tooltip, crosshair,
    table twins, radar canvas frames, gauge type, heatmap matrix, sparklines
    and mark hover states. Series colours come from JS as CSS variables;
@@ -42,7 +42,7 @@
 .chart text.tick,
 .chart .axis text {
   fill: var(--ink-3);
-  font-size: 11px;
+  font-size: 11.5px;
   font-variant-numeric: tabular-nums;
 }
 .chart .tick.is-numeric text, .chart .axis-tick.is-numeric, .chart text.num { font-family: var(--font-mono-mixed); }
@@ -78,6 +78,14 @@
 .chart .line, .chart path.series { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .chart .area { opacity: .14; }
 .chart .marker, .chart circle.point { stroke: var(--bg-1); stroke-width: 2; }
+/* Dumbbell (inherent → residual, one axis): link hairline, hollow "from", solid "to" */
+.chart .dumbbell-link, .dumbbell-link { stroke: var(--line-strong); stroke-width: 2; stroke-linecap: round; }
+.chart .dumbbell-dot, .dumbbell-dot { stroke: var(--bg-1); stroke-width: 2; }
+.chart .dumbbell-dot.is-from, .dumbbell-dot.is-from { fill: var(--bg-1); stroke: var(--key-from, var(--ink-3)); stroke-width: 2; }
+.chart .dumbbell-dot.is-to, .dumbbell-dot.is-to { fill: var(--key-to, var(--s1)); }
+.chart .dumbbell-row:hover .dumbbell-link, .chart .dumbbell-row:focus-visible .dumbbell-link { stroke: var(--ink-2); }
+.chart .dumbbell-label { fill: var(--ink-2); font-size: 12px; }
+.chart .dumbbell-value { fill: var(--ink-1); font-family: var(--font-mono-mixed); font-size: 11px; font-variant-numeric: tabular-nums; }
 .chart .bar, .chart rect.bar { shape-rendering: geometricPrecision; }
 .chart .surface-ring { fill: none; stroke: var(--bg-1); stroke-width: 2; }
 
@@ -87,7 +95,7 @@
   outline: none;
 }
 .mark:hover, .mark:focus-visible { filter: brightness(1.15); }
-.mark:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mark:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .chart.has-active .mark:not(.is-active):not(:hover) { opacity: .55; }
 .mark.is-active { filter: brightness(1.15); }
 .mark[tabindex] { cursor: pointer; }
@@ -181,27 +189,26 @@ button.legend-item:hover { color: var(--ink-1); }
   pointer-events: none;
   min-inline-size: 120px;
   max-inline-size: 280px;
-  padding: 8px 10px;
-  background: color-mix(in srgb, var(--bg-2) 96%, transparent);
+  padding: 9px 11px;
+  background: var(--bg-3);
   border: 1px solid var(--line-2);
-  border-radius: 8px;
-  box-shadow: var(--shadow-1);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  font-size: 12px;
-  line-height: 1.45;
+  border-radius: var(--radius-md);
+  box-shadow: var(--elev-2);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
   color: var(--ink-1);
   will-change: transform;
 }
+:root[data-theme="light"] #tooltip, :root[data-theme="light"] .tooltip { background: var(--bg-1); border-color: var(--line-2); }
 #tooltip[hidden], .tooltip[hidden] { display: none; }
 /* overview.js clones the tooltip look for radar hover inside the frame (absolute, z 2) */
 .radar-frame .tooltip, .radar-tip { position: absolute; max-inline-size: 240px; }
 .tooltip-title {
   margin-block-end: 6px;
   padding-block-end: 6px;
-  border-block-end: 1px solid var(--line);
+  border-block-end: 1px solid var(--line-2);
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--ink-1);
   overflow-wrap: anywhere;
 }
@@ -248,12 +255,12 @@ button.legend-item:hover { color: var(--ink-1); }
 .chart-table {
   inline-size: 100%;
   border-collapse: collapse;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
 }
 .chart-table caption { text-align: start; padding-block-end: 6px; font-size: var(--fs-xs); color: var(--ink-3); }
 .chart-table th, .chart-table td {
-  padding: 6px 8px;
+  padding: 8px 10px;
   text-align: start;
   border-block-end: 1px solid var(--line);
   vertical-align: middle;
@@ -262,7 +269,7 @@ button.legend-item:hover { color: var(--ink-1); }
   position: sticky;
   inset-block-start: 0;
   background: var(--bg-1);
-  color: var(--ink-3);
+  color: var(--ink-2);
   font-weight: 600;
   box-shadow: inset 0 -1px 0 var(--line-2);
   border-block-end: 0;
@@ -286,9 +293,9 @@ button.legend-item:hover { color: var(--ink-1); }
   max-inline-size: 560px;
   aspect-ratio: 1;
   margin-inline: auto;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--line);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line-2) 55%, transparent), inset 0 0 60px -30px color-mix(in srgb, var(--accent) 25%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line-2) 45%, transparent), inset 0 0 60px -30px color-mix(in srgb, var(--accent) 18%, transparent);
   background-color: color-mix(in srgb, var(--bg-0) 55%, var(--bg-1));
   background-image:
     radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent) 9%, transparent) 0%, transparent 62%),
@@ -320,9 +327,10 @@ button.legend-item:hover { color: var(--ink-1); }
   border-radius: inherit;
   touch-action: none;
 }
-.radar-frame:focus-within { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent), var(--glow-accent); }
+.radar-frame:focus-within { box-shadow: inset 0 0 0 2px var(--focus); }
 /* Status corner chip inside the frame (e.g. "مباشر" + live dot) */
 .radar-status {
+  /* Status chip inside the frame: honest wording comes from the view (Demo / Simulated) */
   position: absolute;
   inset-block-start: 12px;
   inset-inline-start: 14px;
@@ -405,12 +413,11 @@ button.legend-item:hover { color: var(--ink-1); }
   border: 1px solid var(--line);
   min-inline-size: 0;
 }
-.tele-label { font-family: var(--font-sans); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 0; }
+.tele-label { font-family: var(--font-sans); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 0; }
 .tele-value { color: var(--ink-1); font-weight: 500; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
 .tele-unit { color: var(--ink-2); font-weight: 400; font-size: 10px; }
-.tele-row.is-alert .tele-value, .radar-telemetry li.is-alert .tele-value { color: color-mix(in srgb, var(--critical) 80%, var(--ink-1)); }
-.tele-row.is-warn .tele-value,  .radar-telemetry li.is-warn  .tele-value { color: color-mix(in srgb, var(--warning) 80%, var(--ink-1)); }
-:root[data-theme="light"] .tele-row.is-warn .tele-value, :root[data-theme="light"] .radar-telemetry li.is-warn .tele-value { color: color-mix(in srgb, var(--warning) 55%, var(--ink-1)); }
+.tele-row.is-alert .tele-value, .radar-telemetry li.is-alert .tele-value { color: var(--critical-text); }
+.tele-row.is-warn .tele-value,  .radar-telemetry li.is-warn  .tele-value { color: var(--warning-text); }
 .tele-row.is-alert, .radar-telemetry li.is-alert { border-color: color-mix(in srgb, var(--critical) 40%, transparent); background: color-mix(in srgb, var(--critical) 10%, transparent); }
 .tele-updated { font-size: 11px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
 
@@ -512,8 +519,8 @@ button.legend-item:hover { color: var(--ink-1); }
 .matrix-cell.is-empty, .matrix-cell[data-value="0"] { color: var(--ink-3); font-weight: 500; background: var(--cell, color-mix(in srgb, var(--bg-2) 70%, transparent)); box-shadow: inset 0 0 0 1px var(--line); }
 .matrix-cell.is-clickable, button.matrix-cell { cursor: pointer; }
 .matrix-cell:hover, .matrix-cell:focus-visible { filter: brightness(1.15); z-index: 1; }
-.matrix-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.matrix-cell.is-selected { box-shadow: 0 0 0 2px var(--bg-1), 0 0 0 4px var(--accent); }
+.matrix-cell:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.matrix-cell.is-selected, .matrix-cell[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--bg-1), 0 0 0 4px var(--focus); }
 .matrix-cell small { font-size: 10px; font-weight: 500; opacity: .8; }
 .matrix-cell svg { inline-size: 12px; block-size: 12px; }
 .matrix.is-compact { gap: 3px; }
@@ -531,7 +538,7 @@ button.legend-item:hover { color: var(--ink-1); }
 .matrix-labels { display: grid; gap: 4px; }
 .matrix-labels.is-rows { grid-auto-rows: 1fr; align-items: center; justify-items: end; padding-inline-end: 4px; }
 .matrix-labels.is-cols { grid-auto-flow: column; grid-auto-columns: 1fr; justify-items: center; text-align: center; }
-.matrix-label { font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.2; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-inline-size: 100%; }
+.matrix-label { font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.2; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-inline-size: 100%; }
 .matrix-axis-title {
   font-size: var(--fs-xs);
   font-weight: 500;
@@ -556,10 +563,10 @@ button.legend-item:hover { color: var(--ink-1); }
 .spark svg { display: block; overflow: visible; inline-size: auto; block-size: auto; }
 .spark path, .spark polyline { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .spark .spark-area { fill: currentColor; opacity: .12; stroke: none; }
-.spark .spark-dot, .spark circle { fill: var(--accent); stroke: var(--bg-1); stroke-width: 1.5; }
-.spark.is-up { color: color-mix(in srgb, var(--good) 80%, var(--ink-1)); }
-.spark.is-down { color: color-mix(in srgb, var(--critical) 80%, var(--ink-1)); }
-.spark.is-brand { color: var(--brand); }
+.spark .spark-dot, .spark circle { fill: currentColor; stroke: var(--bg-1); stroke-width: 1.5; }
+.spark.is-up { color: var(--good-text); }
+.spark.is-down { color: var(--critical-text); }
+.spark.is-brand { color: var(--brand-text); }
 
 /* Segmented bar (replaces donuts) */
 .segbar { display: flex; flex-direction: column; gap: 8px; }

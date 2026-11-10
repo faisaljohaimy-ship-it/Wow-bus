@@ -160,11 +160,11 @@ body.app {
 }
 
 /* Modes */
-:root[data-bg="static"] { --amb-1: color-mix(in srgb, var(--brand) 9%, transparent); --amb-2: color-mix(in srgb, var(--accent) 4%, transparent); }
+:root[data-bg="static"] { --amb-1: color-mix(in srgb, var(--brand) 12%, transparent); --amb-2: color-mix(in srgb, var(--accent) 5%, transparent); }
 :root[data-bg="static"][data-theme="light"] { --amb-1: color-mix(in srgb, var(--brand) 5%, transparent); --amb-2: color-mix(in srgb, var(--accent) 4%, transparent); }
 :root[data-bg="static"] .bg-grid { opacity: calc(var(--grid-opacity) * .7); }
-:root[data-bg="cinematic"] { --amb-1: color-mix(in srgb, var(--brand) 19%, transparent); --amb-2: color-mix(in srgb, var(--accent) 10%, transparent); }
-:root[data-bg="cinematic"][data-theme="light"] { --amb-1: color-mix(in srgb, var(--brand) 11%, transparent); --amb-2: color-mix(in srgb, var(--accent) 9%, transparent); }
+:root[data-bg="cinematic"] { --amb-1: color-mix(in srgb, var(--brand) 26%, transparent); --amb-2: color-mix(in srgb, var(--accent) 13%, transparent); }
+:root[data-bg="cinematic"][data-theme="light"] { --amb-1: color-mix(in srgb, var(--brand) 13%, transparent); --amb-2: color-mix(in srgb, var(--accent) 10%, transparent); }
 :root[data-bg="cinematic"] .bg-ambient::before { will-change: transform; animation: bg-drift-a 84s var(--ease-in-out) infinite alternate; }
 :root[data-bg="cinematic"] .bg-ambient::after  { will-change: transform; animation: bg-drift-b 112s var(--ease-in-out) infinite alternate; }
 @keyframes bg-drift-a {
@@ -364,7 +364,8 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
 }
 .brand-text { display: flex; flex-direction: column; min-inline-size: 0; line-height: var(--lh-tight); gap: 1px; }
 .brand-name { font-weight: 700; font-size: var(--fs-lg); letter-spacing: 0; white-space: nowrap; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
-.brand-tag { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-inline-size: 280px; }
+.brand-tag { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-inline-size: 300px; }
+@media (max-width: 1679.98px) { .brand-tag { display: none; } }
 
 /* Clock: time over stacked Gregorian / Hijri dates */
 .clock {
@@ -473,7 +474,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd, kbd.kbd {
   transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
 }
 .lang-switch [lang="ar"], .lang-switch .lang-opt-ar { font-family: var(--font-ar); font-size: 14px; }
-.lang-switch [lang="en"], .lang-switch .lang-opt-en { font-family: var(--font-en); letter-spacing: .04em; }
+.lang-switch [lang="en"], .lang-switch .lang-opt-en { font-family: var(--font-sans); letter-spacing: .04em; }   /* Plex Arabic's Latin subset = Plex Sans glyphs: no extra download */
 .lang-switch > button:hover, .lang-switch [role="radio"]:hover, .lang-switch .lang-opt:hover { color: var(--ink-1); }
 .lang-switch [aria-pressed="true"], .lang-switch [aria-checked="true"], .lang-switch .is-active, .lang-switch [aria-current="true"] {
   color: var(--ink-1);
@@ -491,7 +492,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd, kbd.kbd {
 /* Data status chip + popover (A-SHELL: "Demo · local data" / Live / Stale / Error / Offline).
    .data-chip[data-status] > .data-chip-dot|.live-dot + .data-chip-label (+ .data-chip-sub)
    .data-popover is absolutely positioned under its positioned wrapper (.data-chip-wrap / .appbar-end). */
-.data-chip-wrap { position: relative; display: inline-flex; flex: none; }
+.data-chip-wrap, .appbar .data-status { position: relative; display: inline-flex; flex: none; }
 .data-chip {
   --tone: var(--brand-text);
   position: relative;
@@ -511,7 +512,11 @@ kbd.cmdk-kbd, .cmdk-foot kbd, kbd.kbd {
 }
 .data-chip:hover { background: color-mix(in srgb, var(--tone) 14%, var(--bg-1)); }
 .data-chip[aria-expanded="true"] { border-style: solid; background: color-mix(in srgb, var(--tone) 16%, var(--bg-1)); }
-.data-chip > svg, .data-chip .icon { inline-size: 14px; block-size: 14px; color: var(--tone); flex: none; }
+.data-chip > svg, .data-chip .icon, .data-chip-icon svg { inline-size: 14px; block-size: 14px; color: var(--tone); flex: none; }
+.data-chip-icon { display: inline-grid; place-items: center; flex: none; color: var(--tone); }
+.data-chip-icon:empty { inline-size: 7px; block-size: 7px; border-radius: 50%; background: var(--tone); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 22%, transparent); }
+.data-chip-offline { display: inline-flex; align-items: center; gap: 4px; padding-inline-start: 8px; margin-inline-start: 2px; border-inline-start: 1px solid var(--line-2); color: var(--ink-2); font-weight: 500; }
+.data-chip-offline svg { inline-size: 13px; block-size: 13px; }
 .data-chip-dot { flex: none; inline-size: 7px; block-size: 7px; border-radius: 50%; background: var(--tone); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 22%, transparent); }
 .data-chip-label { font-weight: 600; }
 .data-chip-sub { color: var(--ink-2); font-weight: 400; }
@@ -1144,6 +1149,11 @@ body:has(#feedOpen[aria-expanded="true"]) .feed {
   border-radius: var(--radius-pill);
 }
 .activity-pin[aria-pressed="true"] { color: var(--brand-text); background: var(--brand-soft); }
+.activity-mode { display: inline-flex; align-items: center; flex: none; }
+.activity-mode:empty { display: none; }
+.activity-actions { display: inline-flex; align-items: center; gap: 2px; margin-inline-start: auto; flex: none; }
+.activity-pause[aria-pressed="true"] { color: var(--warning-text); }
+@media (max-width: 479.98px) { .activity-pause-label { display: none; } }
 .feed-list, .activity-list {
   flex: 1;
   list-style: none;
@@ -1596,13 +1606,22 @@ body.is-feed-paused .feed-status::before,
 }
 
 @media (max-width: 479.98px) {
-  .clock { display: none; }
+  /* Phone filters: project + period share one row (labels stay for assistive tech), search below */
+  .filters { gap: var(--space-2); }
+  .filters-label { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .filters-group:has(.filters-site) { flex: 1 1 140px; }
+  .filters-site { inline-size: 100%; }
+}
+@media (max-width: 479.98px) {
+  /* Phone app bar budget: mark · search · data chip · activity · bell · ع|EN · avatar.
+     The score lives on the cockpit, theme + language are also in the "More" sheet. */
+  .clock, .brand-text, .score-pill, .integrations-pill, .appbar .theme-btn { display: none; }
   .appbar { padding-inline: var(--space-2); }
   .appbar-center { justify-content: flex-end; }
-  .integrations-pill { display: none; }
+  .lang-switch > button, .lang-switch [role="radio"], .lang-switch .lang-opt { min-inline-size: 30px; padding-inline: 6px; }
 }
 @media (max-width: 359.98px) {
-  .brand-text { display: none; }
+  .appbar .bell-btn { display: none; }
 }
 
 @media (max-height: 560px) and (min-width: 960px) {

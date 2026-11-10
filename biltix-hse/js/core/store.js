@@ -40,13 +40,26 @@
  *     `store:change`, append audit entries, generate AIR-#### / MT-#### / AL-#### codes and
  *     simulate the write-back to Biltix PM (pending → synced after 1.5 s + feed event).
  *
+ *   • v3 "Precision" (CONTRACT §8): settings gain `lang`, `appearance {background, density}`, `calendar`,
+ *     `motion` and `dataSource.lastSuccessAt/lastErrorAt/lastError`; weights must be 5 non-negative numbers
+ *     summing to 1 ± 0.001 and thresholds must satisfy critical ≥ alert + 5 — invalid values are REJECTED
+ *     with a bilingual reason (validateWeights / validateThresholds / setWeights / setThresholds, bus
+ *     'settings:invalid'), never silently reshaped. AI risks carry likelihood/impact (1–5) with the score
+ *     derived as L × I × 4, residualLikelihood/residualImpact (+ residualAssessment), dataQuality and
+ *     treatment { plan, taskId, evidence[] }. New audited CRUD returns { ok, … } | { ok:false, reason,
+ *     message, messageEn, errors? }: addEvidence, removeEvidence, assessResidual, closeAiRisk (residual
+ *     assessment + outcome required), reopenAiRisk, editTask, assignTask, addTaskAttachment,
+ *     removeTaskAttachment, recordDataSourceResult; addAiRisk validates (no silent defaults for
+ *     likelihood/impact/owner/due). Every feed event and audit entry the store writes is bilingual
+ *     (title/detail + titleEn/detailEn, detail + detailEn); simulated operations say so.
+ *
  * Side effects on import are limited to reading localStorage once to build `state`.
  */
 
 import seed, { RISK_STATUS, CONTROL_TYPES, INCIDENT_TYPES, INCIDENT_STATUS, PERMIT_TYPES, PERMIT_STATUS, INSPECTION_STATUS, INSPECTION_TYPES, INTEGRATION_STATUS } from '../data/seed.js';
 import { bus } from './bus.js';
 import { sel } from './selectors.js';
-import { enumEn, siteEnById, personEn } from '../data/vocab-en.js';
+import { enumEn, siteEnById, personEn, latinOnly } from '../data/vocab-en.js';
 
 /**
  * Part B — platform seed (ARCHITECTURE.md §B3/§B5). Loaded through an awaited dynamic
@@ -832,10 +845,14 @@ export function scoreOf(likelihood, impact) {
   return l && i ? l * i * 4 : null;
 }
 
-/** Legacy records (pre-v3 saved state) carry only a 0–100 score: the closest L×I×4 pair, rating-preserving. */
+/**
+ * Legacy records (pre-v3 saved state) carry only a 0–100 score: the closest L×I×4 pair that keeps the same
+ * rating AND the same alert decision at the default thresholds (> 60 alert, ≥ 85 immediate escalation) —
+ * the rule the seed was authored with.
+ */
 export function liFromScore(score) {
   const s = clampNum(score, 0, 100, 50);
-  const band = (v) => (v >= 70 ? 2 : v >= 40 ? 1 : 0);
+  const band = (v) => (v >= 85 ? 4 : v >= 70 ? 3 : v > 60 ? 2 : v >= 40 ? 1 : 0);
   let best = [3, 3];
   let bestD = Infinity;
   for (let i = 5; i >= 1; i -= 1) {
@@ -1027,6 +1044,10 @@ export function normalizeState(base, { settingsFallback = DEFAULT_SETTINGS } = {
   for (const key of PERSIST_PLATFORM_COLLECTIONS) p[key] = normalizeCollection(p[key], key);
   if (!isPlainObject(p.validation)) p.validation = emptyPlatform().validation;
   for (const key of PERSIST_VALIDATION_KEYS) p.validation[key] = normalizeCollection(p.validation[key], key);
+  // v3: risks saved before input-data quality existed get it derived from their source system now.
+  if (typeof deriveDataQuality === 'function') {
+    for (const r of p.aiRisks) if (!isPlainObject(r.dataQuality)) r.dataQuality = deriveDataQuality(p.validation, r.evidence && r.evidence.sourceSystem, r.evidence && r.evidence.kind);
+  }
   backfillAlertCodes(p.alerts);
   if (p.auditLog.length > AUDIT_CAP) p.auditLog.length = AUDIT_CAP;
   if (base.feed.length > FEED_CAP) base.feed.length = FEED_CAP;
@@ -1222,6 +1243,8 @@ export function buildFreshState(nowDate = new Date()) {
 function finishLoad(base, nowDate) {
   normalizeState(base);
   base.meta.version = STATE_VERSION;
+  // A save made "later" than this load (clock moved back, imported file) never shows a future time.
+  if (typeof base.meta.savedAt === 'string') base.meta.savedAt = clampInstant(base.meta.savedAt, nowDate);
   base.meta.anchorDate = todayISO(nowDate);
   reanchor(base, nowDate, { instants: false }); // day delta is 0 here → pure clamp pass
   return base;
@@ -1495,6 +1518,7 @@ function normalizeActions(list, nowDate) {
       due: typeof a.due === 'string' && a.due ? a.due : todayISO(addMs(nowDate, 14 * DAY_MS)),
       done: Boolean(a.done),
       doneAt: a.done ? (typeof a.doneAt === 'string' && a.doneAt ? a.doneAt : new Date(nowDate).toISOString()) : null,
+      ...(typeof a.textEn === 'string' && a.textEn.trim() ? { textEn: a.textEn.trim() } : {}),
     } : null))
     .filter((a) => a && a.text);
 }
@@ -1690,6 +1714,66 @@ export function validateAiRiskInput(obj = {}, { mode = 'manual', now } = {}) {
   return { ok: errors.length === 0, errors };
 }
 
+/** Evidence / attachment metadata check: link (http/https), note (text), file (name + size ≤ 25 MB; content never stored). */
+const ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+function validateAttachment(input) {
+  const a = isPlainObject(input) ? input : {};
+  const errors = [];
+  const kind = EVIDENCE_KINDS.includes(a.kind) ? a.kind : null;
+  if (!kind) errors.push(fieldError('kind', 'required', 'اختر نوع الدليل (رابط، ملاحظة، ملف).', 'Choose the evidence type (link, note, file).'));
+  const title = text(a.title).slice(0, 300);
+  if (!title) errors.push(fieldError('title', 'required', 'العنوان مطلوب.', 'A title is required.'));
+  const item = { kind, title, url: null };
+  if (kind === 'link') {
+    const url = text(a.url);
+    if (!/^https?:\/\/[^\s]+$/i.test(url)) errors.push(fieldError('url', 'url', 'الرابط يجب أن يبدأ بـ https:// أو http://.', 'The link must start with https:// or http://.'));
+    else item.url = url.slice(0, 2048);
+  }
+  if (kind === 'note') {
+    const note = text(a.note || a.text).slice(0, 2000);
+    if (!note) errors.push(fieldError('note', 'required', 'اكتب نص الملاحظة.', 'Write the note.'));
+    else item.note = note;
+  }
+  if (kind === 'file') {
+    const fileName = text(a.fileName || a.name).slice(0, 255);
+    const size = Number(a.size);
+    if (!fileName) errors.push(fieldError('fileName', 'required', 'اختر ملفاً.', 'Choose a file.'));
+    if (Number.isFinite(size) && size > ATTACHMENT_MAX_BYTES) errors.push(fieldError('size', 'too-large', 'حجم الملف يتجاوز 25 ميجابايت.', 'The file is larger than 25 MB.'));
+    item.fileName = fileName;
+    if (Number.isFinite(size) && size >= 0) item.size = Math.round(size);
+    if (text(a.mime || a.type)) item.mime = text(a.mime || a.type).slice(0, 120);
+  }
+  if (text(a.titleEn)) item.titleEn = text(a.titleEn).slice(0, 300);
+  if (errors.length) return fail('validation', 'تعذّر حفظ الدليل — راجع الحقول.', 'The evidence was not saved — check the fields.', { errors });
+  return { ok: true, item };
+}
+
+/** Shared closing step (closeAiRisk and a task closure on an assessed risk). */
+function closeRiskInternal(risk, { outcome, outcomeEn = '', actor, viaTask = null } = {}) {
+  const now = localISO(store.now());
+  risk.status = 'مغلق';
+  risk.closedAt = now;
+  risk.outcome = outcome;
+  risk.outcomeEn = outcomeEn || null;
+  if (viaTask) risk.closedByTask = viaTask.id;
+  risk.updatedAt = now;
+  for (const t of platformList('tasks')) {
+    if (!t || t === viaTask || (t.riskId !== risk.id && t.id !== risk.taskId) || t.status === 'مغلقة') continue;
+    t.status = 'مغلقة';
+    t.closedAt = now;
+    t.outcome = t.outcome || outcome;
+    t.updatedAt = now;
+    changed(`platform.tasks.${t.id}`);
+  }
+  const residual = risk.residualLikelihood * risk.residualImpact * 4;
+  riskHistory(risk, actor, `إغلاق المخاطرة — النتيجة: ${outcome} (المتبقية ${residual} مقابل ${risk.score})`, `Risk closed — residual ${residual} vs inherent ${risk.score}; outcome recorded`);
+  changed(`platform.aiRisks.${risk.id}`);
+  if (!viaTask) {
+    store.pushAudit({ actor, action: 'close', target: risk.code, detail: `إغلاق المخاطرة — النتيجة: ${outcome} (المتبقية ${residual}/${risk.score})`, detailEn: `Risk closed — residual ${residual}/${risk.score}; outcome recorded (feedback for model recalibration)` });
+  }
+  emitFeed({ type: 'ai', tone: 'good', siteId: risk.projectId, title: `إغلاق المخاطرة ${risk.code} بعد تقييم المخاطر المتبقية`, titleEn: `Risk ${risk.code} closed after its residual assessment`, detail: outcome, detailEn: outcomeEn || `Residual score ${residual} (inherent ${risk.score})`, sourceId: risk.pipeline, refId: risk.id, code: risk.code });
+}
+
 /* ────────────────────────────── the store ────────────────────────────── */
 
 export const store = {
@@ -1802,7 +1886,8 @@ export const store = {
 
   /* ── CRUD: risks ── */
 
-  addRisk(obj = {}) {
+  /** Add an HSE risk. `{ silent: true }` skips the per-risk feed event (bulk import emits one summary). */
+  addRisk(obj = {}, { silent = false } = {}) {
     const now = store.now();
     const likelihood = clampInt(obj.likelihood, 1, 5, 3);
     const severity = clampInt(obj.severity, 1, 5, 3);
@@ -1835,6 +1920,7 @@ export const store = {
     if (!Array.isArray(state.risks)) state.risks = [];
     state.risks.unshift(risk);
     changed(`risks.${risk.id}`);
+    if (silent) return risk;
     const tier = sel.riskTier(sel.riskScore(risk));
     emitFeed({
       type: 'risk',
@@ -2067,9 +2153,33 @@ export const store = {
   setSettings(patch) {
     if (!isPlainObject(patch)) return state.settings;
     const prevTheme = state.settings.theme;
-    // Unparsable numbers fall back to the CURRENT value (not the default); weights renormalised,
-    // thresholds clamped (critical ≥ alert), brand '' = theme tokens.
-    const merged = sanitizeSettings(deepMerge(state.settings, patch), state.settings);
+    // v3: invalid weights (sum ≠ 1 ± 0.001, negative, missing) or thresholds (critical < alert + 5) in a patch
+    // are REJECTED, not reshaped: they are dropped from the patch, the current values stay, and
+    // bus 'settings:invalid' { field, reason, message, messageEn } tells the UI why. (setWeights /
+    // setThresholds return the same reason directly.)
+    let input = patch;
+    if (isPlainObject(patch.platform)) {
+      const p = { ...patch.platform };
+      if (p.weights !== undefined) {
+        const w = validateWeights(p.weights);
+        if (!w.ok) { delete p.weights; bus.emit('settings:invalid', { field: 'weights', ...w }); } else p.weights = w.weights;
+      }
+      if (p.alertThreshold !== undefined || p.criticalThreshold !== undefined) {
+        const cur = state.settings.platform || {};
+        const t = validateThresholds({
+          alertThreshold: p.alertThreshold !== undefined ? p.alertThreshold : cur.alertThreshold,
+          criticalThreshold: p.criticalThreshold !== undefined ? p.criticalThreshold : cur.criticalThreshold,
+        });
+        if (!t.ok) { delete p.alertThreshold; delete p.criticalThreshold; bus.emit('settings:invalid', { field: 'thresholds', ...t }); }
+      }
+      input = { ...patch, platform: p };
+    }
+    // Weights are replaced whole (never deep-merged key by key with stale values).
+    const base = isPlainObject(input.platform) && input.platform.weights
+      ? { ...state.settings, platform: { ...state.settings.platform, weights: {} } }
+      : state.settings;
+    // Unparsable numbers fall back to the CURRENT value (not the default); brand '' = theme tokens.
+    const merged = sanitizeSettings(deepMerge(base, input), state.settings);
     state.settings = merged;
     changed('settings');
     bus.emit('settings:change', { settings: state.settings });
@@ -2198,15 +2308,15 @@ export const store = {
     }
 
     const rating = ratingOf(score);
-    const titleEn = text(risk.titleEn) || risk.code;
+    const titleEn = text(risk.titleEn) || latinOnly(risk.title);
     emitFeed({
       type: 'ai', tone: RATING_TONE[rating], siteId: risk.projectId, simulated: isEngine || undefined,
       title: isEngine
         ? `${pipelineLabel(pipeline)} (محاكاة): ${risk.title} — الدرجة ${score} (${RATING_LABEL[rating]})`
         : `تسجيل مخاطرة يدوياً ${risk.code}: ${risk.title} — الدرجة ${score} (${RATING_LABEL[rating]})`,
       titleEn: isEngine
-        ? `${enumEn('pipeline', pipeline)} (simulated): ${titleEn} — score ${score} (${enumEn('rating', rating)})`
-        : `Risk registered manually ${risk.code}: ${titleEn} — score ${score} (${enumEn('rating', rating)})`,
+        ? `${enumEn('pipeline', pipeline)} (simulated): ${titleEn || risk.code} — score ${score} (${enumEn('rating', rating)})`
+        : `Risk registered manually ${risk.code}${titleEn ? `: ${titleEn}` : ''} — score ${score} (${enumEn('rating', rating)})`,
       detail: risk.driverExplanation || (risk.evidence && risk.evidence.excerpt) || projectName(risk.projectId),
       detailEn: text(risk.driverExplanationEn) || siteEnById(state.sites, risk.projectId),
       sourceId: pipeline, refId: risk.id, code: risk.code, score,
@@ -2222,7 +2332,7 @@ export const store = {
           severity: level === 'immediate' ? 'critical' : 'routine',
           queue: level,
           title: `${level === 'immediate' ? 'تصعيد فوري' : 'تنبيه'}: ${risk.code} — ${risk.title}`,
-          titleEn: `${level === 'immediate' ? 'Immediate escalation' : 'Alert'}: ${risk.code} — ${titleEn}`,
+          titleEn: `${level === 'immediate' ? 'Immediate escalation' : 'Alert'}: ${risk.code}${titleEn ? ` — ${titleEn}` : ''}`,
           simulated: isEngine || undefined,
         });
       }
@@ -2377,7 +2487,7 @@ export const store = {
     const alert = store.addAlert({
       riskId: risk.id, projectId: risk.projectId, severity: 'critical', queue: 'immediate', channels: list,
       title: `تصعيد فوري: ${risk.code} — ${risk.title}`,
-      titleEn: `Immediate escalation: ${risk.code} — ${text(risk.titleEn) || risk.code}`,
+      titleEn: `Immediate escalation: ${risk.code}${text(risk.titleEn) ? ` — ${text(risk.titleEn)}` : ''}`,
     });
     store.pushAudit({ actor, action: 'escalate', target: risk.code, detail: `تصعيد فوري (الدرجة ${risk.score}) عبر ${list.join('، ') || '—'}`, detailEn: `Immediate escalation (score ${risk.score}) via ${list.map((c) => enumEn('channel', c)).join(', ') || '—'}` });
     return alert;
@@ -2411,8 +2521,10 @@ export const store = {
   },
 
   /**
-   * Patch a task. Closing it ('مغلقة') stamps closedAt, stores the outcome, closes the linked
-   * risk (status 'مغلق' + history) and logs audit 'close' — the outcome feeds recalibration.
+   * Patch a task. Closing it ('مغلقة') requires an outcome (patch.outcome or an existing one — otherwise
+   * null is returned and nothing changes), stamps closedAt and logs audit 'close'. The linked risk is closed
+   * only when it already carries a residual assessment (CONTRACT §8); otherwise it stays «قيد المعالجة» with
+   * a history note asking for the residual assessment. Reopening a closed task reopens a risk it had closed.
    */
   updateTask(id, patch = {}) {
     const task = findPlatform('tasks', id);
@@ -2424,26 +2536,45 @@ export const store = {
     if (rest.status !== undefined) rest.status = pickEnum(rest.status, TASK_STATUS, task.status);
     if (rest.source !== undefined) rest.source = pickEnum(rest.source, TASK_SOURCES, task.source);
     if (rest.outcome !== undefined) rest.outcome = text(rest.outcome);
+    if (rest.priority !== undefined) rest.priority = rest.priority == null || rest.priority === '' ? null : pickEnum(rest.priority, TASK_PRIORITIES, task.priority || null);
+    for (const key of ['id', 'code', 'attachments', 'createdAt']) delete rest[key];
     const closing = rest.status === 'مغلقة' && prevStatus !== 'مغلقة';
     const reopening = prevStatus === 'مغلقة' && rest.status && rest.status !== 'مغلقة';
+    if (closing && !text(rest.outcome !== undefined ? rest.outcome : task.outcome)) return null;
     if (closing) rest.closedAt = now;
     if (reopening) rest.closedAt = null;
+    rest.updatedAt = now;
     const updated = patchPlatformItem('tasks', id, rest);
     const risk = updated.riskId ? findPlatform('aiRisks', updated.riskId) : null;
     if (closing) {
-      const outcome = updated.outcome || 'أُغلقت المهمة';
-      if (risk) {
-        risk.status = 'مغلق';
-        risk.updatedAt = now;
-        riskHistory(risk, actor, `إغلاق مهمة المعالجة ${updated.code} — النتيجة: ${outcome}`);
-        changed(`platform.aiRisks.${risk.id}`);
+      const outcome = updated.outcome;
+      let riskClosed = false;
+      if (risk && !AI_RISK_TERMINAL.includes(risk.status)) {
+        if (risk.residualLikelihood && risk.residualImpact) {
+          closeRiskInternal(risk, { outcome, actor, viaTask: updated });
+          riskClosed = true;
+        } else {
+          risk.status = 'قيد المعالجة';
+          risk.updatedAt = now;
+          riskHistory(risk, actor, `إغلاق مهمة المعالجة ${updated.code} — النتيجة: ${outcome}. يلزم تقييم المخاطر المتبقية قبل إغلاق المخاطرة.`, `Mitigation task ${updated.code} closed. A residual assessment is required before the risk can be closed.`);
+          changed(`platform.aiRisks.${risk.id}`);
+        }
       }
-      store.pushAudit({ actor, action: 'close', target: risk ? risk.code : updated.code, detail: `إغلاق ${updated.code}${risk ? ` وإغلاق ${risk.code}` : ''} — النتيجة: ${outcome} (تغذية راجعة لإعادة معايرة النموذج)` });
-      emitFeed({ type: 'task', tone: 'good', siteId: updated.projectId, title: `إغلاق مهمة المعالجة ${updated.code}${risk ? ` — ${risk.code}` : ''}`, detail: outcome, sourceId: 'biltix-pm', refId: updated.id });
+      store.pushAudit({
+        actor, action: 'close', target: updated.code,
+        detail: `إغلاق ${updated.code}${riskClosed ? ` وإغلاق ${risk.code}` : ''} — النتيجة: ${outcome} (تغذية راجعة لإعادة معايرة النموذج)`,
+        detailEn: `${updated.code} closed${riskClosed ? ` and ${risk.code} closed` : ''} — outcome recorded (feedback for model recalibration)`,
+      });
+      emitFeed({ type: 'task', tone: 'good', siteId: updated.projectId, title: `إغلاق مهمة المعالجة ${updated.code}${risk ? ` — ${risk.code}` : ''}`, titleEn: `Mitigation task ${updated.code} closed${risk ? ` — ${risk.code}` : ''}`, detail: outcome, detailEn: riskClosed ? 'Risk closed after its residual assessment' : (risk ? 'Risk stays in treatment until its residual assessment' : 'Outcome recorded'), sourceId: 'biltix-pm', refId: updated.id, code: updated.code });
     } else if (reopening && risk) {
-      risk.status = 'قيد المعالجة';
+      if (risk.status === 'مغلق' && risk.closedByTask === updated.id) {
+        risk.status = 'قيد المعالجة';
+        risk.closedAt = null;
+        risk.reopenedAt = now;
+        delete risk.closedByTask;
+      }
       risk.updatedAt = now;
-      riskHistory(risk, actor, `إعادة فتح مهمة المعالجة ${updated.code}`);
+      riskHistory(risk, actor, `إعادة فتح مهمة المعالجة ${updated.code}`, `Mitigation task ${updated.code} reopened`);
       changed(`platform.aiRisks.${risk.id}`);
     } else if (rest.status && rest.status !== prevStatus) {
       if (risk && rest.status === 'قيد التنفيذ' && ['مهمة مُسندة', 'تنبيه', 'مكتشف'].includes(risk.status)) {
@@ -2451,25 +2582,28 @@ export const store = {
         risk.updatedAt = now;
         changed(`platform.aiRisks.${risk.id}`);
       }
-      emitFeed({ type: 'task', tone: rest.status === 'متأخرة' ? 'serious' : 'accent', siteId: updated.projectId, title: `المهمة ${updated.code}: ${prevStatus} ← ${rest.status}`, detail: updated.title, sourceId: 'biltix-pm', refId: updated.id });
+      emitFeed({ type: 'task', tone: rest.status === 'متأخرة' ? 'serious' : 'accent', siteId: updated.projectId, title: `المهمة ${updated.code}: ${prevStatus} ← ${rest.status}`, titleEn: `Task ${updated.code}: ${enumEn('taskStatus', prevStatus)} → ${enumEn('taskStatus', rest.status)}`, detail: updated.title, detailEn: text(updated.titleEn), sourceId: 'biltix-pm', refId: updated.id, code: updated.code });
     }
     return updated;
   },
 
-  /** Re-queue a failed/pending write-back (tasks kanban "إعادة المزامنة"). */
+  /** Re-queue a failed/pending write-back (tasks kanban "إعادة المزامنة"). The retry is simulated in the demo. */
   retryWriteback(taskId) {
     const task = findPlatform('tasks', taskId);
     if (!task) return null;
     task.writeback = { target: 'Biltix PM', ...(isPlainObject(task.writeback) ? task.writeback : {}), status: 'pending', at: null };
     changed(`platform.tasks.${task.id}`);
-    emitFeed({ type: 'writeback', tone: 'accent', siteId: task.projectId, title: `إعادة محاولة الكتابة العكسية — ${task.code}`, detail: task.title, sourceId: 'biltix-pm', refId: task.id });
+    emitFeed({ type: 'writeback', tone: 'accent', siteId: task.projectId, simulated: true, title: `محاكاة: إعادة محاولة الكتابة العكسية — ${task.code}`, titleEn: `Simulated: write-back retry — ${task.code}`, detail: task.title, detailEn: text(task.titleEn), sourceId: 'biltix-pm', refId: task.id, code: task.code });
     scheduleWriteback(task.id);
     return task;
   },
 
   /* ── alerts ── */
 
-  /** Add an alert (AL-#### code); critical ones emit bus 'alert' so the shell banner/toast show. */
+  /**
+   * Add an alert (AL-#### code); critical ones emit bus 'alert' so the shell banner/toast show. Channels are
+   * the configured routing; in the demo nothing is delivered to email/Slack/Teams/WhatsApp, and the feed says so.
+   */
   addAlert(obj = {}) {
     const list = platformList('alerts');
     const risk = obj.riskId ? findPlatform('aiRisks', obj.riskId) : null;
@@ -2483,23 +2617,29 @@ export const store = {
       severity,
       queue: obj.queue === 'immediate' || (obj.queue === undefined && severity === 'critical') ? 'immediate' : 'standard',
       channels: normalizeChannels(obj.channels),
-      sentAt: typeof obj.sentAt === 'string' && obj.sentAt ? obj.sentAt : localISO(store.now()),
+      sentAt: typeof obj.sentAt === 'string' && obj.sentAt ? clampInstant(obj.sentAt, store.now()) : localISO(store.now()),
       acknowledged: Boolean(obj.acknowledged),
       ackBy: text(obj.ackBy) || null,
       ackAt: typeof obj.ackAt === 'string' ? obj.ackAt : null,
       title: text(obj.title) || (risk ? `تنبيه: ${risk.code} — ${risk.title}` : 'تنبيه من منصة المخاطر'),
     };
+    if (!text(alert.titleEn)) alert.titleEn = risk ? `Alert: ${risk.code}${text(risk.titleEn) ? ` — ${text(risk.titleEn)}` : ''}` : 'Risk platform alert';
     list.unshift(alert);
     changed(`platform.alerts.${alert.id}`);
     const detail = risk ? `${risk.driverExplanation || risk.title} · الدرجة ${risk.score}` : '';
+    const detailEn = risk ? `Score ${risk.score} (${enumEn('rating', ratingOf(risk.score))})` : '';
+    const chAr = alert.channels.length ? `القنوات المحددة: ${alert.channels.join('، ')} (محاكاة — لا إرسال فعلي)` : '';
+    const chEn = alert.channels.length ? `Routing: ${alert.channels.map((c) => enumEn('channel', c)).join(', ')} (simulated — nothing delivered)` : '';
     emitFeed({
       type: 'alert', tone: severity === 'critical' ? 'critical' : 'warning', siteId: alert.projectId,
-      title: alert.title, detail: `${detail}${alert.channels.length ? `${detail ? ' · ' : ''}القنوات: ${alert.channels.join('، ')}` : ''}`,
-      sourceId: risk ? risk.pipeline : null, refId: alert.id,
+      title: alert.title, titleEn: alert.titleEn,
+      detail: [detail, chAr].filter(Boolean).join(' · '),
+      detailEn: [detailEn, chEn].filter(Boolean).join(' · '),
+      sourceId: risk ? risk.pipeline : null, refId: alert.id, code: alert.code,
     });
     if (severity === 'critical') {
       bus.emit('alert', {
-        severity: 'critical', tone: 'critical', title: alert.title, detail: detail || alert.title,
+        severity: 'critical', tone: 'critical', title: alert.title, titleEn: alert.titleEn, detail: detail || alert.title, detailEn: detailEn || alert.titleEn,
         siteId: alert.projectId, riskId: alert.riskId, alertId: alert.id, source: 'platform', ts: alert.sentAt,
       });
     }
@@ -2514,6 +2654,249 @@ export const store = {
     alert.ackAt = localISO(store.now());
     changed(`platform.alerts.${id}`);
     return alert;
+  },
+
+  /* ══════════════════ v3 — audited risk lifecycle, tasks, scoring settings (CONTRACT §8) ══════════════════
+   * Every method returns { ok:true, … } or { ok:false, reason, message, messageEn[, errors] } (bilingual,
+   * shown as is by the UI), persists, emits store:change and appends an audit entry.
+   */
+
+  /** Replace the five domain weights (must sum to 1 ± 0.001). */
+  setWeights(weights, { by = '' } = {}) {
+    const v = validateWeights(weights);
+    if (!v.ok) return v;
+    const prev = { ...state.settings.platform.weights };
+    store.setSettings({ platform: { weights: v.weights } });
+    const fmtW = (w) => WEIGHT_KEYS.map((k) => `${k} ${Math.round(w[k] * 1000) / 10}%`).join(', ');
+    store.pushAudit({ actor: text(by) || 'مدير المشروع', action: 'config', target: 'settings.platform.weights', detail: `تعديل أوزان المجالات: ${fmtW(prev)} ← ${fmtW(v.weights)}`, detailEn: `Domain weights changed: ${fmtW(prev)} → ${fmtW(v.weights)}` });
+    return { ok: true, weights: { ...state.settings.platform.weights } };
+  },
+
+  /** Replace the alert / critical thresholds (integers 0–100, critical ≥ alert + 5). */
+  setThresholds(input, { by = '' } = {}) {
+    const v = validateThresholds(input);
+    if (!v.ok) return v;
+    const p = state.settings.platform;
+    const prev = `${p.alertThreshold}/${p.criticalThreshold}`;
+    store.setSettings({ platform: { alertThreshold: v.alertThreshold, criticalThreshold: v.criticalThreshold } });
+    store.pushAudit({ actor: text(by) || 'مدير المشروع', action: 'config', target: 'settings.platform.thresholds', detail: `تعديل العتبات (تنبيه/تصعيد): ${prev} ← ${v.alertThreshold}/${v.criticalThreshold}`, detailEn: `Thresholds changed (alert/critical): ${prev} → ${v.alertThreshold}/${v.criticalThreshold}` });
+    return { ok: true, alertThreshold: v.alertThreshold, criticalThreshold: v.criticalThreshold };
+  },
+
+  /**
+   * Record the outcome of a REAL data-source test/import (sources.testConnection / importRisks) so status.js
+   * can report Live / Stale / Error: ok → lastSuccessAt; failure → lastErrorAt + lastError {code,message,messageEn}.
+   */
+  recordDataSourceResult(result = {}) {
+    const r = isPlainObject(result) ? result : {};
+    const at = localISO(store.now());
+    const ds = r.ok
+      ? { lastSuccessAt: at }
+      : { lastErrorAt: at, lastError: { code: text(r.code || r.reason) || 'error', message: text(r.message), messageEn: text(r.messageEn) } };
+    store.setSettings({ dataSource: ds });
+    return { ok: true, dataSource: { ...state.settings.dataSource } };
+  },
+
+  /** Attach evidence to a risk's treatment — metadata only, stored in this browser (local: true). */
+  addEvidence(riskId, ev = {}, { by = '' } = {}) {
+    const risk = findPlatform('aiRisks', riskId);
+    if (!risk) return fail('not-found', 'المخاطرة غير موجودة.', 'Risk not found.');
+    if (AI_RISK_TERMINAL.includes(risk.status)) return fail('risk-closed', 'لا يمكن إضافة أدلة إلى مخاطرة مغلقة أو متجاوزة — أعد فتحها أولاً.', 'Evidence cannot be added to a closed or dismissed risk — reopen it first.');
+    const check = validateAttachment(ev);
+    if (!check.ok) return check;
+    const actor = text(by) || 'مدير المشروع';
+    const treatment = normalizeTreatment(risk.treatment, risk.id);
+    const item = { ...check.item, id: `EV-${risk.id}-${Date.now().toString(36)}${Math.floor(Math.random() * 1e3).toString(36)}`, addedAt: localISO(store.now()), by: actor, local: true };
+    treatment.evidence.push(item);
+    risk.treatment = treatment;
+    risk.updatedAt = localISO(store.now());
+    riskHistory(risk, actor, `إضافة دليل معالجة (${item.kind}): ${item.title} — محفوظ على هذا الجهاز فقط`, `Treatment evidence added (${item.kind}) — stored on this device only`);
+    changed(`platform.aiRisks.${risk.id}`);
+    store.pushAudit({ actor, action: 'evidence', target: risk.code, detail: `إضافة دليل (${item.kind}): ${item.title}`, detailEn: `Evidence added (${item.kind}) to ${risk.code}` });
+    return { ok: true, evidence: item, risk };
+  },
+
+  /** Remove evidence added in this browser (source-record evidence, local:false, cannot be removed here). */
+  removeEvidence(riskId, evidenceId, { by = '' } = {}) {
+    const risk = findPlatform('aiRisks', riskId);
+    if (!risk) return fail('not-found', 'المخاطرة غير موجودة.', 'Risk not found.');
+    const treatment = normalizeTreatment(risk.treatment, risk.id);
+    const idx = treatment.evidence.findIndex((e) => e.id === evidenceId);
+    if (idx === -1) return fail('evidence-not-found', 'الدليل غير موجود.', 'Evidence not found.');
+    if (treatment.evidence[idx].local === false) return fail('source-evidence', 'هذا الدليل جزء من سجل النظام المصدر ولا يُحذف من هنا.', 'This evidence belongs to the source-system record and cannot be removed here.');
+    if (AI_RISK_TERMINAL.includes(risk.status)) return fail('risk-closed', 'المخاطرة مغلقة — أعد فتحها لتعديل الأدلة.', 'The risk is closed — reopen it to change its evidence.');
+    const [removed] = treatment.evidence.splice(idx, 1);
+    const actor = text(by) || 'مدير المشروع';
+    risk.treatment = treatment;
+    risk.updatedAt = localISO(store.now());
+    riskHistory(risk, actor, `حذف دليل معالجة: ${removed.title}`, 'Treatment evidence removed');
+    changed(`platform.aiRisks.${risk.id}`);
+    store.pushAudit({ actor, action: 'evidence', target: risk.code, detail: `حذف دليل: ${removed.title}`, detailEn: `Evidence removed from ${risk.code}` });
+    return { ok: true, removed, risk };
+  },
+
+  /**
+   * Residual assessment after mitigation: likelihood & impact 1–5 and a justification are required; the
+   * residual score cannot exceed the inherent score; the risk must have a treatment (task, plan or evidence)
+   * and must not be closed/dismissed. Required before closeAiRisk.
+   */
+  assessResidual(riskId, { likelihood, impact, justification, justificationEn, by = '' } = {}) {
+    const risk = findPlatform('aiRisks', riskId);
+    if (!risk) return fail('not-found', 'المخاطرة غير موجودة.', 'Risk not found.');
+    if (AI_RISK_TERMINAL.includes(risk.status)) return fail('risk-closed', 'لا يمكن تقييم مخاطرة مغلقة أو متجاوزة — أعد فتحها أولاً.', 'A closed or dismissed risk cannot be assessed — reopen it first.');
+    const errors = [];
+    const l = scale5(likelihood);
+    const im = scale5(impact);
+    if (!l) errors.push(fieldError('likelihood', 'range', 'الاحتمالية المتبقية عدد صحيح من 1 إلى 5.', 'Residual likelihood must be a whole number from 1 to 5.'));
+    if (!im) errors.push(fieldError('impact', 'range', 'الأثر المتبقي عدد صحيح من 1 إلى 5.', 'Residual impact must be a whole number from 1 to 5.'));
+    const why = text(justification);
+    if (why.length < 5) errors.push(fieldError('justification', 'required', 'اكتب مبرر التقييم (5 أحرف على الأقل).', 'Write a justification (at least 5 characters).'));
+    if (errors.length) return fail('validation', 'تعذّر حفظ التقييم المتبقي — راجع الحقول.', 'The residual assessment was not saved — check the fields.', { errors });
+    const inherent = risk.likelihood * risk.impact * 4;
+    if (l * im * 4 > inherent) return fail('residual-above-inherent', `الدرجة المتبقية (${l * im * 4}) أعلى من الدرجة الأصلية (${inherent}) — أعد تقدير الشدة بدلاً من ذلك.`, `The residual score (${l * im * 4}) is above the inherent score (${inherent}) — re-assess the inherent severity instead.`);
+    const treatment = normalizeTreatment(risk.treatment, risk.id);
+    const hasTreatment = Boolean(risk.taskId || treatment.plan || treatment.evidence.length || platformList('tasks').some((t) => t && t.riskId === risk.id));
+    if (!hasTreatment) return fail('treatment-required', 'لا توجد معالجة لهذه المخاطرة بعد — اقبل التوصية أو أنشئ مهمة أولاً.', 'This risk has no treatment yet — accept the recommendation or create a task first.');
+    const actor = text(by) || 'مدير المشروع';
+    const prev = risk.residualLikelihood && risk.residualImpact ? `${risk.residualLikelihood}×${risk.residualImpact}` : null;
+    risk.residualLikelihood = l;
+    risk.residualImpact = im;
+    risk.residualAssessment = { at: localISO(store.now()), by: actor, justification: why, ...(text(justificationEn) ? { justificationEn: text(justificationEn) } : {}) };
+    risk.updatedAt = localISO(store.now());
+    riskHistory(risk, actor, `تقييم المخاطر المتبقية: ${l}×${im} (الدرجة ${l * im * 4} مقابل ${inherent})${prev ? ` — بدلاً من ${prev}` : ''} — ${why}`, `Residual assessment: ${l}×${im} (score ${l * im * 4} vs ${inherent})${prev ? ` — replaces ${prev}` : ''}`);
+    changed(`platform.aiRisks.${risk.id}`);
+    store.pushAudit({ actor, action: 'residual', target: risk.code, detail: `تقييم متبقٍ ${l}×${im} = ${l * im * 4} (الأصلي ${inherent}) — ${why}`, detailEn: `Residual ${l}×${im} = ${l * im * 4} (inherent ${inherent})` });
+    return { ok: true, risk };
+  },
+
+  /** Close a risk with an outcome. Requires a residual assessment; closes its open mitigation tasks too. */
+  closeAiRisk(riskId, { outcome, outcomeEn, by = '' } = {}) {
+    const risk = findPlatform('aiRisks', riskId);
+    if (!risk) return fail('not-found', 'المخاطرة غير موجودة.', 'Risk not found.');
+    if (AI_RISK_TERMINAL.includes(risk.status)) return fail('already-closed', 'المخاطرة مغلقة أو متجاوزة بالفعل.', 'The risk is already closed or dismissed.');
+    if (!risk.residualLikelihood || !risk.residualImpact) return fail('residual-required', 'يلزم تقييم المخاطر المتبقية قبل الإغلاق.', 'A residual assessment is required before closing.');
+    const why = text(outcome);
+    if (!why) return fail('outcome-required', 'اكتب نتيجة المعالجة قبل الإغلاق.', 'Write the treatment outcome before closing.');
+    closeRiskInternal(risk, { outcome: why, outcomeEn: text(outcomeEn), actor: text(by) || 'مدير المشروع' });
+    return { ok: true, risk };
+  },
+
+  /** Reopen a closed or dismissed risk (reason required). Linked closed tasks are reopened as well. */
+  reopenAiRisk(riskId, { reason, by = '' } = {}) {
+    const risk = findPlatform('aiRisks', riskId);
+    if (!risk) return fail('not-found', 'المخاطرة غير موجودة.', 'Risk not found.');
+    if (!AI_RISK_TERMINAL.includes(risk.status)) return fail('not-closed', 'المخاطرة مفتوحة بالفعل.', 'The risk is already open.');
+    const why = text(reason);
+    if (!why) return fail('reason-required', 'اكتب سبب إعادة الفتح.', 'Write the reason for reopening.');
+    const actor = text(by) || 'مدير المشروع';
+    const now = localISO(store.now());
+    const prev = risk.status;
+    const tasks = platformList('tasks').filter((t) => t && (t.riskId === risk.id || t.id === risk.taskId));
+    for (const t of tasks) {
+      if (t.status === 'مغلقة') { t.status = 'قيد التنفيذ'; t.closedAt = null; t.updatedAt = now; changed(`platform.tasks.${t.id}`); }
+    }
+    const level = alertLevelFor(risk.score);
+    risk.status = tasks.length ? 'قيد المعالجة' : (level ? 'تنبيه' : 'مكتشف');
+    risk.closedAt = null;
+    risk.reopenedAt = now;
+    delete risk.closedByTask;
+    risk.updatedAt = now;
+    riskHistory(risk, actor, `إعادة فتح المخاطرة (كانت «${prev}») — السبب: ${why}`, `Risk reopened (was ${enumEn('aiRiskStatus', prev)}) — reason recorded`);
+    changed(`platform.aiRisks.${risk.id}`);
+    store.pushAudit({ actor, action: 'reopen', target: risk.code, detail: `إعادة فتح — السبب: ${why}`, detailEn: `Reopened (was ${enumEn('aiRiskStatus', prev)})` });
+    emitFeed({ type: 'ai', tone: 'warning', siteId: risk.projectId, title: `إعادة فتح المخاطرة ${risk.code}`, titleEn: `Risk ${risk.code} reopened`, detail: why, detailEn: 'Reason recorded in the risk history', sourceId: risk.pipeline, refId: risk.id, code: risk.code });
+    return { ok: true, risk };
+  },
+
+  /** Edit a task's content (title, due date, priority, linked risk, description). Status → updateTask; owner → assignTask. */
+  editTask(id, patch = {}, { by = '' } = {}) {
+    const task = findPlatform('tasks', id);
+    if (!task) return fail('not-found', 'المهمة غير موجودة.', 'Task not found.');
+    if (task.status === 'مغلقة') return fail('task-closed', 'المهمة مغلقة — أعد فتحها لتعديلها.', 'The task is closed — reopen it to edit.');
+    const src = isPlainObject(patch) ? patch : {};
+    const errors = [];
+    const next = {};
+    if (src.title !== undefined) { if (!text(src.title)) errors.push(fieldError('title', 'required', 'عنوان المهمة مطلوب.', 'A task title is required.')); else next.title = text(src.title).slice(0, 300); }
+    if (src.titleEn !== undefined) next.titleEn = text(src.titleEn).slice(0, 300);
+    if (src.description !== undefined) next.description = text(src.description).slice(0, 4000);
+    if (src.dueDate !== undefined) { const d = validDateOnly(src.dueDate); if (!d) errors.push(fieldError('dueDate', 'invalid', 'تاريخ الاستحقاق غير صالح.', 'Invalid due date.')); else next.dueDate = d; }
+    if (src.priority !== undefined) {
+      if (src.priority === null || src.priority === '') next.priority = null;
+      else if (!TASK_PRIORITIES.includes(src.priority)) errors.push(fieldError('priority', 'invalid', 'الأولوية غير صالحة.', 'Invalid priority.'));
+      else next.priority = src.priority;
+    }
+    if (src.riskId !== undefined) {
+      if (src.riskId === null || src.riskId === '') next.riskId = null;
+      else if (!findPlatform('aiRisks', src.riskId)) errors.push(fieldError('riskId', 'unknown', 'المخاطرة المرتبطة غير موجودة.', 'The linked risk does not exist.'));
+      else next.riskId = src.riskId;
+    }
+    if (errors.length) return fail('validation', 'تعذّر حفظ التعديلات — راجع الحقول.', 'Changes were not saved — check the fields.', { errors });
+    const changedKeys = Object.keys(next).filter((k) => !sameJSON(next[k], task[k]));
+    if (!changedKeys.length) return { ok: true, task, changed: [] };
+    const actor = text(by) || 'مدير المشروع';
+    if (next.riskId !== undefined && next.riskId !== task.riskId) {
+      const old = task.riskId ? findPlatform('aiRisks', task.riskId) : null;
+      if (old && old.taskId === task.id) { old.taskId = null; if (old.treatment && old.treatment.taskId === task.id) old.treatment = normalizeTreatment({ ...old.treatment, taskId: null, plan: null }, old.id); changed(`platform.aiRisks.${old.id}`); }
+      const nr = next.riskId ? findPlatform('aiRisks', next.riskId) : null;
+      if (nr) { nr.taskId = task.id; nr.treatment = normalizeTreatment({ ...(nr.treatment || {}), taskId: task.id, plan: next.title || task.title }, nr.id); if (['مكتشف', 'تنبيه'].includes(nr.status)) nr.status = 'مهمة مُسندة'; changed(`platform.aiRisks.${nr.id}`); }
+      if (nr) next.projectId = nr.projectId;
+    }
+    Object.assign(task, next, { updatedAt: localISO(store.now()) });
+    const linked = task.riskId ? findPlatform('aiRisks', task.riskId) : null;
+    if (linked && next.title && linked.treatment && linked.treatment.taskId === task.id) linked.treatment = normalizeTreatment({ ...linked.treatment, plan: task.title }, linked.id);
+    changed(`platform.tasks.${task.id}`);
+    store.pushAudit({ actor, action: 'edit', target: task.code, detail: `تعديل المهمة: ${changedKeys.join('، ')}`, detailEn: `Task edited: ${changedKeys.join(', ')}` });
+    return { ok: true, task, changed: changedKeys };
+  },
+
+  /** (Re)assign a task to an owner. */
+  assignTask(id, owner, { by = '' } = {}) {
+    const task = findPlatform('tasks', id);
+    if (!task) return fail('not-found', 'المهمة غير موجودة.', 'Task not found.');
+    if (task.status === 'مغلقة') return fail('task-closed', 'المهمة مغلقة — أعد فتحها لإسنادها.', 'The task is closed — reopen it to reassign.');
+    const who = text(owner).slice(0, 120);
+    if (!who) return fail('owner-required', 'حدّد المسؤول.', 'Choose an owner.', { errors: [fieldError('owner', 'required', 'حدّد المسؤول.', 'Choose an owner.')] });
+    if (who === task.owner) return { ok: true, task, changed: false };
+    const actor = text(by) || 'مدير المشروع';
+    const prev = task.owner;
+    task.owner = who;
+    task.updatedAt = localISO(store.now());
+    const risk = task.riskId ? findPlatform('aiRisks', task.riskId) : null;
+    if (risk && (!risk.owner || risk.owner === prev)) { risk.owner = who; riskHistory(risk, actor, `إسناد المهمة ${task.code} إلى ${who}`, `Task ${task.code} assigned to ${personEn(who, 'a new owner')}`); changed(`platform.aiRisks.${risk.id}`); }
+    changed(`platform.tasks.${task.id}`);
+    store.pushAudit({ actor, action: 'assign', target: task.code, detail: `إسناد المهمة من ${prev || '—'} إلى ${who}`, detailEn: `Task reassigned from ${personEn(prev, '—')} to ${personEn(who, 'a new owner')}` });
+    emitFeed({ type: 'task', tone: 'accent', siteId: task.projectId, title: `إسناد المهمة ${task.code} إلى ${who}`, titleEn: `Task ${task.code} assigned to ${personEn(who, 'a new owner')}`, detail: task.title, detailEn: text(task.titleEn), sourceId: 'biltix-pm', refId: task.id, code: task.code });
+    return { ok: true, task, changed: true };
+  },
+
+  /** Attach evidence to a task — metadata only, stored in this browser (local: true). */
+  addTaskAttachment(id, att = {}, { by = '' } = {}) {
+    const task = findPlatform('tasks', id);
+    if (!task) return fail('not-found', 'المهمة غير موجودة.', 'Task not found.');
+    const check = validateAttachment(att);
+    if (!check.ok) return check;
+    const actor = text(by) || 'مدير المشروع';
+    const item = { ...check.item, id: `AT-${task.id}-${Date.now().toString(36)}${Math.floor(Math.random() * 1e3).toString(36)}`, addedAt: localISO(store.now()), by: actor, local: true };
+    if (!Array.isArray(task.attachments)) task.attachments = [];
+    task.attachments.push(item);
+    task.updatedAt = localISO(store.now());
+    changed(`platform.tasks.${task.id}`);
+    store.pushAudit({ actor, action: 'attachment', target: task.code, detail: `إرفاق (${item.kind}): ${item.title} — محفوظ على هذا الجهاز فقط`, detailEn: `Attachment added (${item.kind}) to ${task.code} — stored on this device only` });
+    return { ok: true, attachment: item, task };
+  },
+
+  /** Remove a task attachment added in this browser. */
+  removeTaskAttachment(id, attachmentId, { by = '' } = {}) {
+    const task = findPlatform('tasks', id);
+    if (!task) return fail('not-found', 'المهمة غير موجودة.', 'Task not found.');
+    const list = Array.isArray(task.attachments) ? task.attachments : [];
+    const idx = list.findIndex((a) => a && a.id === attachmentId);
+    if (idx === -1) return fail('attachment-not-found', 'المرفق غير موجود.', 'Attachment not found.');
+    const [removed] = list.splice(idx, 1);
+    task.updatedAt = localISO(store.now());
+    changed(`platform.tasks.${task.id}`);
+    store.pushAudit({ actor: text(by) || 'مدير المشروع', action: 'attachment', target: task.code, detail: `حذف مرفق: ${removed.title}`, detailEn: `Attachment removed from ${task.code}` });
+    return { ok: true, removed, task };
   },
 
   /* ── validation layer, pipelines, connectors, audit ── */

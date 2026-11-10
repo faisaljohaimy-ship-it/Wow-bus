@@ -452,15 +452,13 @@ const MARK_HEX = 'M16 1.5L28.56 8.75V23.25L16 30.5L3.44 23.25V8.75Z';
 const MARK_TOP = 'M16 7.5L23 11.5L16 15.5L9 11.5Z';
 const MARK_LEFT = 'M9 11.5L16 15.5V24.5L9 20.5Z';
 const MARK_RIGHT = 'M16 15.5L23 11.5V20.5L16 24.5Z';
-/* Step: a lower wing cut into the right face reads as a stepped structure without hairlines. */
-const MARK_STEP = 'M19.5 18.5L23 16.5V20.5L19.5 22.5Z';
 const MARK_SHIELD = 'M0-4l3.4 1.4v2.4c0 2.3-1.4 4-3.4 4.7-2-.7-3.4-2.4-3.4-4.7v-2.4z';
 
 /**
- * BILTIX mark: a gold hexagon frame (1.5 px at any size) around an isometric block in --brand (lit top,
- * shaded right face with a stepped wing) and an --accent shield notch on the lower-right corner (a logo
- * never mirrors).
- * No sub-pixel strokes, so it renders crisply from 24 px to 40 px (and scales up cleanly).
+ * BILTIX mark: a gold hexagon frame (1.5 px at any size) around an isometric block in --brand, lit from the
+ * top-left (top face tinted toward white, right face toward black — the same lighting in both themes) and an
+ * --accent shield notch on the lower-right corner (a logo never mirrors). No sub-pixel strokes, so it renders
+ * crisply from 24 px to 40 px (and scales up cleanly).
  */
 export function logoMark(size = 36) {
   const px = sizeOf(size, 36);
@@ -475,14 +473,11 @@ export function logoMark(size = 36) {
   frame.appendChild(el('path', { d: MARK_HEX, fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5', 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' }));
   svg.appendChild(frame);
 
-  // block: three faces of one hue (brand) lit from the top
+  // block: three faces of one hue (brand) lit from the top-left; shades are derived from the token, not the theme
   const block = el('g', { class: 'logo-mark-blocks' });
-  block.appendChild(el('path', { d: MARK_LEFT, fill: 'var(--brand)' }));
-  block.appendChild(el('path', { d: MARK_RIGHT, fill: 'var(--brand)' }));
-  block.appendChild(el('path', { d: MARK_RIGHT, fill: 'var(--bg-0)', 'fill-opacity': '0.38' }));
-  block.appendChild(el('path', { d: MARK_TOP, fill: 'var(--brand)' }));
-  block.appendChild(el('path', { d: MARK_TOP, fill: 'var(--brand-ink)', 'fill-opacity': '0.42' }));
-  block.appendChild(el('path', { d: MARK_STEP, fill: 'var(--bg-0)', 'fill-opacity': '0.55' }));
+  block.appendChild(el('path', { d: MARK_LEFT, style: { fill: 'var(--brand)' } }));
+  block.appendChild(el('path', { d: MARK_RIGHT, style: { fill: 'color-mix(in srgb, var(--brand) 64%, black)' } }));
+  block.appendChild(el('path', { d: MARK_TOP, style: { fill: 'color-mix(in srgb, var(--brand) 58%, var(--brand-ink))' } }));
   svg.appendChild(block);
 
   // shield notch: a page-coloured halo cuts the frame, the accent shield sits in the gap

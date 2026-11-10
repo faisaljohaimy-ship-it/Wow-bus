@@ -68,7 +68,10 @@
   <link rel="stylesheet" href="css/charts.css">
   <link rel="stylesheet" href="css/platform.css">
   <link rel="stylesheet" href="css/print.css" media="print">
-  <!-- Module preloads: the core graph (incl. i18n + status + the shell dictionary), the shared UI libraries, both seeds and the home view (other views load on first navigation). -->
+  <!-- Module preloads: the whole static graph of js/app.js (core, i18n runtime + shell/UI dictionaries, status,
+       motion, components, view registry), the boot-time dynamic imports (enum labels, charts, radar, art, both
+       seeds, platform selectors) and the home view. The English data dictionaries (js/i18n/data/) are NOT
+       preloaded: they load on the first switch to English. Other views load on first navigation. -->
   <link rel="modulepreload" href="js/app.js">
   <link rel="modulepreload" href="js/core/bus.js">
   <link rel="modulepreload" href="js/core/i18n.js">
@@ -77,13 +80,21 @@
   <link rel="modulepreload" href="js/core/fmt.js">
   <link rel="modulepreload" href="js/core/store.js">
   <link rel="modulepreload" href="js/core/selectors.js">
+  <link rel="modulepreload" href="js/data/vocab-en.js">
   <link rel="modulepreload" href="js/core/router.js">
-  <link rel="modulepreload" href="js/core/platform-selectors.js">
   <link rel="modulepreload" href="js/views/index.js">
   <link rel="modulepreload" href="js/ui/components.js">
+  <link rel="modulepreload" href="js/ui/i18n-bridge.js">
+  <link rel="modulepreload" href="js/i18n/ui.js">
+  <link rel="modulepreload" href="js/i18n/charts.js">
+  <link rel="modulepreload" href="js/i18n/radar.js">
+  <link rel="modulepreload" href="js/ui/motion.js">
+  <link rel="modulepreload" href="js/vendor/motion.js">
+  <link rel="modulepreload" href="js/ui/art.js">
+  <link rel="modulepreload" href="js/i18n/enums.js">
+  <link rel="modulepreload" href="js/core/platform-selectors.js">
   <link rel="modulepreload" href="js/ui/charts.js">
   <link rel="modulepreload" href="js/ui/radar.js">
-  <link rel="modulepreload" href="js/ui/art.js">
   <link rel="modulepreload" href="js/data/seed.js">
   <link rel="modulepreload" href="js/data/platform-seed.js">
   <link rel="modulepreload" href="js/views/cockpit.js">
@@ -131,7 +142,7 @@
         <span class="pill-label" id="scoreLabel">الدرجة الموحدة</span>
       </button>
       <!-- Data status (CONTRACT §5): Demo · local data / Live / Stale / Error / Offline, with an explanatory popover. -->
-      <div class="data-status" id="dataStatus">
+      <div class="data-status data-chip-wrap" id="dataStatus">
         <button type="button" class="data-chip" id="dataChip" data-status="demo" aria-haspopup="dialog" aria-expanded="false" aria-controls="dataPopover">
           <span class="data-chip-icon" id="dataChipIcon" aria-hidden="true"></span>
           <span class="data-chip-label" id="dataChipLabel">تجريبي · بيانات محلية</span>
@@ -160,7 +171,7 @@
         <span class="user-avatar" id="userAvatar" aria-hidden="true">ف</span>
         <span class="user-text">
           <span class="user-name" id="userName">م. فيصل الحربي</span>
-          <span class="user-role" id="userRole">ملف تجريبي · بدون تسجيل دخول</span>
+          <span class="user-role" id="userRole">ملف تجريبي</span>
         </span>
       </button>
     </div>
