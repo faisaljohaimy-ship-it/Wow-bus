@@ -33,6 +33,7 @@ import { status as statusApi } from '../../core/status.js';
 import { psel as defaultPsel } from '../../core/platform-selectors.js';
 import { sources as defaultSources } from '../../data/sources.js';
 import { motion } from '../../ui/motion.js';
+import { spatialTargetForAiRisk } from '../../data/spatial-seed.js';
 import riskDict from '../../i18n/risk.js';
 
 i18n.register('risk', riskDict);
@@ -836,7 +837,7 @@ function renderOverview(st, risk) {
 
   // details
   const ev = risk.evidence || {};
-  const details = kv([
+  const detailPairs = [
     [t('risk.ov.source'), h('span', {}, sourceLabel(ev.sourceSystem || (risk.origin === 'manual' ? 'إدخال يدوي' : null)))],
     [t('risk.ov.project'), siteName(state, risk.projectId)],
     [t('risk.ov.owner'), risk.owner ? person(risk.owner) : h('span', { class: 'risk-muted' }, t('risk.common.unassigned'))],
@@ -845,13 +846,31 @@ function renderOverview(st, risk) {
     [t('risk.ov.updated'), h('span', { title: defaultFmt.dateTime(risk.updatedAt) }, defaultFmt.relative(risk.updatedAt))],
     [t('risk.ov.engine'), risk.origin === 'manual' ? t('risk.ov.engineManual') : h('span', { class: 'row gap-2 wrap' }, h('span', {}, i18n.label('pipeline', risk.pipeline) || risk.pipeline), risk.modelVersion ? h('span', { class: 'mono', dir: 'ltr' }, risk.modelVersion) : null)],
     [t('risk.ov.stakeholders'), arr(risk.stakeholders).length ? arr(risk.stakeholders).map((r) => i18n.label('stakeholderRole', r) || r).join(t('risk.common.listSep')) : '—'],
-  ]);
+  ];
+  const mapRow = siteMapRow(st, risk, state);
+  if (mapRow) detailPairs.push(mapRow);
+  const details = kv(detailPairs);
   details.classList.add('is-compact');
   wrap.appendChild(section(t('risk.ov.details'), { id: 'risk-ov-details' }, details));
 
   // lifecycle
   wrap.appendChild(lifecycleBlock(st, risk));
   return wrap;
+}
+
+/**
+ * "Show on site map": deep link into the site spatial view when the data places the risk (its zone, the zone of
+ * the HSE register risk it names, or at least its site). Nothing is guessed; no target → no row.
+ */
+function siteMapRow(st, risk, state) {
+  let target = null;
+  try { target = spatialTargetForAiRisk(state, risk); } catch { target = null; }
+  if (!target) return null;
+  const params = { site: target.site, zone: target.zone || null, risk: target.risk || null };
+  const note = target.via ? t('risk.ov.showOnMapVia', { code: target.via }) : (target.zone ? null : t('risk.ov.showOnMapSite'));
+  return [t('risk.ov.siteMap'), h('span', { class: 'stack gap-1' },
+    button(t('risk.ov.showOnMap'), { variant: 'outline', size: 'sm', icon: 'map-pin', onClick: () => navigateTo(st, 'spatial', params), attrs: { 'data-focus-key': 'show-on-map', style: 'align-self: flex-start' } }),
+    note ? h('span', { class: 'risk-muted text-sm' }, ...withCodes(note)) : null)];
 }
 
 function nextHandler(st, risk, key) {

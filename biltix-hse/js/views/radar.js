@@ -373,7 +373,7 @@ export default {
         const hazards = hazardsFor(followedSite);
         const zones = arr(site && L(site, 'zones', 'sites'));
         return simpleTable(t('radarView.plan.tableCaption'), [t('radarView.plan.colZone'), t('radarView.plan.colCode'), t('radarView.plan.colHazards')],
-          zones.map((z) => [String(z.name || ''), h('span', { class: 'code mono', dir: 'ltr', translate: 'no' }, String(z.id)), fmt.num(hazards.filter((hz) => hz && (hz.zoneId === z.id || (hz.x >= z.x && hz.x <= z.x + z.w && hz.y >= z.y && hz.y <= z.y + z.h))).length)]), [false, false, true]);
+          zones.map((z) => [h('a', { href: router.href('spatial', { site: followedSite, zone: z.id }), title: t('radar.spatial.zoneOnMap', { zone: z.id }) }, String(z.name || '')), h('span', { class: 'code mono', dir: 'ltr', translate: 'no' }, String(z.id)), fmt.num(hazards.filter((hz) => hz && (hz.zoneId === z.id || (hz.x >= z.x && hz.x <= z.x + z.w && hz.y >= z.y && hz.y <= z.y + z.h))).length)]), [false, false, true]);
       },
     });
     const complianceCard = radarCard({
@@ -383,6 +383,20 @@ export default {
       tableView: () => simpleTable(t('radarView.iso.tableCaption'), [t('radarView.iso.colClause'), t('radarView.iso.colScore'), t('radarView.iso.colGaps'), t('radarView.iso.colState')],
         isoClauses().map((c) => [h('span', {}, h('span', { class: 'code mono', dir: 'ltr', translate: 'no' }, String(c.id)), ` — ${clauseTitle(c)}`), fmt.pct(Number(c.score) || 0), fmt.num(Number(c.gaps) || 0), (Number(c.score) || 0) >= ISO_TARGET ? t('radarView.iso.onTarget') : t('radarView.iso.belowTarget')]), [false, true, true, false]),
     });
+
+    /* "Show on site map": deep links into the site spatial view (#/spatial?site=…), kept on the followed site */
+    const mapLink = (key) => h('a', { class: 'btn btn-outline btn-sm radar-map-link', href: router.href('spatial', { site: siteFor() }) }, ico('map-pin', 14), h('span', { class: 'btn-label' }, t(`radar.spatial.${key}`)));
+    const planMapLink = mapLink('showOnMap');
+    const sensorMapLink = mapLink('sensorsOnMap');
+    planCard.card.querySelector('.radar-side').appendChild(planMapLink);
+    sensorCard.card.querySelector('.radar-side').appendChild(sensorMapLink);
+    function paintMapLinks(planSite, sensorSite) {
+      const name = (id) => siteName(id) || id;
+      planMapLink.setAttribute('href', router.href('spatial', { site: planSite }));
+      planMapLink.setAttribute('aria-label', t('radar.spatial.showOnMapAria', { site: name(planSite) }));
+      sensorMapLink.setAttribute('href', router.href('spatial', { site: sensorSite }));
+      sensorMapLink.setAttribute('aria-label', t('radar.spatial.sensorsOnMapAria', { site: name(sensorSite) }));
+    }
 
     const cards = [sweepCard, sensorCard, planCard, complianceCard];
     root.appendChild(h('div', { class: 'radar-grid' }, ...cards.map((c) => c.card)));
@@ -467,6 +481,7 @@ export default {
       planCard.canvas.setAttribute('aria-label', t('radarView.plan.aria', { site: site ? L(site, 'name', 'sites') : '—' }));
       sensorSiteBadge.querySelector('.badge-text').textContent = sensorSiteObj ? L(sensorSiteObj, 'name', 'sites') : '—';
       planSiteBadge.querySelector('.badge-text').textContent = site ? L(site, 'name', 'sites') : '—';
+      paintMapLinks(followedSite, sensorSiteObj ? sensorSiteObj.id : followedSite);
     }
     function buildCompliance() {
       const clauses = isoClauses();

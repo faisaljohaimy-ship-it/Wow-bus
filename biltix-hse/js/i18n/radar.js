@@ -9,6 +9,14 @@ export default {
     target: 'الهدف',
     north: 'ش',
     kinds: { worker: 'عامل', vehicle: 'مركبة', crane: 'رافعة', hazard: 'خطر' },
+    // links into the site spatial view (#/spatial)
+    spatial: {
+      showOnMap: 'عرض على خريطة الموقع',
+      showOnMapAria: 'عرض {site} على خريطة الموقع المكانية',
+      sensorsOnMap: 'عرض الحساسات على خريطة الموقع',
+      sensorsOnMapAria: 'عرض حساسات {site} على خريطة الموقع المكانية',
+      zoneOnMap: 'عرض المنطقة {zone} على خريطة الموقع',
+    },
   },
   en: {
     noSensors: 'No active sensors',
@@ -16,5 +24,13 @@ export default {
     target: 'Target',
     north: 'N',
     kinds: { worker: 'Worker', vehicle: 'Vehicle', crane: 'Crane', hazard: 'Hazard' },
+    // links into the site spatial view (#/spatial)
+    spatial: {
+      showOnMap: 'Show on site map',
+      showOnMapAria: 'Show {site} on the site spatial view',
+      sensorsOnMap: 'Show sensors on site map',
+      sensorsOnMapAria: 'Show the sensors of {site} on the site spatial view',
+      zoneOnMap: 'Show zone {zone} on the site map',
+    },
   },
 };

@@ -35,6 +35,10 @@ export default {
       renderErrorText: 'لم تتغير أي بيانات. أعد المحاولة.',
     },
     ov: {
+      siteMap: 'خريطة الموقع',
+      showOnMap: 'عرض على خريطة الموقع',
+      showOnMapVia: 'المنطقة مأخوذة من مخاطرة السلامة المرتبطة {code}',
+      showOnMapSite: 'الموقع فقط: البيانات لا تحدد منطقة لهذه المخاطرة',
       classification: 'تصنيف المخاطرة',
       escalated: 'مُصعَّدة',
       manual: 'مُسجّلة يدوياً',
@@ -445,6 +449,10 @@ export default {
       renderErrorText: 'No data was changed. Try again.',
     },
     ov: {
+      siteMap: 'Site map',
+      showOnMap: 'Show on site map',
+      showOnMapVia: 'Zone taken from the linked safety risk {code}',
+      showOnMapSite: 'Site only: the data names no zone for this risk',
       classification: 'Risk classification',
       escalated: 'Escalated',
       manual: 'Registered manually',
