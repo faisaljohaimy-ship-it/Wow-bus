@@ -17,6 +17,12 @@ import * as storeModule from '../core/store.js';
 
 const APP_VERSION = '2.0.0';
 const BUILD_DATE = '2026-11-09';
+/** One product name everywhere; HSE is the pillar, not the product. */
+const PRODUCT_NAME = 'بلتكس Risk AI';
+const PILLAR = 'ركيزة السلامة والصحة المهنية';
+const THEME_DEFAULT_LABEL = 'افتراضي السمة';
+/** Theme token fallbacks for the colour pickers when brand colours are '' (= use theme tokens). */
+const TOKEN_FALLBACK = { brand: '#2f6fed', accent: '#19c6e6' };
 const SITE_URL = 'https://biltix.sa';
 const SITE_LABEL = 'biltix.sa';
 const HEX_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -166,11 +172,21 @@ function isoDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** Current theme token colour as #rrggbb (colour inputs need a full hex). */
+function tokenHex(token) {
+  try {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(`--${token}`).trim();
+    const n = normalizeHex(v);
+    if (n) return n;
+  } catch { /* fall through */ }
+  return TOKEN_FALLBACK[token] || '#2f6fed';
+}
+
 function validateSnapshot(obj) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return { ok: false, reason: 'الملف ليس كائن JSON صالحاً.' };
   const present = COLLECTIONS.filter((k) => Array.isArray(obj[k]));
   const hasSettings = Boolean(obj.settings && typeof obj.settings === 'object' && !Array.isArray(obj.settings));
-  if (!present.length && !hasSettings) return { ok: false, reason: 'لا يحتوي الملف على أي من مجموعات بيانات بلتكس HSE (المخاطر، الحوادث، التصاريح، التفتيشات، التكاملات، الإعدادات).' };
+  if (!present.length && !hasSettings) return { ok: false, reason: `لا يحتوي الملف على أي من مجموعات بيانات ${PRODUCT_NAME} (المخاطر، الحوادث، التصاريح، التفتيشات، التكاملات، الإعدادات).` };
   if (obj.meta && obj.meta.version !== undefined && Number(obj.meta.version) !== 1) return { ok: false, reason: `إصدار الملف (${obj.meta.version}) غير متوافق مع هذا الإصدار من النظام.` };
   for (const k of present) {
     if (obj[k].some((item) => !item || typeof item !== 'object' || Array.isArray(item))) return { ok: false, reason: `مجموعة «${COLLECTION_LABELS[k]}» تحتوي عناصر غير صالحة.` };
@@ -321,40 +337,61 @@ function render(container, ctx) {
 
   /* ════════════════ الهوية ════════════════ */
 
+  /**
+   * Brand colour field. An empty value ('') means "use the theme token": the text input shows the
+   * placeholder «افتراضي السمة», a badge says so, and the picker previews the token's current colour.
+   * Clearing the text writes '' back (so the light theme keeps its own accent instead of the dark one).
+   */
   function colorField({ label, key, token, hint }) {
     const hexId = uid('hex');
     const picker = h('input', { type: 'color', class: 'field-control', 'aria-label': `منتقي ${label}`, style: { flex: 'none' } });
-    const text = h('input', { type: 'text', id: hexId, class: 'field-control mono ltr', maxlength: '7', spellcheck: 'false', autocomplete: 'off', placeholder: '#2F6FED', style: { flex: '1 1 auto', minInlineSize: '0' } });
+    const text = h('input', { type: 'text', id: hexId, class: 'field-control mono ltr', maxlength: '7', spellcheck: 'false', autocomplete: 'off', placeholder: THEME_DEFAULT_LABEL, style: { flex: '1 1 auto', minInlineSize: '0' } });
     const swatch = h('span', { class: 'brand-swatch', 'aria-hidden': 'true', style: { inlineSize: '28px', blockSize: '28px', borderRadius: '8px', border: '1px solid var(--line-2)', flex: 'none', background: `var(--${token})` } });
-    const wrap = h('div', { class: 'field' }, h('label', { class: 'field-label', for: hexId }, label), h('div', { class: 'input-group', style: { alignItems: 'center' } }, picker, text, swatch), h('p', { class: 'field-hint' }, hint));
+    const defaultBadge = badge(THEME_DEFAULT_LABEL, 'neutral');
+    defaultBadge.hidden = true;
+    const wrap = h('div', { class: 'field' }, h('label', { class: 'field-label', for: hexId }, label), h('div', { class: 'input-group', style: { alignItems: 'center' } }, picker, text, swatch), h('div', { class: 'row gap-2 wrap' }, h('p', { class: 'field-hint', style: { margin: 0 } }, hint), defaultBadge));
 
+    const showDefault = (on) => {
+      defaultBadge.hidden = !on;
+      text.placeholder = on ? THEME_DEFAULT_LABEL : '#2F6FED';
+      wrap.classList.toggle('is-theme-default', on);
+    };
     const setValue = (hex) => {
       const n = normalizeHex(hex);
-      if (!n) return;
+      if (!n) {
+        // '' (or an invalid stored value) → theme default
+        if (document.activeElement !== picker) picker.value = tokenHex(token);
+        if (document.activeElement !== text) text.value = '';
+        showDefault(true);
+        markInvalid(wrap, false);
+        return;
+      }
       if (document.activeElement !== picker) picker.value = n;
       if (document.activeElement !== text) text.value = n.toUpperCase();
+      showDefault(false);
       markInvalid(wrap, false);
     };
     picker.addEventListener('input', () => {
       text.value = picker.value.toUpperCase();
+      showDefault(false);
       markInvalid(wrap, false);
       queueBrand({ [key]: picker.value });
     });
     picker.addEventListener('change', () => { flushBrand(); toast('تم حفظ لون الهوية.', { tone: 'good', timeout: 2200 }); });
     text.addEventListener('input', () => {
       const raw = text.value.trim();
-      const n = normalizeHex(raw.startsWith('#') || raw === '' ? raw : `#${raw}`);
-      if (n) { picker.value = n; markInvalid(wrap, false); queueBrand({ [key]: n }); }
-      else markInvalid(wrap, raw !== '', 'استخدم صيغة HEX مثل #2F6FED');
+      if (raw === '') { picker.value = tokenHex(token); showDefault(true); markInvalid(wrap, false); queueBrand({ [key]: '' }); return; }
+      const n = normalizeHex(raw.startsWith('#') ? raw : `#${raw}`);
+      if (n) { picker.value = n; showDefault(false); markInvalid(wrap, false); queueBrand({ [key]: n }); }
+      else markInvalid(wrap, true, 'استخدم صيغة HEX مثل #2F6FED أو اتركه فارغاً لافتراضي السمة');
     });
     text.addEventListener('change', () => {
       const raw = text.value.trim();
-      const n = normalizeHex(raw.startsWith('#') || raw === '' ? raw : `#${raw}`);
+      if (raw === '') { flushBrand(); toast(`أُعيد ${label} إلى افتراضي السمة.`, { tone: 'neutral', timeout: 2200 }); return; }
+      const n = normalizeHex(raw.startsWith('#') ? raw : `#${raw}`);
       if (!n) {
-        toast('صيغة اللون غير صحيحة — استخدم صيغة HEX مثل #2F6FED.', { tone: 'warning' });
-        const current = normalizeHex(brand()[key]);
-        text.value = current ? current.toUpperCase() : '';
-        markInvalid(wrap, false);
+        toast('صيغة اللون غير صحيحة — استخدم صيغة HEX مثل #2F6FED أو اتركه فارغاً.', { tone: 'warning' });
+        setValue(brand()[key]);
         return;
       }
       text.value = n.toUpperCase();
@@ -365,8 +402,8 @@ function render(container, ctx) {
     return { el: wrap, setValue };
   }
 
-  const primaryField = colorField({ label: 'اللون الأساسي', key: 'primary', token: 'brand', hint: 'الأزرار والروابط والعناصر النشطة في التنقل.' });
-  const accentField = colorField({ label: 'لون التمييز', key: 'accent', token: 'accent', hint: 'مسح الرادار والمؤشرات الحية وحلقة التركيز.' });
+  const primaryField = colorField({ label: 'اللون الأساسي', key: 'primary', token: 'brand', hint: 'الأزرار والروابط والعناصر النشطة في التنقل. اتركه فارغاً ليتبع السمة.' });
+  const accentField = colorField({ label: 'لون التمييز', key: 'accent', token: 'accent', hint: 'مسح الرادار والمؤشرات الحية وحلقة التركيز. اتركه فارغاً ليتبع السمة (الفاتحة أغمق).' });
 
   const companyField = formField({ label: 'اسم الشركة', name: 'companyName', value: brand().companyName || '', placeholder: DEFAULTS.brand.companyName, hint: 'يظهر في شريط التطبيق وترويسة التقارير.' });
   const companyInput = controlOf(companyField);
@@ -424,7 +461,8 @@ function render(container, ctx) {
     onClick: () => {
       pendingBrand = null;
       if (brandTimer) { clearTimeout(brandTimer); brandTimer = null; }
-      save({ brand: clone(DEFAULTS.brand) }, 'أُعيدت ألوان الهوية والاسم والشعار إلى الإعداد الافتراضي.', 'neutral');
+      // '' = theme tokens (each theme keeps its own brand/accent); name and logo back to the defaults.
+      save({ brand: { primary: '', accent: '', companyName: (DEFAULTS.brand && DEFAULTS.brand.companyName) || 'بلتكس', logoUrl: '' } }, 'أُعيدت ألوان الهوية إلى افتراضي السمة والاسم والشعار إلى الإعداد الافتراضي.', 'neutral');
       syncFromState();
     },
   });
@@ -478,7 +516,7 @@ function render(container, ctx) {
     try {
       const now = store.now ? store.now() : new Date();
       const result = await sources.postWebhook(url, {
-        source: 'biltix-hse', kind: 'test', severity: 'info', title: 'تنبيه تجريبي من بلتكس HSE',
+        source: 'biltix-hse', kind: 'test', severity: 'info', title: `تنبيه تجريبي من ${PRODUCT_NAME}`,
         detail: 'هذا تنبيه تجريبي للتحقق من إعداد Webhook. لا يتطلب أي إجراء.', ts: now.toISOString(),
       });
       if (result && result.ok) toast(`تم إرسال التنبيه التجريبي بنجاح${result.status ? ` (${fmt.num(result.status)})` : ''}.`, { tone: 'good' });
@@ -548,7 +586,7 @@ function render(container, ctx) {
   });
 
   async function importFile(file) {
-    if (file.size > MAX_IMPORT_BYTES) { toast('حجم الملف يتجاوز 20 ميجابايت.', { tone: 'warning' }); return; }
+    if (file.size > MAX_IMPORT_BYTES) { toast(`حجم الملف يتجاوز ${fmt.num(20)} ميجابايت.`, { tone: 'warning' }); return; }
     let snapshot;
     try {
       snapshot = JSON.parse(await readFileText(file));
@@ -619,15 +657,17 @@ function render(container, ctx) {
     m.open();
   }
 
+  // The import button is described by the format hint (what file is accepted and what happens on import).
+  const importHintId = uid('imp-hint');
   const dataCard = card({
     code: 'SET-04', title: 'البيانات', subtitle: 'النسخ الاحتياطي والاستعادة وإعادة التعيين',
     body: h('div', { class: 'stack gap-4' },
       statsEl,
       h('div', { class: 'row gap-2 wrap' },
         button('تصدير JSON', { variant: 'outline', icon: icon('download', 16), onClick: exportJSON }),
-        button('استيراد JSON', { variant: 'outline', icon: icon('upload', 16), onClick: () => fileInput.click() }),
+        button('استيراد JSON', { variant: 'outline', icon: icon('upload', 16), onClick: () => fileInput.click(), attrs: { 'aria-describedby': importHintId } }),
         fileInput),
-      h('p', { class: 'muted text-xs' }, 'يشمل التصدير كامل الحالة (البيانات والإعدادات وعوامل التصفية). عند الاستيراد تُراجع بنية الملف قبل التطبيق.'),
+      h('p', { class: 'muted text-xs', id: importHintId }, `يشمل التصدير كامل الحالة (البيانات والإعدادات وعوامل التصفية). يقبل الاستيراد ملف JSON مُصدَّراً من ${PRODUCT_NAME} (الإصدار ${fmt.num(1)}) بحجم حتى ${fmt.num(20)} ميجابايت، وتُراجع بنية الملف وتُعرض محتوياته للتأكيد قبل التطبيق.`),
       h('hr', { class: 'divider' }),
       h('div', { class: 'row between wrap gap-3' },
         h('div', { class: 'stack gap-1' }, h('strong', { class: 'text-sm' }, 'إعادة التعيين إلى البيانات الافتراضية'), h('span', { class: 'muted text-xs' }, 'يحذف التعديلات المحلية ويعيد بيانات العرض التوضيحية والإعدادات الأصلية.')),
@@ -650,6 +690,7 @@ function render(container, ctx) {
   const aboutKv = kv([
     ['الإصدار', h('span', { class: 'mono' }, APP_VERSION)],
     ['تاريخ البناء', h('span', { class: 'row gap-2 wrap' }, fmt.date(BUILD_DATE), h('span', { class: 'mono muted' }, BUILD_DATE))],
+    ['المنتج', `${PRODUCT_NAME} · ${PILLAR}`],
     ['الشركة', `${company.name || DEFAULTS.brand.companyName}${company.nameEn ? ` — ${company.nameEn}` : ''}`],
     ['الموقع الإلكتروني', h('a', { href: SITE_URL, target: '_blank', rel: 'noopener noreferrer', class: 'row gap-1 mono ltr', style: { display: 'inline-flex' } }, SITE_LABEL, icon('external', 13))],
     ['مصدر البيانات الحالي', dataSourceBadge],
@@ -660,7 +701,7 @@ function render(container, ctx) {
     h('p', { class: 'text-sm' }, 'البيانات المعروضة في النظام توضيحية (محاكاة حية تُعاد مزامنة تواريخها مع تاريخ اليوم) ما لم يُربط مصدر بيانات حقيقي من قسم التكاملات — JSON API أو Google Sheets أو Supabase.'),
     h('div', {}, button('فتح التكاملات', { variant: 'outline', size: 'sm', icon: icon('plug', 14), onClick: () => (router && typeof router.navigate === 'function' ? router.navigate('integrations') : (location.hash = '#/integrations')) })));
   const aboutCard = card({
-    code: 'SET-05', title: 'حول النظام', subtitle: `${company.product || 'Biltix HSE'} — ${company.tagline || 'مركز قيادة السلامة والصحة المهنية'}`,
+    code: 'SET-05', title: 'حول النظام', subtitle: `${PRODUCT_NAME} — ${PILLAR}`,
     body: h('div', { class: 'grid-12' },
       h('div', { class: 'col-span-7' }, aboutKv),
       h('div', { class: 'col-span-5' }, aboutNote)),

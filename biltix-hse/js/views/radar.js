@@ -46,7 +46,7 @@ const TIERS = [
   { tier: 'منخفض', tone: 'good' },
 ];
 const CHIPS = [
-  { id: 'sensors', label: 'الحساسات النشطة', icon: 'sensor', unit: 'حسّاس' },
+  { id: 'sensors', label: 'الحساسات النشطة', icon: 'sensor', unit: 'حساس' },
   { id: 'alerts', label: 'التنبيهات آخر ساعة', icon: 'alert', unit: 'تنبيه' },
   { id: 'people', label: 'الأشخاص في الموقع', icon: 'users', unit: 'شخص' },
   { id: 'vehicles', label: 'المعدات المتحركة', icon: 'truck', unit: 'معدّة' },
@@ -151,6 +151,12 @@ export default {
       return siteById('S1') ? 'S1' : (sites()[0] ? sites()[0].id : 'S1');
     };
     const fmtValue = (v) => (v === null ? '—' : fmt.num(v, { maximumFractionDigits: Math.abs(v) < 10 ? 1 : 0 }));
+    /** Digit runs inside labels (ISO clause ids such as "7" or "7.5") follow the numerals setting. */
+    const digits = (s) => String(s ?? '').replace(/\d+(?:\.\d+)?/g, (m) => fmt.num(Number(m), { maximumFractionDigits: 2 }));
+    const clauseLabel = (c) => `${digits(c.id)} ${c.title}`;
+    const SWEEP_SUB = () => `المخاطر المفتوحة موزعة على ${fmt.num(12)} قطاعاً بحسب فئة الخطر — الأشد تقترب من المركز`;
+    const ISO_SUB = () => `درجات بنود المعيار من ${fmt.num(4)} إلى ${fmt.num(10)} مقابل حلقة المستهدف ${fmt.pct(ISO_TARGET)} — الفجوات مظللة`;
+    const setSub = (cardEl, text) => { const el = cardEl.querySelector('.card-sub'); if (el && el.textContent !== text) el.textContent = text; };
 
     function simpleTable(caption, headers, rows, numeric = []) {
       const table = h('table', { class: 'chart-table' });
@@ -297,9 +303,9 @@ export default {
     const fpsText = h('span', {}, 'FPS —');
     const fpsChip = h('span', { class: 'chip is-sm mono', title: 'الإطارات في الثانية لحلقة الرسم المشتركة', 'aria-label': 'معدل الإطارات' }, ico('gauge', 14), fpsText);
     const siteBadge = C.badge('', 'brand', { icon: ico('building', 14) });
-    const pauseBtn = C.button('إيقاف الحركة مؤقتًا', {
+    const pauseBtn = C.button('إيقاف الحركة مؤقتاً', {
       variant: 'outline', size: 'sm', icon: ico('pause', 14),
-      attrs: { 'aria-pressed': 'false', title: 'إيقاف حركة الرادارات مؤقتًا (تبقى البيانات حية)' },
+      attrs: { 'aria-pressed': 'false', title: 'إيقاف حركة الرادارات مؤقتاً (تبقى البيانات حية)' },
       onClick: () => setPaused(!paused),
     });
     root.appendChild(h('div', { class: 'view-head' },
@@ -369,7 +375,7 @@ export default {
     }
 
     const sweepCard = radarCard({
-      code: 'RDR-01', title: 'رادار المخاطر', subtitle: 'المخاطر المفتوحة موزعة على 12 قطاعًا بحسب فئة الخطر — الأشد تقترب من المركز',
+      code: 'RDR-01', title: 'رادار المخاطر', subtitle: SWEEP_SUB(),
       wide: true, large: true, sideTitle: 'القياسات',
       legend: TIERS.map((t) => ({ tone: t.tone, label: t.tier })),
       tableView: () => simpleTable('المخاطر الظاهرة على الرادار', ['الكود', 'الخطر', 'الموقع', 'الفئة', 'الدرجة', 'المستوى'],
@@ -384,7 +390,7 @@ export default {
       tableView: () => {
         const axes = currentAxes;
         const vals = valuesFor(followedSite, axes);
-        return simpleTable('قراءات الحساسات', ['الحسّاس', 'القراءة', 'حد الإنذار', 'الحد الأقصى'],
+        return simpleTable('قراءات الحساسات', ['الحساس', 'القراءة', 'حد الإنذار', 'الحد الأقصى'],
           axes.map((a, i) => [`${a.label}${a.unit ? ` (${a.unit})` : ''}`, fmtValue(num(vals[i])), fmtValue(num(a.threshold)), fmtValue(num(a.max))]), [false, true, true, true]);
       },
     });
@@ -402,11 +408,11 @@ export default {
       },
     });
     const complianceCard = radarCard({
-      code: 'RDR-04', title: 'رادار الامتثال ISO 45001', subtitle: `درجات بنود المعيار من 4 إلى 10 مقابل حلقة المستهدف ${fmt.pct(ISO_TARGET)} — الفجوات مظللة`,
+      code: 'RDR-04', title: 'رادار الامتثال ISO 45001', subtitle: ISO_SUB(),
       wide: true, large: true, sideTitle: 'درجات البنود',
       legend: [{ tone: 'accent', label: 'درجة البند' }, { tone: 'neutral', label: `المستهدف ${fmt.pct(ISO_TARGET)}` }, { tone: 'warning', label: 'فجوة دون المستهدف' }],
       tableView: () => simpleTable('درجات بنود ISO 45001', ['البند', 'الدرجة', 'الفجوات', 'الحالة'],
-        isoClauses().map((c) => [`${c.id} — ${c.title}`, fmt.pct(Number(c.score) || 0), fmt.num(Number(c.gaps) || 0), (Number(c.score) || 0) >= ISO_TARGET ? 'ضمن المستهدف' : 'دون المستهدف']), [false, true, true, false]),
+        isoClauses().map((c) => [`${digits(c.id)} — ${c.title}`, fmt.pct(Number(c.score) || 0), fmt.num(Number(c.gaps) || 0), (Number(c.score) || 0) >= ISO_TARGET ? 'ضمن المستهدف' : 'دون المستهدف']), [false, true, true, false]),
     });
 
     root.appendChild(h('div', { class: 'radar-grid' }, sweepCard.card, sensorCard.card, planCard.card, complianceCard.card));
@@ -505,7 +511,7 @@ export default {
     function buildCompliance() {
       const clauses = isoClauses();
       radars.compliance = makeRadar(R.ComplianceRadar, complianceCard.canvas, {
-        axes: clauses.map((c) => ({ id: String(c.id), label: `${c.id} ${c.title}` })),
+        axes: clauses.map((c) => ({ id: String(c.id), label: clauseLabel(c) })),
         getValues: () => isoClauses().map((c) => Number(c.score) || 0),
         target: ISO_TARGET,
       }, 'ComplianceRadar');
@@ -518,14 +524,14 @@ export default {
       [sweepCard, sensorCard, planCard, complianceCard].forEach((c) => c.frame.classList.toggle('is-paused', paused));
       pauseBtn.setAttribute('aria-pressed', paused ? 'true' : 'false');
       const label = pauseBtn.querySelector('.btn-label');
-      if (label) label.textContent = paused ? 'استئناف الحركة' : 'إيقاف الحركة مؤقتًا';
+      if (label) label.textContent = paused ? 'استئناف الحركة' : 'إيقاف الحركة مؤقتاً';
       const oldIcon = pauseBtn.querySelector('.btn-ic');
       if (oldIcon) { const fresh = ico(paused ? 'play' : 'pause', 14); fresh.classList.add('btn-ic'); oldIcon.replaceWith(fresh); }
     }
 
-    /* ───────────── per-second tick ───────────── */
+    /* ───────────── per-second tick (paused while the tab is hidden) ───────────── */
     function tick() {
-      if (destroyed) return;
+      if (destroyed || document.hidden) return;
       const st = state();
       const f = filters();
       const scopeSites = f.siteId === 'all' ? sites() : sites().filter((s) => s.id === f.siteId);
@@ -613,7 +619,7 @@ export default {
       setTelemetry(complianceCard.tele, [
         { key: 'overall', label: 'الإجمالي', value: fmt.pct(isoOverall()), state: isoOverall() < ISO_TARGET ? 'warn' : undefined },
         { key: 'target', label: 'المستهدف', value: fmt.pct(ISO_TARGET) },
-        ...clauses.map((c) => ({ key: `c${c.id}`, label: `${c.id} ${c.title}`, value: fmt.pct(Number(c.score) || 0), state: (Number(c.score) || 0) < ISO_TARGET ? 'warn' : undefined })),
+        ...clauses.map((c) => ({ key: `c${c.id}`, label: clauseLabel(c), value: fmt.pct(Number(c.score) || 0), state: (Number(c.score) || 0) < ISO_TARGET ? 'warn' : undefined })),
       ]);
 
       /* relative times + fps */
@@ -634,6 +640,9 @@ export default {
     buildCompliance();
     tick();
     timers.push(setInterval(tick, 1000));
+    // Telemetry labels are patched in place, so the label set must be rebuilt when the numerals change.
+    const onVisibility = () => { if (!destroyed && !document.hidden) tick(); };
+    document.addEventListener('visibilitychange', onVisibility);
 
     subs.push(bus.on('store:change', (p) => {
       const path = String((p && p.path) || '*');
@@ -646,11 +655,18 @@ export default {
       if (siteFor() !== followedSite) buildSiteRadars();
       tick();
     }));
-    subs.push(bus.on('settings:change', () => { if (!destroyed) tick(); }));
+    subs.push(bus.on('settings:change', () => {
+      if (destroyed) return;
+      setSub(sweepCard.card, SWEEP_SUB());
+      setSub(complianceCard.card, ISO_SUB());
+      [sweepCard, sensorCard, planCard, complianceCard].forEach((c) => teleRefs.delete(c.tele));
+      tick();
+    }));
 
     /* ───────────── cleanup ───────────── */
     return function cleanup() {
       destroyed = true;
+      document.removeEventListener('visibilitychange', onVisibility);
       subs.splice(0).forEach((off) => { try { off(); } catch { /* ignore */ } });
       timers.splice(0).forEach((t) => { clearInterval(t); clearTimeout(t); });
       Object.keys(radars).forEach((k) => { killRadar(radars[k]); radars[k] = null; });

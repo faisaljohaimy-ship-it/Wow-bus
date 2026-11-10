@@ -17,6 +17,19 @@
  *                        bus 'integrations:tick'
  *   • ≈ every 4 min   → a near-miss incident via store.addIncident (the store emits its feed event)
  *
+ * Simulated records (replacement permits, near-miss incidents) are tagged `simulated: true`
+ * and capped (SIM_CAPS: last 50 simulated closed permits, last 100 simulated incidents); the
+ * oldest closed — then the oldest untouched open — simulated records are pruned when a cap is
+ * exceeded, on start() and after every insertion. Seed and user-created records are never pruned.
+ *
+ * Numerals: every number in generated event text goes through fmt (so the Arabic-Indic setting is
+ * honoured), literal digits in hand-written copy are localised at fill time, codes embedded in
+ * sentences use U+2011 so they never break across lines, and the raw numbers / plain codes travel
+ * in the event payload (value, unit, ms, minutes, days, code, refId) for consumers that re-format.
+ *
+ * Sensors with a `lowThreshold` (O₂) also simulate deficiency excursions below it; `isOver`
+ * and the alert text report the direction ('low' | 'high').
+ *
  * Determinism: every random choice comes from a mulberry32 generator seeded with 20261109.
  * Wall-clock timing still varies, but the sequence of choices is reproducible.
  *
@@ -66,6 +79,12 @@ export const TIMING = Object.freeze({
   replacementMinHours: 4,
   replacementMaxHours: 10,
   pingMaxStep: 2 * SECOND,
+});
+
+/** Caps for engine-generated (simulated) records — see pruneSimulated(). */
+export const SIM_CAPS = Object.freeze({
+  closedPermits: 50,
+  incidents: 100,
 });
 
 const PERMIT_ACTIVE = 'نشط';
@@ -155,6 +174,33 @@ const n1 = (v) => safeNum(v, 1);
 function safeTime(iso) {
   try { return fmt.time(iso); } catch { return ''; }
 }
+
+/** Non-breaking hyphen (U+2011) inside a code embedded in a sentence: "PTW‑5521" never wraps. */
+const nbh = (code) => String(code ?? '').replace(/-/g, '‑');
+
+const ARABIC_INDIC = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+function arabNumerals() {
+  try { return typeof fmt.getNumerals === 'function' && fmt.getNumerals() === 'arab'; } catch { return false; }
+}
+/**
+ * Localise literal ASCII digits inside hand-written Arabic copy when the UI uses Arabic-Indic
+ * numerals ("خلال 48 ساعة" → "خلال ٤٨ ساعة"). Digits glued to Latin letters (H2S, PM2.5, N95)
+ * or hyphenated codes are identifiers and stay as they are. No lookbehind (Safari < 16.4).
+ */
+function arDigits(text) {
+  const s = String(text || '');
+  if (!arabNumerals()) return s;
+  return s
+    .replace(/(^|[^A-Za-z0-9₂‑-])(\d+(?:[.,:/–]\d+)*)(%?)(?![A-Za-z0-9₂])/g, (_, pre, run, pct) => (
+      pre
+      + run.replace(/[0-9]/g, (d) => ARABIC_INDIC[d.charCodeAt(0) - 48]).replace(/(\d|[٠-٩])\.(?=[٠-٩])/g, '$1٫').replace(/,(?=[٠-٩]{3})/g, '٬')
+      + (pct ? '٪' : '')
+    ))
+    .replace(/([٠-٩])%/g, '$1٪');
+}
+
+/** Optional raw fields copied verbatim from a partial event into the stored FeedEvent. */
+const EXTRA_FIELDS = ['code', 'value', 'unit', 'threshold', 'ms', 'minutes', 'hours', 'days', 'pct', 'count', 'direction', 'source'];
 
 function warn(context, error) {
   try { console.warn(`[biltix-hse] live engine (${context}):`, error); } catch { /* no console */ }
@@ -326,6 +372,7 @@ function emitFeed(partial, { force = false } = {}) {
   };
   if (partial.refId != null) event.refId = partial.refId;
   if (partial.kind) event.kind = partial.kind;
+  for (const key of EXTRA_FIELDS) if (partial[key] !== undefined && partial[key] !== null && partial[key] !== '') event[key] = partial[key];
   const stored = E.store.pushFeed(event);
   if (stored && E.bus && typeof E.bus.emit === 'function') E.bus.emit('feed:event', stored);
   return stored || null;
@@ -456,9 +503,14 @@ function templatesByType() {
   return byType;
 }
 
-/** Replace `{key}` / `{{key}}` placeholders; unknown keys become empty strings. */
-function fill(text, ctx) {
-  return String(text || '')
+/**
+ * Replace `{key}` / `{{key}}` placeholders; unknown keys become empty strings.
+ * `localize: true` (feed copy) first routes the template's literal digits through the active
+ * numeral system; record content (incident descriptions) keeps Latin digits like the seed.
+ */
+function fill(text, ctx, { localize = false } = {}) {
+  const src = localize ? arDigits(text) : String(text || '');
+  const out = src
     .replace(/\{\{?\s*([\w.]+)\s*\}?\}/g, (_, key) => {
       const v = ctx[key];
       return v == null ? '' : String(v);
@@ -467,6 +519,25 @@ function fill(text, ctx) {
     .replace(/\s+(،)/g, '$1')
     .replace(/(^|\s)[—·]\s*$/g, '')
     .trim();
+  return localize && arabNumerals() ? out.replace(/([٠-٩])%/g, '$1٪') : out;
+}
+
+/** Placeholder → raw payload field, so consumers get the number behind the formatted text. */
+const PAYLOAD_KEYS = Object.freeze({
+  value: 'value', latency: 'ms', latencyHigh: 'ms', days: 'days', minutes: 'minutes', hours: 'hours', pct: 'pct',
+  n: 'count', n2: 'count', workersCount: 'count', headcount: 'count', checklist: 'count',
+});
+function payloadFor(templateText, ctx) {
+  const raw = ctx.raw && ctx.raw.numbers ? ctx.raw.numbers : {};
+  const out = {};
+  const re = /\{\{?\s*([\w.]+)\s*\}?\}/g;
+  let m;
+  while ((m = re.exec(String(templateText || ''))) !== null) {
+    const field = PAYLOAD_KEYS[m[1]];
+    if (field && out[field] === undefined && Number.isFinite(raw[m[1]])) out[field] = raw[m[1]];
+  }
+  if (out.value !== undefined && ctx.unit) out.unit = ctx.unit;
+  return out;
 }
 
 /* ────────────────────────────── event context ────────────────────────────── */
@@ -546,6 +617,20 @@ function buildContext() {
   const temp = randInt(27, 41);
   const wind = randInt(6, 28);
   const wbgt = randInt(24, 30);
+  const numbers = {
+    value: sensor ? round(displayValue, 2) : round(randBetween(10, 40), 1),
+    latency,
+    latencyHigh: Math.round(latency * randBetween(2.2, 3.4)),
+    workersCount: permit ? num(permit.workers, 3) : randInt(2, 8),
+    checklist: inspection ? num(inspection.checklistTotal, 40) : randInt(30, 60),
+    n: randInt(2, 9),
+    n2: randInt(12, 64),
+    pct: randInt(8, 19),
+    days: randInt(5, 28),
+    hours: randInt(2, 4),
+    minutes: randInt(10, 55),
+    headcount: Math.round(num(site && site.workers, 300) * randBetween(0.78, 0.97)),
+  };
   return {
     // raw entities (used by the seed-template resolver)
     raw: {
@@ -566,53 +651,63 @@ function buildContext() {
       integration,
       integrationDegraded: pick(arr(state().integrations).filter((g) => g && g.status === 'degraded')) || null,
       displayValue,
+      numbers,
       now,
     },
     // generic placeholders shared by seed templates: {code} {value} {unit}
     code: '',
-    value: n0(randInt(2, 9)),
+    rawCode: '',
+    refId: null,
     unit: '',
     siteId,
     site: site ? site.name : '',
     siteCode: site ? site.code : '',
     zone: zone ? zone.name : '',
     zoneId: zone ? zone.id : '',
-    permit: permit ? permit.code : '',
+    permit: permit ? nbh(permit.code) : '',
+    permitCode: permit ? permit.code : '',
+    permitId: permit ? permit.id : null,
     permitType: permit ? permit.type : '',
     permitLocation: permit ? permit.location : '',
     permitHasGas: Boolean(permit && permit.gasTest),
     approver: permit ? permit.approver : (site ? site.hseLead || site.manager : ''),
     requester: permit ? permit.requester : '',
-    workersCount: permit ? n0(num(permit.workers, 3)) : n0(randInt(2, 8)),
-    permitPending: pending ? pending.code : '',
+    workersCount: n0(numbers.workersCount),
+    permitPending: pending ? nbh(pending.code) : '',
+    permitPendingCode: pending ? pending.code : '',
+    permitPendingId: pending ? pending.id : null,
     permitPendingType: pending ? pending.type : '',
     permitPendingLocation: pending ? pending.location : '',
     permitPendingApprover: pending ? pending.approver : '',
     sensor: sensor ? sensor.kind : 'الغبار PM2.5',
     sensorId: sensor ? sensor.id : '',
-    value: sensor ? n1(displayValue) : n1(randBetween(10, 40)),
+    value: sensor ? n1(displayValue) : n1(numbers.value),
     unit: sensor ? sensor.unit : '',
     threshold: sensor ? n1(sensor.threshold) : '',
     sensorRatio,
     integration: integration ? integration.name : 'منصة بلتكس لإدارة المشاريع',
     integrationId: integration ? integration.id : SOURCES.pm,
-    latency: n0(latency),
-    latencyHigh: n0(Math.round(latency * randBetween(2.2, 3.4))),
+    latency: n0(numbers.latency),
+    latencyHigh: n0(numbers.latencyHigh),
     worker: workerName(siteId),
     course: courseName(),
-    inspection: inspection ? inspection.code : '',
+    inspection: inspection ? nbh(inspection.code) : '',
+    inspectionCode: inspection ? inspection.code : '',
+    inspectionId: inspection ? inspection.id : null,
     inspectionType: inspection ? inspection.type : pick(INSPECTION_TYPES_FALLBACK),
     inspector: inspection ? inspection.inspector : (site ? site.hseLead || site.manager : ''),
-    checklist: n0(inspection ? num(inspection.checklistTotal, 40) : randInt(30, 60)),
-    incident: incident ? incident.code : '',
+    checklist: n0(numbers.checklist),
+    incident: incident ? nbh(incident.code) : '',
+    incidentCode: incident ? incident.code : '',
+    incidentId: incident ? incident.id : null,
     incidentTitle: incident ? incident.title : '',
-    n: n0(randInt(2, 9)),
-    n2: n0(randInt(12, 64)),
-    pct: n0(randInt(8, 19)),
-    days: n0(randInt(5, 28)),
-    hours: n0(randInt(2, 4)),
-    minutes: n0(randInt(10, 55)),
-    headcount: n0(Math.round(num(site && site.workers, 300) * randBetween(0.78, 0.97))),
+    n: n0(numbers.n),
+    n2: n0(numbers.n2),
+    pct: n0(numbers.pct),
+    days: n0(numbers.days),
+    hours: n0(numbers.hours),
+    minutes: n0(numbers.minutes),
+    headcount: n0(numbers.headcount),
     temp: n0(temp),
     humidity: n0(randInt(18, 62)),
     wind: n0(wind),
@@ -623,8 +718,23 @@ function buildContext() {
     h2s: n0(randInt(0, 2)),
     co: n0(randInt(0, 3)),
     topic: pick(TOOLBOX_TOPICS),
-    doc: `DMS-${randInt(10_000, 99_999)}`,
+    doc: nbh(`DMS-${randInt(10_000, 99_999)}`),
   };
+}
+
+/** Raw-number helper for seed-template contexts: formatted text + raw payload in one go. */
+function setValue(ctx, raw, unit, digits = 0) {
+  ctx.value = digits ? n1(raw) : n0(raw);
+  ctx.unit = unit;
+  if (ctx.raw && ctx.raw.numbers) ctx.raw.numbers.value = raw;
+  return ctx;
+}
+/** Code helper for seed-template contexts: U+2011 in the sentence, plain code + id in the payload. */
+function setCode(ctx, entity) {
+  ctx.code = nbh(entity.code);
+  ctx.rawCode = String(entity.code || '');
+  ctx.refId = entity.id ?? null;
+  return ctx;
 }
 
 /* ────────────────────────────── seed-template resolver ────────────────────────────── */
@@ -658,7 +768,7 @@ function kindCompatible(phrase, kind) {
 function seedContext(t, base) {
   const raw = base.raw || {};
   const phrase = `${t.title} ${t.detail}`;
-  const ctx = { ...base };
+  const ctx = { ...base, raw: { ...raw, numbers: { ...(raw.numbers || {}) } } };
   // State-changing "critical" phrases are produced by the engine itself with real data.
   if (t.tone === 'critical') return null;
   switch (t.type) {
@@ -667,7 +777,8 @@ function seedContext(t, base) {
       if (!m || !kindCompatible(phrase, m.kind)) return null;
       if (t.tone === 'warning' && base.sensorRatio < 0.7) return null;
       if (/عودة|الطبيعي/.test(phrase) && base.sensorRatio > 0.6) return null;
-      ctx.code = m.kind; ctx.value = n1(raw.displayValue); ctx.unit = m.unit;
+      ctx.code = m.kind; ctx.rawCode = m.code || m.id; ctx.refId = m.id;
+      setValue(ctx, round(raw.displayValue, 2), m.unit, 1);
       if (m.zoneId) ctx.zone = zoneName(m.siteId, m.zoneId) || ctx.zone;
       break;
     }
@@ -678,15 +789,16 @@ function seedContext(t, base) {
         p = raw.expiringPermit;
         if (!p) return null;
         const minutes = Math.max(1, Math.round((Date.parse(p.expiresAt) - raw.now) / MINUTE));
-        ctx.value = n0(minutes); ctx.unit = 'دقيقة';
+        setValue(ctx, minutes, 'دقيقة');
+        ctx.raw.numbers.minutes = minutes;
       } else if (/إغلاق|أُغلق|اكتمال العمل/.test(phrase)) p = raw.closedPermit;
       else if (/تعليق|معلق/.test(phrase)) p = raw.suspendedPermit;
       if (!p) return null;
       if (/O₂|غازات/.test(phrase)) {
         if (!p.gasTest && !/قبل الدخول/.test(phrase)) return null;
-        ctx.value = n1(randBetween(20.6, 20.9)); ctx.unit = '%';
+        setValue(ctx, round(randBetween(20.6, 20.9), 1), '%', 1);
       }
-      ctx.code = p.code; ctx.siteId = p.siteId;
+      setCode(ctx, p); ctx.siteId = p.siteId;
       ctx.site = (siteById(p.siteId) || {}).name || ctx.site;
       ctx.zone = p.location || zoneName(p.siteId, p.zoneId) || ctx.zone;
       break;
@@ -694,7 +806,7 @@ function seedContext(t, base) {
     case 'incident': {
       const i = /تصعيد|عالي الخطورة/.test(phrase) ? raw.incidentHigh : raw.incident;
       if (!i) return null;
-      ctx.code = i.code; ctx.siteId = i.siteId;
+      setCode(ctx, i); ctx.siteId = i.siteId;
       ctx.site = (siteById(i.siteId) || {}).name || ctx.site;
       ctx.zone = i.location || zoneName(i.siteId, i.zoneId) || ctx.zone;
       break;
@@ -702,43 +814,44 @@ function seedContext(t, base) {
     case 'inspection': {
       let ins = raw.inspection;
       if (/متأخر/.test(phrase)) ins = raw.inspectionOverdue;
-      else if (/بدء|قائمة تحقق/.test(phrase)) { ins = raw.inspectionScheduled; if (ins) { ctx.value = n0(num(ins.checklistTotal, 40)); ctx.unit = 'بندًا'; } }
-      else if (/اعتماد|الدرجة|ملاحظة/.test(phrase)) { ins = raw.inspectionDone; if (ins) { ctx.value = n0(num(ins.score, 85)); ctx.unit = '%'; } }
+      else if (/بدء|قائمة تحقق/.test(phrase)) { ins = raw.inspectionScheduled; if (ins) setValue(ctx, num(ins.checklistTotal, 40), 'بندًا'); }
+      else if (/اعتماد|الدرجة|ملاحظة/.test(phrase)) { ins = raw.inspectionDone; if (ins) setValue(ctx, num(ins.score, 85), '%'); }
       if (!ins) return null;
-      ctx.code = ins.code; ctx.siteId = ins.siteId;
+      setCode(ctx, ins); ctx.siteId = ins.siteId;
       ctx.site = (siteById(ins.siteId) || {}).name || ctx.site;
       ctx.zone = zoneName(ins.siteId, ins.zoneId) || ctx.zone;
       break;
     }
     case 'training': {
-      if (/تنتهي خلال/.test(phrase)) { ctx.value = n0(randInt(7, 45)); ctx.unit = 'يومًا'; }
-      else if (/شهادة/.test(phrase)) { ctx.value = n0(randInt(14, 80)); ctx.unit = ''; }
-      else { ctx.value = n0(randInt(6, 24)); ctx.unit = ''; }
+      if (/تنتهي خلال/.test(phrase)) { const d = randInt(7, 45); setValue(ctx, d, 'يومًا'); ctx.raw.numbers.days = d; }
+      else if (/شهادة/.test(phrase)) setValue(ctx, randInt(14, 80), '');
+      else setValue(ctx, randInt(6, 24), '');
       break;
     }
     case 'integration': {
       const g = /تدهور|متدهور/.test(phrase) ? raw.integrationDegraded : raw.integration;
       if (!g) return null;
       if (/استعادة/.test(phrase) && g.status !== 'connected') return null;
-      ctx.code = g.name; ctx.siteId = null;
-      if (/الاستجابة/.test(phrase)) { ctx.value = n0(Math.max(20, num(g.latencyMs, 120))); ctx.unit = 'مللي ثانية'; }
-      else { ctx.value = n0(randInt(12, 180)); ctx.unit = ''; }
+      ctx.code = g.name; ctx.rawCode = g.id; ctx.siteId = null;
+      if (/الاستجابة/.test(phrase)) { const ms = Math.max(20, num(g.latencyMs, 120)); setValue(ctx, ms, 'مللي ثانية'); ctx.raw.numbers.latency = ms; }
+      else setValue(ctx, randInt(12, 180), '');
       ctx.sourceId = g.id;
       break;
     }
     case 'ppe': {
-      ctx.value = n0(randInt(93, 99)); ctx.unit = '%';
+      setValue(ctx, randInt(93, 99), '%');
       break;
     }
     case 'weather': {
-      if (/رياح/.test(phrase)) { ctx.value = n0(randInt(39, 55)); ctx.unit = 'كم/س'; }
-      else if (/الحرارة|حرارة/.test(phrase)) { ctx.value = n0(randInt(42, 47)); ctx.unit = '°م'; }
-      else if (/الرؤية|غبار/.test(phrase)) { ctx.value = n1(randBetween(1.2, 3.5)); ctx.unit = 'كم'; }
+      if (/رياح/.test(phrase)) setValue(ctx, randInt(39, 55), 'كم/س');
+      else if (/الحرارة|حرارة/.test(phrase)) setValue(ctx, randInt(42, 47), '°م');
+      else if (/الرؤية|غبار/.test(phrase)) setValue(ctx, round(randBetween(1.2, 3.5), 1), 'كم', 1);
       break;
     }
     case 'alert': {
-      if (/تجاوز الحد/.test(phrase)) { ctx.value = n0(randInt(22, 40)); ctx.unit = ''; }
-      ctx.code = `AP-${randInt(1, 4)}`;
+      if (/تجاوز الحد/.test(phrase)) setValue(ctx, randInt(22, 40), '');
+      const ap = `AP-${randInt(1, 4)}`;
+      ctx.code = nbh(ap); ctx.rawCode = ap;
       break;
     }
     default:
@@ -767,17 +880,31 @@ function emitRandomFeed() {
     const template = weightedPick(candidates, (t) => num(t.weight, 1));
     const ctx = template.fromSeed ? seedContext(template, base) : base;
     if (!ctx) continue;
-    const title = fill(template.title, ctx);
+    const title = fill(template.title, ctx, { localize: true });
     if (!title) continue;
     let sourceId = ctx.sourceId || template.sourceId;
     if (type === 'integration' && !sourceId) sourceId = ctx.integrationId;
+    const text = `${template.title} ${template.detail}`;
+    // Plain code + entity id of the record the phrase talks about (the sentence carries the U+2011 form).
+    let code = ctx.rawCode || '';
+    let refId = ctx.refId || null;
+    if (!code) {
+      if (/\{permitPending\}/.test(text)) { code = ctx.permitPendingCode; refId = ctx.permitPendingId; }
+      else if (/\{permit\}/.test(text)) { code = ctx.permitCode; refId = ctx.permitId; }
+      else if (/\{incident\}/.test(text)) { code = ctx.incidentCode; refId = ctx.incidentId; }
+      else if (/\{inspection\}/.test(text)) { code = ctx.inspectionCode; refId = ctx.inspectionId; }
+      else if (/\{sensor\}|\{value\}/.test(text) && ctx.sensorId) { refId = ctx.sensorId; }
+    }
     return emitFeed({
       type,
       tone: template.tone,
       siteId: ctx.siteId,
       title,
-      detail: fill(template.detail, ctx),
+      detail: fill(template.detail, ctx, { localize: true }),
       sourceId: sourceId || null,
+      code: code || undefined,
+      refId: refId || undefined,
+      ...payloadFor(text, ctx),
     });
   }
   return null;
@@ -804,6 +931,9 @@ function buildSensorModel(s) {
   const inverted = base > threshold; // a sensor whose baseline sits above its threshold: lower is worse
   const lowThreshold = Number.isFinite(Number(s.lowThreshold)) ? clamp(Number(s.lowThreshold), min, threshold) : null;
   const span = Math.max(Math.abs(threshold - base), (max - min) * 0.05);
+  // A sensor with a lower alarm limit (O₂ deficiency) may dip a little below the seed `min`
+  // during a deficiency excursion; `floor` is the hard lower bound of the simulation.
+  const floor = lowThreshold != null && !inverted ? Math.min(min, lowThreshold - Math.max((threshold - lowThreshold) * 0.12, 0.2)) : min;
   return {
     id: s.id,
     code: String(s.code || s.id),
@@ -814,8 +944,10 @@ function buildSensorModel(s) {
     unit: String(s.unit || ''),
     min,
     max,
+    floor,
     threshold,
     lowThreshold,
+    low: false,
     base,
     inverted,
     span,
@@ -852,8 +984,21 @@ function normalTarget(m, now) {
   return target;
 }
 
+/** Below the lower alarm limit (O₂ deficiency) counts as an excursion too. */
+function isLow(m, value) {
+  return m.lowThreshold != null && !m.inverted && value < m.lowThreshold;
+}
+
 function isOver(m, value) {
-  return m.inverted ? value < m.threshold : value > m.threshold;
+  if (m.inverted) return value < m.threshold;
+  return value > m.threshold || isLow(m, value);
+}
+
+function hasHighRoom(m) {
+  return m.inverted ? m.threshold - m.min > m.span * 0.3 : m.max - m.threshold > m.span * 0.3;
+}
+function hasLowRoom(m) {
+  return m.lowThreshold != null && !m.inverted && m.lowThreshold - m.floor > 0;
 }
 
 function sensorSnapshot(m) {
@@ -873,6 +1018,8 @@ function sensorSnapshot(m) {
     lowThreshold: m.lowThreshold,
     pct: Math.round(clamp(((value - m.min) / Math.max(m.max - m.min, 0.001)) * 100, 0, 100)),
     over: m.over,
+    low: m.low === true,
+    direction: m.over ? (m.low ? 'low' : 'high') : null,
     excursion: Boolean(m.excursion),
     categoryId: m.categoryId,
   };
@@ -901,22 +1048,30 @@ function sensorStep(now = Date.now()) {
       m.target = normalTarget(m, now);
     }
     const k = 1 - Math.exp(-dt / tau);
-    m.value = clamp(m.value + (m.target - m.value) * k, m.min, m.max);
+    m.value = clamp(m.value + (m.target - m.value) * k, m.floor ?? m.min, m.max);
     const wasOver = m.over;
     m.over = isOver(m, m.value);
+    m.low = m.over && isLow(m, m.value);
     if (m.over && !wasOver && m.excursion && !m.excursion.alerted) {
       m.excursion.alerted = true;
       raiseSensorAlert(m, now);
     } else if (!m.over && wasOver && m.recovering) {
       m.recovering = false;
+      const low = m.lastDirection === 'low';
+      const limit = low ? m.lowThreshold : m.threshold;
       emitFeed({
         type: 'sensor',
         tone: 'good',
         siteId: m.siteId,
         title: `عودة قراءة ${m.kind} إلى المعدل الطبيعي — ${zoneName(m.siteId, m.zoneId) || 'الموقع'}`,
-        detail: `القراءة الحالية ${n1(m.value)} ${m.unit} (الحد ${n1(m.threshold)} ${m.unit}) · رفع الإجراءات الاحترازية`,
+        detail: `القراءة الحالية ${n1(m.value)} ${m.unit} (${low ? 'الحد الأدنى' : 'الحد'} ${n1(limit)} ${m.unit}) · رفع الإجراءات الاحترازية`,
         sourceId: SOURCES.iot,
         refId: m.id,
+        code: m.code,
+        value: round(m.value, 2),
+        unit: m.unit,
+        threshold: limit,
+        direction: low ? 'low' : 'high',
       });
     }
     if (m.over && m.excursion && m.excursion.alerted) m.recovering = true;
@@ -933,9 +1088,12 @@ function raiseSensorAlert(m, now) {
   const zone = zoneName(m.siteId, m.zoneId);
   const site = siteById(m.siteId);
   const where = [m.location || zone, site && site.name].filter(Boolean).join(' · ');
-  const direction = m.inverted ? 'انخفضت دون الحد الأدنى' : 'تجاوزت الحد المسموح';
-  const title = `قراءة ${m.kind} ${direction} (${n1(m.threshold)} ${m.unit})`;
-  const detail = `القيمة الحالية ${n1(m.value)} ${m.unit} — ${where || 'الموقع'} · حسّاس ${m.code} · إخلاء احترازي للمنطقة والتحقق الميداني`;
+  const low = m.inverted || m.low === true;
+  const limit = m.low === true && m.lowThreshold != null ? m.lowThreshold : m.threshold;
+  m.lastDirection = low ? 'low' : 'high';
+  const direction = low ? 'انخفضت دون الحد الأدنى' : 'تجاوزت الحد المسموح';
+  const title = `قراءة ${m.kind} ${direction} (${n1(limit)} ${m.unit})`;
+  const detail = `القيمة الحالية ${n1(m.value)} ${m.unit} — ${where || 'الموقع'} · حسّاس ${nbh(m.code)} · إخلاء احترازي للمنطقة والتحقق الميداني`;
   emitBus('alert', {
     severity: 'critical',
     tone: 'critical',
@@ -945,8 +1103,11 @@ function raiseSensorAlert(m, now) {
     siteId: m.siteId,
     zoneId: m.zoneId,
     sensorId: m.id,
+    code: m.code,
     value: round(m.value, 2),
-    threshold: m.threshold,
+    threshold: limit,
+    lowThreshold: m.lowThreshold,
+    direction: low ? 'low' : 'high',
     unit: m.unit,
     ts: localISO(now),
   });
@@ -958,6 +1119,11 @@ function raiseSensorAlert(m, now) {
     detail,
     sourceId: SOURCES.iot,
     refId: m.id,
+    code: m.code,
+    value: round(m.value, 2),
+    unit: m.unit,
+    threshold: limit,
+    direction: low ? 'low' : 'high',
   });
   addTransient({
     id: `det-${m.id}-${now.toString(36)}`,
@@ -971,16 +1137,24 @@ function raiseSensorAlert(m, now) {
 }
 
 /** Start a threshold excursion on a random sensor with headroom (≈ every 90 s). */
+function excursionPeak(m, low) {
+  if (low) return clamp(m.lowThreshold - (m.lowThreshold - m.floor) * randBetween(0.4, 0.9), m.floor, m.max);
+  if (m.inverted) return clamp(m.threshold - (m.threshold - m.min) * randBetween(0.25, 0.6), m.min, m.max);
+  return clamp(m.threshold + (m.max - m.threshold) * randBetween(0.3, 0.8), m.min, m.max);
+}
+
+/**
+ * Start a threshold excursion on a random sensor with headroom (≈ every 90 s). A sensor with a
+ * lower alarm limit (O₂) dips below it — a deficiency — in ~60 % of its excursions.
+ */
 function startExcursion(now = Date.now()) {
   syncSensorModels();
-  const candidates = Array.from(E.sensors.values()).filter((m) => !m.excursion && (m.inverted ? m.threshold - m.min > m.span * 0.3 : m.max - m.threshold > m.span * 0.3));
+  const candidates = Array.from(E.sensors.values()).filter((m) => !m.excursion && (hasHighRoom(m) || hasLowRoom(m)));
   const m = pick(candidates);
   if (!m) return null;
   const duration = randBetween(TIMING.excursionMin, TIMING.excursionMax);
-  const peak = m.inverted
-    ? clamp(m.threshold - (m.threshold - m.min) * randBetween(0.25, 0.6), m.min, m.max)
-    : clamp(m.threshold + (m.max - m.threshold) * randBetween(0.3, 0.8), m.min, m.max);
-  m.excursion = { startedAt: now, endsAt: now + duration, peak, alerted: false };
+  const low = hasLowRoom(m) && (!hasHighRoom(m) || chance(0.6));
+  m.excursion = { startedAt: now, endsAt: now + duration, peak: excursionPeak(m, low), alerted: false, low };
   return m.id;
 }
 
@@ -1041,10 +1215,14 @@ function permitStep(now = Date.now()) {
         type: 'permit',
         tone: 'warning',
         siteId: p.siteId,
-        title: `تصريح ${p.code} يقترب من الانتهاء خلال ${n0(minutes)} دقيقة`,
+        title: `تصريح ${nbh(p.code)} يقترب من الانتهاء خلال ${n0(minutes)} دقيقة`,
         detail: `${p.type} — ${p.location || ''} · ينتهي ${safeTime(p.expiresAt)} · يلزم الإقفال أو التمديد قبل الموعد`,
         sourceId: SOURCES.pm,
         refId: p.id,
+        code: p.code,
+        minutes,
+        value: minutes,
+        unit: 'دقيقة',
       });
     }
   }
@@ -1096,6 +1274,8 @@ function issueReplacement(p, now) {
       workers: num(p.workers, 3),
       gasTest,
       replaces: p.code,
+      simulated: true,
+      source: 'المحاكاة الحية — تصريح بديل',
     });
   } catch (err) {
     warn('addPermit', err);
@@ -1105,11 +1285,14 @@ function issueReplacement(p, now) {
     type: 'permit',
     tone: 'accent',
     siteId: p.siteId,
-    title: `انتهاء صلاحية التصريح ${p.code} — إغلاق تلقائي`,
-    detail: `تم إصدار تصريح جديد ${created.code} (${p.type}) بديلاً عنه حتى ${safeTime(created.expiresAt)} · ${p.location || ''}`,
+    title: `انتهاء صلاحية التصريح ${nbh(p.code)} — إغلاق تلقائي`,
+    detail: `تم إصدار تصريح جديد ${nbh(created.code)} (${p.type}) بديلاً عنه حتى ${safeTime(created.expiresAt)} · ${p.location || ''}`,
     sourceId: SOURCES.pm,
     refId: created.id,
+    code: created.code,
+    hours: round(hours, 1),
   });
+  pruneSimulated('permits');
   return created;
 }
 
@@ -1184,6 +1367,9 @@ function integrationStep(now = Date.now()) {
         title: `استعادة الاتصال الكامل مع ${g.name}`,
         detail: `عاد زمن الاستجابة إلى ${n0(latency)} مللي ثانية بعد فترة تدهور استمرت نحو دقيقتين · اكتملت إعادة مزامنة الأحداث المتأخرة`,
         sourceId: g.id,
+        ms: latency,
+        value: latency,
+        unit: 'مللي ثانية',
       });
     }
   }
@@ -1204,8 +1390,11 @@ function integrationStep(now = Date.now()) {
         tone: 'warning',
         siteId: null,
         title: `تدهور أداء ${victim.name}`,
-        detail: `ارتفاع زمن الاستجابة إلى ${n0(latency)} مللي ثانية — إعادة المحاولة تلقائيًا كل 30 ثانية`,
+        detail: arDigits(`ارتفاع زمن الاستجابة إلى {ms} مللي ثانية — إعادة المحاولة تلقائيًا كل 30 ثانية`).replace('{ms}', n0(latency)),
         sourceId: victim.id,
+        ms: latency,
+        value: latency,
+        unit: 'مللي ثانية',
       });
     }
   }
@@ -1237,14 +1426,15 @@ function nearMissStep(now = Date.now()) {
   if (!site) return null;
   const zone = pick(zonesOf(site));
   const scenario = pick(NEAR_MISS_SCENARIOS);
+  // Record content keeps Latin digits like the seed (the UI formats numbers at render time).
   const ctx = {
     zone: zone ? zone.name : site.name,
     site: site.name,
-    floor: n0(randInt(3, 24)),
-    weight: n1(randBetween(2.5, 7.5)),
-    weightKg: n0(randInt(28, 45)),
-    n: n0(randInt(3, 9)),
-    wbgt: n1(randBetween(30, 33)),
+    floor: String(randInt(3, 24)),
+    weight: String(round(randBetween(2.5, 7.5), 1)),
+    weightKg: String(randInt(28, 45)),
+    n: String(randInt(3, 9)),
+    wbgt: String(round(randBetween(30, 33), 1)),
   };
   const reporter = pick(['مشرف المنطقة', 'منظم الحركة', 'مراقب السلامة', 'مشرف الوردية']) + ' — ' + workerName(site.id);
   const owner = site.hseLead || site.manager || 'مسؤول السلامة';
@@ -1270,11 +1460,13 @@ function nearMissStep(now = Date.now()) {
       investigationStep: 0,
       actions: [{ text: fill(scenario.action, ctx), owner, due, done: false }],
       source: 'بلاغ ميداني — المحاكاة الحية',
+      simulated: true,
     });
   } catch (err) {
     warn('addIncident', err);
   }
   if (incident) {
+    pruneSimulated('incidents');
     addTransient({
       id: `det-${incident.id}-${now.toString(36)}`,
       code: incident.code,
@@ -1467,6 +1659,64 @@ function getHazards(siteId) {
   return out.slice(0, 16);
 }
 
+/* ────────────────────────────── simulated-record caps ────────────────────────────── */
+
+const parseMs = (v) => { const t = Date.parse(v || ''); return Number.isFinite(t) ? t : 0; };
+const isSimulated = (r) => Boolean(r && r.simulated === true);
+/** A simulated incident nobody has worked on (no investigation progress, no closed actions, never patched). */
+function untouchedIncident(i) {
+  if (num(i.investigationStep, 0) > 0) return false;
+  if (arr(i.actions).some((a) => a && a.done)) return false;
+  return !i.updatedAt || !i.createdAt || i.updatedAt === i.createdAt;
+}
+
+/**
+ * Drop the oldest engine-generated records once a cap is exceeded (SIM_CAPS). Only records
+ * tagged `simulated: true` are ever considered: seed and user-created records are never pruned.
+ * Permits: simulated closed permits beyond the cap (oldest expiry first).
+ * Incidents: simulated closed incidents first, then untouched open ones, oldest first.
+ * Returns { permits, incidents } removed counts.
+ */
+function pruneSimulated(which = 'all') {
+  const removed = { permits: 0, incidents: 0 };
+  if (!E.store || typeof E.store.update !== 'function') return removed;
+  const dropFrom = (collection, ids) => {
+    if (!ids.size) return;
+    E.store.update((s) => {
+      const list = Array.isArray(s[collection]) ? s[collection] : [];
+      for (let i = list.length - 1; i >= 0; i -= 1) if (list[i] && ids.has(list[i].id)) list.splice(i, 1);
+      return collection;
+    });
+  };
+  try {
+    if (which === 'all' || which === 'permits') {
+      const closed = arr(state().permits)
+        .filter((p) => isSimulated(p) && p.status === PERMIT_CLOSED)
+        .sort((a, b) => parseMs(a.closedAt || a.expiresAt) - parseMs(b.closedAt || b.expiresAt));
+      const excess = closed.length - SIM_CAPS.closedPermits;
+      if (excess > 0) {
+        const ids = new Set(closed.slice(0, excess).map((p) => p.id));
+        dropFrom('permits', ids);
+        removed.permits = ids.size;
+      }
+    }
+    if (which === 'all' || which === 'incidents') {
+      const sim = arr(state().incidents).filter(isSimulated).sort((a, b) => parseMs(a.createdAt || a.date) - parseMs(b.createdAt || b.date));
+      let excess = sim.length - SIM_CAPS.incidents;
+      if (excess > 0) {
+        const ids = new Set();
+        for (const i of sim) { if (excess <= 0) break; if (i.status === 'مغلق') { ids.add(i.id); excess -= 1; } }
+        for (const i of sim) { if (excess <= 0) break; if (!ids.has(i.id) && untouchedIncident(i)) { ids.add(i.id); excess -= 1; } }
+        dropFrom('incidents', ids);
+        removed.incidents = ids.size;
+      }
+    }
+  } catch (err) {
+    warn('pruneSimulated', err);
+  }
+  return removed;
+}
+
 /* ────────────────────────────── lifecycle ────────────────────────────── */
 
 function start({ store, bus } = {}) {
@@ -1496,6 +1746,7 @@ function start({ store, bus } = {}) {
   templateCache = { key: null, byType: null };
   syncSensorModels();
   for (const g of arr(state().integrations)) if (g && g.id) integrationModel(g, E.startedAt);
+  pruneSimulated('all'); // a long-lived saved state may carry more simulated records than the caps allow
   attachVisibility();
   armAll({ fresh: true });
   return true;
@@ -1559,20 +1810,22 @@ export const live = {
   getSensors: () => Array.from(E.sensors.values()).map(sensorSnapshot),
   /** Add one simulated near-miss right now (QA / demo button). Returns the incident or null. */
   triggerNearMiss: () => nearMissStep(Date.now()),
-  triggerExcursion: (sensorId) => {
+  /** Force an excursion now; `direction` 'low' picks a deficiency dip when the sensor has a lowThreshold. */
+  triggerExcursion: (sensorId, direction) => {
     syncSensorModels();
     const m = sensorId ? E.sensors.get(sensorId) : null;
     if (m) { m.excursion = null; }
     if (m) {
       const now = Date.now();
-      const peak = m.inverted
-        ? clamp(m.threshold - (m.threshold - m.min) * 0.5, m.min, m.max)
-        : clamp(m.threshold + (m.max - m.threshold) * 0.6, m.min, m.max);
-      m.excursion = { startedAt: now, endsAt: now + TIMING.excursionMin, peak, alerted: false };
+      const low = direction === 'low' ? hasLowRoom(m) : (direction === 'high' ? false : hasLowRoom(m) && !hasHighRoom(m));
+      m.excursion = { startedAt: now, endsAt: now + TIMING.excursionMin, peak: excursionPeak(m, low), alerted: false, low };
       return m.id;
     }
     return startExcursion(Date.now());
   },
+  /** Prune simulated records beyond SIM_CAPS ('permits' | 'incidents' | 'all'); returns removed counts. */
+  pruneSimulated,
+  SIM_CAPS,
   TIMING,
 };
 

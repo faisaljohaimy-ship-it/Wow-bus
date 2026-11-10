@@ -55,6 +55,7 @@
   display: flex;
   flex-direction: column;
   min-inline-size: 0;
+  container: card / inline-size;   /* @container card (…) rules below size by the card, not the viewport */
   background-color: var(--bg-1);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
@@ -77,6 +78,14 @@
 }
 .card:hover { border-color: var(--line-2); }
 .card.is-framed:hover { --bracket: color-mix(in srgb, var(--accent) 70%, transparent); }
+/* Nested cards (audits, catalog, weather days): hairline only — no brackets, no shadow */
+.card.is-plain, .card.is-plain.is-framed {
+  background-image: none;
+  background-color: color-mix(in srgb, var(--bg-2) 55%, transparent);
+  box-shadow: none;
+  border-color: var(--line);
+}
+.card.is-plain:hover { border-color: var(--line-2); --bracket: transparent; }
 
 /* Hero: gold ornament hairline + faint lattice wash */
 .card.is-hero::before {
@@ -134,6 +143,19 @@
   padding: 14px 18px 18px;
 }
 .card-head + .card-body { padding-block-start: 12px; }
+/* Narrow cards (4-col grid): actions wrap under the title instead of squeezing it */
+@container card (max-width: 380px) {
+  .card-head { flex-wrap: wrap; row-gap: 8px; }
+  .card-head .card-actions { flex: 1 1 100%; justify-content: flex-start; }
+}
+/* Column priority inside cards (dataTable sets data-priority on th/td): low-priority
+   columns hide below 720px of card width, medium ones below 520px. */
+@container card (max-width: 720px) {
+  .table [data-priority="low"] { display: none; }
+}
+@container card (max-width: 520px) {
+  .table [data-priority="medium"] { display: none; }
+}
 .card-view { min-inline-size: 0; }
 .card-view-table.table-wrap { max-block-size: 480px; }
 .card-foot {
@@ -234,7 +256,7 @@
 .tile-delta-arrow { inline-size: 12px; block-size: 12px; }
 .tile-spark { display: inline-flex; margin-inline-start: auto; color: var(--ink-3); }
 .tile-spark svg { overflow: visible; }
-.tile-hint { font-size: 11px; color: var(--ink-3); line-height: 1.4; }
+.tile-hint { font-size: 11px; color: var(--ink-2); line-height: 1.4; }
 
 /* --------------------------------------------------------------------------
    Badges
@@ -260,6 +282,10 @@
 .badge-text { overflow: hidden; text-overflow: ellipsis; }
 .badge.is-solid { color: var(--ink-on-dark); background: var(--tone); border-color: var(--tone); }
 .badge.is-solid.tone-warning, .badge.is-solid.tone-accent { color: var(--ink-on-light); }
+/* Light theme: amber text needs more ink (5.1:1 on the soft fill); the icon keeps the tone */
+:root[data-theme="light"] .badge.tone-warning:not(.is-solid) { color: color-mix(in srgb, var(--warning) 50%, var(--ink-1)); }
+:root[data-theme="light"] .badge.tone-warning:not(.is-solid) > svg,
+:root[data-theme="light"] .badge.tone-warning:not(.is-solid) .badge-icon { color: color-mix(in srgb, var(--warning) 66%, var(--ink-1)); }
 .badge.is-lg { font-size: var(--fs-sm); padding: 3px 10px; }
 .badge.is-lg .badge-icon { inline-size: 14px; block-size: 14px; }
 .badge.mono, .badge.is-code { font-family: var(--font-mono-mixed); letter-spacing: .02em; }
@@ -455,13 +481,49 @@
    -------------------------------------------------------------------------- */
 
 .table-wrap {
+  --scroll-edge: color-mix(in srgb, var(--ink-1) 16%, transparent);
   position: relative;
   min-inline-size: 0;
   max-block-size: min(72vh, 820px);
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 10px;
+  /* Scroll edges (pure CSS): the two cover gradients scroll with the content and hide the
+     fixed edge shadows while that edge is fully in view, so a soft ridge appears only on the
+     side that has more columns — direction-agnostic, no JS required. */
+  background-color: var(--bg-1);
+  background-image:
+    linear-gradient(to right, var(--bg-1) 35%, transparent),
+    linear-gradient(to left,  var(--bg-1) 35%, transparent),
+    radial-gradient(farthest-side at 0 50%,    var(--scroll-edge), transparent),
+    radial-gradient(farthest-side at 100% 50%, var(--scroll-edge), transparent);
+  background-repeat: no-repeat;
+  background-position: 0 0, 100% 0, 0 0, 100% 0;
+  background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
+/* dataTable adds .is-paged (pager present → no height cap, the pager is always reachable),
+   .is-scroll (long unpaged lists keep the cap) and .is-overflowing (columns hidden sideways). */
+.table-wrap.is-paged { max-block-size: none; }
+.table-wrap.is-scroll { max-block-size: min(72vh, 820px); }
+.table-wrap.is-overflowing { --scroll-edge: color-mix(in srgb, var(--ink-1) 24%, transparent); background-size: 48px 100%, 48px 100%, 20px 100%, 20px 100%; }
+/* Sticky first column (code / title) while the rest scrolls sideways */
+.table.has-sticky-first th:first-child,
+.table.has-sticky-first td:first-child {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
   background: var(--bg-1);
+}
+.table.has-sticky-first thead th:first-child { z-index: 2; }
+.table.has-sticky-first tbody tr:hover td:first-child { background: color-mix(in srgb, var(--bg-2) 75%, var(--bg-1)); }
+.table.has-sticky-first tbody tr.is-selected td:first-child { background: color-mix(in srgb, var(--brand) 10%, var(--bg-1)); }
+.table-wrap.is-overflowing .table.has-sticky-first th:first-child,
+.table-wrap.is-overflowing .table.has-sticky-first td:first-child {
+  box-shadow: calc(var(--dir, 1) * 8px) 0 12px -8px color-mix(in srgb, var(--ink-1) 35%, transparent);
+}
+.table-wrap.is-overflowing .table.has-sticky-first tr.is-critical td:first-child {
+  box-shadow: inset calc(var(--dir, 1) * 3px) 0 0 var(--critical), calc(var(--dir, 1) * 8px) 0 12px -8px color-mix(in srgb, var(--ink-1) 35%, transparent);
 }
 .table {
   inline-size: 100%;
@@ -487,7 +549,7 @@
   font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--ink-3);
-  letter-spacing: .02em;
+  letter-spacing: 0;
   white-space: nowrap;
 }
 .table tbody tr { transition: background var(--dur-1) var(--ease); }
@@ -505,18 +567,26 @@
 .table .is-overdue { color: var(--tone-ink, color-mix(in srgb, var(--critical) 80%, var(--ink-1))); font-weight: 500; }
 .table tr.is-critical td:first-child { box-shadow: inset calc(var(--dir) * 3px) 0 0 var(--critical); }
 
-/* Sortable headers */
+/* Sortable headers: the button covers the whole header cell (negative margins eat the
+   cell padding), so the hit area is the full th, not just the 19px text line. */
 .sort-btn {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 4px;
+  inline-size: calc(100% + 24px);
+  min-block-size: 100%;
+  margin: -10px -12px;
+  padding: 10px 12px;
   color: inherit;
   font: inherit;
   letter-spacing: inherit;
-  border-radius: 4px;
-  transition: color var(--dur-1) var(--ease);
+  white-space: nowrap;
+  border-radius: 0;
+  transition: color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
-.sort-btn:hover { color: var(--ink-1); }
+.table.is-dense .sort-btn { inline-size: calc(100% + 20px); margin: -6px -10px; padding: 6px 10px; }
+.sort-btn:hover { color: var(--ink-1); background: color-mix(in srgb, var(--bg-2) 70%, transparent); }
+.sort-btn:focus-visible { outline-offset: -2px; border-radius: 4px; }
 .sort-ic { inline-size: 14px; block-size: 14px; opacity: .45; transition: opacity var(--dur-1) var(--ease); }
 .sort-btn:hover .sort-ic { opacity: .8; }
 th.is-sorted .sort-btn { color: var(--ink-1); }
@@ -539,6 +609,17 @@ th.is-sorted { box-shadow: inset 0 -2px 0 var(--brand), inset 0 -1px 0 var(--lin
 }
 .pager-info { font-family: var(--font-mono-mixed); font-variant-numeric: tabular-nums; }
 .pager-page { margin-inline-start: auto; }
+/* Sticky pager: stays visible at the bottom of a capped .table-wrap, or as a sibling after it */
+.pager.is-sticky { inset-block-end: 0; z-index: 2; }
+.table-wrap + .pager.is-sticky {
+  position: sticky;
+  inset-block-end: 0;
+  z-index: 2;
+  border: 1px solid var(--line);
+  border-block-start: 0;
+  border-radius: 0 0 10px 10px;
+}
+.table-wrap:has(+ .pager) { border-end-start-radius: 0; border-end-end-radius: 0; }
 .table-wrap > .empty { padding-block: var(--space-5); }
 
 /* --------------------------------------------------------------------------
@@ -648,7 +729,7 @@ input[type="search"].field-control { padding-inline-start: 12px; }
 .form-section-title {
   font-size: var(--fs-xs);
   font-weight: 600;
-  letter-spacing: .06em;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: var(--ink-3);
   padding-block-end: 6px;
@@ -789,7 +870,7 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
   margin-block-end: 10px;
   font-size: var(--fs-xs);
   font-weight: 600;
-  letter-spacing: .06em;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: var(--ink-3);
 }
@@ -881,7 +962,7 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
 .toast-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); line-height: 1.45; }
 .toast-title { font-weight: 600; }
 .toast-msg { color: var(--ink-2); overflow-wrap: anywhere; }
-.toast-action { flex: none; color: var(--brand); }
+.toast-action { flex: none; color: var(--link); }
 .toast-close { flex: none; margin-inline-end: -6px; margin-block-start: -4px; }
 .toast.tone-critical { background: color-mix(in srgb, var(--critical) 12%, var(--bg-2)); }
 
@@ -899,6 +980,37 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
   padding-block-end: var(--space-2);
   scroll-snap-type: inline proximity;
 }
+@media (max-width: 1599.98px) { .kanban { grid-auto-columns: minmax(220px, 1fr); } }
+/* kanban() adds .is-overflowing when columns are cut off: the cut edge fades out.
+   Optional .is-scrolled fades both edges; .is-at-end removes the fade. */
+.kanban.is-overflowing {
+  -webkit-mask-image: linear-gradient(to left, transparent, black 36px);
+  mask-image: linear-gradient(to left, transparent, black 36px);
+}
+.kanban.is-overflowing.is-scrolled {
+  -webkit-mask-image: linear-gradient(to left, transparent, black 36px, black calc(100% - 36px), transparent);
+  mask-image: linear-gradient(to left, transparent, black 36px, black calc(100% - 36px), transparent);
+}
+:root[dir="ltr"] .kanban.is-overflowing {
+  -webkit-mask-image: linear-gradient(to right, transparent, black 36px);
+  mask-image: linear-gradient(to right, transparent, black 36px);
+}
+:root[dir="ltr"] .kanban.is-overflowing.is-scrolled {
+  -webkit-mask-image: linear-gradient(to right, transparent, black 36px, black calc(100% - 36px), transparent);
+  mask-image: linear-gradient(to right, transparent, black 36px, black calc(100% - 36px), transparent);
+}
+.kanban.is-overflowing.is-at-end { -webkit-mask-image: none; mask-image: none; }
+/* Column-count / scroll hint rendered after the board (e.g. "٥ مراحل — مرّر لعرض الباقي") */
+.kanban-hint {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  margin-block-start: 2px;
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+}
+.kanban-hint > svg { inline-size: 14px; block-size: 14px; }
+.kanban.is-overflowing + .kanban-hint, .kanban-wrap:has(.kanban.is-overflowing) .kanban-hint { display: inline-flex; }
 .kanban-col {
   display: flex;
   flex-direction: column;
@@ -927,7 +1039,8 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
   border-block-end: 1px solid var(--line);
 }
 .kanban-col-head > svg { inline-size: 16px; block-size: 16px; color: var(--tone-ink, var(--ink-3)); flex: none; }
-.kanban-col-title { flex: 1; font-size: var(--fs-sm); font-weight: 600; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Any heading level (h2/h3/h4) renders the same: the class owns size and weight */
+.kanban-col-title { flex: 1; margin: 0; font-size: var(--fs-sm); font-weight: 600; line-height: 1.3; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kanban-count {
   min-inline-size: 22px;
   padding: 0 7px;
@@ -974,6 +1087,12 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
   transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease), opacity var(--dur-1) var(--ease);
 }
 .kanban-card:hover { border-color: var(--line-2); }
+.kanban-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+  box-shadow: var(--glow-accent);
+}
 .kanban-card:active { cursor: grabbing; }
 .kanban-card.is-dragging { opacity: .45; transform: scale(.98) rotate(calc(var(--dir) * -1deg)); border-color: var(--accent); }
 .kanban.is-dragging .kanban-card:not(.is-dragging) { pointer-events: none; }
@@ -1046,7 +1165,8 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
 
 /* Residual vs. inherent pair (risk drawer) */
 .bar-pair { display: grid; gap: 6px; }
-.bar-pair-row { display: grid; grid-template-columns: 7em minmax(0, 1fr) 3em; align-items: center; gap: 8px; font-size: var(--fs-xs); color: var(--ink-2); }
+.bar-pair-row { display: grid; grid-template-columns: 4.5em minmax(48px, 1fr) 3em; align-items: center; gap: 8px; font-size: var(--fs-xs); color: var(--ink-2); }
+.bar-pair-row > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bar-pair-row .progress-value { text-align: end; }
 
 /* --------------------------------------------------------------------------
@@ -1190,7 +1310,7 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
 }
 .live-chip > svg, .live-chip-icon { inline-size: 18px; block-size: 18px; color: var(--accent); flex: none; }
 .live-chip-text { display: flex; flex-direction: column; min-inline-size: 0; line-height: 1.3; }
-.live-chip-label { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.live-chip-label { font-size: 11px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .live-chip-value { font-family: var(--font-mono-mixed); font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink-1); }
 .live-chip-unit { font-size: var(--fs-xs); color: var(--ink-3); margin-inline-start: 3px; font-weight: 400; }
 .live-chip .live-dot { margin-inline-start: auto; }
@@ -1258,7 +1378,7 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
   border-radius: 10px;
 }
 .int-stat { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; }
-.int-stat-label { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.int-stat-label { font-size: 11px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .int-stat-value { font-family: var(--font-mono-mixed); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; color: var(--ink-1); white-space: nowrap; }
 .int-spark { color: var(--ink-3); }
 .int-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-block-start: auto; }
@@ -1313,11 +1433,12 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
   100% { box-shadow: 0 0 0 0 transparent; }
 }
 .feed-title-row { display: flex; align-items: baseline; gap: 8px; min-inline-size: 0; }
-.feed-item .feed-title { flex: 1; min-inline-size: 0; font-size: var(--fs-sm); font-weight: 500; color: var(--ink-1); line-height: 1.4; overflow-wrap: anywhere; }
+/* break-word (not anywhere): codes such as CT-2026-014 are not split mid-token unless nothing else fits */
+.feed-item .feed-title { flex: 1; min-inline-size: 0; font-size: var(--fs-sm); font-weight: 500; color: var(--ink-1); line-height: 1.4; overflow-wrap: break-word; }
 .feed-item.tone-critical .feed-title, .feed-item.tone-serious .feed-title { font-weight: 600; }
-.feed-item .feed-detail { margin-block-start: 2px; font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.45; overflow-wrap: anywhere; }
-.feed-type { color: var(--tone-ink, var(--ink-3)); font-weight: 500; }
-.feed-item.tone-neutral .feed-type { color: var(--ink-3); }
+.feed-item .feed-detail { margin-block-start: 2px; font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.45; overflow-wrap: break-word; }
+/* The type label stays in neutral ink; the tone lives on the bar and icon */
+.feed-type { color: var(--ink-2); font-weight: 500; }
 .feed-type::after { content: ""; display: inline-block; inline-size: 3px; block-size: 3px; border-radius: 50%; background: var(--ink-3); margin-inline-start: 6px; opacity: .7; }
 .feed-list.is-archive { flex: none; padding: 0; }
 .feed-tone { inline-size: 3px; align-self: stretch; border-radius: 2px; background: var(--tone, var(--line-2)); }
@@ -1334,8 +1455,8 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
 .feed-item.tone-neutral .feed-icon, .feed-item:not([class*="tone-"]) .feed-icon { color: var(--ink-2); background: var(--bg-2); border-color: var(--line); }
 .feed-icon svg { inline-size: 15px; block-size: 15px; }
 .feed-body { min-inline-size: 0; display: flex; flex-direction: column; }
-.feed-item-title { font-size: var(--fs-sm); font-weight: 500; color: var(--ink-1); line-height: 1.4; overflow-wrap: anywhere; }
-.feed-item-detail { margin-block-start: 2px; font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.45; overflow-wrap: anywhere; }
+.feed-item-title { font-size: var(--fs-sm); font-weight: 500; color: var(--ink-1); line-height: 1.4; overflow-wrap: break-word; }
+.feed-item-detail { margin-block-start: 2px; font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.45; overflow-wrap: break-word; }
 .feed-meta {
   display: flex;
   flex-wrap: wrap;
@@ -1343,7 +1464,7 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
   gap: 4px 8px;
   margin-block-start: 6px;
   font-size: 11px;
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 .feed-meta > span { display: inline-flex; align-items: center; gap: 4px; min-inline-size: 0; }
 .feed-site { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-inline-size: 180px; }
@@ -1383,9 +1504,9 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
 .alert-item.tone-critical { background: color-mix(in srgb, var(--critical) 9%, var(--bg-1)); border-color: color-mix(in srgb, var(--critical) 30%, var(--line)); }
 .alert-item > .badge { margin-block-start: 2px; }
 .alert-item-body { min-inline-size: 0; display: flex; flex-direction: column; gap: 2px; }
-.alert-item-title { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-1); line-height: 1.4; overflow-wrap: anywhere; }
-.alert-item-detail { font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.45; overflow-wrap: anywhere; }
-.alert-item-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-block-start: 4px; font-size: 11px; color: var(--ink-3); }
+.alert-item-title { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-1); line-height: 1.4; overflow-wrap: break-word; }
+.alert-item-detail { font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.45; overflow-wrap: break-word; }
+.alert-item-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-block-start: 4px; font-size: 11px; color: var(--ink-2); }
 .alert-item-meta time { font-variant-numeric: tabular-nums; margin-inline-start: auto; font-family: var(--font-mono-mixed, var(--font-mono)); }
 
 /* --------------------------------------------------------------------------
@@ -1398,8 +1519,8 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
   padding: 12px 14px 4px;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: .06em;
-  color: var(--ink-3);
+  letter-spacing: 0;
+  color: var(--ink-2);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1665,7 +1786,7 @@ a.urgent-item:hover, button.urgent-item:hover, .urgent-item.is-clickable:hover {
 .fact { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: color-mix(in srgb, var(--bg-2) 70%, transparent); border: 1px solid var(--line); border-radius: 10px; min-inline-size: 0; }
 .fact-label {
   font-size: 11px;
-  color: var(--ink-3);
+  color: var(--ink-2);
   line-height: 1.3;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -1724,6 +1845,27 @@ a.urgent-item:hover, button.urgent-item:hover, .urgent-item.is-clickable:hover {
 .tabpanels { min-inline-size: 0; }
 .rail-li { display: block; min-inline-size: 0; }
 .card.is-table-view .card-body { padding-block-start: 10px; }
+
+/* --------------------------------------------------------------------------
+   Touch targets (RTL-14): on coarse pointers every control reaches 40px.
+   Small chips and switches keep their visual size and grow a transparent hit area.
+   -------------------------------------------------------------------------- */
+
+.chip { position: relative; }
+@media (pointer: coarse) {
+  .btn-sm { block-size: 40px; padding-inline: 12px; }
+  .btn-icon.btn-sm { inline-size: 40px; }
+  .seg-btn, .seg-sm .seg-btn { min-block-size: 40px; }
+  .chip { block-size: 40px; }
+  .chip.is-sm { block-size: 32px; }
+  .chip.is-sm::before { content: ""; position: absolute; inset-block: -4px; inset-inline: 0; }
+  .field-control { block-size: 40px; }
+  .sort-btn { min-block-size: 40px; }
+  .menu-item { min-block-size: 40px; padding-block: 10px; }
+  .tab { padding-block: 11px; }
+  .switch::before { content: ""; position: absolute; inset: -9px; }
+  .legend-item { padding: 6px 4px; margin: -6px -4px; }
+}
 
 /* --------------------------------------------------------------------------
    Responsive tweaks

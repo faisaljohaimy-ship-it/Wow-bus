@@ -54,7 +54,7 @@
 .chart .value-label { font-family: var(--font-mono-mixed); font-weight: 500; }
 .chart .label.is-strong, .chart .value-label.is-strong, .chart text.is-strong { fill: var(--ink-1); font-weight: 600; }
 .chart .label.is-muted, .chart text.is-muted { fill: var(--ink-3); }
-.chart .axis-title { fill: var(--ink-3); font-size: 11px; letter-spacing: .02em; }
+.chart .axis-title { fill: var(--ink-2); font-size: 11px; letter-spacing: 0; }
 .chart .label.is-inside, .chart text.is-inside { fill: var(--ink-on-dark); font-weight: 600; }
 .chart .label.is-inside-light, .chart text.is-inside-light { fill: var(--ink-on-light); font-weight: 600; }
 
@@ -335,7 +335,7 @@ button.legend-item:hover { color: var(--ink-1); }
   border: 1px solid var(--line);
   font-family: var(--font-mono-mixed);
   font-size: 10px;
-  letter-spacing: .08em;
+  letter-spacing: 0;          /* Arabic status text ("مباشر") must not be tracked */
   text-transform: uppercase;
   color: var(--ink-2);
   pointer-events: none;
@@ -372,9 +372,9 @@ button.legend-item:hover { color: var(--ink-1); }
 .radar-side-title {
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: .06em;
+  letter-spacing: 0;
   text-transform: uppercase;
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 .radar-legend {
   display: flex;
@@ -407,12 +407,12 @@ button.legend-item:hover { color: var(--ink-1); }
 }
 .tele-label { font-family: var(--font-sans); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 0; }
 .tele-value { color: var(--ink-1); font-weight: 500; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
-.tele-unit { color: var(--ink-3); font-weight: 400; font-size: 10px; }
+.tele-unit { color: var(--ink-2); font-weight: 400; font-size: 10px; }
 .tele-row.is-alert .tele-value, .radar-telemetry li.is-alert .tele-value { color: color-mix(in srgb, var(--critical) 80%, var(--ink-1)); }
 .tele-row.is-warn .tele-value,  .radar-telemetry li.is-warn  .tele-value { color: color-mix(in srgb, var(--warning) 80%, var(--ink-1)); }
 :root[data-theme="light"] .tele-row.is-warn .tele-value, :root[data-theme="light"] .radar-telemetry li.is-warn .tele-value { color: color-mix(in srgb, var(--warning) 55%, var(--ink-1)); }
 .tele-row.is-alert, .radar-telemetry li.is-alert { border-color: color-mix(in srgb, var(--critical) 40%, transparent); background: color-mix(in srgb, var(--critical) 10%, transparent); }
-.tele-updated { font-size: 11px; color: var(--ink-3); display: inline-flex; align-items: center; gap: 6px; }
+.tele-updated { font-size: 11px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
 
 /* Radar page grid (2×2) */
 .radar-grid {
@@ -537,7 +537,7 @@ button.legend-item:hover { color: var(--ink-1); }
   font-weight: 500;
   color: var(--ink-2);
   text-align: center;
-  letter-spacing: .02em;
+  letter-spacing: 0;
 }
 .matrix-axis-title.is-y { writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; }
 .matrix-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--fs-xs); color: var(--ink-2); margin-block-start: var(--space-2); }
@@ -577,12 +577,24 @@ button.legend-item:hover { color: var(--ink-1); }
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  transition: flex-basis var(--dur-2) var(--ease), filter var(--dur-1) var(--ease);
+  transition: filter var(--dur-1) var(--ease);
 }
 .segbar-part + .segbar-part { box-shadow: inset calc(var(--dir) * 1px) 0 0 var(--bg-1); }
 .segbar-part.is-light { color: var(--ink-on-light); }
 .segbar-part:hover, .segbar-part:focus-visible { filter: brightness(1.15); }
-.segbar-part .segbar-label { padding-inline: 6px; overflow: hidden; text-overflow: ellipsis; }
+/* Inside labels sit on a fixed dark plate so they stay ≥7:1 on any series colour
+   (white on raw --s1 is only 3.4:1); the plate is theme-independent by design. */
+.segbar-part .segbar-label {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(7, 13, 24, .5);
+  color: var(--ink-on-dark);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.segbar-part.is-light .segbar-label { color: var(--ink-on-dark); }
 
 /* --------------------------------------------------------------------------
    Pareto, ranked bars and small type helpers used by charts.js

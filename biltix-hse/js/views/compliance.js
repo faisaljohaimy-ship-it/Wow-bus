@@ -74,6 +74,8 @@ export default {
     /* ───────────────────────── helpers ───────────────────────── */
 
     const mono = (text, extra = '') => h('span', { class: ['num', ...String(extra).split(/\s+/).filter(Boolean)], style: { fontFamily: 'var(--font-mono)' } }, String(text ?? ''));
+    /** Clause ids ("7", "7.5") follow the numerals setting wherever they appear in copy. */
+    const digits = (s) => String(s ?? '').replace(/\d+(?:\.\d+)?/g, (m) => fmt.num(Number(m), { maximumFractionDigits: 2 }));
 
     function makeChart(name, opts) {
       if (!charts || typeof charts[name] !== 'function') return null;
@@ -167,7 +169,7 @@ export default {
         h('div', { class: 'view-head-text' },
           h('span', { class: 'code-tag' }, 'SEC-08'),
           h('h1', { tabindex: '-1' }, 'الامتثال ISO 45001'),
-          h('p', { class: 'view-lead' }, `تقييم نضج نظام إدارة السلامة والصحة المهنية وفق بنود المواصفة ISO 45001:2018 (البنود 4 إلى 10) مقابل مستهدف ${fmt.pct(TARGET)}، إلى جانب سجل المتطلبات القانونية وضبط الوثائق.`),
+          h('p', { class: 'view-lead' }, `تقييم نضج نظام إدارة السلامة والصحة المهنية وفق بنود المواصفة ISO 45001:2018 (البنود ${fmt.num(4)} إلى ${fmt.num(10)}) مقابل مستهدف ${fmt.pct(TARGET)}، إلى جانب سجل المتطلبات القانونية وضبط الوثائق.`),
         ),
         h('div', { class: 'view-actions' }, badge(scoreLabel(data.overall), scoreTone(data.overall)), exportBtn),
       );
@@ -177,7 +179,7 @@ export default {
       const t = h('table', { class: 'table is-dense' }, h('caption', { class: 'sr-only' }, 'درجات بنود ISO 45001 مقابل المستهدف'),
         h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'البند'), h('th', { scope: 'col' }, 'العنوان'), h('th', { scope: 'col' }, 'الدرجة'), h('th', { scope: 'col' }, 'المستهدف'), h('th', { scope: 'col' }, 'الفجوات'), h('th', { scope: 'col' }, 'الحالة'))));
       const tb = h('tbody');
-      data.clauses.forEach((c) => tb.appendChild(h('tr', {}, h('td', { class: 'mono' }, String(c.id)), h('td', {}, c.title), h('td', { class: 'num' }, fmt.pct(c.score)), h('td', { class: 'num' }, fmt.pct(TARGET)), h('td', { class: 'num' }, fmt.num(c.gaps)), h('td', {}, scoreLabel(c.score)))));
+      data.clauses.forEach((c) => tb.appendChild(h('tr', {}, h('td', { class: 'mono' }, digits(c.id)), h('td', {}, c.title), h('td', { class: 'num' }, fmt.pct(c.score)), h('td', { class: 'num' }, fmt.pct(TARGET)), h('td', { class: 'num' }, fmt.num(c.gaps)), h('td', {}, scoreLabel(c.score)))));
       t.appendChild(tb);
       return t;
     }
@@ -203,7 +205,7 @@ export default {
     }
 
     function buildSpider(data) {
-      const axes = data.clauses.map((c) => ({ id: String(c.id), label: `${c.id} — ${c.title}` }));
+      const axes = data.clauses.map((c) => ({ id: String(c.id), label: `${digits(c.id)} — ${c.title}` }));
       const spider = axes.length ? makeChart('spider', {
         axes,
         series: [
@@ -211,7 +213,7 @@ export default {
           { id: 'target', label: `المستهدف ${fmt.pct(TARGET)}`, color: 'var(--ink-3)', values: data.clauses.map(() => TARGET) },
         ],
         max: 100,
-        size: 320,
+        size: 400, // ≥ 360: seven axes with two-word labels need the room to stay legible
         ariaLabel: 'رسم عنكبوتي لدرجات بنود ISO 45001 السبعة مقارنة بالمستهدف',
       }) : null;
       const legend = h('ul', { class: 'legend is-center', 'aria-label': 'المفتاح' },
@@ -220,24 +222,24 @@ export default {
       );
       const chips = h('div', { class: 'matrix-legend', role: 'list', 'aria-label': 'درجات البنود' },
         ...data.clauses.map((c) => h('span', { class: ['matrix-legend-item', `tone-${scoreTone(c.score)}`], role: 'listitem' },
-          glyph(scoreTone(c.score), 12), mono(c.id, 'text-xs'), h('span', { class: 'legend-label' }, c.title), h('span', { class: 'legend-value' }, fmt.pct(c.score)))));
+          glyph(scoreTone(c.score), 12), mono(digits(c.id), 'text-xs'), h('span', { class: 'legend-label' }, c.title), h('span', { class: 'legend-value' }, fmt.pct(c.score)))));
       const body = axes.length
         ? h('div', { class: 'stack gap-3' }, chartOr(spider, clausesTable(data)), spider ? null : legend, chips)
         : emptyState({ title: 'لا توجد بنود تقييم', text: 'تحقق من بيانات ISO 45001 في المصدر.' });
-      return card({ code: 'ISO-02', title: 'خريطة البنود مقابل المستهدف', subtitle: 'البنود 4–10 من ISO 45001:2018', className: 'col-span-8', body, tableView: tableOf(spider, () => clausesTable(data)) });
+      return card({ code: 'ISO-02', title: 'خريطة البنود مقابل المستهدف', subtitle: `البنود ${fmt.num(4)}–${fmt.num(10)} من ISO 45001:2018`, className: 'col-span-8', body, tableView: tableOf(spider, () => clausesTable(data)) });
     }
 
     function subclauseList(clause) {
-      const list = h('ul', { class: 'controls-list', 'aria-label': `البنود الفرعية للبند ${clause.id}` });
+      const list = h('ul', { class: 'controls-list', 'aria-label': `البنود الفرعية للبند ${digits(clause.id)}` });
       clause.subclauses.forEach((s) => {
         const score = Math.round(Number(s.score) || 0);
         const tone = scoreTone(score);
         const gaps = Array.isArray(s.gaps) ? s.gaps : [];
         list.appendChild(h('li', { class: ['controls-item', `tone-${tone}`] },
-          h('span', { class: 'controls-type', style: { fontFamily: 'var(--font-mono)' } }, String(s.id)),
+          h('span', { class: 'controls-type', style: { fontFamily: 'var(--font-mono)' } }, digits(s.id)),
           h('div', { class: 'stack gap-2 grow' },
             h('div', { class: 'row between gap-2 wrap' }, h('span', { class: 'semibold' }, s.title || '—'), badge(fmt.pct(score), tone)),
-            h('div', { class: 'progress-row' }, progress({ value: score, max: 100, tone, label: `درجة ${s.id}` }), h('span', { class: 'progress-value' }, fmt.pct(score))),
+            h('div', { class: 'progress-row' }, progress({ value: score, max: 100, tone, label: `درجة ${digits(s.id)}` }), h('span', { class: 'progress-value' }, fmt.pct(score))),
             gaps.length
               ? h('div', { class: 'stack gap-1' },
                 h('span', { class: 'text-xs muted' }, `${fmt.num(gaps.length)} ${gaps.length === 1 ? 'فجوة' : gaps.length === 2 ? 'فجوتان' : 'فجوات'}:`),
@@ -269,19 +271,21 @@ export default {
         });
         const body = h('div', { class: 'stack gap-3' },
           h('div', { class: 'ring-row' },
-            ringOr(c.score, 64, `البند ${c.id}`),
+            ringOr(c.score, 64, `البند ${digits(c.id)}`),
             h('div', { class: 'ring-text grow' },
-              h('span', { class: 'row gap-2 wrap' }, mono(`البند ${c.id}`, 'text-xs muted'), badge(scoreLabel(c.score), tone)),
+              h('span', { class: 'row gap-2 wrap' }, mono(`البند ${digits(c.id)}`, 'text-xs muted'), badge(scoreLabel(c.score), tone)),
               h('span', { class: 'semibold' }, c.title),
               h('span', { class: 'text-xs muted' }, `${fmt.num(c.subclauses.length)} بنود فرعية · ${fmt.num(c.gaps)} ${c.gaps === 1 ? 'فجوة' : c.gaps === 2 ? 'فجوتان' : 'فجوات'} · المستهدف ${fmt.pct(TARGET)}`),
             ),
           ),
-          h('div', { class: 'progress-row' }, progress({ value: c.score, max: 100, tone, label: `درجة البند ${c.id}` }), h('span', { class: 'progress-value' }, fmt.signed(c.score - TARGET))),
+          h('div', { class: 'progress-row' }, progress({ value: c.score, max: 100, tone, label: `درجة البند ${digits(c.id)}` }), h('span', { class: 'progress-value' }, fmt.signed(c.score - TARGET))),
           h('div', { class: 'row' }, toggle),
           panel,
         );
-        return card({ code: `ISO-${String(c.id).padStart(2, '0')}`, title: c.title, subtitle: `البند ${c.id}`, className: 'is-compact', body });
+        return card({ code: `ISO-${String(c.id).padStart(2, '0')}`, title: c.title, subtitle: `البند ${digits(c.id)}`, className: 'is-compact', body });
       });
+      // Seven clause cards: four columns on wide mains (4 + 3) instead of a two-column grid with an orphan.
+      const clauseGrid = h('div', { class: 'cards-grid', style: { gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 230px), 1fr))', alignItems: 'start' } }, ...cards);
       return h('section', { class: 'stack gap-3', 'aria-labelledby': 'iso-clauses-title' },
         h('div', { class: 'row between wrap' },
           h('div', { class: 'card-titles' }, h('span', { class: 'card-code', 'aria-hidden': 'true' }, 'ISO-03'), h('h2', { class: 'card-title', id: 'iso-clauses-title' }, 'بطاقات البنود والفجوات')),
@@ -291,7 +295,7 @@ export default {
             h('span', { class: 'matrix-legend-item tone-critical' }, glyph('critical', 12), h('span', {}, `فجوة حرجة (< ${fmt.pct(70)})`)),
           ),
         ),
-        cards.length ? h('div', { class: 'cards-grid' }, ...cards) : emptyState({ title: 'لا توجد بنود' }),
+        cards.length ? clauseGrid : emptyState({ title: 'لا توجد بنود' }),
       );
     }
 
@@ -326,12 +330,12 @@ export default {
         initialSort: { key: 'status', dir: 'asc' },
         onRowClick: (r) => openLegal(r),
         columns: [
-          { key: 'title', label: 'المتطلب والجهة التنظيمية', width: '56%', render: (r) => h('div', { class: 'stack gap-1' },
+          { key: 'title', label: 'المتطلب والجهة التنظيمية', priority: 'high', width: '56%', render: (r) => h('div', { class: 'stack gap-1' },
             h('span', { class: 'semibold' }, r.title || '—'),
             h('span', { class: 'text-xs muted' }, [r.authority, r.owner ? `المسؤول: ${r.owner}` : null].filter(Boolean).join(' · '))) },
-          { key: 'status', label: 'الحالة', render: (r) => badge(r.status || '—', r.tone), sortValue: (r) => ({ 'فجوة': 0, 'جزئي': 1, 'ممتثل': 2 })[r.status] ?? 3 },
-          { key: 'lastReview', label: 'آخر مراجعة', render: (r) => h('span', { class: 'nowrap' }, r.lastReview ? fmt.date(r.lastReview) : '—'), sortValue: (r) => (r.lastReview ? new Date(r.lastReview).getTime() : 0) },
-          { key: 'nextReview', label: 'المراجعة القادمة', sortValue: (r) => (r.nextReview ? new Date(r.nextReview).getTime() : 0), render: (r) => {
+          { key: 'status', label: 'الحالة', priority: 'high', render: (r) => badge(r.status || '—', r.tone), sortValue: (r) => ({ 'فجوة': 0, 'جزئي': 1, 'ممتثل': 2 })[r.status] ?? 3 },
+          { key: 'lastReview', label: 'آخر مراجعة', priority: 'low', render: (r) => h('span', { class: 'nowrap' }, r.lastReview ? fmt.date(r.lastReview) : '—'), sortValue: (r) => (r.lastReview ? new Date(r.lastReview).getTime() : 0) },
+          { key: 'nextReview', label: 'المراجعة القادمة', priority: 'medium', sortValue: (r) => (r.nextReview ? new Date(r.nextReview).getTime() : 0), render: (r) => {
             if (!r.nextReview) return '—';
             const d = r.daysToReview;
             const overdue = Number.isFinite(d) && d < 0;
@@ -343,6 +347,7 @@ export default {
           } },
         ],
         rows: data.legal,
+        stickyFirst: true,
       });
       const counts = ['ممتثل', 'جزئي', 'فجوة'].map((s) => ({ s, n: data.legal.filter((l) => l.status === s).length }));
       return card({
@@ -365,7 +370,7 @@ export default {
           const meta = DOC_STATUS[d.status];
           return h('li', { class: ['urgent-item', `tone-${meta.tone}`] },
             h('span', { class: 'urgent-icon' }, glyph(meta.tone, 14)),
-            h('span', { class: 'urgent-text' }, h('span', {}, d.title), h('span', { class: 'urgent-sub' }, d.clause ? `البند ${d.clause}${d.subTitle ? ` — ${d.subTitle}` : ''}` : '—')),
+            h('span', { class: 'urgent-text' }, h('span', {}, d.title), h('span', { class: 'urgent-sub' }, d.clause ? `البند ${digits(d.clause)}${d.subTitle ? ` — ${d.subTitle}` : ''}` : '—')),
             h('span', { class: 'urgent-due' }, mono(d.code), h('span', {}, d.status === 'expired' ? 'إعادة إصدار' : 'مراجعة')));
         }));
       const total = data.docs.length;
@@ -381,11 +386,11 @@ export default {
       const tableFn = () => {
         const t = h('table', { class: 'table is-dense' }, h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'الرمز'), h('th', { scope: 'col' }, 'الوثيقة'), h('th', { scope: 'col' }, 'البند الحاكم'), h('th', { scope: 'col' }, 'الحالة'))));
         const tb = h('tbody');
-        data.docs.forEach((d) => tb.appendChild(h('tr', {}, h('td', { class: 'mono' }, d.code), h('td', {}, d.title), h('td', { class: 'mono' }, d.clause || '—'), h('td', {}, DOC_STATUS[d.status].short))));
+        data.docs.forEach((d) => tb.appendChild(h('tr', {}, h('td', { class: 'mono' }, d.code), h('td', {}, d.title), h('td', { class: 'mono' }, d.clause ? digits(d.clause) : '—'), h('td', {}, DOC_STATUS[d.status].short))));
         t.appendChild(tb);
         return t;
       };
-      return card({ code: 'ISO-05', title: 'ضبط الوثائق', subtitle: 'المعلومات الموثقة — البند 7.5', className: 'col-span-4', body, tableView: tableFn });
+      return card({ code: 'ISO-05', title: 'ضبط الوثائق', subtitle: `المعلومات الموثقة — البند ${digits('7.5')}`, className: 'col-span-4', body, tableView: tableFn });
     }
 
     /* ───────────────────────── build ───────────────────────── */

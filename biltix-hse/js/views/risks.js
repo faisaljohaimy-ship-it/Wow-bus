@@ -49,7 +49,7 @@ const STATUS_TONE = { 'مفتوح': 'serious', 'قيد المعالجة': 'warni
 const LIKELIHOOD_LABELS = ['نادر', 'غير محتمل', 'محتمل', 'مرجّح', 'شبه مؤكد'];
 const SEVERITY_LABELS = ['طفيف', 'بسيط', 'متوسط', 'جسيم', 'كارثي'];
 const HIERARCHY_HINT = {
-  'إلغاء': 'إزالة الخطر من المصدر نهائيًا',
+  'إلغاء': 'إزالة الخطر من المصدر نهائياً',
   'استبدال': 'استبدال الخطر بعملية أو مادة أقل خطورة',
   'ضوابط هندسية': 'عزل الأشخاص عن الخطر بوسائل مادية',
   'ضوابط إدارية': 'تغيير طريقة العمل: إجراءات، تدريب، إشراف، تصاريح',
@@ -135,7 +135,7 @@ function dayWord(n) {
   if (n === 1) return 'يوم';
   if (n === 2) return 'يومين';
   if (n <= 10) return 'أيام';
-  return 'يومًا';
+  return 'يوماً';
 }
 
 export default {
@@ -236,13 +236,14 @@ export default {
       h('div', { class: 'view-head-text' },
         h('span', { class: 'code-tag' }, 'SEC-03'),
         h('h1', { tabindex: '-1' }, 'سجل المخاطر'),
-        h('p', { class: 'view-lead' }, 'تقييم المخاطر المهنية لكل موقع: الاحتمالية × الشدة، هرمية الضوابط، الدرجة المتبقية بعد المعالجة، والمالك المسؤول وموعد الاستحقاق. يُحفظ كل تعديل محليًا فورًا.')),
+        h('p', { class: 'view-lead' }, 'تقييم المخاطر المهنية لكل موقع: الاحتمالية × الشدة، هرمية الضوابط، الدرجة المتبقية بعد المعالجة، والمالك المسؤول وموعد الاستحقاق. يُحفظ كل تعديل محلياً فوراً.')),
       h('div', { class: 'view-actions' },
         headCount,
         C.button('إضافة مخاطرة', { variant: 'primary', size: 'sm', icon: ico('plus', 14), onClick: () => openRiskModal(null) }))));
 
     /* ───────────── toolbar ───────────── */
-    const chipGroup = h('div', { class: 'chip-group', role: 'group', 'aria-label': 'تصفية حسب فئة الخطر' });
+    // `chips is-scroll`: horizontal snap scroller on phones instead of a tall wrapped block.
+    const chipGroup = h('div', { class: 'chip-group chips is-scroll', role: 'group', 'aria-label': 'تصفية حسب فئة الخطر' });
     const statusSelect = h('select', { class: 'field-control', 'aria-label': 'تصفية حسب الحالة', onChange: (e) => { local.status = e.target.value; schedule(); } },
       h('option', { value: 'all' }, 'كل الحالات'), ...riskStatuses().map((s) => h('option', { value: s }, s)));
     const tierSelect = h('select', { class: 'field-control', 'aria-label': 'تصفية حسب الدرجة', onChange: (e) => { local.tier = e.target.value; schedule(); } },
@@ -261,12 +262,14 @@ export default {
 
     /* ───────────── table ───────────── */
     const tableHost = h('div');
+    // The eleven-column register always takes the full row (no horizontal overflow inside an
+    // eight-column card); the matrix and category cards sit beneath it, two-up on wide screens.
     const registerCard = C.card({
-      code: 'REG-01', title: 'السجل', subtitle: 'انقر صفًا لعرض التفاصيل وهرمية الضوابط والسجل الزمني',
-      body: h('div', { class: 'stack gap-3' }, toolbar, tableHost), className: 'col-span-8',
+      code: 'REG-01', title: 'السجل', subtitle: 'انقر صفاً لعرض التفاصيل وهرمية الضوابط والسجل الزمني',
+      body: h('div', { class: 'stack gap-3' }, toolbar, tableHost), className: 'col-span-12',
     });
 
-    /* ───────────── side column ───────────── */
+    /* ───────────── side cards (beneath the register) ───────────── */
     const matrixHost = h('div');
     const matrixLegendHost = h('div');
     const matrixCard = C.card({
@@ -278,50 +281,9 @@ export default {
       code: 'RSK-CAT', title: 'أعلى الفئات', subtitle: 'عدد المخاطر المفتوحة لكل فئة خطر',
       body: catHost, tableView: categoriesTable, className: 'is-compact',
     });
-    const sideCol = h('div', { class: 'col-span-4 stack gap-4' }, matrixCard, catCard);
+    const sideCol = h('div', { class: 'col-span-12', style: { display: 'grid', gap: 'var(--space-4)', alignItems: 'start', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))' } }, matrixCard, catCard);
     root.appendChild(h('div', { class: 'grid-12' }, registerCard, sideCol));
     container.appendChild(root);
-
-    // Register table has eleven columns: under ~1100px of view width it takes the full row and the
-    // side cards move beneath it (two-up), instead of squeezing the table into eight columns.
-    const applyLayout = (w) => {
-      const narrow = w < 1100;
-      registerCard.classList.toggle('col-span-8', !narrow);
-      registerCard.classList.toggle('col-span-12', narrow);
-      sideCol.classList.toggle('col-span-4', !narrow);
-      sideCol.classList.toggle('col-span-12', narrow);
-      sideCol.classList.toggle('stack', !narrow);
-      sideCol.classList.toggle('gap-4', !narrow);
-      if (narrow) {
-        sideCol.style.display = 'grid';
-        sideCol.style.gridTemplateColumns = w < 640 ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))';
-        sideCol.style.gap = 'var(--space-4)';
-        sideCol.style.alignItems = 'start';
-      } else {
-        sideCol.style.display = '';
-        sideCol.style.gridTemplateColumns = '';
-        sideCol.style.gap = '';
-        sideCol.style.alignItems = '';
-      }
-    };
-    // Width-only and deferred a frame so the re-span never re-enters the observer loop.
-    let layoutObserver = null;
-    let lastLayoutWidth = -1;
-    let layoutRaf = 0;
-    if (typeof ResizeObserver === 'function') {
-      layoutObserver = new ResizeObserver((entries) => {
-        for (const e of entries) {
-          const w = Math.round(e.contentRect.width);
-          if (w === lastLayoutWidth || w === 0) continue;
-          lastLayoutWidth = w;
-          if (layoutRaf) cancelAnimationFrame(layoutRaf);
-          layoutRaf = requestAnimationFrame(() => { layoutRaf = 0; if (!destroyed) applyLayout(w); });
-        }
-      });
-      layoutObserver.observe(root);
-    } else {
-      applyLayout(root.getBoundingClientRect().width || 1200);
-    }
 
     /* ───────────── table columns ───────────── */
     const scoreCell = (s) => h('span', { class: 'row gap-2 nowrap' }, h('strong', { class: 'mono' }, fmt.num(s)), C.tierBadge(tierOf(s)));
@@ -335,18 +297,20 @@ export default {
       if (days >= -7) return h('span', { class: 'stack gap-1' }, C.badge(days === 0 ? 'يستحق اليوم' : `خلال ${fmt.num(-days)} ${dayWord(-days)}`, 'warning'), h('span', { class: 'mono text-xs muted' }, dateText));
       return h('span', { class: 'mono text-xs' }, dateText);
     }
+    /* `priority` drives the table's container-width column hiding (low → medium → never high);
+       the code column stays sticky. Site names wrap on two lines instead of truncating. */
     const columns = [
-      { key: 'code', label: 'الكود', mono: true, width: 88, sortValue: (r) => r.code, render: (r) => h('span', { class: 'nowrap' }, String(r.code || '')) },
-      { key: 'hazard', label: 'الخطر', sortValue: (r) => r.hazard, render: (r) => h('div', { class: 'stack gap-1', style: { minInlineSize: '200px', maxInlineSize: '300px' } }, h('strong', { class: 'truncate', title: String(r.hazard || '') }, String(r.hazard || '')), r.activity ? h('span', { class: 'muted text-xs truncate', title: String(r.activity) }, String(r.activity)) : null) },
-      { key: 'siteId', label: 'الموقع', sortValue: (r) => siteName(r.siteId), render: (r) => { const s = siteById(r.siteId); return h('div', { class: 'stack gap-1', style: { maxInlineSize: '160px' } }, h('span', { class: 'truncate', title: s ? s.name : '' }, s ? s.name : '—'), s ? h('span', { class: 'muted text-xs mono' }, String(s.code || '')) : null); } },
-      { key: 'categoryId', label: 'الفئة', sortValue: (r) => categoryById(r.categoryId).name, render: (r) => { const c = categoryById(r.categoryId); return h('span', { class: 'row gap-2 nowrap', title: c.name }, ico(c.icon, 14), h('span', { class: 'truncate', style: { maxInlineSize: '140px' } }, c.name)); } },
-      { key: 'likelihood', label: 'الاحتمالية', align: 'center', sortValue: (r) => Number(r.likelihood) || 0, render: (r) => h('span', { class: 'mono', title: LIKELIHOOD_LABELS[(Number(r.likelihood) || 1) - 1] || '' }, fmt.num(Number(r.likelihood) || 0)) },
-      { key: 'severity', label: 'الشدة', align: 'center', sortValue: (r) => Number(r.severity) || 0, render: (r) => h('span', { class: 'mono', title: SEVERITY_LABELS[(Number(r.severity) || 1) - 1] || '' }, fmt.num(Number(r.severity) || 0)) },
-      { key: 'score', label: 'الدرجة', sortValue: (r) => score(r), render: (r) => scoreCell(score(r)) },
-      { key: 'residual', label: 'المتبقية', sortValue: (r) => residual(r), render: (r) => scoreCell(residual(r)) },
-      { key: 'owner', label: 'المالك', sortValue: (r) => r.owner, render: (r) => h('span', { class: 'nowrap' }, String(r.owner || '—')) },
-      { key: 'dueDate', label: 'الاستحقاق', sortValue: (r) => parseMs(r.dueDate), render: dueCell },
-      { key: 'status', label: 'الحالة', sortValue: (r) => riskStatuses().indexOf(r.status), render: (r) => { const b = C.badge(String(r.status || '—'), STATUS_TONE[r.status] || 'neutral'); b.classList.add('nowrap'); return b; } },
+      { key: 'code', label: 'الكود', priority: 'high', mono: true, width: 88, sortValue: (r) => r.code, render: (r) => h('span', { class: 'nowrap' }, String(r.code || '')) },
+      { key: 'hazard', label: 'الخطر', priority: 'high', sortValue: (r) => r.hazard, render: (r) => h('div', { class: 'stack gap-1', style: { minInlineSize: '200px', maxInlineSize: '300px' } }, h('strong', { class: 'truncate', title: String(r.hazard || '') }, String(r.hazard || '')), r.activity ? h('span', { class: 'muted text-xs truncate', title: String(r.activity) }, String(r.activity)) : null) },
+      { key: 'siteId', label: 'الموقع', priority: 'high', sortValue: (r) => siteName(r.siteId), render: (r) => { const s = siteById(r.siteId); return h('div', { class: 'stack gap-1', style: { minInlineSize: '110px', maxInlineSize: '160px' } }, h('span', { style: { whiteSpace: 'normal', lineHeight: '1.35' } }, s ? s.name : '—'), s ? h('span', { class: 'muted text-xs mono' }, String(s.code || '')) : null); } },
+      { key: 'categoryId', label: 'الفئة', priority: 'high', sortValue: (r) => categoryById(r.categoryId).name, render: (r) => { const c = categoryById(r.categoryId); return h('span', { class: 'row gap-2 nowrap', title: c.name }, ico(c.icon, 14), h('span', { class: 'truncate', style: { maxInlineSize: '140px' } }, c.name)); } },
+      { key: 'likelihood', label: 'الاحتمالية', priority: 'medium', align: 'center', sortValue: (r) => Number(r.likelihood) || 0, render: (r) => h('span', { class: 'mono', title: LIKELIHOOD_LABELS[(Number(r.likelihood) || 1) - 1] || '' }, fmt.num(Number(r.likelihood) || 0)) },
+      { key: 'severity', label: 'الشدة', priority: 'medium', align: 'center', sortValue: (r) => Number(r.severity) || 0, render: (r) => h('span', { class: 'mono', title: SEVERITY_LABELS[(Number(r.severity) || 1) - 1] || '' }, fmt.num(Number(r.severity) || 0)) },
+      { key: 'score', label: 'الدرجة', priority: 'high', sortValue: (r) => score(r), render: (r) => scoreCell(score(r)) },
+      { key: 'residual', label: 'المتبقية', priority: 'low', sortValue: (r) => residual(r), render: (r) => scoreCell(residual(r)) },
+      { key: 'owner', label: 'المالك', priority: 'medium', sortValue: (r) => r.owner, render: (r) => h('span', { class: 'nowrap' }, String(r.owner || '—')) },
+      { key: 'dueDate', label: 'الاستحقاق', priority: 'high', sortValue: (r) => parseMs(r.dueDate), render: dueCell },
+      { key: 'status', label: 'الحالة', priority: 'high', sortValue: (r) => riskStatuses().indexOf(r.status), render: (r) => { const b = C.badge(String(r.status || '—'), STATUS_TONE[r.status] || 'neutral'); b.classList.add('nowrap'); return b; } },
     ];
 
     /* ───────────── table twins ───────────── */
@@ -354,7 +318,7 @@ export default {
       const m = safe(() => sel.riskMatrix(state(), effectiveFilters({ tier: 'all' })), [], 'riskMatrix');
       const header = ['الشدة ↓ / الاحتمالية →', ...LIKELIHOOD_LABELS.map((l, i) => `${fmt.num(i + 1)} ${l}`)];
       const rows = SEVERITY_LABELS.map((l, ri) => [`${fmt.num(ri + 1)} ${l}`, ...LIKELIHOOD_LABELS.map((_, ci) => fmt.num(Number(m[ri] && m[ri][ci]) || 0))]);
-      return simpleTable('مصفوفة المخاطر 5×5 — المخاطر المفتوحة', header, rows, [false, true, true, true, true, true]);
+      return simpleTable(`مصفوفة المخاطر ${fmt.num(5)}×${fmt.num(5)} — المخاطر المفتوحة`, header, rows, [false, true, true, true, true, true]);
     }
     function categoryCounts() {
       const viaSel = typeof sel.risksByCategory === 'function' ? safe(() => sel.risksByCategory(state(), effectiveFilters({ categoryId: 'all' })), null, 'risksByCategory') : null;
@@ -394,7 +358,7 @@ export default {
       clearBtn.hidden = local.categoryId === 'all' && local.status === 'all' && local.tier === 'all';
       if (!table) {
         table = C.dataTable({
-          columns, rows, rowKey: 'id', pageSize: 10, dense: true, caption: 'سجل المخاطر',
+          columns, rows, rowKey: 'id', pageSize: 10, dense: true, caption: 'سجل المخاطر', stickyFirst: true,
           initialSort: { key: 'score', dir: 'desc' }, emptyText: 'لا توجد مخاطر مطابقة للمرشّحات الحالية',
           onRowClick: (row) => openDrawer(row.id),
         });
@@ -542,7 +506,7 @@ export default {
         subtitle: risk.code,
         size: 'sm',
         body: h('div', { class: 'stack gap-3' },
-          h('p', {}, `سيتم حذف المخاطرة «${risk.hazard}» نهائيًا من السجل مع ضوابطها وسجلها الزمني.`),
+          h('p', {}, `سيتم حذف المخاطرة «${risk.hazard}» نهائياً من السجل مع ضوابطها وسجلها الزمني.`),
           h('div', { class: 'note tone-critical' }, h('strong', {}, 'تنبيه: '), 'لا يمكن التراجع عن هذا الإجراء. إن كانت المخاطرة قد عولجت فالأنسب إغلاقها بدل حذفها للحفاظ على الأثر التدقيقي.')),
         actions: [
           { label: 'إلغاء', variant: 'ghost' },
@@ -683,7 +647,7 @@ export default {
 
       api = C.modal({
         title: isEdit ? `تعديل المخاطرة ${existing.code}` : 'إضافة مخاطرة جديدة',
-        subtitle: isEdit ? String(existing.hazard || '') : 'تُحفظ المخاطرة محليًا وتظهر فورًا في السجل والرادار',
+        subtitle: isEdit ? String(existing.hazard || '') : 'تُحفظ المخاطرة محلياً وتظهر فوراً في السجل والرادار',
         size: 'lg', body: form,
         actions: [
           { label: 'إلغاء', variant: 'ghost' },
@@ -735,8 +699,6 @@ export default {
       subs.splice(0).forEach((off) => { try { off(); } catch { /* ignore */ } });
       timers.splice(0).forEach((t) => { clearTimeout(t); clearInterval(t); });
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
-      if (layoutObserver) { try { layoutObserver.disconnect(); } catch { /* ignore */ } layoutObserver = null; }
-      if (layoutRaf) { cancelAnimationFrame(layoutRaf); layoutRaf = 0; }
       [drawerApi, modalApi, confirmApi].forEach((api) => { if (api) { try { api.close(); } catch { /* ignore */ } } });
       drawerApi = null; modalApi = null; confirmApi = null; drawerRiskId = null;
       try { if (charts && charts.tooltip && typeof charts.tooltip.hide === 'function') charts.tooltip.hide(); } catch { /* ignore */ }

@@ -192,7 +192,7 @@ export default {
         ]),
         h('div', { class: 'matrix-legend' }, ...STATUS_ORDER.map((k) => legendItem(k, rows.filter((r) => r.status === k).length))),
         table.el,
-        h('p', { class: 'text-xs muted' }, `تُعدّ الشهادة «تنتهي قريباً» عندما يتبقى على انتهائها 30 يوماً أو أقل. الإجمالي: ${counts.map(([l, v]) => `${l} ${v}`).join(' · ')}`),
+        h('p', { class: 'text-xs muted' }, `تُعدّ الشهادة «تنتهي قريباً» عندما يتبقى على انتهائها ${fmt.num(30)} يوماً أو أقل. الإجمالي: ${counts.map(([l, v]) => `${l} ${v}`).join(' · ')}`),
       );
       openDrawer = drawer({ title: worker.name, subtitle: 'سجل الشهادات والتدريب', body, size: 'lg', onClose: () => { openDrawer = null; } });
       openDrawer.open();
@@ -212,7 +212,7 @@ export default {
             { key: 'worker', label: 'العامل' }, { key: 'role', label: 'الدور' }, { key: 'company', label: 'الشركة' }, { key: 'site', label: 'الموقع' },
             { key: 'course', label: 'الدورة' }, { key: 'expiresAt', label: 'تاريخ الانتهاء' }, { key: 'daysLeft', label: 'الأيام المتبقية' },
           ];
-          if (!rows.length) { toast('لا توجد شهادات تنتهي خلال 60 يوماً لتصديرها.', { tone: 'neutral' }); return; }
+          if (!rows.length) { toast(`لا توجد شهادات تنتهي خلال ${fmt.num(EXPIRING_WINDOW_DAYS)} يوماً لتصديرها.`, { tone: 'neutral' }); return; }
           try {
             if (!sources || typeof sources.exportCSV !== 'function') throw new Error('export unavailable');
             sources.exportCSV(rows, columns, `biltix-hse-expiring-certs-${new Date().toISOString().slice(0, 10)}.csv`);
@@ -267,8 +267,11 @@ export default {
       const rows = data.shownWorkers.map((w) => w.name);
       const cols = data.courses.map((c) => c.name);
       const cells = data.shownCells.map((row) => row.map((s) => (STATUS[s] || STATUS.missing).code));
+      // Short course codes for the column headers (the heatmap uses them when it supports `colCodes`;
+      // full names stay in `cols` for tooltips / the table twin).
+      const colCodes = data.courses.map((c) => String(c.code || c.id || ''));
       const heat = rows.length && cols.length ? makeChart('heatmap', {
-        rows, cols, cells,
+        rows, cols, cells, colCodes,
         colorFor: (v) => STATUS[STATUS_BY_CODE[v] || 'missing'].color,
         labelFor: (v) => STATUS[STATUS_BY_CODE[v] || 'missing'].glyph,
         // charts.js may call onCellClick(value, ri, ci) per the contract or onCellClick({value, ri, ci, row, col}); accept both.
@@ -298,7 +301,8 @@ export default {
           : emptyState({ title: 'لا يوجد عمال ضمن هذا النطاق', text: 'غيّر الموقع من عوامل التصفية أو تحقق من بيانات العمال.' }),
         h('p', { class: 'text-xs muted' }, 'انقر على أي خلية لعرض سجل شهادات العامل كاملاً مع تواريخ الإكمال والانتهاء.'),
       );
-      return card({ code: 'TRN-01', title: 'مصفوفة التدريب', subtitle, className: 'col-span-8', body, tableView: () => matrixTable(data) });
+      // Full width: 9 course columns need the whole row for legible headers.
+      return card({ code: 'TRN-01', title: 'مصفوفة التدريب', subtitle, className: 'col-span-12', body, tableView: () => matrixTable(data) });
     }
 
     function buildCompletionCard(data) {
@@ -319,7 +323,7 @@ export default {
           chartOr(chart, fallbackTable()),
           h('p', { class: 'text-xs muted' }, 'النسبة = العمال الحاصلون على شهادة سارية (أو تنتهي قريباً) ÷ إجمالي عمال النطاق.'))
         : emptyState({ title: 'لا توجد دورات مسجلة' });
-      return card({ code: 'TRN-02', title: 'نسبة الإكمال لكل دورة', subtitle: 'مرتبة من الأعلى إلى الأدنى', className: 'col-span-4', body, tableView: tableOf(chart, fallbackTable) });
+      return card({ code: 'TRN-02', title: 'نسبة الإكمال لكل دورة', subtitle: 'مرتبة من الأعلى إلى الأدنى', className: 'col-span-6', body, tableView: tableOf(chart, fallbackTable) });
     }
 
     function buildExpiringCard(data) {
@@ -337,25 +341,26 @@ export default {
         tone: e.tone || 'warning',
       }));
       const table = dataTable({
-        caption: `الشهادات التي تنتهي خلال ${EXPIRING_WINDOW_DAYS} يوماً`,
+        caption: `الشهادات التي تنتهي خلال ${fmt.num(EXPIRING_WINDOW_DAYS)} يوماً`,
         pageSize: 10,
         rowKey: 'id',
+        stickyFirst: true,
         emptyText: `لا توجد شهادات تنتهي خلال ${fmt.num(EXPIRING_WINDOW_DAYS)} يوماً`,
         onRowClick: (r) => openWorker(data, r.worker, null),
         initialSort: { key: 'daysLeft', dir: 'asc' },
         columns: [
-          { key: 'name', label: 'العامل', width: '34%', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.name), h('span', { class: 'text-xs muted' }, [r.role, r.company].filter(Boolean).join(' · '))) },
-          { key: 'site', label: 'الموقع', width: '18%', render: (r) => h('span', { class: 'text-sm' }, r.site) },
-          { key: 'course', label: 'الدورة', width: '24%', render: (r) => h('div', { class: 'stack gap-1' }, h('span', {}, r.course), r.mandatory ? badge('إلزامية', 'brand') : null) },
-          { key: 'expiresAt', label: 'الانتهاء', render: (r) => h('span', { class: 'nowrap' }, fmt.date(r.expiresAt)), sortValue: (r) => new Date(r.expiresAt).getTime() },
-          { key: 'daysLeft', label: 'المتبقي', render: (r) => badge(daysLabel(r.daysLeft), r.tone), sortValue: (r) => r.daysLeft },
+          { key: 'name', label: 'العامل', priority: 'high', width: '34%', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.name), h('span', { class: 'text-xs muted' }, [r.role, r.company].filter(Boolean).join(' · '))) },
+          { key: 'site', label: 'الموقع', priority: 'low', width: '18%', render: (r) => h('span', { class: 'text-sm', style: { whiteSpace: 'normal' } }, r.site) },
+          { key: 'course', label: 'الدورة', priority: 'high', width: '24%', render: (r) => h('div', { class: 'stack gap-1' }, h('span', {}, r.course), r.mandatory ? badge('إلزامية', 'brand') : null) },
+          { key: 'expiresAt', label: 'الانتهاء', priority: 'medium', render: (r) => h('span', { class: 'nowrap' }, fmt.date(r.expiresAt)), sortValue: (r) => new Date(r.expiresAt).getTime() },
+          { key: 'daysLeft', label: 'المتبقي', priority: 'high', render: (r) => badge(daysLabel(r.daysLeft), r.tone), sortValue: (r) => r.daysLeft },
         ],
         rows,
       });
       const el = card({
         code: 'TRN-03', title: `شهادات تنتهي خلال ${fmt.num(EXPIRING_WINDOW_DAYS)} يوماً`,
         subtitle: rows.length ? `${fmt.num(rows.length)} شهادة تتطلب جدولة تجديد — الأقرب أولاً` : 'لا توجد شهادات تقترب من الانتهاء',
-        className: 'col-span-8',
+        className: 'col-span-12',
         body: table.el,
         footer: h('div', { class: 'matrix-legend' },
           h('span', { class: 'matrix-legend-item tone-critical' }, glyph('critical', 12), h('span', {}, 'أسبوع أو أقل')),
@@ -401,7 +406,7 @@ export default {
         t.appendChild(tb);
         return t;
       };
-      return card({ code: 'TRN-04', title: 'توزيع حالات الشهادات', subtitle: `${fmt.num(total)} شهادة مطلوبة ضمن النطاق`, className: 'col-span-4', body, tableView: tableFn });
+      return card({ code: 'TRN-04', title: 'توزيع حالات الشهادات', subtitle: `${fmt.num(total)} شهادة مطلوبة ضمن النطاق`, className: 'col-span-6', body, tableView: tableFn });
     }
 
     function buildCatalogue(data) {
@@ -411,7 +416,8 @@ export default {
         const pct = Number(comp.pct) || 0;
         const tone = pct >= 90 ? 'good' : pct >= 75 ? 'warning' : 'critical';
         const bar = progress({ value: pct, max: 100, tone, label: `نسبة إكمال ${c.name}` });
-        return h('article', { class: 'card is-compact is-flat', 'aria-label': c.name },
+        // Catalogue entries are nested list cards → plain framing (only top-level cards carry the CAD frame).
+        return h('article', { class: 'card is-compact is-flat is-plain', 'aria-label': c.name },
           h('div', { class: 'card-body stack gap-3' },
             h('div', { class: 'row between gap-2' },
               h('div', { class: 'row gap-2 grow' },
@@ -452,11 +458,14 @@ export default {
       raf = 0;
       const data = collect();
       const frag = document.createDocumentFragment();
+      // Rows: full-width matrix → completion + distribution (6/6, aligned to start) → full-width expiring table.
+      const pairRow = h('div', { class: 'grid-12', style: { alignItems: 'start' } }, buildCompletionCard(data), buildDistributionCard(data));
       frag.append(
         buildHead(data),
         buildKpis(data),
-        h('div', { class: 'grid-12' }, buildMatrixCard(data), buildCompletionCard(data)),
-        h('div', { class: 'grid-12' }, buildExpiringCard(data), buildDistributionCard(data)),
+        h('div', { class: 'grid-12' }, buildMatrixCard(data)),
+        pairRow,
+        h('div', { class: 'grid-12' }, buildExpiringCard(data)),
         buildCatalogue(data),
       );
       root.replaceChildren(frag);

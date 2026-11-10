@@ -210,7 +210,10 @@ export function readPalette(force = false) {
     p[key] = v || (key.startsWith('bg') ? bgFallback : inkFallback);
   }
   p.fontSans = cs.getPropertyValue('--font-sans').trim() || cs.fontFamily || 'system-ui, sans-serif';
-  p.fontMono = cs.getPropertyValue('--font-mono').trim() || 'ui-monospace, monospace';
+  // Canvas mono text mixes Latin codes with Arabic digits/units: prefer the mixed stack (RTL-15).
+  const monoMixed = cs.getPropertyValue('--font-mono-mixed').trim();
+  const mono = cs.getPropertyValue('--font-mono').trim();
+  p.fontMono = monoMixed || (mono ? `${mono}, "IBM Plex Sans Arabic"` : 'ui-monospace, "IBM Plex Sans Arabic", monospace');
   p.theme = root.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
   p.light = p.theme === 'light';
   p.numerals = root.getAttribute('data-numerals') === 'arab' ? 'arab' : 'latn';
@@ -285,6 +288,74 @@ function wrapText(ctx, text, maxWidth, maxLines = 2) {
   lines.push(cur);
   return lines.map((l) => fitText(ctx, l, maxWidth));
 }
+/**
+ * Wrap `text` into at most `maxLines` lines that ALL fit `maxWidth` without truncation.
+ * Returns null when it cannot (the caller then drops the label instead of showing "…").
+ */
+function wrapNoEllipsis(ctx, text, maxWidth, maxLines = 2) {
+  const words = String(text ?? '').trim().split(/\s+/).filter(Boolean);
+  if (!words.length || !(maxWidth > 0)) return null;
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    if (ctx.measureText(w).width > maxWidth) return null;
+    const probe = cur ? `${cur} ${w}` : w;
+    if (ctx.measureText(probe).width <= maxWidth) { cur = probe; continue; }
+    lines.push(cur);
+    cur = w;
+    if (lines.length >= maxLines) return null;
+  }
+  if (cur) lines.push(cur);
+  return lines.length <= maxLines ? lines : null;
+}
+
+/** Coarse occupancy grid for label placement (one byte per 6×6 px cell). */
+class Occupancy {
+  constructor(w, h, cell = 6) {
+    this.cell = cell;
+    this.w = w;
+    this.h = h;
+    this.cols = Math.max(1, Math.ceil(w / cell));
+    this.rows = Math.max(1, Math.ceil(h / cell));
+    this.bits = new Uint8Array(this.cols * this.rows);
+  }
+  reset(w, h) {
+    if (w !== this.w || h !== this.h) {
+      this.w = w; this.h = h;
+      this.cols = Math.max(1, Math.ceil(w / this.cell));
+      this.rows = Math.max(1, Math.ceil(h / this.cell));
+      this.bits = new Uint8Array(this.cols * this.rows);
+    } else this.bits.fill(0);
+    return this;
+  }
+  _range(x, y, w, h) {
+    return [
+      clamp(Math.floor(x / this.cell), 0, this.cols - 1), clamp(Math.floor(y / this.cell), 0, this.rows - 1),
+      clamp(Math.ceil((x + w) / this.cell) - 1, 0, this.cols - 1), clamp(Math.ceil((y + h) / this.cell) - 1, 0, this.rows - 1),
+    ];
+  }
+  /** True when the rectangle lies inside the canvas and overlaps nothing taken so far. */
+  free(x, y, w, h) {
+    if (x < 0 || y < 0 || x + w > this.w || y + h > this.h) return false;
+    const [c0, r0, c1, r1] = this._range(x, y, w, h);
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) if (this.bits[r * this.cols + c]) return false;
+    return true;
+  }
+  take(x, y, w, h) {
+    const [c0, r0, c1, r1] = this._range(x, y, w, h);
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) this.bits[r * this.cols + c] = 1;
+  }
+}
+
+/** Hazard pill text: the hazard label only — a leading "CODE — " prefix is dropped (the code is in the tooltip). */
+function hazardLabelText(hz) {
+  const direct = hz && (hz.hazard || hz.title);
+  if (direct) return String(direct).trim();
+  const raw = String((hz && hz.label) || '').trim();
+  const m = /^[A-Za-z][A-Za-z0-9]*(?:[-‑][A-Za-z0-9]+)*\s*[—–-]\s*(.+)$/.exec(raw);
+  return (m ? m[1] : raw).trim();
+}
+
 /** Rounded-rectangle path (used for label pills). */
 function roundRect(ctx, x, y, w, h, r) {
   const rr = Math.min(r, w / 2, h / 2);
@@ -973,8 +1044,11 @@ export class RadarBase {
       return;
     }
     this.hover = data;
-    if (this._hoverFn) {
-      try { this._hoverFn(data, pt ? this._hoverInfo(t, pt) : null); } catch (err) { reportError('onHover', err); }
+    // Targets flagged `silent` (e.g. zone name reveal) only change the internal hover state.
+    const pub = data && data.silent ? null : data;
+    if (this._hoverFn && !sameItem(pub, this._hoverPublic || null)) {
+      this._hoverPublic = pub;
+      try { this._hoverFn(pub, pt && pub ? this._hoverInfo(t, pt) : (pt ? this._hoverInfo(null, pt) : null)); } catch (err) { reportError('onHover', err); }
     }
   }
 }
@@ -1298,7 +1372,9 @@ export class SweepRadar extends RadarBase {
         const raw = labels[i];
         if (!raw) continue;
         const deg = norm360(i * step + step / 2);
-        items.push({ deg, text: fitText(ctx, raw, chord), flip: deg > 90 && deg < 270 });
+        // Lower half (glyph tops would point down after the tangential rotation) → rotate a further 180° so
+        // every label reads upright (V28).
+        items.push({ deg, text: fitText(ctx, raw, chord), flip: Math.cos(deg * DEG) < -1e-6 });
       }
       this._labels = { key, items };
     }
@@ -1385,11 +1461,14 @@ export class SensorRadar extends RadarBase {
     }
     if (!Array.isArray(vals)) vals = [];
     const axes = this._axes();
+    // null / undefined / non-numeric → null: the axis is drawn with a gap and a "—" value (V12).
+    const toVal = (x) => (x === null || x === undefined || x === '' ? null : (isNum(num(x, NaN)) ? num(x) : null));
     for (let i = 0; i < axes.length; i++) {
       const raw = vals[i];
-      const v = raw && typeof raw === 'object' ? num(raw.value) : num(raw);
+      const v = raw && typeof raw === 'object' ? toVal(raw.value) : toVal(raw);
       this._target[i] = v;
-      if (!isNum(this._cur[i])) this._cur[i] = 0;
+      if (v === null) this._cur[i] = null;
+      else if (!isNum(this._cur[i])) this._cur[i] = 0;
     }
     this._target.length = axes.length;
     this._cur.length = axes.length;
@@ -1409,7 +1488,12 @@ export class SensorRadar extends RadarBase {
     }
     if (!this.reduced) this._rot = norm360(this._rot + num(o.rotateDegPerSec, 4) * dt);
     const k = easeK(clamp(num(o.ease, 0.08), 0.01, 1), dt || 1 / 60);
-    for (let i = 0; i < n; i++) this._cur[i] += (this._target[i] - this._cur[i]) * k;
+    for (let i = 0; i < n; i++) {
+      const tg = this._target[i];
+      if (tg === null || tg === undefined) { this._cur[i] = null; continue; }
+      if (!isNum(this._cur[i])) this._cur[i] = 0;
+      this._cur[i] += (tg - this._cur[i]) * k;
+    }
 
     /* plate */
     ctx.beginPath();
@@ -1434,23 +1518,36 @@ export class SensorRadar extends RadarBase {
     for (let i = 0; i < n; i++) {
       const ax = axes[i] || {};
       const max = Math.max(1e-9, num(ax.max, 100));
-      const vn = clamp(this._cur[i] / max, 0, 1.06);
+      const has = isNum(this._cur[i]);
+      const vn = has ? clamp(this._cur[i] / max, 0, 1.06) : 0;
       const tn = isNum(ax.threshold) ? clamp(ax.threshold / max, 0, 1) : null;
       const deg = norm360(this._rot + i * stepDeg);
-      pts.push({ deg, vn, pt: polar(cx, cy, deg, vn * R), tip: polar(cx, cy, deg, R) });
+      pts.push({ deg, vn, has, pt: has ? polar(cx, cy, deg, vn * R) : null, tip: polar(cx, cy, deg, R) });
       thr.push(tn === null ? null : polar(cx, cy, deg, tn * R));
-      over.push(tn !== null && this._cur[i] > ax.threshold);
+      over.push(has && tn !== null && this._cur[i] > ax.threshold);
     }
 
-    /* spokes */
+    /* spokes (a missing sensor's spoke is drawn faint and detached from the centre) */
     ctx.lineWidth = 1;
     ctx.strokeStyle = rgba(p.line, 0.95);
     ctx.beginPath();
     for (const q of pts) {
+      if (!q.has) continue;
       ctx.moveTo(cx, cy);
       ctx.lineTo(q.tip[0], q.tip[1]);
     }
     ctx.stroke();
+    if (pts.some((q) => !q.has)) {
+      ctx.strokeStyle = rgba(p.line2, 0.6);
+      ctx.beginPath();
+      for (const q of pts) {
+        if (q.has) continue;
+        const [sx, sy] = polar(cx, cy, q.deg, R * 0.22);
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(q.tip[0], q.tip[1]);
+      }
+      ctx.stroke();
+    }
     // over-threshold spoke segments
     for (let i = 0; i < n; i++) {
       if (!over[i] || !thr[i]) continue;
@@ -1483,27 +1580,42 @@ export class SensorRadar extends RadarBase {
       }
     }
 
-    /* value polygon */
-    if (n >= 2) {
+    /* value polygon — stroked only between neighbouring live axes, so a missing sensor leaves a gap */
+    const live = pts.filter((q) => q.has);
+    if (live.length >= 2) {
+      const complete = live.length === n;
       ctx.beginPath();
-      for (let i = 0; i < n; i++) {
-        const q = pts[i].pt;
+      for (let i = 0; i < live.length; i++) {
+        const q = live[i].pt;
         if (i === 0) ctx.moveTo(q[0], q[1]);
         else ctx.lineTo(q[0], q[1]);
       }
       ctx.closePath();
-      ctx.fillStyle = rgba(p.accent, 0.18);
+      ctx.fillStyle = rgba(p.accent, complete ? 0.18 : 0.1);
       ctx.fill();
       ctx.shadowColor = rgba(p.accent, p.light ? 0.25 : 0.45);
       ctx.shadowBlur = 12;
       ctx.lineWidth = 2;
       ctx.strokeStyle = p.accent;
-      ctx.stroke();
+      if (complete) ctx.stroke();
+      else {
+        ctx.beginPath();
+        let open = false;
+        for (let i = 0; i < n; i++) {
+          const q = pts[i];
+          const nx = pts[(i + 1) % n];
+          if (!q.has) { open = false; continue; }
+          if (!open) { ctx.moveTo(q.pt[0], q.pt[1]); open = true; }
+          if (nx.has && (i < n - 1 || n > 2)) ctx.lineTo(nx.pt[0], nx.pt[1]); else open = false;
+        }
+        ctx.stroke();
+      }
       ctx.shadowBlur = 0;
     }
 
     /* vertex dots + alarm flashes */
     for (let i = 0; i < n; i++) {
+      if (!pts[i].has) continue;
       const [x, y] = pts[i].pt;
       const isOver = over[i];
       const color = isOver ? p.critical : p.accent;
@@ -1565,9 +1677,10 @@ export class SensorRadar extends RadarBase {
       const styles = lines.map(() => ({ font: labelFont, color: p.ink2 }));
       if (o.showValues) {
         const v = this._cur[i];
-        const text = typeof o.formatValue === 'function' ? String(o.formatValue(v, ax)) : fmtValueUnit(v, ax.unit, p.numerals);
+        const missing = !isNum(v);
+        const text = missing ? '—' : (typeof o.formatValue === 'function' ? String(o.formatValue(v, ax)) : fmtValueUnit(v, ax.unit, p.numerals));
         lines.push(text);
-        styles.push({ font: valueFont, color: over[i] ? mixColor(p.critical, p.ink1, p.light ? 0.15 : 0.3) : p.ink1 });
+        styles.push({ font: valueFont, color: missing ? p.ink3 : (over[i] ? mixColor(p.critical, p.ink1, p.light ? 0.15 : 0.3) : p.ink1) });
       }
       drawTipLabel(ctx, tx, ty, hx, vy, lines, g.lineH, styles);
     }
@@ -1592,8 +1705,9 @@ export class SitePlanRadar extends RadarBase {
     showGrid: true,
     showLegend: true,
     showCompass: true,
-    showHazardLabels: true,
+    showHazardLabels: true,   // true → pills for critical (and hovered) hazards only; 'all' → every hazard; false → hover only
     gridDivisions: 10,
+    zoneLabelMinPx: 90,       // zone names are printed only when the projected zone is at least this wide
   };
 
   constructor(canvas, opts) {
@@ -1604,11 +1718,13 @@ export class SitePlanRadar extends RadarBase {
     this._lastPingPoll = -1;
     this._geo = null;
     this._zoneLabels = null;
+    this._pillCache = new Map();
+    this._occ = null;
   }
 
-  onResize() { this._geo = null; this._zoneLabels = null; }
-  onPalette() { this._zoneLabels = null; }
-  onOptions() { this._geo = null; this._zoneLabels = null; }
+  onResize() { this._geo = null; this._zoneLabels = null; this._pillCache.clear(); }
+  onPalette() { this._zoneLabels = null; this._pillCache.clear(); }
+  onOptions() { this._geo = null; this._zoneLabels = null; this._pillCache.clear(); }
   onData() { this._zoneLabels = null; }
 
   _zones() {
@@ -1766,20 +1882,40 @@ export class SitePlanRadar extends RadarBase {
       ctx.restore();
     }
 
-    /* zones */
+    /* zones — names only where the projected zone is wide enough (≥ zoneLabelMinPx) and the text fits
+       on one or two lines without truncation; everything else is revealed on hover (RTL-16 / V11). */
     const zoneFont = `500 ${g.W >= 300 ? 10.5 : 9.5}px ${p.fontSans}`;
+    const zoneLineH = g.W >= 300 ? 13 : 12;
     const codeFont = `500 9px ${p.fontMono}`;
-    const zkey = `${g.W}|${zoneFont}|${zones.map((z) => z && (z.id + z.name)).join('|')}`;
+    const occ = (this._occ || (this._occ = new Occupancy(w, h))).reset(w, h);
+    // Reserve the fixed chrome: compass (top-left), legend strip (bottom-right) and the DOM chips that
+    // overlay the frame (status top-inline-start = top-right, caption bottom-inline-end = bottom-left).
+    if (o.showCompass) occ.take(g.m - 2, g.m - 2, 30, 40);
+    if (o.showLegend) occ.take(Math.max(0, w - g.m - 250), h - g.m - 16, 250, 20);
+    occ.take(Math.max(0, w - 170), 0, 170, 26);
+    occ.take(0, h - 24, 190, 24);
+    const minZonePx = num(o.zoneLabelMinPx, 90);
+    const zkey = `${g.W}|${zoneFont}|${minZonePx}|${zones.map((z) => z && (z.id + z.name + z.w + z.h)).join('|')}`;
     if (!this._zoneLabels || this._zoneLabels.key !== zkey) {
       ctx.font = zoneFont;
       this._zoneLabels = {
         key: zkey,
         items: zones.map((z, i) => {
           const zw = clamp(num(z.w), 0, 1) * g.W;
-          return { text: fitText(ctx, z.name || z.id || '', zw - 14), code: localizeDigits(String(i + 1).padStart(2, '0'), p.numerals) };
+          const zh = clamp(num(z.h), 0, 1) * g.Hp;
+          const name = String(z.name || z.id || '').trim();
+          const maxW = zw - 16;
+          let lines = null;
+          if (name && zw >= minZonePx && zh > 22) {
+            if (ctx.measureText(name).width <= maxW) lines = [name];
+            else if (zh >= zoneLineH * 2 + 10) lines = wrapNoEllipsis(ctx, name, maxW, 2);
+          }
+          const width = lines ? Math.max(...lines.map((l) => ctx.measureText(l).width)) : 0;
+          return { name, lines, width, code: localizeDigits(String(i + 1).padStart(2, '0'), p.numerals) };
         }),
       };
     }
+    const hoveredZone = this.hover && this.hover.kind === 'zone' ? this.hover : null;
     for (let i = 0; i < zones.length; i++) {
       const z = zones[i];
       if (!z) continue;
@@ -1787,29 +1923,46 @@ export class SitePlanRadar extends RadarBase {
       const zy = clamp(num(z.y), 0, 1);
       const zw = clamp(num(z.w), 0, 1 - zx);
       const zh = clamp(num(z.h), 0, 1 - zy);
+      const isHover = hoveredZone && String(hoveredZone.id) === String(z.id ?? i);
       this._quad(ctx, zx, zy, zw, zh);
-      ctx.fillStyle = rgba(p.ink1, i % 2 ? 0.02 : 0.045);
+      ctx.fillStyle = rgba(p.ink1, isHover ? 0.09 : i % 2 ? 0.02 : 0.045);
       ctx.fill();
-      ctx.strokeStyle = rgba(p.line2, 0.95);
+      ctx.strokeStyle = isHover ? rgba(p.accent, 0.8) : rgba(p.line2, 0.95);
       ctx.lineWidth = 1;
       ctx.stroke();
-      // zone name: inline-start (right) of the zone's top edge
       const lbl = this._zoneLabels.items[i];
-      if (lbl && lbl.text && zw * g.W > 40 && zh * g.Hp > 22) {
+      const zwPx = zw * g.W;
+      const zhPx = zh * g.Hp;
+      if (lbl && lbl.lines && zwPx > 40 && zhPx > 22) {
+        // zone name: inline-start (right) of the zone's top edge, if the spot is free
         const vTop = zy + Math.min(0.03, zh * 0.2);
         const [rx, ry] = this.project(zx + zw, vTop);
-        ctx.font = zoneFont;
-        ctx.fillStyle = p.ink2;
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'top';
-        ctx.fillText(lbl.text, rx - 7, ry + 4);
-        // zone number: bottom-left corner in mono
+        const bx = rx - 8 - lbl.width;
+        const by = ry + 3;
+        const bh = lbl.lines.length * zoneLineH;
+        if (occ.free(bx - 2, by - 1, lbl.width + 4, bh + 2)) {
+          occ.take(bx - 2, by - 1, lbl.width + 4, bh + 2);
+          ctx.font = zoneFont;
+          ctx.fillStyle = p.ink2;
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'top';
+          for (let li = 0; li < lbl.lines.length; li++) ctx.fillText(lbl.lines[li], rx - 8, by + li * zoneLineH);
+        }
+      }
+      if (lbl && zwPx > 28 && zhPx > 16) {
+        // zone number: bottom-left corner in mono (keeps small zones identifiable without a name)
         const [lx, ly] = this.project(zx, zy + zh);
         ctx.font = codeFont;
         ctx.fillStyle = p.ink3;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'bottom';
         ctx.fillText(lbl.code, lx + 6, ly - 4);
+        occ.take(lx + 4, ly - 16, 18, 14);
+      }
+      // hover target at the zone centre (silent: highlights the zone and reveals its name, never forwarded to onHover)
+      if (lbl && lbl.name) {
+        const [zcx, zcy] = this.project(zx + zw / 2, zy + zh / 2);
+        this.addHit(zcx, zcy, { kind: 'zone', id: z.id ?? i, name: lbl.name, index: i, silent: true }, clamp(Math.min(zwPx, zhPx) / 2, 10, 48));
       }
     }
     // plan outline on top of zones
@@ -1923,6 +2076,8 @@ export class SitePlanRadar extends RadarBase {
     }
 
     /* hazards */
+    const hoveredHazard = this.hover && this.hover.kind === 'hazard' ? this.hover : null;
+    const hazardPts = [];
     for (let i = 0; i < this._hazards.length; i++) {
       const hz = this._hazards[i];
       const u = clamp(num(hz.x), 0, 1);
@@ -1960,28 +2115,111 @@ export class SitePlanRadar extends RadarBase {
       ctx.beginPath();
       ctx.arc(x, y, 5.2, 0, TAU);
       ctx.stroke();
-      if (o.showHazardLabels && hz.label) {
-        ctx.font = `500 10px ${p.fontSans}`;
-        const text = fitText(ctx, hz.label, Math.min(150, w * 0.32));
-        const tw = ctx.measureText(text).width;
-        const padX = 7;
-        const ph = 18;
-        const pw = tw + padX * 2;
+      occ.take(x - 7, y - 7, 14, 14);
+      const data = { ...hz, kind: 'hazard', index: i };
+      this.addHit(x, y, data, o.hitRadius);
+      hazardPts.push({ hz, x, y, color, data });
+    }
+
+    /* hazard pills: critical (and the hovered) hazards only, label text without the code, placed on the
+       occupancy grid with a short leader line when displaced; dropped (hover reveals) when nothing fits. */
+    if (o.showHazardLabels !== false && hazardPts.length) {
+      const pillFont = `500 10px ${p.fontSans}`;
+      const lineH = 13;
+      const maxPillW = Math.min(150, w * 0.32);
+      ctx.font = pillFont;
+      const wanted = hazardPts.filter(({ hz, data }) => {
+        const isHover = hoveredHazard && sameItem(hoveredHazard, data);
+        return isHover || o.showHazardLabels === 'all' || hz.tone === 'critical';
+      });
+      wanted.sort((a, b) => ((hoveredHazard && sameItem(hoveredHazard, b.data)) ? 1 : 0) - ((hoveredHazard && sameItem(hoveredHazard, a.data)) ? 1 : 0));
+      for (const hp of wanted) {
+        const text = hazardLabelText(hp.hz);
+        if (!text) continue;
+        let pill = this._pillCache.get(text);
+        if (!pill) {
+          let lines = ctx.measureText(text).width <= maxPillW - 14 ? [text] : wrapNoEllipsis(ctx, text, maxPillW - 14, 2);
+          if (!lines) lines = null;
+          pill = lines ? { lines, w: Math.max(...lines.map((l) => ctx.measureText(l).width)) + 14, h: lines.length * lineH + 6 } : null;
+          this._pillCache.set(text, pill);
+        }
+        if (!pill) continue;
+        const { x, y, color } = hp;
+        const pw = pill.w;
+        const ph = pill.h;
         const toLeft = x > w / 2;
-        const px = toLeft ? x - 11 - pw : x + 11;
-        const py = y - ph / 2;
+        // candidate anchors: beside the dot first, then above/below, then displaced rings (leader line)
+        const cands = [
+          [toLeft ? x - 11 - pw : x + 11, y - ph / 2, false],
+          [toLeft ? x + 11 : x - 11 - pw, y - ph / 2, false],
+          [x - pw / 2, y - 13 - ph, false],
+          [x - pw / 2, y + 13, false],
+        ];
+        for (const d of [26, 40, 56]) {
+          for (let a = 0; a < 8; a++) {
+            const ang = (a / 8) * TAU + Math.PI / 8;
+            cands.push([x + Math.cos(ang) * d - pw / 2, y + Math.sin(ang) * d - ph / 2, true]);
+          }
+        }
+        let placed = null;
+        for (const [px, py, displaced] of cands) {
+          if (occ.free(px - 2, py - 2, pw + 4, ph + 4)) { placed = { px, py, displaced }; break; }
+        }
+        if (!placed) continue;
+        occ.take(placed.px - 2, placed.py - 2, pw + 4, ph + 4);
+        const { px, py } = placed;
+        if (placed.displaced) {
+          // leader: from the dot's edge to the nearest point on the pill boundary
+          const cxp = clamp(x, px, px + pw);
+          const cyp = clamp(y, py, py + ph);
+          const dx = cxp - x;
+          const dy = cyp - y;
+          const dist = Math.hypot(dx, dy) || 1;
+          ctx.strokeStyle = rgba(color, 0.75);
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x + (dx / dist) * 6.5, y + (dy / dist) * 6.5);
+          ctx.lineTo(cxp, cyp);
+          ctx.stroke();
+        }
         roundRect(ctx, px, py, pw, ph, 5);
-        ctx.fillStyle = rgba(p.bg1, 0.9);
+        ctx.fillStyle = rgba(p.bg1, 0.92);
         ctx.fill();
         ctx.lineWidth = 1;
         ctx.strokeStyle = rgba(color, 0.75);
         ctx.stroke();
+        ctx.font = pillFont;
         ctx.fillStyle = p.ink1;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text, px + pw / 2, py + ph / 2 + 0.5);
+        for (let li = 0; li < pill.lines.length; li++) ctx.fillText(pill.lines[li], px + pw / 2, py + 3 + lineH / 2 + li * lineH + 0.5);
       }
-      this.addHit(x, y, { ...hz, kind: 'hazard', index: i }, o.hitRadius);
+    }
+
+    /* hovered zone: reveal its name as a pill at the zone centre (small zones have no printed name) */
+    if (hoveredZone && hoveredZone.name) {
+      const z = zones[hoveredZone.index] || {};
+      const zx = clamp(num(z.x), 0, 1);
+      const zy = clamp(num(z.y), 0, 1);
+      const zw = clamp(num(z.w), 0, 1 - zx);
+      const zh = clamp(num(z.h), 0, 1 - zy);
+      const [zcx, zcy] = this.project(zx + zw / 2, zy + zh / 2);
+      ctx.font = zoneFont;
+      const lines = ctx.measureText(hoveredZone.name).width <= w * 0.5 ? [hoveredZone.name] : (wrapNoEllipsis(ctx, hoveredZone.name, w * 0.5, 2) || [fitText(ctx, hoveredZone.name, w * 0.5)]);
+      const pw = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 16;
+      const ph = lines.length * zoneLineH + 8;
+      const px = clamp(zcx - pw / 2, 2, w - pw - 2);
+      const py = clamp(zcy - ph / 2, 2, h - ph - 2);
+      roundRect(ctx, px, py, pw, ph, 5);
+      ctx.fillStyle = rgba(p.bg1, 0.94);
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = rgba(p.accent, 0.7);
+      ctx.stroke();
+      ctx.fillStyle = p.ink1;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (let li = 0; li < lines.length; li++) ctx.fillText(lines[li], px + pw / 2, py + 4 + zoneLineH / 2 + li * zoneLineH);
     }
 
     /* compass (top-left: the .radar-status chip lives top-inline-start = top-right in RTL) */

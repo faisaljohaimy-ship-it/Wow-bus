@@ -10,6 +10,7 @@
 import { art } from './art.js';
 import { sel } from '../core/selectors.js';
 import { fmt } from '../core/fmt.js';
+import { bus } from '../core/bus.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
@@ -61,8 +62,10 @@ export function h(tag, attrs = {}, ...children) {
         }
         continue;
       }
-      if (key.startsWith('on') && typeof value === 'function') {
-        el.addEventListener(key.slice(2).toLowerCase(), value);
+      if (/^on[A-Za-z]/.test(key)) {
+        // Only functions become handlers. String on* values are never written as
+        // attributes, so data can never smuggle an inline handler into the DOM (C-8).
+        if (typeof value === 'function') el.addEventListener(key.slice(2).toLowerCase(), value);
         continue;
       }
       if (key === 'text') { el.textContent = String(value); continue; }
@@ -405,7 +408,41 @@ export function card({ code = '', title = '', subtitle = '', actions = [], body 
 function formatValue(value) {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'number') return Number.isFinite(value) ? fmt.num(value, { maximumFractionDigits: Number.isInteger(value) ? 0 : 1 }) : '—';
-  return String(value);
+  const s = String(value).trim();
+  return s === '' || /^(nan|undefined|null)$/i.test(s) ? '—' : s;
+}
+
+/* Unicode bidi controls Intl may emit around signed numbers (LRM, RLM, ALM, embeddings, isolates, BOM). */
+const BIDI_MARKS_RE = /[\u200E\u200F\u061C\u202A-\u202E\u2066-\u2069\uFEFF]/g;
+const PLACEHOLDER_RE = /^(nan|undefined|null|—|-|–)$/i;
+
+/**
+ * Parse a delta given as a number or as a formatted string (e.g. fmt.signed() output:
+ * "\u200E+0.35", "\u061C−٢٫٥", "+3%") into a finite number. Returns NaN when it cannot.
+ * Strips bidi marks, converts Arabic-Indic / Persian digits and the Arabic decimal
+ * separator, accepts U+2212 / en dash as minus and ignores thousands separators and %.
+ */
+export function parseDelta(delta) {
+  if (typeof delta === 'number') return Number.isFinite(delta) ? delta : NaN;
+  if (delta === null || delta === undefined || typeof delta === 'boolean') return NaN;
+  if (typeof fmt.parseSigned === 'function') {
+    try { const n = fmt.parseSigned(delta); if (Number.isFinite(n)) return n; } catch { /* fall through to the local parser */ }
+  }
+  let s = String(delta).replace(BIDI_MARKS_RE, '').trim();
+  if (!s) return NaN;
+  s = s.replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06F0))
+    .replace(/\u066B/g, '.')
+    .replace(/[\u066C,\s]/g, '')
+    .replace(/[\u2212\u2013\u2012\u2011]/g, '-')
+    .replace(/[%\u066A]/g, '');
+  let neg = false;
+  const paren = /^\((.*)\)$/.exec(s);
+  if (paren) { neg = true; s = paren[1]; }
+  if (/^[+-]/.test(s)) { neg = neg || s[0] === '-'; s = s.slice(1); }
+  if (!/^(\d+\.?\d*|\.\d+)$/.test(s)) return NaN;
+  const n = Number(s);
+  return Number.isFinite(n) ? (neg ? -n : n) : NaN;
 }
 
 export function statTile({ label, value, unit = '', delta = null, deltaGoodWhen = 'down', spark = null, icon = null, tone = null, onClick = null, hint = '' } = {}) {
@@ -430,19 +467,38 @@ export function statTile({ label, value, unit = '', delta = null, deltaGoodWhen 
   el.appendChild(valueRow);
 
   const bottom = h('div', { class: 'tile-bottom' });
-  if (delta !== null && delta !== undefined && delta !== '') {
-    const n = typeof delta === 'number' ? delta : parseFloat(String(delta).replace('−', '-'));
-    const isUp = Number.isFinite(n) ? n > 0 : false;
-    const isZero = Number.isFinite(n) && n === 0;
-    const good = isZero ? null : (deltaGoodWhen === 'down' ? !isUp : isUp);
+  const deltaRaw = typeof delta === 'string' ? delta.replace(BIDI_MARKS_RE, '').trim() : delta;
+  const deltaGiven = deltaRaw !== null && deltaRaw !== undefined && deltaRaw !== '' && !(typeof deltaRaw === 'string' && PLACEHOLDER_RE.test(deltaRaw)) && !(typeof deltaRaw === 'number' && !Number.isFinite(deltaRaw));
+  if (deltaGiven) {
+    // Numbers are formatted here; strings (already formatted by the caller, e.g. fmt.signed)
+    // are shown verbatim but parsed with bidi marks stripped so tone/arrow are never inverted (V1).
+    const parsed = parseDelta(delta);
+    let text;
+    let n = parsed;
+    if (typeof delta === 'number') {
+      const digits = Number.isInteger(delta) ? 0 : (Math.abs(delta) < 1 ? 2 : 1);
+      n = Number(delta.toFixed(digits));
+      text = fmt.signed(n, digits);
+    } else {
+      text = String(delta).trim();
+    }
+    const known = Number.isFinite(n);
+    const isZero = known && n === 0;
+    const isUp = known && n > 0;
+    const isDown = known && n < 0;
+    const goodWhen = deltaGoodWhen === 'up' ? 'up' : 'down';
+    const good = !known || isZero ? null : (goodWhen === 'down' ? isDown : isUp);
     const d = h('span', {
-      class: ['tile-delta', isZero ? 'is-flat' : (isUp ? 'is-up' : 'is-down'), good === null ? null : (good ? 'is-good' : 'is-bad')],
+      class: ['tile-delta', isZero || !known ? 'is-flat' : (isUp ? 'is-up' : 'is-down'), good === null ? null : (good ? 'is-good' : 'is-bad')],
+      'data-direction': isZero || !known ? 'flat' : (isUp ? 'up' : 'down'),
     });
     const arrow = svgEl(12); arrow.classList.add('tile-delta-arrow');
-    arrow.append(isZero ? path('M5 12h14') : (isUp ? path('M12 19V5M5 12l7-7 7 7') : path('M12 5v14M5 12l7 7 7-7')));
+    arrow.append(isZero || !known ? path('M5 12h14') : (isUp ? path('M12 19V5M5 12l7-7 7 7') : path('M12 5v14M5 12l7 7 7-7')));
     d.appendChild(arrow);
-    d.appendChild(h('span', {}, typeof delta === 'number' ? fmt.signed(delta, Number.isInteger(delta) ? 0 : 1) : String(delta)));
-    d.setAttribute('aria-label', `التغير مقارنة بالفترة السابقة: ${typeof delta === 'number' ? fmt.signed(delta, Number.isInteger(delta) ? 0 : 1) : String(delta)}`);
+    d.appendChild(h('span', { class: 'sr-only' }, 'التغير مقارنة بالفترة السابقة: '));
+    d.appendChild(h('bdi', { class: 'tile-delta-text' }, text));
+    if (isZero) d.appendChild(h('span', { class: 'sr-only' }, ' (دون تغيير)'));
+    else if (good !== null) d.appendChild(h('span', { class: 'sr-only' }, good ? ' (تحسّن)' : ' (تراجع)'));
     bottom.appendChild(d);
   }
   const sp = iconNode(spark);
@@ -468,9 +524,28 @@ function compareValues(a, b) {
   return collator.compare(String(a), String(b));
 }
 
-export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick = null, pageSize = 12, emptyText = 'لا توجد بيانات', dense = false, caption = '', initialSort = null } = {}) {
+const PRIORITIES = ['high', 'medium', 'low'];
+const priorityOf = (col) => (col && PRIORITIES.includes(col.priority) ? col.priority : 'high');
+const INTERACTIVE = 'button,a[href],input,select,textarea,[tabindex],[role="button"],[contenteditable]';
+
+/**
+ * Sortable, paged data table.
+ *   columns[].priority  'high' (default) | 'medium' | 'low'  → data-priority on th/td so CSS can
+ *                       hide low-priority columns in narrow containers (V2/V8).
+ *   stickyFirst         default true → table.has-sticky-first (CSS pins the first column).
+ *   maxHeight           number (px); with autoPageSize=true the page size is computed so that the
+ *                       rows + pager fit inside it (measured after mount); without it, it is applied
+ *                       as max-block-size on the wrapper.
+ *   rowLabel(row)       optional accessible name for the row-open button (default: first cell text).
+ * Rows are plain <tr>; when onRowClick is given the first cell content becomes a
+ * <button class="row-open"> named "فتح: <first cell text>" (RTL-8), the pointer click on the row stays.
+ * Wrapper classes: is-paged (pageSize > 0), has-pager (more than one page), is-overflowing
+ * (scrollWidth > clientWidth), is-scroll-start / is-scroll-end (horizontal scroll position).
+ */
+export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick = null, pageSize = 12, emptyText = 'لا توجد بيانات', dense = false, caption = '', initialSort = null, stickyFirst = true, autoPageSize = false, maxHeight = null, rowLabel = null } = {}) {
   const wrap = h('div', { class: 'table-wrap' });
-  const table = h('table', { class: ['table', dense ? 'is-dense' : null] });
+  const clickable = typeof onRowClick === 'function';
+  const table = h('table', { class: ['table', dense ? 'is-dense' : null, stickyFirst !== false ? 'has-sticky-first' : null, clickable ? 'has-row-open' : null] });
   if (caption) table.appendChild(h('caption', { class: 'sr-only' }, String(caption)));
   const thead = h('thead'); const tbody = h('tbody');
   table.append(thead, tbody);
@@ -481,17 +556,23 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
   const pager = h('nav', { class: 'pager', 'aria-label': 'ترقيم الصفحات', hidden: true });
   wrap.appendChild(pager);
 
+  const maxH = typeof maxHeight === 'number' && Number.isFinite(maxHeight) && maxHeight > 0 ? maxHeight : null;
+  const autoFit = !!autoPageSize && maxH !== null;
+  if (maxH !== null && !autoFit) wrap.style.maxBlockSize = `${Math.round(maxH)}px`;
+  if (autoFit) wrap.dataset.autoPage = 'true';
+
   let data = Array.isArray(rows) ? rows.slice() : [];
   let sortKey = initialSort ? initialSort.key : null;
   let sortDir = initialSort ? (initialSort.dir || 'asc') : 'asc';
   let page = 0;
-  const clickable = typeof onRowClick === 'function';
+  let size = Number.isFinite(Number(pageSize)) ? Math.max(0, Number(pageSize) | 0) : 12;
+  if (autoFit) size = estimateRows(maxH, dense);
   const headCells = new Map();
 
   const headRow = h('tr');
   columns.forEach((col) => {
     const sortable = col.sortable !== false;
-    const th = h('th', { scope: 'col', 'data-key': String(col.key), style: col.width ? { inlineSize: typeof col.width === 'number' ? `${col.width}px` : col.width } : undefined, class: col.align ? `align-${col.align}` : null });
+    const th = h('th', { scope: 'col', 'data-key': String(col.key), 'data-priority': priorityOf(col), style: col.width ? { inlineSize: typeof col.width === 'number' ? `${col.width}px` : col.width } : undefined, class: col.align ? `align-${col.align}` : null });
     if (sortable) {
       const btn = h('button', { type: 'button', class: 'sort-btn', onClick: () => toggleSort(col.key) }, h('span', {}, String(col.label ?? '')));
       const ic = glyph('sort', 14); ic.classList.add('sort-ic'); btn.appendChild(ic);
@@ -525,47 +606,73 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
   }
 
   function renderCell(col, row) {
-    const td = h('td', { class: col.align ? `align-${col.align}` : null, 'data-label': String(col.label ?? '') });
+    const td = h('td', { class: col.align ? `align-${col.align}` : null, 'data-label': String(col.label ?? ''), 'data-priority': priorityOf(col) });
     let content;
     try { content = typeof col.render === 'function' ? col.render(row) : row[col.key]; } catch { content = '—'; }
     if (content === null || content === undefined || content === '') content = '—';
-    if (typeof content === 'number') content = fmt.num(content, { maximumFractionDigits: Number.isInteger(content) ? 0 : 1 });
+    if (typeof content === 'number') content = Number.isFinite(content) ? fmt.num(content, { maximumFractionDigits: Number.isInteger(content) ? 0 : 1 }) : '—';
     appendChild(td, content);
     if (col.mono) td.classList.add('mono');
     return td;
+  }
+
+  /** First cell → <button class="row-open"> that opens the row (keyboard path without role=button on <tr>). */
+  function makeRowOpen(td, row, key) {
+    let name = '';
+    if (typeof rowLabel === 'function') { try { name = String(rowLabel(row) ?? ''); } catch { name = ''; } }
+    const text = (name || td.textContent || '').replace(/\s+/g, ' ').trim() || key || '';
+    const label = `فتح: ${text}`;
+    const open = (e) => { e.stopPropagation(); onRowClick(row, e); };
+    if (!td.querySelector(INTERACTIVE)) {
+      const btn = h('button', { type: 'button', class: 'row-open', 'aria-label': label, onClick: open });
+      while (td.firstChild) btn.appendChild(td.firstChild);
+      td.appendChild(btn);
+    } else {
+      // The cell already holds interactive content: add a dedicated opener beside it instead of nesting.
+      td.appendChild(h('button', { type: 'button', class: 'row-open row-open-aux', 'aria-label': label, onClick: open }, glyph('chevronEnd', 14)));
+    }
+    td.classList.add('has-row-open');
   }
 
   function renderBody() {
     clear(tbody);
     const all = sorted();
     const total = all.length;
-    const pages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
+    const pages = size > 0 ? Math.max(1, Math.ceil(total / size)) : 1;
     if (page > pages - 1) page = pages - 1;
     if (page < 0) page = 0;
-    const slice = pageSize > 0 ? all.slice(page * pageSize, page * pageSize + pageSize) : all;
+    const slice = size > 0 ? all.slice(page * size, page * size + size) : all;
     const frag = document.createDocumentFragment();
     slice.forEach((row) => {
       const key = row && row[rowKey] !== undefined ? String(row[rowKey]) : '';
-      const tr = h('tr', { 'data-key': key || undefined, class: clickable ? 'is-clickable' : null, tabindex: clickable ? '0' : undefined, role: clickable ? 'button' : undefined });
-      columns.forEach((col) => tr.appendChild(renderCell(col, row)));
+      const tr = h('tr', { 'data-key': key || undefined, class: clickable ? 'is-clickable' : null });
+      columns.forEach((col, ci) => {
+        const td = renderCell(col, row);
+        if (ci === 0 && clickable) makeRowOpen(td, row, key);
+        tr.appendChild(td);
+      });
       if (clickable) {
-        tr.addEventListener('click', (e) => { if (e.target.closest('button,a,input,select')) return; onRowClick(row, e); });
-        tr.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRowClick(row, e); } });
+        // Pointer convenience only: buttons/links inside the row (incl. .row-open) handle themselves.
+        tr.addEventListener('click', (e) => { if (e.target.closest(INTERACTIVE)) return; onRowClick(row, e); });
       }
       frag.appendChild(tr);
     });
     tbody.appendChild(frag);
     table.hidden = total === 0;
     emptyEl.hidden = total !== 0;
+    wrap.classList.toggle('is-paged', size > 0);
+    wrap.classList.toggle('is-empty', total === 0);
     renderPager(total, pages);
+    scheduleMeasure();
   }
 
   function renderPager(total, pages) {
     clear(pager);
+    wrap.classList.toggle('has-pager', pages > 1);
     if (pages <= 1) { pager.hidden = true; return; }
     pager.hidden = false;
-    const from = page * pageSize + 1;
-    const to = Math.min(total, (page + 1) * pageSize);
+    const from = page * size + 1;
+    const to = Math.min(total, (page + 1) * size);
     const prev = button('', { variant: 'ghost', size: 'sm', icon: glyph('chevronStart', 16), onClick: () => { page = Math.max(0, page - 1); renderBody(); }, attrs: { 'aria-label': 'الصفحة السابقة', disabled: page === 0 } });
     const next = button('', { variant: 'ghost', size: 'sm', icon: glyph('chevronEnd', 16), onClick: () => { page = Math.min(pages - 1, page + 1); renderBody(); }, attrs: { 'aria-label': 'الصفحة التالية', disabled: page >= pages - 1 } });
     const info = h('span', { class: 'pager-info', 'aria-live': 'polite' }, `${fmt.num(from)}–${fmt.num(to)} من ${fmt.num(total)}`);
@@ -580,6 +687,57 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     paintHead(); renderBody();
   }
 
+  /* ---- overflow affordance + auto page size (measured) ---- */
+  let ro = null;
+  let wasConnected = false;
+  let measureRaf = 0;
+  function updateScrollEdges() {
+    const sl = Math.abs(wrap.scrollLeft);
+    const max = wrap.scrollWidth - wrap.clientWidth;
+    wrap.classList.toggle('is-scroll-start', sl <= 1);
+    wrap.classList.toggle('is-scroll-end', max - sl <= 1);
+  }
+  function updateOverflow() {
+    const over = wrap.scrollWidth > wrap.clientWidth + 1;
+    wrap.classList.toggle('is-overflowing', over);
+    updateScrollEdges();
+  }
+  function fitRows() {
+    if (!autoFit || !wrap.isConnected || table.hidden) return;
+    const firstRow = tbody.querySelector('tr');
+    const rowH = (firstRow && firstRow.getBoundingClientRect().height) || (dense ? 31 : 41);
+    const headH = thead.getBoundingClientRect().height || 37;
+    const total = data.length;
+    const pagerH = pager.hidden ? (total > size ? 41 : 0) : (pager.getBoundingClientRect().height || 41);
+    let fit = Math.floor((maxH - headH - pagerH - 2) / Math.max(16, rowH));
+    fit = Math.max(3, Math.min(500, fit));
+    if (fit !== size) { size = fit; page = Math.min(page, Math.max(0, Math.ceil(total / size) - 1)); renderBody(); }
+  }
+  function measure() {
+    measureRaf = 0;
+    if (!wrap.isConnected) { if (wasConnected) destroy(); return; }
+    wasConnected = true;
+    updateOverflow();
+    fitRows();
+  }
+  function scheduleMeasure() {
+    if (measureRaf || typeof requestAnimationFrame !== 'function') return;
+    measureRaf = requestAnimationFrame(measure);
+  }
+  if (typeof ResizeObserver === 'function') {
+    ro = new ResizeObserver(() => scheduleMeasure());
+    ro.observe(wrap);
+    ro.observe(table);
+  } else {
+    window.addEventListener('resize', scheduleMeasure);
+  }
+  wrap.addEventListener('scroll', updateScrollEdges, { passive: true });
+  function destroy() {
+    if (ro) { ro.disconnect(); ro = null; }
+    window.removeEventListener('resize', scheduleMeasure);
+    if (measureRaf) { cancelAnimationFrame(measureRaf); measureRaf = 0; }
+  }
+
   paintHead();
   renderBody();
 
@@ -589,8 +747,17 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     update(nextRows) { data = Array.isArray(nextRows) ? nextRows.slice() : []; renderBody(); },
     setSort(key, dir = 'asc') { sortKey = key; sortDir = dir === 'desc' ? 'desc' : 'asc'; page = 0; paintHead(); renderBody(); },
     setPage(p) { page = Math.max(0, p | 0); renderBody(); },
+    setPageSize(n) { size = Math.max(0, Number(n) | 0); page = 0; renderBody(); },
+    destroy,
     get rows() { return data; },
+    get pageSize() { return size; },
   };
+}
+
+/** Rows that fit a given block size before the table is measured (header ≈ 37px, pager ≈ 41px). */
+function estimateRows(maxH, dense) {
+  const rowH = dense ? 31 : 41;
+  return Math.max(3, Math.min(500, Math.floor((maxH - 37 - 41) / rowH)));
 }
 
 /* ------------------------------------------------------------------ */
@@ -871,7 +1038,16 @@ export function menu(anchor, items = [], { ariaLabel = 'قائمة' } = {}) {
     else if (e.key === 'ArrowUp') { e.preventDefault(); (list[(idx - 1 + list.length) % list.length] || list[0]).focus(); }
     else if (e.key === 'Tab') { close(); }
   }
+  let closed = false;
+  let armTimer = 0;
+  let watchTimer = 0;
+  const unsubs = [];
   function close() {
+    if (closed) return;
+    closed = true;
+    clearTimeout(armTimer);
+    clearInterval(watchTimer);
+    unsubs.splice(0).forEach((un) => { try { un(); } catch { /* noop */ } });
     document.removeEventListener('pointerdown', onDoc, true);
     document.removeEventListener('keydown', onKey, true);
     window.removeEventListener('resize', close);
@@ -879,11 +1055,15 @@ export function menu(anchor, items = [], { ariaLabel = 'قائمة' } = {}) {
     el.remove();
   }
   el.__close = close;
-  setTimeout(() => {
+  armTimer = setTimeout(() => {
+    if (closed) return;
     document.addEventListener('pointerdown', onDoc, true);
     document.addEventListener('keydown', onKey, true);
     window.addEventListener('resize', close);
   }, 0);
+  // Never outlive the view that opened it: close on navigation and when the anchor leaves the DOM.
+  unsubs.push(bus.on('route:change', close), bus.on('ui:route-leave', close));
+  watchTimer = setInterval(() => { if (!anchor.isConnected || !el.isConnected) close(); }, 300);
   requestAnimationFrame(() => { const first = list.find((b) => !b.disabled); if (first) first.focus(); });
   return { el, close };
 }
@@ -896,7 +1076,8 @@ function toastStack() {
   let stack = document.getElementById('toasts');
   if (!stack) { stack = h('div', { id: 'toasts' }); document.body.appendChild(stack); }
   stack.classList.add('toast-stack');
-  if (!stack.hasAttribute('aria-live')) { stack.setAttribute('aria-live', 'polite'); stack.setAttribute('aria-relevant', 'additions'); }
+  // Each toast carries its own role=status / role=alert; the container itself is not a
+  // live region, so a toast is announced exactly once (RTL-18).
   return stack;
 }
 
@@ -937,24 +1118,72 @@ export function toast(message, { tone = 'neutral', timeout = 4500, action = null
 /* Kanban                                                              */
 /* ------------------------------------------------------------------ */
 
-export function kanban({ columns = [], items = [], onMove = null } = {}) {
-  const el = h('div', { class: 'kanban', role: 'list', 'aria-label': 'لوحة المراحل' });
+const KANBAN_HINT = 'استخدم السهم الأيسر/الأيمن للنقل بين الأعمدة';
+const cssEscape = (v) => (typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(String(v)) : String(v).replace(/["\\]/g, '\\$&'));
+
+/** Accessible name for a card: explicit code/title fields, else code + title read from the rendered content. */
+function kanbanCardName(item, card) {
+  const parts = [];
+  const pick = (v) => (v === null || v === undefined ? '' : String(v).replace(/\s+/g, ' ').trim());
+  const code = pick(item.code);
+  const title = pick(item.title || item.label || item.name);
+  if (code) parts.push(code);
+  if (title) parts.push(title);
+  if (!parts.length) {
+    const titleEl = card.querySelector('.kanban-card-title, h3, h4, strong');
+    const codeEl = card.querySelector('.mono');
+    const c = codeEl ? pick(codeEl.textContent) : '';
+    const t = titleEl ? pick(titleEl.textContent) : '';
+    if (c) parts.push(c);
+    if (t) parts.push(t);
+  }
+  if (!parts.length) {
+    const text = pick(Array.from(card.childNodes).filter((n) => !(n.classList && n.classList.contains('kanban-card-bar'))).map((n) => n.textContent || '').join(' '));
+    if (text) parts.push(text.length > 90 ? `${text.slice(0, 88).trimEnd()}…` : text);
+  }
+  return parts.join(' — ') || `بطاقة ${pick(item.id)}`;
+}
+
+/**
+ * Kanban board. columns:[{id,label,tone}], items:[{id,columnId,render,code?,title?}], onMove(id, toColumnId).
+ * Options: headingLevel (2|3|4, default 2; auto-bumped to 3 when the board mounts inside a .card that has
+ * its own h2), ariaLabel. Columns are role=group labelled by their heading; cards carry an accessible
+ * name (code + title), aria-roledescription and shared sr-only keyboard instructions (RTL-7/17/27).
+ * After a keyboard move the moved card is re-focused once the board re-renders. The scroller toggles
+ * is-overflowing / is-scroll-start / is-scroll-end (V21).
+ */
+export function kanban({ columns = [], items = [], onMove = null, headingLevel = null, ariaLabel = 'لوحة المراحل' } = {}) {
+  const hintId = uid('kanban-hint');
+  const el = h('div', { class: 'kanban', role: 'group', 'aria-label': ariaLabel, 'aria-describedby': hintId, dataset: { columns: columns.length } });
+  const hint = h('p', { class: 'sr-only', id: hintId }, KANBAN_HINT);
   const cols = new Map();
   let current = Array.isArray(items) ? items.slice() : [];
   let dragId = null;
+  let pendingFocusId = null;
+  let pendingFocusTimer = 0;
+  const explicitLevel = [2, 3, 4, 5, 6].includes(Number(headingLevel)) ? Number(headingLevel) : null;
+  let level = explicitLevel || 2;
 
-  const move = (id, toColumnId) => {
+  const move = (id, toColumnId, { viaKeyboard = false } = {}) => {
     const item = current.find((i) => String(i.id) === String(id));
     if (!item || String(item.columnId) === String(toColumnId)) return;
+    if (viaKeyboard) {
+      pendingFocusId = String(id);
+      clearTimeout(pendingFocusTimer);
+      pendingFocusTimer = setTimeout(() => { pendingFocusId = null; }, 2000);
+    }
     if (typeof onMove === 'function') onMove(item.id, toColumnId);
   };
 
   columns.forEach((col) => {
-    const colEl = h('section', { class: ['kanban-col', col.tone ? `tone-${toneOf(col.tone)}` : null], 'data-column': String(col.id), role: 'listitem', 'aria-label': String(col.label) });
+    const titleId = uid('kanban-col');
+    const colEl = h('section', { class: ['kanban-col', col.tone ? `tone-${toneOf(col.tone)}` : null], 'data-column': String(col.id), role: 'group', 'aria-labelledby': titleId });
     const head = h('header', { class: 'kanban-col-head' });
     if (col.tone) head.appendChild(liveDot(col.tone));
-    head.appendChild(h('h3', { class: 'kanban-col-title' }, String(col.label)));
-    const count = h('span', { class: 'kanban-count', 'aria-label': 'عدد البطاقات' }, '0');
+    const title = h(`h${level}`, { class: 'kanban-col-title', id: titleId }, String(col.label));
+    head.appendChild(title);
+    const countNum = h('span', { class: 'kanban-count-num' }, '0');
+    const count = h('span', { class: 'kanban-count' }, h('span', { class: 'sr-only' }, 'عدد البطاقات: '), countNum);
     head.appendChild(count);
     const cards = h('div', { class: 'kanban-cards', 'data-column': String(col.id) });
     colEl.append(head, cards);
@@ -967,23 +1196,39 @@ export function kanban({ columns = [], items = [], onMove = null } = {}) {
       dragId = null;
       if (id) move(id, col.id);
     });
-    cols.set(String(col.id), { colEl, cards, count, col });
+    cols.set(String(col.id), { colEl, cards, count, countNum, title, col });
     el.appendChild(colEl);
   });
+  el.appendChild(hint);
+
+  /** Heading level: explicit option wins; otherwise h2 at top level, h3 inside a card that already has an h2. */
+  function applyHeadingLevel() {
+    if (explicitLevel) return;
+    const card = el.closest('.card');
+    const want = card && card.querySelector('h2') ? 3 : 2;
+    if (want === level) return;
+    level = want;
+    for (const slot of cols.values()) {
+      const next = h(`h${level}`, { class: 'kanban-col-title', id: slot.title.id }, slot.title.textContent);
+      slot.title.replaceWith(next);
+      slot.title = next;
+    }
+  }
 
   function cardFor(item) {
-    const card = h('article', { class: 'kanban-card', draggable: true, 'data-id': String(item.id), tabindex: '0' });
+    const card = h('article', { class: 'kanban-card', draggable: true, 'data-id': String(item.id), tabindex: '0', 'aria-roledescription': 'بطاقة قابلة للنقل', 'aria-describedby': hintId });
     const bar = h('div', { class: 'kanban-card-bar' });
     const grip = glyph('grip', 14); grip.classList.add('kanban-grip');
     bar.appendChild(grip);
     const others = columns.filter((c) => String(c.id) !== String(item.columnId));
     const moveBtn = button('', { variant: 'ghost', size: 'sm', icon: glyph('move', 15), attrs: { 'aria-label': 'نقل إلى', 'aria-haspopup': 'menu', 'aria-expanded': 'false', class: 'kanban-move' },
-      onClick: (e) => { e.stopPropagation(); menu(moveBtn, others.map((c) => ({ label: `نقل إلى: ${c.label}`, tone: c.tone || null, onClick: () => move(item.id, c.id) })), { ariaLabel: 'نقل إلى' }); } });
+      onClick: (e) => { e.stopPropagation(); menu(moveBtn, others.map((c) => ({ label: `نقل إلى: ${c.label}`, tone: c.tone || null, onClick: () => move(item.id, c.id, { viaKeyboard: true }) })), { ariaLabel: 'نقل إلى' }); } });
     bar.appendChild(moveBtn);
     card.appendChild(bar);
     let content = null;
     try { content = typeof item.render === 'function' ? item.render(item) : null; } catch { content = null; }
     appendChild(card, content);
+    card.setAttribute('aria-label', kanbanCardName(item, card));
     card.addEventListener('dragstart', (e) => {
       dragId = String(item.id);
       e.dataTransfer.effectAllowed = 'move';
@@ -995,8 +1240,8 @@ export function kanban({ columns = [], items = [], onMove = null } = {}) {
       if (e.target !== card) return;
       const idx = columns.findIndex((c) => String(c.id) === String(item.columnId));
       // RTL: ArrowLeft advances to the next column, ArrowRight goes back.
-      if (e.key === 'ArrowLeft' && idx < columns.length - 1) { e.preventDefault(); move(item.id, columns[idx + 1].id); }
-      else if (e.key === 'ArrowRight' && idx > 0) { e.preventDefault(); move(item.id, columns[idx - 1].id); }
+      if (e.key === 'ArrowLeft' && idx < columns.length - 1) { e.preventDefault(); move(item.id, columns[idx + 1].id, { viaKeyboard: true }); }
+      else if (e.key === 'ArrowRight' && idx > 0) { e.preventDefault(); move(item.id, columns[idx - 1].id, { viaKeyboard: true }); }
       else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); moveBtn.click(); }
     });
     return card;
@@ -1013,19 +1258,94 @@ export function kanban({ columns = [], items = [], onMove = null } = {}) {
     });
     for (const slot of cols.values()) {
       const n = counts.get(slot) || 0;
-      slot.count.textContent = fmt.num(n);
+      slot.countNum.textContent = fmt.num(n);
       slot.colEl.classList.toggle('is-empty', n === 0);
       if (n === 0) slot.cards.appendChild(h('p', { class: 'kanban-empty' }, 'لا توجد بطاقات'));
     }
+    if (pendingFocusId !== null) {
+      const target = el.querySelector(`.kanban-card[data-id="${cssEscape(pendingFocusId)}"]`);
+      if (target) {
+        pendingFocusId = null;
+        clearTimeout(pendingFocusTimer);
+        try { target.focus({ preventScroll: false }); } catch { target.focus(); }
+      }
+    }
+    scheduleOverflow();
   }
 
+  /* ---- scroller affordance (V21) ---- */
+  let ro = null;
+  let raf = 0;
+  let wasConnected = false;
+  function updateOverflow() {
+    raf = 0;
+    if (!el.isConnected) { if (wasConnected) teardown(); return; }
+    wasConnected = true;
+    applyHeadingLevel();
+    const over = el.scrollWidth > el.clientWidth + 1;
+    el.classList.toggle('is-overflowing', over);
+    const sl = Math.abs(el.scrollLeft);
+    const max = el.scrollWidth - el.clientWidth;
+    el.classList.toggle('is-scroll-start', sl <= 1);
+    el.classList.toggle('is-scroll-end', max - sl <= 1);
+  }
+  function scheduleOverflow() {
+    if (raf || typeof requestAnimationFrame !== 'function') return;
+    raf = requestAnimationFrame(updateOverflow);
+  }
+  function teardown() {
+    if (ro) { ro.disconnect(); ro = null; }
+    window.removeEventListener('resize', scheduleOverflow);
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    clearTimeout(pendingFocusTimer);
+  }
+  if (typeof ResizeObserver === 'function') { ro = new ResizeObserver(() => scheduleOverflow()); ro.observe(el); }
+  else window.addEventListener('resize', scheduleOverflow);
+  el.addEventListener('scroll', scheduleOverflow, { passive: true });
+
   render();
-  return { el, update(next) { current = Array.isArray(next) ? next.slice() : []; render(); } };
+  return {
+    el,
+    update(next) { current = Array.isArray(next) ? next.slice() : []; render(); },
+    focusCard(id) { const c = el.querySelector(`.kanban-card[data-id="${cssEscape(String(id))}"]`); if (c) c.focus(); return !!c; },
+    destroy: teardown,
+  };
 }
 
 /* ------------------------------------------------------------------ */
 /* Countdown                                                           */
 /* ------------------------------------------------------------------ */
+
+/* One shared 1 s ticker drives every countdown on the page; it idles while the tab is hidden (C-9). */
+const tickers = new Set();
+let tickerTimer = 0;
+let tickerVisibilityBound = false;
+function runTickers() {
+  for (const fn of Array.from(tickers)) {
+    try { fn(); } catch { /* a failing countdown never stops the others */ }
+  }
+}
+function syncTicker() {
+  const shouldRun = tickers.size > 0 && !(typeof document !== 'undefined' && document.hidden);
+  if (shouldRun && !tickerTimer) tickerTimer = setInterval(runTickers, 1000);
+  else if (!shouldRun && tickerTimer) { clearInterval(tickerTimer); tickerTimer = 0; }
+}
+function onTickerVisibility() {
+  syncTicker();
+  if (!document.hidden) runTickers(); // catch up immediately when the tab comes back
+}
+function addTicker(fn) {
+  tickers.add(fn);
+  if (!tickerVisibilityBound && typeof document !== 'undefined') {
+    tickerVisibilityBound = true;
+    document.addEventListener('visibilitychange', onTickerVisibility);
+  }
+  syncTicker();
+}
+function removeTicker(fn) {
+  tickers.delete(fn);
+  syncTicker();
+}
 
 export function countdown(targetIso, { onExpire = null, warnMinutes = 60, expiredText = 'منتهٍ' } = {}) {
   const target = new Date(targetIso).getTime();
@@ -1033,8 +1353,14 @@ export function countdown(targetIso, { onExpire = null, warnMinutes = 60, expire
   const ic = glyph('clock', 13); ic.classList.add('countdown-icon');
   const text = h('span', { class: 'countdown-text' });
   el.append(ic, text);
-  let fired = false; let timer = null;
+  let fired = false;
+  let registered = false;
+  let wasConnected = false;
+  const stop = () => { if (registered) { registered = false; removeTicker(tick); } };
   const tick = () => {
+    // Auto-unregister once the element has been removed from the document (view navigated away without stop()).
+    if (el.isConnected) wasConnected = true;
+    else if (wasConnected) { stop(); return; }
     const remaining = target - Date.now();
     if (!Number.isFinite(target)) { text.textContent = '—'; stop(); return; }
     if (remaining <= 0) {
@@ -1050,9 +1376,8 @@ export function countdown(targetIso, { onExpire = null, warnMinutes = 60, expire
     text.textContent = d;
     el.setAttribute('aria-label', `الوقت المتبقي: ${d}`);
   };
-  const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
   tick();
-  if (!el.classList.contains('is-expired')) timer = setInterval(tick, 1000);
+  if (!el.classList.contains('is-expired') && Number.isFinite(target)) { registered = true; addTicker(tick); }
   return { el, stop, tick };
 }
 
@@ -1063,5 +1388,6 @@ export function countdown(targetIso, { onExpire = null, warnMinutes = 60, expire
 export const components = {
   h, clear, glyph, svgIcon, card, statTile, badge, tierBadge, button, segmented, tabs, dataTable,
   modal, drawer, menu, toast, kanban, formField, readForm, emptyState, progress, countdown, liveDot, kv, reducedMotion,
+  parseDelta,
 };
 export default components;

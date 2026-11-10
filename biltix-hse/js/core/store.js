@@ -1,18 +1,33 @@
 /**
- * Biltix HSE — state store (js/core/store.js)
+ * Biltix Risk AI — state store (js/core/store.js)
  *
  * Single live state object + localStorage persistence + CRUD + filters + settings.
  * Contract (ARCHITECTURE.md §4). Highlights:
  *
- *   • State shape: { ...seed, feed, settings, filters, meta:{version, savedAt, anchorDate} }
- *   • Persistence key 'biltix-hse:v1', debounced 300 ms, every storage access guarded
- *     (private mode / quota / disabled storage never throws).
- *   • Time re-anchoring: seed dates are authored against 2026-11-09. On every load the
- *     whole dataset is shifted by the number of days between the stored anchor and
- *     today, preserving clock time and UTC offsets, so the demo always looks current.
- *   • Saved state (same version) wins for the collections the app mutates; reference
- *     data (sites, courses, workers, ISO clauses, legal register, sensors, company)
- *     always comes from the current seed so deployments never show stale reference data.
+ *   • State shape: { ...seed, feed, settings, filters, meta:{version, savedAt, anchorDate, anchorNow} }
+ *   • Persistence key 'biltix-hse:v1', debounced 2 s, every storage access guarded
+ *     (private mode / quota / disabled storage never throws; a quota overflow is surfaced
+ *     once through bus 'alert' with tone 'warning'). Only MUTABLE data is written: settings,
+ *     filters, meta, the last 30 feed events and, for every user-mutable collection, a
+ *     delta against the seed (new items in full, changed fields of seed items, removed ids).
+ *     Reference data (sites, courses, workers, ISO clauses, legal register, sensors,
+ *     contracts, suppliers, …) is never persisted and is rebuilt from the seed on load.
+ *     Feed-only changes do not trigger a write. Legacy full snapshots (and JSON imports)
+ *     are still accepted and normalised on load.
+ *   • Time re-anchoring: seed dates are authored against 2026-11-09 12:40 (Riyadh).
+ *     Calendar dates ("YYYY-MM-DD") shift by whole days so weekdays/months stay coherent;
+ *     instants ("…T hh:mm…") shift by the exact millisecond delta between the anchor
+ *     instant and now, and every instant that must lie in the past (sync times, audit
+ *     entries, detections, alerts, feed, active permit starts …) is clamped to now, so
+ *     nothing timestamp-like is ever in the future after load.
+ *   • Snapshots are normalised on load: numbers clamped, enums validated, theme/numerals
+ *     coerced, filters checked against the seed, non-object items dropped, platform weights
+ *     normalised to sum 1, alert codes backfilled (AL-####), legacy brand defaults migrated.
+ *   • Prototype-pollution safe: deepMerge/setPath/patch helpers skip __proto__, constructor
+ *     and prototype keys.
+ *   • AI-risk state machine enforced here: accept/override only once and only on open
+ *     risks (مكتشف/تنبيه), dismiss/escalate never on closed or dismissed risks, closed
+ *     permits (مغلق) cannot be reopened — invalid transitions return null.
  *   • CRUD helpers generate ids/codes (R-1049, INC-2026-032, PTW-5543), stamp
  *     createdAt/updatedAt, push a feed event and emit `store:change`.
  *   • Part B (§B5): `state.platform` holds the AI Risk Platform entities from
@@ -27,7 +42,7 @@
  * Side effects on import are limited to reading localStorage once to build `state`.
  */
 
-import seed, { RISK_STATUS, CONTROL_TYPES, INCIDENT_TYPES, INCIDENT_STATUS, PERMIT_TYPES, PERMIT_STATUS } from '../data/seed.js';
+import seed, { RISK_STATUS, CONTROL_TYPES, INCIDENT_TYPES, INCIDENT_STATUS, PERMIT_TYPES, PERMIT_STATUS, INSPECTION_STATUS, INSPECTION_TYPES, INTEGRATION_STATUS } from '../data/seed.js';
 import { bus } from './bus.js';
 import { sel } from './selectors.js';
 
@@ -48,17 +63,32 @@ try {
 
 export const STORAGE_KEY = 'biltix-hse:v1';
 export const STATE_VERSION = 1;
-export const SEED_ANCHOR_DATE = '2026-11-09';
+/** Layout of the persisted payload: 'delta' (mutable data only) vs legacy full snapshots. */
+export const PERSIST_FORMAT = 'delta';
+export const SEED_ANCHOR_DATE = (seed && seed.meta && typeof seed.meta.anchorDate === 'string') ? seed.meta.anchorDate : '2026-11-09';
+/** Instant the seed was authored at (Riyadh noon-ish) — instants are re-anchored from here. */
+export const SEED_ANCHOR_NOW = (seed && seed.meta && typeof seed.meta.anchorNow === 'string') ? seed.meta.anchorNow : `${SEED_ANCHOR_DATE}T12:40:00+03:00`;
 export const FEED_CAP = 200;
 export const AUDIT_CAP = 500;
-const PERSIST_DEBOUNCE_MS = 300;
+/** Feed events kept in localStorage (the live engines refill the rest). */
+export const PERSIST_FEED_CAP = 30;
+export const PERSIST_DEBOUNCE_MS = 2000;
 const WRITEBACK_MS = 1500;
 const DAY_MS = 86_400_000;
+/** Legacy brand defaults (pre-RTL-2); saved copies of these migrate to '' = "use theme tokens". */
+const LEGACY_BRAND = { primary: '#2f6fed', accent: '#19c6e6' };
+const HEX_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const DATA_SOURCE_TYPES = ['simulation', 'json', 'sheets', 'supabase'];
+const MOTION_MODES = ['auto', 'reduce', 'full'];
 
 export const DEFAULT_SETTINGS = deepFreeze({
   theme: 'dark',
   numerals: 'latn',
-  brand: { primary: '#2F6FED', accent: '#19C6E6', companyName: 'بلتكس', logoUrl: '' },
+  // '' for primary/accent means "use the theme tokens" (css/tokens.css); a hex overrides both themes.
+  brand: { primary: '', accent: '', companyName: 'بلتكس', logoUrl: '' },
   sound: false,
   feedPaused: false,
   dataSource: { type: 'simulation', url: '', apiKey: '', table: '' },
@@ -83,6 +113,14 @@ export const TASK_STATUS = ['جديدة', 'قيد التنفيذ', 'متأخرة
 export const TASK_SOURCES = ['ai-accepted', 'ai-edited', 'manual'];
 export const QUARANTINE_STATUS = ['معلّق', 'مُصحح', 'مرفوض'];
 export const AUDIT_ACTIONS = ['override', 'accept', 'escalate', 'writeback', 'model-update', 'validation', 'login', 'config', 'close'];
+export const PIPELINE_STATUS = ['running', 'idle', 'training', 'degraded'];
+export const CONNECTOR_STATUS = ['connected', 'degraded', 'disconnected', 'configurable'];
+export const ALERT_SEVERITIES = ['critical', 'routine'];
+export const ALERT_QUEUES = ['immediate', 'standard'];
+/** AI-risk state machine (§B3): accept/override only from these … */
+export const AI_RISK_ASSIGNABLE = ['مكتشف', 'تنبيه'];
+/** … and nothing moves out of these. */
+export const AI_RISK_TERMINAL = ['مغلق', 'مُتجاوز'];
 const CATEGORY_PIPELINE = { contract: 'contract-nlp', bom: 'bom-forecast', schedule: 'schedule-model', site: 'site-ai', cost: 'cost-forecast' };
 const CATEGORY_TYPE = { contract: 'Conflict', bom: 'Financial', schedule: 'Delay', site: 'Safety', cost: 'Financial' };
 const PIPELINE_LABEL = { 'contract-nlp': 'محرك العقود NLP', 'bom-forecast': 'محرك توقعات المواد', 'schedule-model': 'نموذج الجدول الزمني', 'site-ai': 'ذكاء الموقع والصور', 'cost-forecast': 'محرك توقعات التكلفة' };
@@ -98,9 +136,14 @@ const PLATFORM_COLLECTIONS = [
   'pipelines', 'connectors', 'auditLog',
 ];
 
-/** Platform date fields shifted by `reanchorPlatform()` (§B5 list, exhaustively). */
+/**
+ * Platform date-bearing fields re-anchored on load (§B5 list, exhaustively). A field holding a
+ * calendar date ("YYYY-MM-DD") is shifted by whole days; one holding an instant ("…T hh:mm…")
+ * by the exact ms delta — the value's own format decides (see `shiftValue`). Every instant
+ * is clamped to "now" unless `futureOk` says it may legitimately lie in the future.
+ */
 const PLATFORM_DATE_FIELDS = {
-  projects: { own: ['startDate', 'plannedFinish', 'forecastFinish'] },
+  projects: { own: ['startDate', 'plannedFinish', 'forecastFinish'], nested: { nextMilestone: ['date'] } },
   contracts: { own: ['signedAt', 'endsAt'], children: { obligations: ['due'] } },
   boqItems: { own: ['requiredBy', 'orderBy'] },
   scheduleTasks: { own: ['start', 'finish', 'baselineFinish'] },
@@ -116,14 +159,36 @@ const PLATFORM_DATE_FIELDS = {
 
 export const DEFAULT_FILTERS = deepFreeze({ siteId: 'all', range: 30, search: '' });
 
-/** Collections the UI mutates; a saved copy of these overrides the seed on load. */
+/** Part A collections the UI mutates (persisted as deltas against the seed; a legacy full copy overrides the seed). */
 const MUTABLE_COLLECTIONS = ['risks', 'incidents', 'permits', 'inspections', 'integrations', 'feed'];
+/** Part A collections persisted as deltas (feed is persisted separately, capped). */
+const PERSIST_COLLECTIONS = ['risks', 'incidents', 'permits', 'inspections', 'integrations'];
+/** Platform collections persisted as deltas. */
+const PERSIST_PLATFORM_COLLECTIONS = ['aiRisks', 'tasks', 'alerts', 'auditLog', 'connectors', 'pipelines'];
+/** platform.validation sub-collections persisted as deltas. */
+const PERSIST_VALIDATION_KEYS = ['sources', 'rules', 'quarantine'];
+/**
+ * Fields whose changes are persisted for seed items of a collection (undefined = every field).
+ * Jittered telemetry (latency, counters, histories) stays session-only; configuration and
+ * status survive reloads.
+ */
+const PERSIST_FIELDS = {
+  integrations: ['config', 'status', 'lastSync', 'lastError', 'enabled'],
+  connectors: ['config', 'status', 'lastSync', 'enabled', 'mode'],
+  pipelines: ['status', 'version', 'lastRun', 'driftScore', 'calibrationError', 'enabled'],
+  sources: ['enabled'],
+  rules: ['enabled'],
+};
 
-/** Date-bearing fields shifted by `reanchor()` — one entry per collection. */
+/** Part A date-bearing fields re-anchored on load — one entry per collection (format-driven, see above). */
 const DATE_FIELDS = {
   risks: { own: ['dueDate', 'createdAt', 'updatedAt', 'closedAt'], children: { history: ['at'] } },
   incidents: { own: ['date', 'createdAt', 'updatedAt', 'closedAt'], children: { actions: ['due', 'doneAt'] } },
-  permits: { own: ['startsAt', 'expiresAt', 'createdAt', 'updatedAt', 'approvedAt', 'closedAt'] },
+  permits: {
+    own: ['startsAt', 'expiresAt', 'createdAt', 'updatedAt', 'approvedAt', 'closedAt'],
+    // expiry is a deadline; a draft / pending / suspended permit may start later.
+    futureOk: (item, key) => key === 'expiresAt' || (key === 'startsAt' && !['نشط', 'مغلق'].includes(item && item.status)),
+  },
   inspections: { own: ['date', 'createdAt', 'updatedAt'] },
   workers: { own: ['joinedAt'], children: { certs: ['completedAt', 'expiresAt'] } },
   integrations: { own: ['lastSync'] },
@@ -152,15 +217,40 @@ function clone(value) {
   }
 }
 
-/** Recursive merge: plain objects merge key by key, arrays and scalars replace. */
+/** Keys that must never be assigned from data (prototype pollution). */
+function isUnsafeKey(key) {
+  return UNSAFE_KEYS.has(key);
+}
+
+/** Recursive merge: plain objects merge key by key, arrays and scalars replace. Skips unsafe keys. */
 function deepMerge(target, patch) {
   if (!isPlainObject(patch)) return patch;
   const out = isPlainObject(target) ? { ...target } : {};
   for (const [key, value] of Object.entries(patch)) {
-    if (value === undefined) continue;
+    if (value === undefined || isUnsafeKey(key)) continue;
     out[key] = isPlainObject(value) && isPlainObject(out[key]) ? deepMerge(out[key], value) : (Array.isArray(value) ? value.slice() : value);
   }
   return out;
+}
+
+/** Object.assign that ignores unsafe keys and `undefined` values. */
+function safeAssign(target, patch) {
+  if (!isPlainObject(target) || !isPlainObject(patch)) return target;
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined || isUnsafeKey(key)) continue;
+    target[key] = value;
+  }
+  return target;
+}
+
+/** Structural equality through JSON (good enough for plain data records). */
+function sameJSON(a, b) {
+  if (a === b) return true;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
 }
 
 function pad(n, width) {
@@ -224,41 +314,121 @@ export function shiftISO(value, days) {
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1, 2)}-${pad(d.getUTCDate(), 2)}${m[4]}`;
 }
 
-function shiftFields(obj, keys, days) {
-  if (!isPlainObject(obj)) return;
-  for (const key of keys) {
-    if (typeof obj[key] === 'string') obj[key] = shiftISO(obj[key], days);
-  }
+/** Offset suffix of an ISO instant ("+03:00", "Z") → minutes east of UTC; null when absent/invalid. */
+function offsetMinutesOf(value) {
+  const m = /(Z|[+-]\d{2}:\d{2})$/.exec(String(value));
+  if (!m) return null;
+  if (m[1] === 'Z') return 0;
+  const sign = m[1][0] === '-' ? -1 : 1;
+  return sign * (Number(m[1].slice(1, 3)) * 60 + Number(m[1].slice(4, 6)));
+}
+
+/** Format an epoch ms as "YYYY-MM-DDThh:mm:ss±hh:mm" in the given UTC offset (minutes). */
+function isoAtOffset(epochMs, offsetMin) {
+  const shifted = new Date(epochMs + offsetMin * 60_000);
+  const sign = offsetMin < 0 ? '-' : '+';
+  const abs = Math.abs(offsetMin);
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1, 2)}-${pad(shifted.getUTCDate(), 2)}`
+    + `T${pad(shifted.getUTCHours(), 2)}:${pad(shifted.getUTCMinutes(), 2)}:${pad(shifted.getUTCSeconds(), 2)}`
+    + `${sign}${pad(Math.floor(abs / 60), 2)}:${pad(abs % 60, 2)}`;
 }
 
 /**
- * Re-anchor every date in `state` from `state.meta.anchorDate` (default 2026-11-09)
- * to the calendar day of `nowDate`. Returns the day delta applied.
+ * Shift an ISO instant by `ms`, keeping its original UTC offset
+ * ("2026-11-09T12:39:00+03:00" + 1 h → "2026-11-09T13:39:00+03:00").
+ * Offset-less instants are treated as local time (the offset of the host).
  */
-export function reanchor(state, nowDate = new Date()) {
-  if (!isPlainObject(state)) return 0;
-  const today = todayISO(nowDate);
-  const meta = isPlainObject(state.meta) ? state.meta : (state.meta = {});
-  const anchor = typeof meta.anchorDate === 'string' ? meta.anchorDate : SEED_ANCHOR_DATE;
-  const delta = daysBetween(anchor, today);
-  if (delta !== 0) {
-    for (const [collection, spec] of Object.entries(DATE_FIELDS)) {
-      const items = state[collection];
-      if (!Array.isArray(items)) continue;
-      for (const item of items) {
-        if (spec.own) shiftFields(item, spec.own, delta);
-        if (spec.children) {
-          for (const [childKey, childFields] of Object.entries(spec.children)) {
-            const children = item && item[childKey];
-            if (Array.isArray(children)) children.forEach((child) => shiftFields(child, childFields, delta));
-          }
-        }
+export function shiftInstant(value, ms) {
+  if (typeof value !== 'string' || !INSTANT_RE.test(value) || !Number.isFinite(ms) || ms === 0) return value;
+  const epoch = Date.parse(value);
+  if (!Number.isFinite(epoch)) return value;
+  const offset = offsetMinutesOf(value);
+  if (offset === null) return localISO(new Date(epoch + ms));
+  return isoAtOffset(epoch + ms, offset);
+}
+
+/** Clamp an ISO instant so it is never after `nowDate` (keeps its offset). */
+export function clampInstant(value, nowDate) {
+  if (typeof value !== 'string' || !INSTANT_RE.test(value)) return value;
+  const epoch = Date.parse(value);
+  const nowMs = nowDate.getTime();
+  if (!Number.isFinite(epoch) || epoch <= nowMs) return value;
+  const offset = offsetMinutesOf(value);
+  return offset === null ? localISO(nowDate) : isoAtOffset(nowMs, offset);
+}
+
+/**
+ * Re-anchor one date-bearing string: calendar dates move by `days`, instants by `ms`
+ * (when `shift.instants` is on), and instants that must lie in the past are clamped to now.
+ */
+function shiftValue(value, shift, futureOk) {
+  if (typeof value !== 'string') return value;
+  if (DATE_ONLY_RE.test(value)) return shift.days ? shiftISO(value, shift.days) : value;
+  if (!INSTANT_RE.test(value)) return value;
+  let next = shift.instants && shift.ms ? shiftInstant(value, shift.ms) : value;
+  if (!futureOk) next = clampInstant(next, shift.now);
+  return next;
+}
+
+function shiftFields(obj, keys, shift, spec) {
+  if (!isPlainObject(obj)) return;
+  for (const key of keys) {
+    if (typeof obj[key] !== 'string') continue;
+    const futureOk = spec && typeof spec.futureOk === 'function' ? Boolean(spec.futureOk(obj, key)) : false;
+    obj[key] = shiftValue(obj[key], shift, futureOk);
+  }
+}
+
+/** Apply a {own, children, nested, futureOk} spec to every item of a collection. */
+function shiftCollection(items, spec, shift) {
+  if (!Array.isArray(items) || !spec) return;
+  for (const item of items) {
+    if (!isPlainObject(item)) continue;
+    if (spec.own) shiftFields(item, spec.own, shift, spec);
+    if (spec.children) {
+      for (const [childKey, childFields] of Object.entries(spec.children)) {
+        const children = item[childKey];
+        if (Array.isArray(children)) children.forEach((child) => shiftFields(child, childFields, shift));
       }
     }
-    if (isPlainObject(state.platform)) reanchorPlatform(state.platform, delta);
+    if (spec.nested) {
+      for (const [childKey, childFields] of Object.entries(spec.nested)) shiftFields(item[childKey], childFields, shift);
+    }
   }
+}
+
+/** Instant the snapshot was anchored at (meta.anchorNow → savedAt → seed anchor), as epoch ms. */
+function anchorInstantOf(meta) {
+  const candidates = [meta && meta.anchorNow, meta && meta.savedAt, SEED_ANCHOR_NOW];
+  for (const c of candidates) {
+    const t = typeof c === 'string' ? Date.parse(c) : NaN;
+    if (Number.isFinite(t)) return t;
+  }
+  return Date.parse(SEED_ANCHOR_NOW);
+}
+
+/**
+ * Re-anchor every date in `state` from `state.meta.anchorDate` / `anchorNow` to `nowDate`.
+ * Calendar dates shift by whole days (weekday-preserving demo), instants by the exact ms delta
+ * (`instants: true` forces it even on the same day — used for the seed; 'auto' = only when the
+ * calendar day changed, so a same-day reload leaves saved instants untouched). Past-only
+ * instants are always clamped to now. Returns the day delta applied.
+ */
+export function reanchor(state, nowDate = new Date(), { instants = 'auto' } = {}) {
+  if (!isPlainObject(state)) return 0;
+  const now = nowDate instanceof Date ? nowDate : new Date(nowDate);
+  const today = todayISO(now);
+  const meta = isPlainObject(state.meta) ? state.meta : (state.meta = {});
+  const anchor = typeof meta.anchorDate === 'string' ? meta.anchorDate : SEED_ANCHOR_DATE;
+  const days = daysBetween(anchor, today);
+  const ms = now.getTime() - anchorInstantOf(meta);
+  const shiftInstants = instants === true || (instants !== false && days !== 0);
+  const shift = { days, ms, instants: shiftInstants, now };
+  for (const [collection, spec] of Object.entries(DATE_FIELDS)) shiftCollection(state[collection], spec, shift);
+  if (isPlainObject(state.platform)) reanchorPlatform(state.platform, shift);
   meta.anchorDate = today;
-  return delta;
+  meta.anchorNow = localISO(now);
+  return days;
 }
 
 /* ────────────────────────────── Part B: platform helpers ────────────────────────────── */
@@ -311,38 +481,27 @@ function normalizePlatform(src) {
   return out;
 }
 
-/** Shift every platform date (§B5 list) by `days`; tolerant of missing arrays/objects. */
-export function reanchorPlatform(platform, days) {
-  if (!isPlainObject(platform) || !days) return;
-  for (const [collection, spec] of Object.entries(PLATFORM_DATE_FIELDS)) {
-    const items = platform[collection];
-    if (!Array.isArray(items)) continue;
-    for (const item of items) {
-      if (!isPlainObject(item)) continue;
-      if (spec.own) shiftFields(item, spec.own, days);
-      if (spec.children) {
-        for (const [childKey, childFields] of Object.entries(spec.children)) {
-          const children = item[childKey];
-          if (Array.isArray(children)) children.forEach((child) => shiftFields(child, childFields, days));
-        }
-      }
-      if (spec.nested) {
-        for (const [childKey, childFields] of Object.entries(spec.nested)) shiftFields(item[childKey], childFields, days);
-      }
-    }
-  }
+/**
+ * Re-anchor every platform date (§B5 list). `shift` is the {days, ms, instants, now} object built
+ * by `reanchor()`; a bare number is accepted for backwards compatibility (days only).
+ */
+export function reanchorPlatform(platform, shift) {
+  if (!isPlainObject(platform)) return;
+  const s = typeof shift === 'number' ? { days: shift, ms: 0, instants: false, now: new Date() } : shift;
+  if (!s) return;
+  for (const [collection, spec] of Object.entries(PLATFORM_DATE_FIELDS)) shiftCollection(platform[collection], spec, s);
   if (isPlainObject(platform.monteCarlo)) {
-    for (const mc of Object.values(platform.monteCarlo)) shiftFields(mc, ['p50', 'p80', 'p90'], days);
+    for (const mc of Object.values(platform.monteCarlo)) shiftFields(mc, ['p50', 'p80', 'p90', 'plannedFinish'], s);
   }
   if (isPlainObject(platform.weather)) {
     for (const w of Object.values(platform.weather)) {
-      if (isPlainObject(w) && Array.isArray(w.next7)) w.next7.forEach((d) => shiftFields(d, ['date'], days));
+      if (isPlainObject(w) && Array.isArray(w.next7)) w.next7.forEach((d) => shiftFields(d, ['date'], s));
     }
   }
   const v = platform.validation;
   if (isPlainObject(v)) {
-    if (Array.isArray(v.sources)) v.sources.forEach((s) => shiftFields(s, ['lastBatch'], days));
-    if (Array.isArray(v.quarantine)) v.quarantine.forEach((q) => shiftFields(q, ['at', 'resolvedAt'], days));
+    if (Array.isArray(v.sources)) v.sources.forEach((src) => shiftFields(src, ['lastBatch'], s));
+    if (Array.isArray(v.quarantine)) v.quarantine.forEach((q) => shiftFields(q, ['at', 'resolvedAt'], s));
   }
 }
 
@@ -388,14 +547,408 @@ function nextPlatformCode(items, prefix, min = 0, width = 4) {
 }
 
 /** Feed items re-anchored into the future read oddly ("خلال 3 ساعات"); clamp them to now. */
-function clampFutureFeed(feed, nowDate) {
-  if (!Array.isArray(feed)) return;
-  const nowMs = nowDate.getTime();
-  const nowIso = localISO(nowDate);
-  for (const item of feed) {
-    const t = Date.parse(item && item.ts);
-    if (Number.isFinite(t) && t > nowMs) item.ts = nowIso;
+/* ────────────────────────────── normalisation (snapshots / imports) ────────────────────────────── */
+
+function bool(value, fallback = false) {
+  if (typeof value === 'boolean') return value;
+  return value == null ? fallback : Boolean(value);
+}
+
+/** '#RGB' / '#RRGGBB' kept as is; anything else (and a legacy default) becomes '' = theme tokens. */
+function hexOrEmpty(value, legacy) {
+  const v = typeof value === 'string' ? value.trim() : '';
+  if (!HEX_RE.test(v)) return '';
+  if (legacy && v.toLowerCase() === legacy) return '';
+  return v;
+}
+
+function objectItems(list) {
+  return Array.isArray(list) ? list.filter((x) => isPlainObject(x) && (typeof x.id === 'string' || typeof x.id === 'number')) : [];
+}
+
+function objectList(list) {
+  return Array.isArray(list) ? list.filter(isPlainObject) : [];
+}
+
+function stringList(list) {
+  return Array.isArray(list) ? list.map((s) => text(s)).filter(Boolean) : [];
+}
+
+const INTEGRATION_STATUS_IDS = Array.isArray(INTEGRATION_STATUS)
+  ? INTEGRATION_STATUS.map((s) => (isPlainObject(s) ? s.id : s)).filter(Boolean)
+  : CONNECTOR_STATUS;
+
+/** Platform category weights → numbers in 0..1 summing to exactly 1 (fallback when unusable). */
+export function normalizeWeights(input, fallback = DEFAULT_SETTINGS.platform.weights) {
+  const base = isPlainObject(fallback) ? fallback : DEFAULT_SETTINGS.platform.weights;
+  const keys = Object.keys(base);
+  const raw = isPlainObject(input) ? input : {};
+  const vals = keys.map((k) => clampNum(raw[k], 0, 1, NaN));
+  keys.forEach((k, i) => { if (!Number.isFinite(vals[i])) vals[i] = clampNum(base[k], 0, 1, 0); });
+  const sum = vals.reduce((a, b) => a + b, 0);
+  if (!(sum > 0)) return { ...DEFAULT_SETTINGS.platform.weights };
+  const out = {};
+  keys.forEach((k, i) => { out[k] = Math.round((vals[i] / sum) * 10_000) / 10_000; });
+  const drift = Math.round((1 - keys.reduce((a, k) => a + out[k], 0)) * 10_000) / 10_000;
+  if (drift) out[keys[0]] = Math.round((out[keys[0]] + drift) * 10_000) / 10_000;
+  return out;
+}
+
+/**
+ * Coerce any settings-like object into the canonical shape: theme/numerals enums, brand hex
+ * or '' (legacy '#2F6FED'/'#19C6E6' defaults migrate to ''), data-source enum, motion mode,
+ * platform weights normalised to sum 1, thresholds clamped (critical ≥ alert) with `current`
+ * values as the fallback for unparsable numbers.
+ */
+export function sanitizeSettings(input, current = DEFAULT_SETTINGS) {
+  const cur = isPlainObject(current) ? current : DEFAULT_SETTINGS;
+  const merged = deepMerge(clone(DEFAULT_SETTINGS), isPlainObject(input) ? input : {});
+  merged.theme = merged.theme === 'light' ? 'light' : 'dark';
+  merged.numerals = merged.numerals === 'arab' ? 'arab' : 'latn';
+  const brand = deepMerge(clone(DEFAULT_SETTINGS.brand), isPlainObject(merged.brand) ? merged.brand : {});
+  brand.primary = hexOrEmpty(brand.primary, LEGACY_BRAND.primary);
+  brand.accent = hexOrEmpty(brand.accent, LEGACY_BRAND.accent);
+  brand.companyName = text(brand.companyName).slice(0, 60) || DEFAULT_SETTINGS.brand.companyName;
+  brand.logoUrl = typeof brand.logoUrl === 'string' ? brand.logoUrl.trim().slice(0, 2048) : '';
+  merged.brand = brand;
+  merged.sound = bool(merged.sound, false);
+  merged.feedPaused = bool(merged.feedPaused, false);
+  if (merged.railCollapsed !== undefined) merged.railCollapsed = bool(merged.railCollapsed);
+  if (merged.reducedMotion !== undefined) merged.reducedMotion = bool(merged.reducedMotion);
+  if (merged.motion !== undefined) merged.motion = pickEnum(merged.motion, MOTION_MODES, 'auto');
+  const ds = deepMerge(clone(DEFAULT_SETTINGS.dataSource), isPlainObject(merged.dataSource) ? merged.dataSource : {});
+  ds.type = pickEnum(ds.type, DATA_SOURCE_TYPES, 'simulation');
+  ds.url = text(ds.url);
+  ds.apiKey = text(ds.apiKey);
+  ds.table = text(ds.table);
+  merged.dataSource = ds;
+  merged.alertWebhook = text(merged.alertWebhook);
+  const curP = isPlainObject(cur.platform) ? cur.platform : DEFAULT_SETTINGS.platform;
+  const p = deepMerge(clone(DEFAULT_SETTINGS.platform), isPlainObject(merged.platform) ? merged.platform : {});
+  p.weights = normalizeWeights(p.weights, normalizeWeights(curP.weights));
+  const curAlert = clampNum(curP.alertThreshold, 0, 100, DEFAULT_SETTINGS.platform.alertThreshold);
+  const curCritical = clampNum(curP.criticalThreshold, 0, 100, DEFAULT_SETTINGS.platform.criticalThreshold);
+  p.alertThreshold = Math.round(clampNum(p.alertThreshold, 0, 100, curAlert));
+  p.criticalThreshold = Math.round(clampNum(p.criticalThreshold, p.alertThreshold, 100, Math.max(p.alertThreshold, curCritical)));
+  const channels = {};
+  for (const k of Object.keys(DEFAULT_SETTINGS.platform.channels)) {
+    channels[k] = bool(isPlainObject(p.channels) ? p.channels[k] : undefined, DEFAULT_SETTINGS.platform.channels[k]);
   }
+  p.channels = channels;
+  const pay = {};
+  for (const k of Object.keys(DEFAULT_SETTINGS.platform.paymentPct)) {
+    const v = isPlainObject(p.paymentPct) ? p.paymentPct[k] : null;
+    pay[k] = v == null || v === '' ? null : clampNum(v, 0, 100, null);
+  }
+  p.paymentPct = pay;
+  p.writebackEnabled = p.writebackEnabled !== false;
+  merged.platform = p;
+  return merged;
+}
+
+/** Global filters: siteId must be 'all' or a known site, range 1..3650 days, search never persisted. */
+export function sanitizeFilters(input, siteIds = []) {
+  const f = isPlainObject(input) ? input : {};
+  const out = { ...DEFAULT_FILTERS };
+  for (const [key, value] of Object.entries(f)) {
+    if (isUnsafeKey(key) || value === undefined) continue;
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) out[key] = value;
+  }
+  const siteId = text(f.siteId) || 'all';
+  out.siteId = siteId === 'all' || siteIds.includes(siteId) ? siteId : 'all';
+  out.range = clampInt(f.range, 1, 3650, DEFAULT_FILTERS.range);
+  out.search = '';
+  return out;
+}
+
+/** Backfill AL-#### codes (chronological, continuing after the highest existing code). */
+export function backfillAlertCodes(list) {
+  if (!Array.isArray(list)) return list;
+  const re = /^AL-(\d+)$/;
+  let max = maxCaptured(list, re);
+  const missing = list.filter((a) => isPlainObject(a) && !re.test(String(a.code || '')));
+  if (!missing.length) return list;
+  const idNum = (a) => Number(String(a.id || '').replace(/\D/g, '')) || 0;
+  missing.sort((a, b) => ((Date.parse(a.sentAt) || 0) - (Date.parse(b.sentAt) || 0)) || (idNum(a) - idNum(b)));
+  for (const a of missing) {
+    max += 1;
+    a.code = `AL-${pad(max, 4)}`;
+  }
+  return list;
+}
+
+/** Per-collection item normalisers (enums, clamped numbers, well-typed sub-structures). */
+const ITEM_NORMALIZERS = {
+  risks(r) {
+    r.status = pickEnum(r.status, RISK_STATUS, 'مفتوح');
+    r.likelihood = clampInt(r.likelihood, 1, 5, 3);
+    r.severity = clampInt(r.severity, 1, 5, 3);
+    r.residualLikelihood = clampInt(r.residualLikelihood, 1, 5, r.likelihood);
+    r.residualSeverity = clampInt(r.residualSeverity, 1, 5, r.severity);
+    r.controls = normalizeControls(r.controls);
+    r.history = objectList(r.history);
+  },
+  incidents(i) {
+    i.type = pickEnum(i.type, INCIDENT_TYPES, 'حادث وشيك');
+    i.status = pickEnum(i.status, INCIDENT_STATUS, 'مفتوح');
+    i.severity = clampInt(i.severity, 1, 5, 2);
+    i.daysLost = clampInt(i.daysLost, 0, 10_000, 0);
+    i.investigationStep = clampInt(i.investigationStep, 0, 4, 0);
+    i.actions = objectList(i.actions);
+  },
+  permits(p) {
+    p.type = pickEnum(p.type, PERMIT_TYPES, PERMIT_TYPES[0]);
+    p.status = pickEnum(p.status, PERMIT_STATUS, 'مسودة');
+    p.workers = clampInt(p.workers, 1, 10_000, 1);
+    p.hazards = stringList(p.hazards);
+    p.controls = Array.isArray(p.controls) ? p.controls.map((c) => (isPlainObject(c) ? text(c.text) : text(c))).filter(Boolean) : [];
+    if (p.gasTest != null && !isPlainObject(p.gasTest)) p.gasTest = null;
+  },
+  inspections(x) {
+    x.status = pickEnum(x.status, INSPECTION_STATUS, 'مجدول');
+    if (x.type !== undefined) x.type = pickEnum(x.type, INSPECTION_TYPES, INSPECTION_TYPES[0]);
+    x.score = x.score == null ? null : clampInt(x.score, 0, 100, null);
+    if (x.checklistDone !== undefined) x.checklistDone = clampInt(x.checklistDone, 0, 100_000, 0);
+    if (x.checklistTotal !== undefined) x.checklistTotal = clampInt(x.checklistTotal, 0, 100_000, 0);
+    if (x.findings !== undefined) x.findings = objectList(x.findings);
+  },
+  integrations(g) {
+    g.status = pickEnum(g.status, INTEGRATION_STATUS_IDS, 'configurable');
+    if (g.config != null && !isPlainObject(g.config)) g.config = {};
+    if (g.latencyMs !== undefined) g.latencyMs = clampNum(g.latencyMs, 0, 1e7, 0);
+    if (g.eventsPerHour !== undefined) g.eventsPerHour = clampNum(g.eventsPerHour, 0, 1e9, 0);
+    if (g.uptimePct !== undefined) g.uptimePct = clampNum(g.uptimePct, 0, 100, 0);
+  },
+  aiRisks(r) {
+    r.category = pickEnum(r.category, AI_CATEGORIES, 'site');
+    r.type = pickEnum(r.type, AI_TYPES, CATEGORY_TYPE[r.category]);
+    r.pipeline = pickEnum(r.pipeline, AI_PIPELINES, CATEGORY_PIPELINE[r.category]);
+    r.status = pickEnum(r.status, AI_RISK_STATUS, 'مكتشف');
+    r.score = Math.round(clampNum(r.score, 0, 100, 50));
+    r.confidence = clampNum(r.confidence, 0, 1, 0.8);
+    r.history = objectList(r.history);
+    r.overrides = objectList(r.overrides);
+    r.stakeholders = stringList(r.stakeholders);
+    r.escalated = Boolean(r.escalated);
+    r.taskId = r.taskId == null ? null : text(r.taskId);
+    if (!isPlainObject(r.recommendation)) r.recommendation = { action: '', rationale: '', effort: 'متوسط', impact: '', alternatives: [] };
+    if (r.evidence != null && !isPlainObject(r.evidence)) r.evidence = null;
+    if (!isPlainObject(r.responseParams)) r.responseParams = {};
+  },
+  tasks(t) {
+    t.status = pickEnum(t.status, TASK_STATUS, 'جديدة');
+    t.source = pickEnum(t.source, TASK_SOURCES, 'manual');
+    t.riskId = t.riskId == null ? null : text(t.riskId);
+    if (!isPlainObject(t.writeback)) t.writeback = { target: 'Biltix PM', status: 'pending', at: null };
+    t.writeback.status = pickEnum(t.writeback.status, ['pending', 'synced', 'failed'], 'pending');
+  },
+  alerts(a) {
+    a.severity = pickEnum(a.severity, ALERT_SEVERITIES, 'routine');
+    a.queue = pickEnum(a.queue, ALERT_QUEUES, a.severity === 'critical' ? 'immediate' : 'standard');
+    a.acknowledged = Boolean(a.acknowledged);
+    a.channels = stringList(a.channels);
+    if (a.ackBy !== undefined && a.ackBy !== null) a.ackBy = text(a.ackBy) || null;
+    if (typeof a.ackAt !== 'string') a.ackAt = null;
+  },
+  auditLog(e) {
+    e.action = pickEnum(e.action, AUDIT_ACTIONS, 'config');
+    e.actor = text(e.actor) || SYSTEM_ACTOR;
+    e.target = text(e.target);
+    e.detail = text(e.detail);
+  },
+  pipelines(p) {
+    p.status = pickEnum(p.status, PIPELINE_STATUS, 'idle');
+    for (const k of ['precision', 'recall', 'calibrationError', 'driftScore']) if (p[k] !== undefined) p[k] = clampNum(p[k], 0, 1, 0);
+    if (p.runsToday !== undefined) p.runsToday = clampInt(p.runsToday, 0, 1e6, 0);
+    if (p.acceptanceRatePct !== undefined) p.acceptanceRatePct = clampNum(p.acceptanceRatePct, 0, 100, 0);
+  },
+  connectors(c) {
+    c.status = pickEnum(c.status, CONNECTOR_STATUS, 'configurable');
+    if (c.config != null && !isPlainObject(c.config)) c.config = {};
+    if (c.latencyMs !== undefined) c.latencyMs = clampNum(c.latencyMs, 0, 1e7, 0);
+  },
+  sources(s) {
+    for (const k of ['completenessPct', 'consistencyPct']) if (s[k] !== undefined) s[k] = clampNum(s[k], 0, 100, 0);
+    for (const k of ['recordsIn', 'rejected', 'deduplicated', 'passed']) if (s[k] !== undefined) s[k] = clampInt(s[k], 0, 1e9, 0);
+    if (s.enabled !== undefined) s.enabled = Boolean(s.enabled);
+  },
+  rules(r) {
+    if (r.enabled !== undefined) r.enabled = Boolean(r.enabled);
+    if (r.hitsToday !== undefined) r.hitsToday = clampInt(r.hitsToday, 0, 1e9, 0);
+  },
+  quarantine(q) {
+    q.status = pickEnum(q.status, QUARANTINE_STATUS, 'معلّق');
+  },
+  feed(ev) {
+    ev.title = text(ev.title);
+    ev.detail = text(ev.detail);
+    ev.type = text(ev.type) || 'alert';
+    ev.tone = text(ev.tone) || 'accent';
+  },
+};
+
+/** Drop non-object / id-less / duplicate items and normalise each one (never throws). */
+export function normalizeCollection(list, key) {
+  const seen = new Set();
+  const out = [];
+  const fn = ITEM_NORMALIZERS[key];
+  for (const item of objectItems(list)) {
+    const id = String(item.id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (fn) {
+      try { fn(item); } catch { /* keep the item as is */ }
+    }
+    out.push(item);
+  }
+  return out;
+}
+
+/** Normalise every mutable part of a state object in place (settings, filters, collections). */
+export function normalizeState(base, { settingsFallback = DEFAULT_SETTINGS } = {}) {
+  if (!isPlainObject(base)) return base;
+  base.settings = sanitizeSettings(base.settings, settingsFallback);
+  base.filters = sanitizeFilters(base.filters, objectItems(base.sites).map((s) => String(s.id)));
+  for (const key of MUTABLE_COLLECTIONS) base[key] = normalizeCollection(base[key], key);
+  const p = isPlainObject(base.platform) ? base.platform : (base.platform = emptyPlatform());
+  for (const key of PERSIST_PLATFORM_COLLECTIONS) p[key] = normalizeCollection(p[key], key);
+  if (!isPlainObject(p.validation)) p.validation = emptyPlatform().validation;
+  for (const key of PERSIST_VALIDATION_KEYS) p.validation[key] = normalizeCollection(p.validation[key], key);
+  backfillAlertCodes(p.alerts);
+  if (p.auditLog.length > AUDIT_CAP) p.auditLog.length = AUDIT_CAP;
+  if (base.feed.length > FEED_CAP) base.feed.length = FEED_CAP;
+  return base;
+}
+
+/* ────────────────────────────── delta persistence ────────────────────────────── */
+
+/**
+ * Baseline = the seed-derived collections as built at load (already re-anchored). Persistence
+ * stores only the difference between the live state and this baseline, so reference data and
+ * unchanged seed items never reach localStorage and the seed stays the source of truth.
+ */
+let baseline = null;
+
+function indexById(list) {
+  const map = new Map();
+  for (const item of objectItems(list)) {
+    const id = String(item.id);
+    if (!map.has(id)) map.set(id, clone(item));
+  }
+  return map;
+}
+
+function captureBaseline(fresh) {
+  baseline = { data: {}, platform: {}, validation: {} };
+  for (const k of PERSIST_COLLECTIONS) baseline.data[k] = indexById(fresh[k]);
+  const p = isPlainObject(fresh.platform) ? fresh.platform : {};
+  for (const k of PERSIST_PLATFORM_COLLECTIONS) baseline.platform[k] = indexById(p[k]);
+  const v = isPlainObject(p.validation) ? p.validation : {};
+  for (const k of PERSIST_VALIDATION_KEYS) baseline.validation[k] = indexById(v[k]);
+}
+
+/**
+ * Delta of `list` against a baseline index → {a: added items, p: {id: changed fields}, r: removed ids}
+ * or null when nothing differs. `fields` limits which changes of seed items are recorded.
+ */
+export function diffCollection(list, base, fields) {
+  const added = [];
+  const patched = {};
+  const seen = new Set();
+  for (const item of objectItems(list)) {
+    const id = String(item.id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const ref = base ? base.get(id) : undefined;
+    if (!ref) {
+      added.push(item);
+      continue;
+    }
+    const keys = Array.isArray(fields) ? fields : Array.from(new Set([...Object.keys(ref), ...Object.keys(item)]));
+    let patch = null;
+    for (const key of keys) {
+      if (isUnsafeKey(key) || key === 'id') continue;
+      if (sameJSON(item[key], ref[key])) continue;
+      if (!patch) patch = {};
+      patch[key] = item[key] === undefined ? null : item[key];
+    }
+    if (patch) patched[id] = patch;
+  }
+  const removed = base ? Array.from(base.keys()).filter((id) => !seen.has(id)) : [];
+  const out = {};
+  if (added.length) out.a = added;
+  if (Object.keys(patched).length) out.p = patched;
+  if (removed.length) out.r = removed;
+  return Object.keys(out).length ? out : null;
+}
+
+/** Apply a delta to a seed-derived list: removals, field patches, then added items in front. */
+export function applyDelta(list, delta) {
+  const base = objectItems(list);
+  if (!isPlainObject(delta)) return base;
+  const removed = new Set(Array.isArray(delta.r) ? delta.r.map(String) : []);
+  const patches = isPlainObject(delta.p) ? delta.p : {};
+  const kept = base.filter((item) => !removed.has(String(item.id)));
+  for (const item of kept) {
+    const patch = patches[String(item.id)];
+    if (isPlainObject(patch)) safeAssign(item, patch);
+  }
+  const ids = new Set(kept.map((it) => String(it.id)));
+  const added = objectItems(delta.a).filter((it) => !ids.has(String(it.id)));
+  return [...added, ...kept];
+}
+
+/** The objects a delta carries (added items + patch objects) — re-anchored in place on load. */
+function deltaCarriers(delta) {
+  if (!isPlainObject(delta)) return [];
+  const patches = isPlainObject(delta.p) ? Object.values(delta.p).filter(isPlainObject) : [];
+  return [...objectItems(delta.a), ...patches];
+}
+
+function isDeltaSnapshot(snapshot) {
+  return isPlainObject(snapshot) && isPlainObject(snapshot.meta) && snapshot.meta.format === PERSIST_FORMAT;
+}
+
+/** What gets written to localStorage (also exposed as store.persistPayload() for tests/diagnostics). */
+export function buildPersistPayload(st, nowDate = new Date()) {
+  const data = {};
+  for (const k of PERSIST_COLLECTIONS) {
+    const d = diffCollection(st[k], baseline && baseline.data[k], PERSIST_FIELDS[k]);
+    if (d) data[k] = d;
+  }
+  const platformOut = {};
+  const p = isPlainObject(st.platform) ? st.platform : {};
+  for (const k of PERSIST_PLATFORM_COLLECTIONS) {
+    const d = diffCollection(p[k], baseline && baseline.platform[k], PERSIST_FIELDS[k]);
+    if (d) platformOut[k] = d;
+  }
+  const validation = {};
+  const v = isPlainObject(p.validation) ? p.validation : {};
+  for (const k of PERSIST_VALIDATION_KEYS) {
+    const d = diffCollection(v[k], baseline && baseline.validation[k], PERSIST_FIELDS[k]);
+    if (d) validation[k] = d;
+  }
+  if (Object.keys(validation).length) platformOut.validation = validation;
+  const filters = {};
+  for (const [k, val] of Object.entries(isPlainObject(st.filters) ? st.filters : {})) {
+    if (k !== 'search' && !isUnsafeKey(k)) filters[k] = val;
+  }
+  const savedAt = localISO(nowDate);
+  return {
+    meta: {
+      version: STATE_VERSION,
+      format: PERSIST_FORMAT,
+      savedAt,
+      anchorDate: isPlainObject(st.meta) && typeof st.meta.anchorDate === 'string' ? st.meta.anchorDate : todayISO(nowDate),
+      // instants are anchored at the save instant: everything in the state happened before it.
+      anchorNow: savedAt,
+    },
+    settings: st.settings,
+    filters,
+    feed: objectItems(st.feed).slice(0, PERSIST_FEED_CAP),
+    data,
+    platform: platformOut,
+  };
 }
 
 /* ────────────────────────────── storage adapter ────────────────────────────── */
@@ -430,7 +983,11 @@ function readSaved() {
 
 /* ────────────────────────────── state construction ────────────────────────────── */
 
-function buildFreshState(nowDate) {
+/**
+ * Seed → state anchored at `nowDate` (calendar dates by whole days, instants by the exact ms
+ * delta from the seed's authoring instant, past-only instants clamped). Exported for tests.
+ */
+export function buildFreshState(nowDate = new Date()) {
   const base = clone(seed);
   base.feed = [];
   base.platform = normalizePlatform(platformSeed);
@@ -439,14 +996,28 @@ function buildFreshState(nowDate) {
   base.meta = {
     version: STATE_VERSION,
     savedAt: null,
-    anchorDate: isPlainObject(seed.meta) && typeof seed.meta.anchorDate === 'string' ? seed.meta.anchorDate : SEED_ANCHOR_DATE,
+    anchorDate: SEED_ANCHOR_DATE,
+    anchorNow: SEED_ANCHOR_NOW,
   };
-  reanchor(base, nowDate);
+  reanchor(base, nowDate, { instants: true });
+  backfillAlertCodes(base.platform.alerts);
   return base;
 }
 
-/** Overlay a saved/imported snapshot onto a fresh seed-derived state (in place). */
-function overlaySnapshot(base, snapshot, nowDate) {
+/** Final load pass shared by every path: normalise, cap, and clamp every past-only instant to now. */
+function finishLoad(base, nowDate) {
+  normalizeState(base);
+  base.meta.version = STATE_VERSION;
+  base.meta.anchorDate = todayISO(nowDate);
+  reanchor(base, nowDate, { instants: false }); // day delta is 0 here → pure clamp pass
+  return base;
+}
+
+/**
+ * Overlay a LEGACY full snapshot (or a JSON export of store.state) onto a fresh seed-derived
+ * state: saved mutable collections win, reference data comes from the seed. Exported for tests.
+ */
+export function overlaySnapshot(base, snapshot, nowDate = new Date()) {
   const saved = clone(snapshot);
   if (!isPlainObject(saved.meta)) saved.meta = {};
   if (typeof saved.meta.anchorDate !== 'string') saved.meta.anchorDate = SEED_ANCHOR_DATE;
@@ -455,21 +1026,66 @@ function overlaySnapshot(base, snapshot, nowDate) {
     if (Array.isArray(saved[key])) base[key] = saved[key];
   }
   if (isPlainObject(saved.platform)) base.platform = mergePlatform(base.platform, saved.platform);
-  if (Array.isArray(base.platform.auditLog) && base.platform.auditLog.length > AUDIT_CAP) base.platform.auditLog.length = AUDIT_CAP;
-  if (Array.isArray(base.feed) && base.feed.length > FEED_CAP) base.feed.length = FEED_CAP;
-  clampFutureFeed(base.feed, nowDate);
-  if (isPlainObject(saved.settings)) base.settings = deepMerge(clone(DEFAULT_SETTINGS), saved.settings);
-  if (isPlainObject(saved.filters)) base.filters = { ...DEFAULT_FILTERS, ...saved.filters, search: '' };
+  if (isPlainObject(saved.settings)) base.settings = saved.settings;
+  if (isPlainObject(saved.filters)) base.filters = saved.filters;
   base.meta.savedAt = typeof saved.meta.savedAt === 'string' ? saved.meta.savedAt : null;
-  base.meta.anchorDate = todayISO(nowDate);
-  return base;
+  return finishLoad(base, nowDate);
+}
+
+/**
+ * Restore a DELTA snapshot (the persisted format): re-anchor the carried objects from the save
+ * instant to now, then apply removals / patches / additions over the fresh seed-derived state.
+ * Exported for tests.
+ */
+export function restoreSnapshot(base, snapshot, nowDate = new Date()) {
+  const snap = clone(snapshot);
+  const meta = isPlainObject(snap.meta) ? snap.meta : {};
+  const data = isPlainObject(snap.data) ? snap.data : {};
+  const platformDelta = isPlainObject(snap.platform) ? snap.platform : {};
+  const validationDelta = isPlainObject(platformDelta.validation) ? platformDelta.validation : {};
+
+  // Carrier state: every object the delta carries, so reanchor() can shift their dates in place.
+  const carrier = {
+    meta: { anchorDate: typeof meta.anchorDate === 'string' ? meta.anchorDate : SEED_ANCHOR_DATE, anchorNow: meta.anchorNow || meta.savedAt },
+    feed: objectItems(snap.feed),
+    platform: { validation: {} },
+  };
+  for (const k of PERSIST_COLLECTIONS) carrier[k] = deltaCarriers(data[k]);
+  for (const k of PERSIST_PLATFORM_COLLECTIONS) carrier.platform[k] = deltaCarriers(platformDelta[k]);
+  for (const k of PERSIST_VALIDATION_KEYS) carrier.platform.validation[k] = deltaCarriers(validationDelta[k]);
+  reanchor(carrier, nowDate);
+
+  for (const k of PERSIST_COLLECTIONS) base[k] = applyDelta(base[k], data[k]);
+  const p = base.platform;
+  for (const k of PERSIST_PLATFORM_COLLECTIONS) p[k] = applyDelta(p[k], platformDelta[k]);
+  if (!isPlainObject(p.validation)) p.validation = emptyPlatform().validation;
+  for (const k of PERSIST_VALIDATION_KEYS) p.validation[k] = applyDelta(p.validation[k], validationDelta[k]);
+  base.feed = carrier.feed.slice(0, FEED_CAP);
+  if (isPlainObject(snap.settings)) base.settings = snap.settings;
+  if (isPlainObject(snap.filters)) base.filters = { ...snap.filters, search: '' };
+  base.meta.savedAt = typeof meta.savedAt === 'string' ? meta.savedAt : null;
+  return finishLoad(base, nowDate);
+}
+
+/** Load a saved snapshot of either format over a fresh state. */
+function loadSnapshot(base, snapshot, nowDate) {
+  return isDeltaSnapshot(snapshot) ? restoreSnapshot(base, snapshot, nowDate) : overlaySnapshot(base, snapshot, nowDate);
 }
 
 function createInitialState() {
   const now = new Date();
   const fresh = buildFreshState(now);
+  captureBaseline(fresh);
   const saved = readSaved();
-  return saved ? overlaySnapshot(fresh, saved, now) : fresh;
+  if (!saved) return finishLoad(fresh, now);
+  try {
+    return loadSnapshot(fresh, saved, now);
+  } catch (error) {
+    console.warn('[biltix] تعذر استعادة الحالة المحفوظة — تم البدء من البيانات الافتراضية.', error && error.message ? error.message : error);
+    const again = buildFreshState(now);
+    captureBaseline(again);
+    return finishLoad(again, now);
+  }
 }
 
 const state = createInitialState();
@@ -478,6 +1094,15 @@ const state = createInitialState();
 
 let persistTimer = null;
 let flushHookInstalled = false;
+let dirty = false;      // non-feed changes waiting to be written
+let feedDirty = false;  // feed-only changes (ride along with the next write / pagehide)
+let quotaReported = false;
+
+function isQuotaError(error) {
+  const name = error && error.name;
+  const code = error && error.code;
+  return name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED' || code === 22 || code === 1014;
+}
 
 function persistNow() {
   if (persistTimer) {
@@ -486,10 +1111,21 @@ function persistNow() {
   }
   if (!storage) return false;
   try {
-    state.meta.savedAt = localISO(new Date());
-    storage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const payload = buildPersistPayload(state, new Date());
+    storage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    state.meta.savedAt = payload.meta.savedAt;
+    dirty = false;
+    feedDirty = false;
     return true;
-  } catch {
+  } catch (error) {
+    if (isQuotaError(error) && !quotaReported) {
+      quotaReported = true;
+      bus.emit('alert', {
+        severity: 'warning', tone: 'warning', source: 'storage',
+        title: 'تعذر حفظ البيانات محلياً',
+        detail: 'امتلأت مساحة التخزين المحلية في المتصفح؛ ستبقى التغييرات في هذه الجلسة فقط حتى يتوفر مكان.',
+      });
+    }
     return false;
   }
 }
@@ -497,18 +1133,24 @@ function persistNow() {
 function installFlushHook() {
   if (flushHookInstalled || typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
   flushHookInstalled = true;
-  window.addEventListener('pagehide', () => { if (persistTimer) persistNow(); });
+  window.addEventListener('pagehide', () => { if (dirty || feedDirty || persistTimer) persistNow(); });
 }
 
-function schedulePersist() {
+/** Debounced write (≥ 2 s). Feed-only changes never start the timer on their own. */
+function schedulePersist(path = '*') {
   if (!storage) return;
   installFlushHook();
+  if (path === 'feed') {
+    feedDirty = true;
+    return;
+  }
+  dirty = true;
   if (persistTimer) clearTimeout(persistTimer);
   persistTimer = setTimeout(persistNow, PERSIST_DEBOUNCE_MS);
 }
 
 function changed(path) {
-  schedulePersist();
+  schedulePersist(path);
   bus.emit('store:change', { path });
 }
 
@@ -529,7 +1171,7 @@ function getPath(obj, path) {
 
 function setPath(obj, path, value) {
   const keys = splitPath(path);
-  if (keys.length === 0) return false;
+  if (keys.length === 0 || keys.some(isUnsafeKey)) return false;
   let node = obj;
   for (let i = 0; i < keys.length - 1; i += 1) {
     const key = keys[i];
@@ -585,7 +1227,7 @@ function patchItem(collection, id, patch, { stamp = true } = {}) {
   const item = findIn(collection, id);
   if (!item || !isPlainObject(patch)) return null;
   for (const [key, value] of Object.entries(patch)) {
-    if (value === undefined || key === 'id') continue;
+    if (value === undefined || key === 'id' || isUnsafeKey(key)) continue;
     item[key] = isPlainObject(value) && isPlainObject(item[key]) ? deepMerge(item[key], value) : value;
   }
   if (stamp) item.updatedAt = localISO(store.now());
@@ -653,7 +1295,7 @@ function patchPlatformItem(key, id, patch, { stamp = false } = {}) {
   const item = findPlatform(key, id);
   if (!item || !isPlainObject(patch)) return null;
   for (const [k, value] of Object.entries(patch)) {
-    if (value === undefined || k === 'id') continue;
+    if (value === undefined || k === 'id' || isUnsafeKey(k)) continue;
     item[k] = isPlainObject(value) && isPlainObject(item[k]) ? deepMerge(item[k], value) : value;
   }
   if (stamp) item.updatedAt = localISO(store.now());
@@ -810,9 +1452,14 @@ export const store = {
     if (storage) {
       try { storage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
     }
-    const fresh = buildFreshState(store.now());
+    const now = store.now();
+    const fresh = buildFreshState(now);
+    captureBaseline(fresh);
+    finishLoad(fresh, now);
     for (const key of Object.keys(state)) delete state[key];
     Object.assign(state, fresh);
+    dirty = false;
+    feedDirty = false;
     bus.emit('store:change', { path: '*' });
     bus.emit('filters:change', { filters: state.filters });
     bus.emit('settings:change', { settings: state.settings });
@@ -821,16 +1468,27 @@ export const store = {
   },
 
   /**
-   * Replace the mutable part of the state from an exported JSON snapshot
-   * (settings view → "استيراد JSON"). Returns true when the snapshot was accepted.
+   * Replace the mutable part of the state from an exported JSON snapshot (settings view →
+   * "استيراد JSON"); both a full export of store.state and the persisted delta format are
+   * accepted and normalised. Returns true when the snapshot was accepted.
    */
   importState(snapshot) {
     if (!isPlainObject(snapshot)) return false;
-    const hasData = MUTABLE_COLLECTIONS.some((key) => Array.isArray(snapshot[key])) || isPlainObject(snapshot.settings) || isPlainObject(snapshot.platform);
+    const hasData = isDeltaSnapshot(snapshot)
+      || MUTABLE_COLLECTIONS.some((key) => Array.isArray(snapshot[key]))
+      || isPlainObject(snapshot.settings) || isPlainObject(snapshot.platform);
     if (!hasData) return false;
     const now = store.now();
     clearWritebackTimers();
-    const fresh = overlaySnapshot(buildFreshState(now), snapshot, now);
+    let fresh;
+    try {
+      const base = buildFreshState(now);
+      captureBaseline(base);
+      fresh = loadSnapshot(base, snapshot, now);
+    } catch (error) {
+      console.warn('[biltix] تعذر استيراد الملف — بنية غير صالحة.', error && error.message ? error.message : error);
+      return false;
+    }
     for (const key of Object.keys(state)) delete state[key];
     Object.assign(state, fresh);
     changed('*');
@@ -843,6 +1501,16 @@ export const store = {
   /** Write pending changes to localStorage immediately. */
   flush() {
     return persistNow();
+  },
+
+  /** The exact object that persistence writes (mutable deltas + settings + filters + last feed events). */
+  persistPayload() {
+    return buildPersistPayload(state, store.now());
+  },
+
+  /** True when there are unsaved changes (feed-only changes count only for `includeFeed`). */
+  isDirty({ includeFeed = false } = {}) {
+    return dirty || (includeFeed && feedDirty);
   },
 
   /* ── CRUD: risks ── */
@@ -1024,11 +1692,14 @@ export const store = {
     return permit;
   },
 
+  /** Patch a permit. A closed permit (مغلق) is final: any attempt to move it to another status returns null. */
   updatePermit(id, patch = {}) {
     const permit = findIn('permits', id);
     if (!permit || !isPlainObject(patch)) return null;
     const rest = { ...patch };
     if (rest.status !== undefined) rest.status = pickEnum(rest.status, PERMIT_STATUS, permit.status);
+    if (permit.status === 'مغلق' && rest.status !== undefined && rest.status !== 'مغلق') return null;
+    if (rest.status === 'مغلق' && permit.status !== 'مغلق' && !rest.closedAt) rest.closedAt = localISO(store.now());
     if (rest.type !== undefined) rest.type = pickEnum(rest.type, PERMIT_TYPES, permit.type);
     if (rest.workers !== undefined) rest.workers = clampInt(rest.workers, 1, 10_000, permit.workers);
     if (rest.status === 'نشط' && permit.status !== 'نشط' && !permit.approvedAt) rest.approvedAt = localISO(store.now());
@@ -1100,17 +1771,9 @@ export const store = {
   setSettings(patch) {
     if (!isPlainObject(patch)) return state.settings;
     const prevTheme = state.settings.theme;
-    const merged = deepMerge(state.settings, patch);
-    merged.theme = merged.theme === 'light' ? 'light' : 'dark';
-    merged.numerals = merged.numerals === 'arab' ? 'arab' : 'latn';
-    merged.brand = deepMerge(clone(DEFAULT_SETTINGS.brand), merged.brand);
-    merged.dataSource = deepMerge(clone(DEFAULT_SETTINGS.dataSource), merged.dataSource);
-    // Part B: keep the platform block complete and its thresholds sane (critical ≥ alert).
-    const platform = deepMerge(clone(DEFAULT_SETTINGS.platform), merged.platform);
-    platform.alertThreshold = Math.round(clampNum(platform.alertThreshold, 0, 100, DEFAULT_SETTINGS.platform.alertThreshold));
-    platform.criticalThreshold = Math.round(clampNum(platform.criticalThreshold, platform.alertThreshold, 100, Math.max(platform.alertThreshold, DEFAULT_SETTINGS.platform.criticalThreshold)));
-    platform.writebackEnabled = platform.writebackEnabled !== false;
-    merged.platform = platform;
+    // Unparsable numbers fall back to the CURRENT value (not the default); weights renormalised,
+    // thresholds clamped (critical ≥ alert), brand '' = theme tokens.
+    const merged = sanitizeSettings(deepMerge(state.settings, patch), state.settings);
     state.settings = merged;
     changed('settings');
     bus.emit('settings:change', { settings: state.settings });
@@ -1211,6 +1874,8 @@ export const store = {
     const { by, note, ...rest } = patch;
     const prevStatus = risk.status;
     if (rest.status !== undefined) rest.status = pickEnum(rest.status, AI_RISK_STATUS, risk.status);
+    // Terminal states are final: a closed / dismissed risk never changes status again.
+    if (AI_RISK_TERMINAL.includes(prevStatus) && rest.status !== undefined && rest.status !== prevStatus) return null;
     if (rest.score !== undefined) rest.score = Math.round(clampNum(rest.score, 0, 100, risk.score));
     if (rest.confidence !== undefined) rest.confidence = clampNum(rest.confidence, 0, 1, risk.confidence);
     if (rest.category !== undefined) rest.category = pickEnum(rest.category, AI_CATEGORIES, risk.category);
@@ -1225,9 +1890,24 @@ export const store = {
    * (source 'ai-accepted', write-back pending → synced), assigns the risk, logs 'accept'.
    * Returns the created task (task.riskId links back to the risk).
    */
+  /**
+   * Allowed transitions for an AI risk (state machine, §B3):
+   *   accept / override → only from مكتشف|تنبيه and only once (no task linked yet);
+   *   dismiss / escalate → never from مغلق|مُتجاوز.
+   * @returns {{accept:boolean, override:boolean, dismiss:boolean, escalate:boolean, status:string|null}}
+   */
+  aiRiskTransitions(riskId) {
+    const risk = typeof riskId === 'object' && riskId ? riskId : findPlatform('aiRisks', riskId);
+    if (!risk) return { accept: false, override: false, dismiss: false, escalate: false, status: null };
+    const linked = Boolean(risk.taskId) || platformList('tasks').some((t) => t && t.riskId === risk.id);
+    const assignable = AI_RISK_ASSIGNABLE.includes(risk.status) && !linked;
+    const open = !AI_RISK_TERMINAL.includes(risk.status);
+    return { accept: assignable, override: assignable, dismiss: open, escalate: open, status: risk.status };
+  },
+
   acceptRecommendation(riskId, { owner = '', dueDate = '', escalate = false, by = '' } = {}) {
     const risk = findPlatform('aiRisks', riskId);
-    if (!risk) return null;
+    if (!risk || !store.aiRiskTransitions(risk).accept) return null;
     const actor = text(by) || text(owner) || 'مدير المشروع';
     const task = createTask({
       riskId: risk.id, projectId: risk.projectId,
@@ -1261,7 +1941,7 @@ export const store = {
    */
   overrideRecommendation(riskId, { action = '', reason = '', owner = '', dueDate = '', escalate = false, by = '' } = {}) {
     const risk = findPlatform('aiRisks', riskId);
-    if (!risk) return null;
+    if (!risk || !store.aiRiskTransitions(risk).override) return null;
     const actor = text(by) || text(owner) || 'مدير المشروع';
     const fromAction = (risk.recommendation && text(risk.recommendation.action)) || '';
     const toAction = text(action) || fromAction || risk.title;
@@ -1295,7 +1975,7 @@ export const store = {
   /** Immediate escalation: critical alert in the immediate queue + bus 'alert' + audit. Returns the alert. */
   escalateRisk(riskId, channels, by = '') {
     const risk = findPlatform('aiRisks', riskId);
-    if (!risk) return null;
+    if (!risk || !store.aiRiskTransitions(risk).escalate) return null;
     const actor = text(by) || 'مدير المشروع';
     const list = normalizeChannels(channels);
     risk.escalated = true;
@@ -1314,7 +1994,7 @@ export const store = {
   /** Dismiss (مُتجاوز) with a mandatory reason; logged as an override for model recalibration. */
   dismissAiRisk(riskId, reason = '', by = '') {
     const risk = findPlatform('aiRisks', riskId);
-    if (!risk) return null;
+    if (!risk || !store.aiRiskTransitions(risk).dismiss) return null;
     const actor = text(by) || 'مدير المشروع';
     const why = text(reason) || 'دون سبب مُسجَّل';
     const prev = risk.status;
@@ -1461,7 +2141,7 @@ export const store = {
     const v = platform().validation;
     const item = isPlainObject(v) && Array.isArray(v.sources) ? v.sources.find((s) => s && s.id === id) : null;
     if (!item || !isPlainObject(patch)) return null;
-    Object.assign(item, patch);
+    safeAssign(item, patch);
     changed('platform.validation.sources');
     return item;
   },
@@ -1470,7 +2150,7 @@ export const store = {
     const v = platform().validation;
     const item = isPlainObject(v) && Array.isArray(v.rules) ? v.rules.find((r) => r && r.id === id) : null;
     if (!item || !isPlainObject(patch)) return null;
-    Object.assign(item, patch);
+    safeAssign(item, patch);
     changed('platform.validation.rules');
     if (patch.enabled !== undefined) {
       store.pushAudit({ actor: 'مدير المشروع', action: 'config', target: item.name || item.id, detail: patch.enabled ? 'تفعيل قاعدة التحقق' : 'تعطيل قاعدة التحقق' });

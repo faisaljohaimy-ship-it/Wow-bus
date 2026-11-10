@@ -71,8 +71,8 @@ body.app {
   background-image:
     radial-gradient(ellipse at 50% -10%, color-mix(in srgb, var(--brand) 10%, transparent), transparent 55%),
     radial-gradient(ellipse at 50% 60%, transparent 50%, color-mix(in srgb, var(--ink-1) 7%, transparent) 100%),
-    linear-gradient(color-mix(in srgb, var(--ink-1) 4%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--ink-1) 4%, transparent) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--ink-1) var(--grid-alpha, 4%), transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--ink-1) var(--grid-alpha, 4%), transparent) 1px, transparent 1px);
   background-size: 100% 100%, 100% 100%, 24px 24px, 24px 24px;
   background-attachment: fixed;
 }
@@ -251,32 +251,39 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
   clip-path: polygon(50% 0%, 61% 24%, 85% 15%, 76% 39%, 100% 50%, 76% 61%, 85% 85%, 61% 76%, 50% 100%, 39% 76%, 15% 85%, 24% 61%, 0% 50%, 24% 39%, 15% 15%, 39% 24%);
 }
 .brand-text { display: flex; flex-direction: column; min-inline-size: 0; line-height: 1.2; }
-.brand-name { font-weight: 700; font-size: var(--fs-lg); letter-spacing: -0.01em; white-space: nowrap; }
-.brand-tag { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brand-name { font-weight: 700; font-size: var(--fs-lg); letter-spacing: 0; white-space: nowrap; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
+.brand-tag { font-size: 11px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* Clock */
+/* Clock: a compact block — time on the first line, Gregorian and Hijri dates
+   stacked under it (10.5px), so the dates are never clipped by the centre track. */
 .clock {
   display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
   min-inline-size: 0;
   white-space: nowrap;
+  line-height: 1.2;
 }
 .clock-time {
   font-size: 15px;
   font-weight: 500;
+  line-height: 1.15;
   color: var(--ink-1);
   letter-spacing: .04em;
 }
-.clock-dates { display: inline-flex; gap: var(--space-2); font-size: var(--fs-xs); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; }
-.clock-sep { opacity: .6; }
+.clock-dates { display: flex; flex-direction: column; gap: 0; font-size: 10.5px; line-height: 1.25; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.clock-sep { display: none; }
 
 /* Command palette trigger: looks like a quiet search field */
 .cmdk-btn {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  min-inline-size: 260px;
+  flex: 1 1 220px;
+  min-inline-size: 160px;
+  max-inline-size: 320px;
   block-size: 36px;
   padding-inline: var(--space-3);
   background: color-mix(in srgb, var(--bg-2) 80%, transparent);
@@ -386,7 +393,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
 }
 .user-text { display: flex; flex-direction: column; line-height: 1.2; text-align: start; min-inline-size: 0; }
 .user-name { font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; }
-.user-role { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-inline-size: 200px; }
+.user-role { font-size: 11px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-inline-size: 200px; }
 
 /* --------------------------------------------------------------------------
    Alert banner (critical tone band under the app bar)
@@ -426,6 +433,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   box-shadow: 0 0 12px color-mix(in srgb, var(--tone) 70%, transparent);
 }
 .alert-banner-icon, .alert-banner > svg {
+  position: relative;
   flex: none;
   display: grid;
   place-items: center;
@@ -437,10 +445,23 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent);
 }
 .alert-banner-icon svg { inline-size: 18px; block-size: 18px; }
-.alert-banner.tone-critical .alert-banner-icon { animation: banner-pulse 1.8s var(--ease) infinite; }
+/* Critical banner: a ring expands from the icon (transform/opacity only, compositor-friendly).
+   Base state is a static soft halo so reduced-motion users still see the emphasis. */
+.alert-banner.tone-critical .alert-banner-icon::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 2px solid color-mix(in srgb, var(--tone) 55%, transparent);
+  opacity: .35;
+  transform: scale(1.25);
+  pointer-events: none;
+  animation: banner-pulse 1.8s var(--ease) infinite;
+}
 @keyframes banner-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 45%, transparent); }
-  60%      { box-shadow: 0 0 0 7px color-mix(in srgb, var(--tone) 0%, transparent); }
+  0%   { transform: scale(1); opacity: .7; }
+  70%  { transform: scale(1.55); opacity: 0; }
+  100% { transform: scale(1.55); opacity: 0; }
 }
 .alert-banner strong { font-weight: 600; }
 .alert-banner-text, .alert-banner .banner-text {
@@ -475,7 +496,6 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   padding: var(--space-3) 10px;
   background: color-mix(in srgb, var(--bg-1) 72%, var(--bg-0));
   border-inline-end: 1px solid var(--line);
-  transition: padding var(--dur-2) var(--ease);
 }
 
 .rail-list {
@@ -546,13 +566,21 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   color: inherit;
 }
 .rail-icon svg, .rail-item > svg { inline-size: 20px; block-size: 20px; }
-.rail-label { overflow: hidden; text-overflow: ellipsis; }
+/* Labels may take two lines (clamped) instead of ellipsizing long view titles */
+.rail-label {
+  white-space: normal;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: break-word;
+}
 .rail-code {
   font-family: var(--font-mono-mixed);
   font-size: 10px;
   letter-spacing: .06em;
   color: var(--ink-3);
-  opacity: .85;
 }
 .rail-item.is-active .rail-code,
 .rail-item[aria-current="page"] .rail-code { color: color-mix(in srgb, var(--brand) 70%, var(--ink-3)); opacity: 1; }
@@ -646,6 +674,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   overscroll-behavior: contain;
   padding: var(--space-5);
   scroll-padding-block-start: var(--space-4);
+  container: main / inline-size;   /* @container main (…) sizes the KPI row by the pane, not the viewport */
 }
 .main:focus { outline: none; }
 .main > * {
@@ -679,6 +708,9 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
 /* The router focuses the heading programmatically on every navigation; keep the
    ring present for keyboard users but quieter than a control's ring. */
 .view-head h1:focus-visible { outline-offset: 6px; outline-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+/* app.js tracks the last input modality on <html data-input="keyboard|pointer">: the
+   programmatic heading focus only shows a ring when the user navigated by keyboard. */
+html[data-input="pointer"] .view-head h1:focus-visible { outline: none; }
 .view-head p, .view-lead { color: var(--ink-2); max-inline-size: 76ch; font-size: var(--fs-md); }
 .view-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 
@@ -750,6 +782,30 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: var(--space-4);
+}
+/* Explicit columns by tile count so no row is left with an orphan (auto-fit is the
+   fallback where :has() is unsupported). 5 and 7 tiles use a 6/12-track grid so the
+   second row stays fully justified (3+2 / 4+3). Phones keep the 2-column rule below. */
+@media (min-width: 960px) {
+  .kpi-row:has(> :nth-child(2):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi-row:has(> :nth-child(3):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .kpi-row:has(> :nth-child(4):last-child) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .kpi-row:has(> :nth-child(5):last-child) { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .kpi-row:has(> :nth-child(5):last-child) > * { grid-column: span 2; }
+  .kpi-row:has(> :nth-child(5):last-child) > :nth-child(n + 4) { grid-column: span 3; }
+  .kpi-row:has(> :nth-child(6):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .kpi-row:has(> :nth-child(7):last-child) { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .kpi-row:has(> :nth-child(7):last-child) > * { grid-column: span 3; }
+  .kpi-row:has(> :nth-child(7):last-child) > :nth-child(n + 5) { grid-column: span 4; }
+  .kpi-row:has(> :nth-child(8):last-child) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .kpi-row:has(> :nth-child(9):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* Wide panes (≥1200px inner): five and six tiles on one row */
+  @container main (min-width: 1248px) {
+    .kpi-row:has(> :nth-child(5):last-child) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .kpi-row:has(> :nth-child(5):last-child) > *,
+    .kpi-row:has(> :nth-child(5):last-child) > :nth-child(n + 4) { grid-column: auto; }
+    .kpi-row:has(> :nth-child(6):last-child) { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  }
 }
 
 .cards-grid {
@@ -830,7 +886,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   backdrop-filter: blur(10px);
   border-block-start: 1px solid var(--line);
 }
-.feed-status { font-size: 11px; color: var(--ink-3); }
+.feed-status { font-size: 11px; color: var(--ink-2); }
 .feed-status::before {
   content: "";
   display: inline-block;
@@ -990,7 +1046,14 @@ body.is-feed-paused .feed-status::before,
   color: var(--ink-1);
 }
 .cmdk-input::placeholder { color: var(--ink-3); }
+/* The input's own ring is replaced by a ring on the whole search row */
 .cmdk-input:focus-visible { outline: none; }
+.cmdk-search { transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.cmdk-search:focus-within {
+  color: var(--accent);
+  border-block-end-color: var(--accent);
+  box-shadow: inset 0 -1px 0 var(--accent);
+}
 
 .cmdk-list {
   list-style: none;
@@ -1006,8 +1069,8 @@ body.is-feed-paused .feed-status::before,
   padding: 10px 12px 4px;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: .06em;
-  color: var(--ink-3);
+  letter-spacing: 0;
+  color: var(--ink-2);
   text-transform: uppercase;
 }
 .cmdk-item, .cmdk-list > li[role="option"] {
@@ -1048,7 +1111,7 @@ body.is-feed-paused .feed-status::before,
 .cmdk-text .badge { flex: none; }
 .cmdk-label, .cmdk-item-title { color: inherit; font-weight: 500; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmdk-item-text { min-inline-size: 0; display: flex; flex-direction: column; line-height: 1.35; }
-.cmdk-item-sub { font-size: 11px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmdk-item-sub { font-size: 11px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmdk-meta, .cmdk-item-kbd, .cmdk-item-code {
   font-family: var(--font-mono-mixed);
   font-size: 10px;
@@ -1136,13 +1199,15 @@ body.is-feed-paused .feed-status::before,
   border: 0;
 }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 0; }
+/* .num isolates a number from the surrounding bidi run but keeps the document
+   direction, so "٨٧٪" reads like Intl output. Codes and ranges (08:00–16:00,
+   CT-2026-014) that must read left-to-right use .ltr or dir="ltr" instead. */
 .num {
   font-variant-numeric: tabular-nums;
   unicode-bidi: isolate;
-  direction: ltr;
   display: inline-block;
 }
-.ltr { direction: ltr; unicode-bidi: isolate; }
+.ltr, .num.ltr { direction: ltr; unicode-bidi: isolate; }
 .nowrap { white-space: nowrap; }
 .report-only { display: none; }
 .divider { block-size: 1px; background: var(--line); border: 0; margin: 0; }
@@ -1203,8 +1268,10 @@ body.is-feed-paused .feed-status::before,
 
   .grid-12 .col-span-3, .grid-12 .col-span-4, .grid-12 .col-span-5 { grid-column: span 6; }
   .grid-12 .col-span-7, .grid-12 .col-span-8, .grid-12 .col-span-9 { grid-column: span 12; }
-  .cmdk-btn { min-inline-size: 200px; }
-  .user-role { display: none; }
+  /* App bar budget on tablets: tagline, dates and pill labels go; the search keeps ≥160px */
+  .brand-tag, .clock-dates, .user-role { display: none; }
+  .score-pill .pill-label, .score-pill .score-pill-delta, .integrations-pill .pill-label { display: none; }
+  .cmdk-btn { max-inline-size: 280px; }
 }
 
 /* Single column with bottom tab bar */
@@ -1227,7 +1294,7 @@ body.is-feed-paused .feed-status::before,
     position: fixed;
     inset-block-start: 0;
     inset-inline: 0;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(40px, 1fr) auto;
     gap: var(--space-2);
     padding-inline: var(--space-3);
   }
@@ -1238,9 +1305,10 @@ body.is-feed-paused .feed-status::before,
   .brand { gap: var(--space-2); }
   .brand-mark { inline-size: 32px; block-size: 32px; }
   .brand-name { font-size: var(--fs-md); }
-  .cmdk-btn { min-inline-size: 0; inline-size: 36px; padding-inline: 0; justify-content: center; }
+  .cmdk-btn { flex: none; inline-size: 40px; min-inline-size: 40px; max-inline-size: none; block-size: 40px; padding-inline: 0; justify-content: center; }
+  .appbar-center { gap: var(--space-2); min-inline-size: 40px; }
+  .clock { flex-direction: row; align-items: center; }
   .clock-time { font-size: var(--fs-sm); letter-spacing: 0; }
-  .appbar-center { gap: var(--space-2); }
   .pill { block-size: 30px; padding-inline: 9px; }
   .user-chip { padding-inline: 2px; block-size: 36px; }
   .user-avatar { inline-size: 28px; block-size: 28px; }
@@ -1280,14 +1348,23 @@ body.is-feed-paused .feed-status::before,
   .clock { display: none; }
   .appbar { padding-inline: var(--space-2); }
   .appbar-center { justify-content: flex-end; }
-}
-@media (max-width: 359.98px) {
+  /* The connector pill is the first thing to go so the search button keeps its 40px */
   .integrations-pill { display: none; }
 }
 
 /* Short viewports: let the main pane breathe */
 @media (max-height: 560px) and (min-width: 960px) {
   .filters { padding-block: 6px; }
+}
+
+/* Touch devices: every shell control is at least 40px tall (RTL-14) */
+@media (pointer: coarse) {
+  .pill { block-size: 40px; }
+  .appbar .btn-icon { inline-size: 40px; block-size: 40px; }
+  .user-chip { block-size: 40px; }
+  .filters .field-control { block-size: 40px; }
+  .cmdk-item, .cmdk-list > li[role="option"] { min-block-size: 40px; }
+  .feed-count { min-block-size: 24px; }
 }
 
 /* Forced-colours (Windows high contrast): keep structure visible */

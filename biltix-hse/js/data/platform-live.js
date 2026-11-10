@@ -16,9 +16,19 @@
  *   • Every 60 s: overdue mitigation tasks are re-flagged 'متأخرة' (store.updateTask → feed event).
  *   • Respects settings.feedPaused (no feed events, no new detections; silent jitter continues)
  *     and document.hidden (every timer is suspended and re-armed on return). stop() clears all.
+ *   • Detected risks are tagged `simulated: true` and capped (SIM_CAPS.aiRisks = 100): the oldest
+ *     closed/dismissed — then the oldest untouched open — simulated risks (never ones with a task)
+ *     are pruned together with their alerts, after each detection and on start(). Seed and
+ *     user-created records are never pruned.
+ *   • Event text: every number goes through fmt (Arabic-Indic numerals honoured), codes inside
+ *     sentences use U+2011 so they never wrap, Arabic source names come first ("منصة بلتكس…")
+ *     with the Latin name in `source`, and raw numbers / plain codes travel in the payload
+ *     (value, unit, ms, days, count, pct, score, code, refId).
  *
  * Side-effect free on import. All DOM-free; the shell renders the events.
  */
+
+import { fmt } from '../core/fmt.js';
 
 const RNG_SEED = (20261109 ^ 0x5bd1e995) >>> 0;
 const FEED_MIN_MS = 4000;
@@ -45,12 +55,22 @@ const PIPELINE_LABEL = {
 const PIPELINE_UNIT = {
   'contract-nlp': 'بنداً تعاقدياً',
   'bom-forecast': 'بند توريد وسلسلة أسعار',
-  'schedule-model': 'نشاطاً حرجاً (Monte Carlo 5,000 تشغيل)',
+  'schedule-model': 'نشاطاً حرجاً (Monte Carlo {runs} تشغيل)',
   'site-ai': 'صورة وتقريراً يومياً',
   'cost-forecast': 'سطر تكلفة (EVM)',
 };
+const MONTE_CARLO_RUNS = 5000;
 const RATING_LABEL = { red: 'أحمر', yellow: 'أصفر', green: 'أخضر' };
 const RATING_TONE = { red: 'critical', yellow: 'warning', green: 'good' };
+
+/** Biltix PM: Arabic name leads the sentence (RTL-5); the Latin name travels in `source`. */
+const PM_NAME = 'منصة بلتكس لإدارة المشاريع';
+const PM_SOURCE = 'Biltix PM';
+
+/** Caps for engine-generated (simulated) records — see pruneSimulated(). */
+export const SIM_CAPS = Object.freeze({ aiRisks: 100 });
+const CLOSED_RISK = new Set(['مغلق', 'مُتجاوز']);
+const FRESH_RISK = new Set(['مكتشف', 'تنبيه']);
 
 /* ────────────────────────────── RNG & tiny helpers ────────────────────────────── */
 
@@ -70,6 +90,16 @@ const pick = (list) => (Array.isArray(list) && list.length ? list[Math.floor(ran
 const chance = (p) => rand() < p;
 const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
 const round1 = (n) => Math.round(n * 10) / 10;
+
+/* numerals-aware text helpers (RTL-4 / RTL-5 / RTL-21 / RTL-23) */
+const num = (n, digits = 0) => { try { return fmt.num(n, { maximumFractionDigits: digits }); } catch { return String(n); } };
+const pct = (n, digits = 0) => { try { return fmt.pct(n, digits); } catch { return `${n}%`; } };
+const arabNumerals = () => { try { return typeof fmt.getNumerals === 'function' && fmt.getNumerals() === 'arab'; } catch { return false; } };
+const signedPct = (n, digits = 1) => { try { return `${fmt.signed(n, digits)}${arabNumerals() ? '٪' : '%'}`; } catch { return `${n >= 0 ? '+' : '−'}${Math.abs(n)}%`; } };
+/** Non-breaking hyphen (U+2011) inside a code embedded in a sentence: "AIR‑1042" never wraps. */
+const nbh = (code) => String(code ?? '').replace(/-/g, '‑');
+const unitOf = (pipeId) => String(PIPELINE_UNIT[pipeId] || 'سجلاً').replace('{runs}', num(MONTE_CARLO_RUNS));
+const parseMs = (v) => { const t = Date.parse(v || ''); return Number.isFinite(t) ? t : 0; };
 
 function weightedPick(entries) {
   const total = entries.reduce((s, [, w]) => s + w, 0);
@@ -174,19 +204,27 @@ function aiEvent() {
     const rating = ratingOf(score);
     return {
       type: 'ai', tone: RATING_TONE[rating], siteId: r.projectId, sourceId: pipeId, refId: r.id,
-      title: `${label}: إعادة تقييم ${r.code} — الدرجة ${score} (${RATING_LABEL[rating]})`,
+      title: `${label}: إعادة تقييم ${nbh(r.code)} — الدرجة ${num(score)} (${RATING_LABEL[rating]})`,
       detail: [r.title, siteName(r.projectId)].filter(Boolean).join(' · '),
+      code: r.code, score, rating, source: label,
     };
   }
 
   const n = int(18, 640);
   const ms = int(180, 2400);
+  const overrides = int(3, 14);
   const variants = [
-    `${label}: اكتمال دورة تحليل — ${n} ${PIPELINE_UNIT[pipeId] || 'سجلاً'} خلال ${ms} ms`,
-    `${label}: لا مخاطر جديدة فوق العتبة في الدورة الأخيرة (${n} ${PIPELINE_UNIT[pipeId] || 'سجلاً'})`,
-    `${label}: تحديث أهمية السمات بعد ${int(3, 14)} تجاوزاً بشرياً — إعادة معايرة مُجدولة`,
+    { title: `${label}: اكتمال دورة تحليل — ${num(n)} ${unitOf(pipeId)} خلال ${num(ms)} م.ث`, count: n, ms },
+    { title: `${label}: لا مخاطر جديدة فوق العتبة في الدورة الأخيرة (${num(n)} ${unitOf(pipeId)})`, count: n },
+    { title: `${label}: تحديث أهمية السمات بعد ${num(overrides)} تجاوزاً بشرياً — إعادة معايرة مُجدولة`, count: overrides },
   ];
-  return { type: 'ai', tone: 'accent', siteId: randomProjectId(), sourceId: pipeId, title: pick(variants), detail: `الإصدار ${(pipes.find((p) => p.id === pipeId) || {}).version || 'v2.3.1'} · طبقة التفسير مفعّلة` };
+  const v = pick(variants);
+  const version = (pipes.find((p) => p.id === pipeId) || {}).version || 'v2.3.1';
+  return {
+    type: 'ai', tone: 'accent', siteId: randomProjectId(), sourceId: pipeId,
+    title: v.title, detail: `الإصدار ${version} · طبقة التفسير مفعّلة`,
+    count: v.count, ms: v.ms, source: label,
+  };
 }
 
 function validationEvent() {
@@ -198,9 +236,11 @@ function validationEvent() {
   const rejected = int(0, 6);
   const dedup = int(0, 5);
   const passed = Math.max(0, batch - rejected - dedup);
+  let completeness = round1(97 + rand() * 2.5);
+  let consistency = round1(96 + rand() * 3);
   if (src) {
-    const completeness = clamp(round1((Number(src.completenessPct) || 97) + (rand() - 0.5) * 0.6), 90, 99.9);
-    const consistency = clamp(round1((Number(src.consistencyPct) || 97) + (rand() - 0.5) * 0.6), 90, 99.9);
+    completeness = clamp(round1((Number(src.completenessPct) || 97) + (rand() - 0.5) * 0.6), 90, 99.9);
+    consistency = clamp(round1((Number(src.consistencyPct) || 97) + (rand() - 0.5) * 0.6), 90, 99.9);
     S.updateValidationSource(src.id, {
       recordsIn: (Number(src.recordsIn) || 0) + batch,
       passed: (Number(src.passed) || 0) + passed,
@@ -211,43 +251,53 @@ function validationEvent() {
       lastBatch: localISO(new Date()),
     });
   }
-  const completenessText = src ? `${Number(src.completenessPct).toFixed(1)}%` : `${round1(97 + rand() * 2.5)}%`;
   const variants = [
-    `طبقة التحقق: معالجة دفعة ${batch} سجلاً من ${name} · رفض ${rejected} · حذف ${dedup} مكرراً · اكتمال ${completenessText}`,
+    `طبقة التحقق: معالجة دفعة ${num(batch)} سجلاً من ${name} · رفض ${num(rejected)} · حذف ${num(dedup)} مكرراً · اكتمال ${pct(completeness, 1)}`,
     rejected > 0
-      ? `طبقة التحقق: ${rejected} سجلات فشلت فحص المخطط من ${name} — تحويلها إلى قائمة الحجر`
-      : `طبقة التحقق: دفعة ${name} اجتازت فحوص المخطط والاكتمال بالكامل (${batch} سجلاً)`,
-    `طبقة التحقق: اتساق ${src ? Number(src.consistencyPct).toFixed(1) : round1(96 + rand() * 3)}% لدفعة ${name} — عبرت البوابة إلى بحيرة البيانات`,
+      ? `طبقة التحقق: ${num(rejected)} سجلات فشلت فحص المخطط من ${name} — تحويلها إلى قائمة الحجر`
+      : `طبقة التحقق: دفعة ${name} اجتازت فحوص المخطط والاكتمال بالكامل (${num(batch)} سجلاً)`,
+    `طبقة التحقق: اتساق ${pct(consistency, 1)} لدفعة ${name} — عبرت البوابة إلى بحيرة البيانات`,
   ];
   return {
     type: 'validation', tone: rejected >= 4 ? 'warning' : 'accent', siteId: null, sourceId: src ? src.id : null,
     title: pick(variants), detail: 'لا يصل أي سجل إلى المحرك قبل اجتياز التحقق · التكرار والاكتمال والاتساق',
+    count: batch, rejected, deduplicated: dedup, pct: completeness, consistencyPct: consistency, source: name,
   };
 }
 
+/** Title + raw payload for a connector sync event (numbers formatted with fmt, raw copies kept). */
 function connectorTitle(c) {
   const id = String(c.id || '');
   const name = c.name || id;
   const n = int(24, 960);
-  if (id.startsWith('primavera')) return `${name}: مزامنة ${n} نشاطاً · المسار الحرج محدّث · الطفو الكلي أُعيد حسابه`;
-  if (id.startsWith('autodesk')) return `${name}: استخراج كميات من النموذج (Model Derivative) — ${n} عنصراً · فروقات BoQ↔BIM محدّثة`;
-  if (id.startsWith('oracle-erp') || id.startsWith('sap')) return `${name}: ${n} قيداً مالياً جديداً · الالتزامات والفعلي محدّثان`;
-  if (id.includes('crm') || id.startsWith('hubspot') || id.startsWith('zoho')) return `${name}: تحديث ${int(3, 40)} سجلاً للعملاء والعقود`;
-  if (id === 'biltix-contracts') return `Biltix — العقود: ${int(1, 9)} مستندات جديدة أُرسلت إلى محرك NLP`;
-  if (id === 'biltix-boq') return `Biltix — BoQ: تحديث ${n} بنداً · أسعار الوحدة ومهل التوريد محدّثة`;
-  if (id === 'biltix-schedule') return `Biltix — الجدول الزمني: ${n} نشاطاً متزامناً مع P6 · نسب الإنجاز محدّثة`;
-  if (id === 'biltix-site-reports') return `Biltix — تقارير الموقع: ${int(4, 28)} تقريراً يومياً أُرسلت إلى ذكاء الموقع`;
-  if (id === 'biltix-images') return `Biltix — الصور: ${int(40, 420)} صورة موقع جديدة · كشف معدات الوقاية والحواجز`;
-  if (id === 'biltix-cost') return `Biltix — التكلفة: تحديث ${int(6, 60)} سطر ميزانية · EV/AC محدّثان`;
+  const t = (title, extra = {}) => ({ title, count: n, ...extra });
+  if (id.startsWith('primavera')) return t(`${name}: مزامنة ${num(n)} نشاطاً · المسار الحرج محدّث · الطفو الكلي أُعيد حسابه`);
+  if (id.startsWith('autodesk')) return t(`${name}: استخراج كميات من النموذج (Model Derivative) — ${num(n)} عنصراً · فروقات BoQ↔BIM محدّثة`);
+  if (id.startsWith('oracle-erp') || id.startsWith('sap')) return t(`${name}: ${num(n)} قيداً مالياً جديداً · الالتزامات والفعلي محدّثان`);
+  if (id.includes('crm') || id.startsWith('hubspot') || id.startsWith('zoho')) { const k = int(3, 40); return t(`${name}: تحديث ${num(k)} سجلاً للعملاء والعقود`, { count: k }); }
+  if (id === 'biltix-contracts') { const k = int(1, 9); return t(`${name}: ${num(k)} مستندات جديدة أُرسلت إلى محرك NLP`, { count: k }); }
+  if (id === 'biltix-boq') return t(`${name}: تحديث ${num(n)} بنداً · أسعار الوحدة ومهل التوريد محدّثة`);
+  if (id === 'biltix-schedule') return t(`${name}: ${num(n)} نشاطاً متزامناً مع P6 · نسب الإنجاز محدّثة`);
+  if (id === 'biltix-site-reports') { const k = int(4, 28); return t(`${name}: ${num(k)} تقريراً يومياً أُرسلت إلى ذكاء الموقع`, { count: k }); }
+  if (id === 'biltix-images') { const k = int(40, 420); return t(`${name}: ${num(k)} صورة موقع جديدة · كشف معدات الوقاية والحواجز`, { count: k }); }
+  if (id === 'biltix-cost') { const k = int(6, 60); return t(`${name}: تحديث ${num(k)} سطر ميزانية · EV/AC محدّثان`, { count: k }); }
   if (id === 'feed-commodities') {
     const com = pick(arr('commodities')) || { name: 'حديد التسليح' };
-    const pct = round1((rand() - 0.45) * 4);
-    return `مؤشرات السلع: تحديث سعر ${com.name} (${pct >= 0 ? '+' : '−'}${Math.abs(pct)}%)`;
+    const change = round1((rand() - 0.45) * 4);
+    return { title: `مؤشرات السلع: تحديث سعر ${com.name} (${signedPct(change)})`, pct: change, subject: com.name };
   }
-  if (id === 'feed-fx-sama') return `أسعار الصرف (ساما): EUR ${round1(4.05 + rand() * 0.1)} · CNY ${(0.51 + rand() * 0.02).toFixed(3)} · USD 3.75 (مثبّت)`;
-  if (id === 'feed-weather-ncm') return `المركز الوطني للأرصاد: تحديث توقعات 7 أيام — رياح ${int(14, 48)} كم/س في ${siteName(randomProjectId()) || 'المواقع'}`;
-  if (id === 'feed-gis') return `طبقات GIS: تحديث حدود المواقع والمناطق المحظورة (${int(2, 9)} طبقات)`;
-  return `${name}: مزامنة ${n} سجلاً — اكتملت دون أخطاء`;
+  if (id === 'feed-fx-sama') {
+    const eur = round1(4.05 + rand() * 0.1);
+    const cny = Number((0.51 + rand() * 0.02).toFixed(3));
+    return { title: `أسعار الصرف (ساما): EUR ${num(eur, 2)} · CNY ${num(cny, 3)} · USD ${num(3.75, 2)} (مثبّت)`, value: eur, unit: 'ر.س/EUR', rates: { EUR: eur, CNY: cny, USD: 3.75 } };
+  }
+  if (id === 'feed-weather-ncm') {
+    const wind = int(14, 48);
+    const days = 7;
+    return { title: `المركز الوطني للأرصاد: تحديث توقعات ${num(days)} أيام — رياح ${num(wind)} كم/س في ${siteName(randomProjectId()) || 'المواقع'}`, value: wind, unit: 'كم/س', days };
+  }
+  if (id === 'feed-gis') { const k = int(2, 9); return t(`طبقات GIS: تحديث حدود المواقع والمناطق المحظورة (${num(k)} طبقات)`, { count: k }); }
+  return t(`${name}: مزامنة ${num(n)} سجلاً — اكتملت دون أخطاء`);
 }
 
 function connectorEvent() {
@@ -260,24 +310,40 @@ function connectorEvent() {
     S.updateConnector(c.id, patch);
   }
   if (c.status === 'degraded') {
-    return { type: 'connector', tone: 'warning', siteId: null, sourceId: c.id, title: `${c.name}: زمن استجابة مرتفع (${latency} ms) — إعادة المحاولة التلقائية`, detail: 'الموصل في وضع متدهور · البيانات الواردة تُعاد معالجتها بعد الاستقرار' };
+    return {
+      type: 'connector', tone: 'warning', siteId: null, sourceId: c.id,
+      title: `${c.name}: زمن استجابة مرتفع (${num(latency)} م.ث) — إعادة المحاولة التلقائية`,
+      detail: 'الموصل في وضع متدهور · البيانات الواردة تُعاد معالجتها بعد الاستقرار',
+      ms: latency, source: c.name,
+    };
   }
-  return { type: 'connector', tone: 'accent', siteId: null, sourceId: c.id, title: connectorTitle(c), detail: `${c.mode === 'read+writeback' ? 'قراءة + كتابة عكسية' : 'قراءة فقط'} · ${latency} ms` };
+  const { title, ...payload } = connectorTitle(c);
+  return {
+    type: 'connector', tone: 'accent', siteId: null, sourceId: c.id, title,
+    detail: `${c.mode === 'read+writeback' ? 'قراءة + كتابة عكسية' : 'قراءة فقط'} · ${num(latency)} م.ث`,
+    ms: latency, source: c.name, ...payload,
+  };
 }
 
 function writebackEvent() {
   const synced = arr('tasks').filter((t) => t && t.writeback && t.writeback.status === 'synced');
   const t = pick(synced);
   if (!t) {
-    return { type: 'writeback', tone: 'accent', siteId: null, sourceId: 'biltix-pm', title: 'Biltix PM: مزامنة أعلام المخاطر والتنبيهات — لا تغييرات معلّقة', detail: 'الكتابة العكسية تقتصر على الأعلام والدرجات والتنبيهات ومهام المعالجة' };
+    return {
+      type: 'writeback', tone: 'accent', siteId: null, sourceId: 'biltix-pm',
+      title: `${PM_NAME}: مزامنة أعلام المخاطر والتنبيهات — لا تغييرات معلّقة`,
+      detail: 'الكتابة العكسية تقتصر على الأعلام والدرجات والتنبيهات ومهام المعالجة',
+      source: PM_SOURCE,
+    };
   }
   const risk = arr('aiRisks').find((r) => r && r.id === t.riskId);
   return {
     type: 'writeback', tone: 'good', siteId: t.projectId, sourceId: 'biltix-pm', refId: t.id,
     title: risk
-      ? `Biltix PM: تحديث علم المخاطرة ${risk.code} ودرجتها (${risk.score}) — مرتبط بالمهمة ${t.code}`
-      : `Biltix PM: تأكيد الكتابة العكسية للمهمة ${t.code}`,
+      ? `${PM_NAME}: تحديث علم المخاطرة ${nbh(risk.code)} ودرجتها (${num(risk.score)}) — مرتبط بالمهمة ${nbh(t.code)}`
+      : `${PM_NAME}: تأكيد الكتابة العكسية للمهمة ${nbh(t.code)}`,
     detail: [t.title, siteName(t.projectId)].filter(Boolean).join(' · '),
+    source: PM_SOURCE, code: t.code, riskCode: risk ? risk.code : undefined, score: risk ? Number(risk.score) : undefined,
   };
 }
 
@@ -303,8 +369,9 @@ function taskEvent() {
   ];
   return {
     type: 'task', tone: t.status === 'متأخرة' ? 'serious' : 'accent', siteId: t.projectId, sourceId: 'biltix-pm', refId: t.id,
-    title: `${t.owner || 'المسؤول'} أضاف تحديثاً على ${t.code}: ${pick(notes)}`,
+    title: `${t.owner || 'المسؤول'} أضاف تحديثاً على ${nbh(t.code)}: ${pick(notes)}`,
     detail: [t.title, `الحالة: ${t.status}`].filter(Boolean).join(' · '),
+    code: t.code, source: PM_SOURCE,
   };
 }
 
@@ -610,17 +677,59 @@ function buildRisk(category = pick(CATEGORIES)) {
     status: 'مكتشف', owner: '', dueDate: plusDays(int(7, 28)),
     stakeholders: draft.stakeholders || ['PM'],
     responseParams: Object.fromEntries(Object.entries(draft.responseParams || {}).filter(([role]) => (draft.stakeholders || ['PM']).includes(role))),
+    simulated: true,
   };
 }
 
 function detectRisk(category) {
   if (!S || typeof S.addAiRisk !== 'function') return null;
   try {
-    return S.addAiRisk(buildRisk(category));
+    const risk = S.addAiRisk(buildRisk(category));
+    if (risk) pruneSimulated();
+    return risk;
   } catch (error) {
     console.warn('[بلتكس Risk AI] تعذر توليد مخاطرة جديدة:', error && error.message ? error.message : error);
     return null;
   }
+}
+
+/* ────────────────────────────── simulated-record cap ────────────────────────────── */
+
+/**
+ * Keep at most SIM_CAPS.aiRisks engine-detected risks. Only risks tagged `simulated: true`
+ * that carry no task are candidates: closed/dismissed ones go first (oldest detection first),
+ * then untouched fresh ones (مكتشف/تنبيه with no overrides). Alerts that pointed at a pruned
+ * risk are removed with it. Seed and user-created records are never pruned.
+ * Returns { aiRisks, alerts } removed counts.
+ */
+function pruneSimulated() {
+  const removed = { aiRisks: 0, alerts: 0 };
+  if (!S || typeof S.update !== 'function') return removed;
+  try {
+    const all = arr('aiRisks').filter((r) => r && r.simulated === true);
+    let excess = all.length - SIM_CAPS.aiRisks;
+    if (excess <= 0) return removed;
+    const candidates = all.filter((r) => !r.taskId).sort((a, b) => parseMs(a.detectedAt) - parseMs(b.detectedAt));
+    const ids = new Set();
+    for (const r of candidates) { if (excess <= 0) break; if (CLOSED_RISK.has(r.status)) { ids.add(r.id); excess -= 1; } }
+    for (const r of candidates) {
+      if (excess <= 0) break;
+      if (!ids.has(r.id) && FRESH_RISK.has(r.status) && !(Array.isArray(r.overrides) && r.overrides.length)) { ids.add(r.id); excess -= 1; }
+    }
+    if (!ids.size) return removed;
+    S.update((state) => {
+      const p = state.platform && typeof state.platform === 'object' ? state.platform : {};
+      const risks = Array.isArray(p.aiRisks) ? p.aiRisks : [];
+      for (let i = risks.length - 1; i >= 0; i -= 1) if (risks[i] && ids.has(risks[i].id)) risks.splice(i, 1);
+      const alerts = Array.isArray(p.alerts) ? p.alerts : [];
+      for (let i = alerts.length - 1; i >= 0; i -= 1) if (alerts[i] && ids.has(alerts[i].riskId)) { alerts.splice(i, 1); removed.alerts += 1; }
+      return 'platform.aiRisks';
+    });
+    removed.aiRisks = ids.size;
+  } catch (error) {
+    console.warn('[بلتكس Risk AI] تعذر تقليم السجلات المحاكاة:', error && error.message ? error.message : error);
+  }
+  return removed;
 }
 
 /* ────────────────────────────── 30 s jitter · 60 s overdue ────────────────────────────── */
@@ -732,6 +841,7 @@ export const platformLive = {
     paused = false;
     rand = mulberry32(RNG_SEED);
     suspended = hidden();
+    pruneSimulated(); // a long-lived saved state may carry more simulated risks than the cap allows
     if (typeof document !== 'undefined' && !visibilityHandler) {
       visibilityHandler = onVisibility;
       document.addEventListener('visibilitychange', visibilityHandler);
@@ -778,6 +888,10 @@ export const platformLive = {
 
   /** Force a detection for a given category (demo hook / tests). */
   detectRisk,
+
+  /** Prune simulated AI risks beyond SIM_CAPS.aiRisks; returns { aiRisks, alerts } removed counts. */
+  pruneSimulated,
+  SIM_CAPS,
 
   /** Diagnostics for the QA harness. */
   stats() { return { running, paused, suspended, ticks, seed: RNG_SEED }; },

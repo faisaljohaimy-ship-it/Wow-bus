@@ -167,9 +167,13 @@ export default {
     const siteById = (id) => arr(state().sites).find((s) => s.id === id) || null;
     const siteName = (id) => { const s = siteById(id); return s ? s.name : ''; };
     const now = () => (typeof store.now === 'function' ? store.now() : new Date());
-    const periodLabel = (f) => `آخر ${fmt.num(f.range)} ${f.range <= 10 ? 'أيام' : 'يومًا'}`;
+    const periodLabel = (f) => `آخر ${fmt.num(f.range)} ${f.range <= 10 ? 'أيام' : 'يوماً'}`;
     const scopeLabel = (f) => (f.siteId === 'all' ? 'جميع المواقع' : siteName(f.siteId) || 'موقع محدد');
     const pairs = (count) => `${fmt.num(count)} مخاطرة`;
+    /** Route digit runs inside selector-made labels ("أسبوع 36") through the numerals setting. */
+    const digits = (s) => String(s ?? '').replace(/\d+(?:\.\d+)?/g, (m) => fmt.num(Number(m), { maximumFractionDigits: 2 }));
+    /** Re-set a card subtitle (static copy carries numbers that must follow the numerals setting). */
+    const setSub = (cardEl, text) => { const el = cardEl.querySelector('.card-sub'); if (el && el.textContent !== text) el.textContent = text; };
 
     /** Plain table twin builder (headers + rows; `numeric` marks mono/end-aligned columns). */
     function simpleTable(caption, headers, rows, numeric = []) {
@@ -248,7 +252,7 @@ export default {
     const blipCount = h('span', { class: 'text-sm ink-2' });
     const updatedText = h('span', {});
     const radarCard = C.card({
-      code: 'RDR-01', title: 'رادار المخاطر الحي', subtitle: '12 قطاعًا بحسب فئة الخطر — المخاطر الأشد تقترب من المركز',
+      code: 'RDR-01', title: 'رادار المخاطر الحي', subtitle: `${fmt.num(12)} قطاعاً بحسب فئة الخطر — المخاطر الأشد تقترب من المركز`,
       body: h('div', { class: 'stack gap-3' }, radarWrap, h('div', { class: 'row between wrap' }, radarLegendHost, blipCount)),
       tableView: blipTable,
       footer: [
@@ -274,7 +278,7 @@ export default {
       body: h('div', { class: 'stack gap-3' }, matrixHost, matrixLegendHost), tableView: matrixTable, className: 'col-span-4',
     });
     const trendCard = C.card({
-      code: 'INC-TRD', title: 'اتجاه الحوادث', subtitle: 'آخر 12 أسبوعًا — الحوادث مقابل الحوادث الوشيكة',
+      code: 'INC-TRD', title: 'اتجاه الحوادث', subtitle: `آخر ${fmt.num(12)} أسبوعاً — الحوادث مقابل الحوادث الوشيكة`,
       body: trendHost, tableView: trendTable, className: 'col-span-4',
     });
     const permitsCard = C.card({
@@ -289,7 +293,7 @@ export default {
     const urgentHost = h('div');
     const urgentCount = h('span', { class: 'text-sm ink-2' });
     const sitesCard = C.card({
-      code: 'SITES', title: 'أداء المواقع', subtitle: 'مؤشر السلامة لكل موقع مع اتجاه 12 أسبوعًا — انقر موقعًا لتصفية اللوحة عليه',
+      code: 'SITES', title: 'أداء المواقع', subtitle: `مؤشر السلامة لكل موقع مع اتجاه ${fmt.num(12)} أسبوعاً — انقر موقعاً لتصفية اللوحة عليه`,
       body: sitesHost, className: 'col-span-8',
     });
     const urgentCard = C.card({
@@ -408,12 +412,12 @@ export default {
       const m = safe(() => sel.riskMatrix(state(), filters()), [], 'riskMatrix');
       const header = ['الشدة ↓ / الاحتمالية →', ...LIKELIHOOD_LABELS.map((l, i) => `${fmt.num(i + 1)} ${l}`)];
       const rows = SEVERITY_LABELS.map((l, ri) => [`${fmt.num(ri + 1)} ${l}`, ...LIKELIHOOD_LABELS.map((_, ci) => fmt.num(Number(m[ri] && m[ri][ci]) || 0))]);
-      return simpleTable('مصفوفة المخاطر 5×5 — عدد المخاطر المفتوحة', header, rows, [false, true, true, true, true, true]);
+      return simpleTable(`مصفوفة المخاطر ${fmt.num(5)}×${fmt.num(5)} — عدد المخاطر المفتوحة`, header, rows, [false, true, true, true, true, true]);
     }
     function trendTable() {
       const t = safe(() => sel.incidentTrend(state(), 12, filters()), [], 'incidentTrend');
       return simpleTable('اتجاه الحوادث الأسبوعي', ['الأسبوع', 'الحوادث', 'الحوادث الوشيكة'],
-        t.map((w) => [String(w.label || ''), fmt.num(Number(w.incidents) || 0), fmt.num(Number(w.nearMisses) || 0)]), [false, true, true]);
+        t.map((w) => [digits(w.label || ''), fmt.num(Number(w.incidents) || 0), fmt.num(Number(w.nearMisses) || 0)]), [false, true, true]);
     }
     function permitsTable() {
       const parts = safe(() => sel.permitsByStatus(state(), filters()), [], 'permitsByStatus');
@@ -441,7 +445,7 @@ export default {
       factsHost.replaceChildren(
         fact('أيام بدون إصابة مضيعة للوقت', fmt.num(k ? k.daysSinceLTI : 0), 'يوم'),
         fact('LTIFR — الإصابات المضيعة للوقت', fmt.num(k ? k.ltifr : 0, { maximumFractionDigits: 2 }), '/مليون ساعة'),
-        fact('TRIR — الإصابات المسجلة', fmt.num(k ? k.trir : 0, { maximumFractionDigits: 2 }), '/200 ألف ساعة'));
+        fact('TRIR — الإصابات المسجلة', fmt.num(k ? k.trir : 0, { maximumFractionDigits: 2 }), `/${fmt.num(200)} ألف ساعة`));
 
       const counts = tierCounts(st, f);
       const total = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -456,15 +460,18 @@ export default {
         bar || toneLegend(TIERS.map((t) => ({ tone: t.tone, label: t.tier, count: counts[t.tone] }))));
     }
 
+    /* Labels/hints are functions: their numbers follow the numerals setting on every refresh.
+       Order is fixed (8 tiles → 4×2 on wide screens): incidents, near misses, permits, critical,
+       CAPA %, training %, inspections due, TRIR. */
     const TILES = [
-      { key: 'openIncidents', label: 'الحوادث المفتوحة', icon: 'incident', goodWhen: 'down', hint: 'حوادث لم تُغلق بعد ضمن النطاق', tone: (v) => (v > 0 ? 'serious' : null), route: { id: 'incidents' } },
-      { key: 'nearMisses30d', label: 'الحوادث الوشيكة (30 يومًا)', icon: 'nearmiss', goodWhen: 'down', hint: 'بلاغات الحوادث الوشيكة خلال آخر 30 يومًا', route: { id: 'incidents' } },
-      { key: 'activePermits', label: 'التصاريح النشطة', icon: 'permit', goodWhen: 'up', hint: 'تصاريح عمل سارية الآن', route: { id: 'permits' } },
-      { key: 'criticalRisks', label: 'المخاطر الحرجة', icon: 'risk', goodWhen: 'down', hint: 'مخاطر مفتوحة بدرجة 16 فأكثر', tone: (v) => (v > 0 ? 'critical' : null), route: { id: 'risks', params: { tier: 'حرج' } } },
-      { key: 'capaClosure', label: 'إغلاق الإجراءات التصحيحية', icon: 'check', unit: '%', goodWhen: 'up', hint: 'نسبة الإجراءات التصحيحية المنجزة', route: { id: 'incidents' } },
-      { key: 'trainingCompliance', label: 'الامتثال التدريبي', icon: 'training', unit: '%', goodWhen: 'up', hint: 'شهادات سارية للدورات الإلزامية', route: { id: 'training' } },
-      { key: 'inspectionsDue', label: 'تفتيشات مستحقة', icon: 'inspection', goodWhen: 'down', hint: 'متأخرة أو مستحقة خلال 7 أيام', tone: (v) => (v > 0 ? 'warning' : null), route: { id: 'inspections' } },
-      { key: 'trir', label: 'معدل الحوادث المسجلة TRIR', icon: 'trend', goodWhen: 'down', digits: 2, hint: 'الإصابات المسجلة لكل 200 ألف ساعة عمل', route: { id: 'reports' } },
+      { key: 'openIncidents', label: () => 'الحوادث المفتوحة', icon: 'incident', goodWhen: 'down', hint: () => 'حوادث لم تُغلق بعد ضمن النطاق', tone: (v) => (v > 0 ? 'serious' : null), route: { id: 'incidents' } },
+      { key: 'nearMisses30d', label: () => `الحوادث الوشيكة (${fmt.num(30)} يوماً)`, icon: 'nearmiss', goodWhen: 'down', hint: () => `بلاغات الحوادث الوشيكة خلال آخر ${fmt.num(30)} يوماً`, route: { id: 'incidents' } },
+      { key: 'activePermits', label: () => 'التصاريح النشطة', icon: 'permit', goodWhen: 'up', hint: () => 'تصاريح عمل سارية الآن', route: { id: 'permits' } },
+      { key: 'criticalRisks', label: () => 'المخاطر الحرجة', icon: 'risk', goodWhen: 'down', hint: () => `مخاطر مفتوحة بدرجة ${fmt.num(16)} فأكثر`, tone: (v) => (v > 0 ? 'critical' : null), route: { id: 'risks', params: { tier: 'حرج' } } },
+      { key: 'capaClosure', label: () => 'إغلاق الإجراءات التصحيحية', icon: 'check', unit: '%', goodWhen: 'up', hint: () => 'نسبة الإجراءات التصحيحية المنجزة', route: { id: 'incidents' } },
+      { key: 'trainingCompliance', label: () => 'الامتثال التدريبي', icon: 'training', unit: '%', goodWhen: 'up', hint: () => 'شهادات سارية للدورات الإلزامية', route: { id: 'training' } },
+      { key: 'inspectionsDue', label: () => 'تفتيشات مستحقة', icon: 'inspection', goodWhen: 'down', hint: () => `متأخرة أو مستحقة خلال ${fmt.num(7)} أيام`, tone: (v) => (v > 0 ? 'warning' : null), route: { id: 'inspections' } },
+      { key: 'trir', label: () => 'معدل الحوادث المسجلة TRIR', icon: 'trend', goodWhen: 'down', digits: 2, hint: () => `الإصابات المسجلة لكل ${fmt.num(200)} ألف ساعة عمل`, route: { id: 'reports' } },
     ];
 
     function renderTiles(k, st, f) {
@@ -473,12 +480,13 @@ export default {
         const raw = k && Number.isFinite(k[t.key]) ? k[t.key] : null;
         const value = raw === null ? null : (t.digits ? fmt.num(raw, { maximumFractionDigits: t.digits }) : raw);
         const d = k && k.deltas && Number.isFinite(k.deltas[t.key]) ? k.deltas[t.key] : null;
-        const delta = d === null ? null : (t.digits ? fmt.signed(d, t.digits) : d);
+        // Always a number: the tile formats it (a pre-formatted fmt.signed string carries bidi marks → NaN → wrong arrow).
+        const delta = d === null ? null : (t.digits ? Number(d.toFixed(t.digits)) : d);
         const values = hist.map((p) => (p && Number.isFinite(p[t.key]) ? p[t.key] : 0));
         const spark = tryEl(() => charts.sparkline({ values, width: 84, height: 26 }), 'sparkline');
         const tile = C.statTile({
-          label: t.label, value, unit: t.unit || '', delta, deltaGoodWhen: t.goodWhen, spark,
-          icon: ico(t.icon, 18), tone: t.tone ? t.tone(raw) : null, hint: t.hint,
+          label: t.label(), value, unit: t.unit || '', delta, deltaGoodWhen: t.goodWhen, spark,
+          icon: ico(t.icon, 18), tone: t.tone ? t.tone(raw) : null, hint: t.hint(),
           onClick: t.route ? () => router.navigate(t.route.id, t.route.params || {}) : null,
         });
         tile.setAttribute('role', 'listitem');
@@ -495,7 +503,7 @@ export default {
         colorFor: (value, ri, ci) => `var(--${toneOfCell(Number(ri) || 0, Number(ci) || 0)})`,
         labelFor: (value) => (value ? fmt.num(value) : ''),
         onCellClick: (...args) => { const c = cellArgs(args); router.navigate('risks', { tier: tierOfCell(c.ri, c.ci) }); },
-        cellSize: 'auto', ariaLabel: 'مصفوفة المخاطر 5×5', rowTitle: 'الشدة', colTitle: 'الاحتمالية',
+        cellSize: 'auto', ariaLabel: `مصفوفة المخاطر ${fmt.num(5)}×${fmt.num(5)}`, rowTitle: 'الشدة', colTitle: 'الاحتمالية',
       }), 'مصفوفة المخاطر'));
       const counts = tierCounts(st, f);
       matrixLegendHost.replaceChildren(toneLegend(TIERS.map((t) => ({ tone: t.tone, label: t.tier, count: counts[t.tone] })), 'matrix-legend'));
@@ -508,7 +516,7 @@ export default {
           { id: 'incidents', label: 'الحوادث', color: 'var(--s1)', values: t.map((w) => Number(w.incidents) || 0) },
           { id: 'nearMisses', label: 'الحوادث الوشيكة', color: 'var(--s2)', values: t.map((w) => Number(w.nearMisses) || 0) },
         ],
-        labels: t.map((w) => String(w.label || '')), height: 220, yFormat: fmt.num, ariaLabel: 'اتجاه الحوادث الأسبوعي',
+        labels: t.map((w) => digits(w.label || '')), height: 220, yFormat: fmt.num, ariaLabel: 'اتجاه الحوادث الأسبوعي',
       }), 'اتجاه الحوادث'));
     }
 
@@ -523,16 +531,18 @@ export default {
           h('dd', { class: 'mono' }, total ? `${fmt.num(p.value)} · ${fmt.pct((p.value / total) * 100)}` : fmt.num(p.value))))));
     }
 
+    /* Column `priority` lets the table hide low/medium columns in narrow containers (dataTable
+       container query); the first (name) column stays sticky. Site names wrap instead of truncating. */
     function siteColumns() {
       return [
-        { key: 'name', label: 'الموقع', sortValue: (r) => r.site.name, render: (r) => h('div', { class: 'stack gap-1' }, h('strong', {}, r.site.name), h('span', { class: 'muted text-xs mono' }, String(r.site.code || ''))) },
-        { key: 'city', label: 'المدينة', sortValue: (r) => r.site.city, render: (r) => String(r.site.city || '') },
-        { key: 'phase', label: 'المرحلة', sortValue: (r) => r.site.phase, render: (r) => h('span', { class: 'truncate', style: { display: 'inline-block', maxInlineSize: '170px', verticalAlign: 'middle' }, title: String(r.site.phase || '') }, String(r.site.phase || '')) },
-        { key: 'workers', label: 'العمال', align: 'end', sortValue: (r) => Number(r.site.workers) || 0, render: (r) => fmt.num(Number(r.site.workers) || 0) },
-        { key: 'score', label: 'مؤشر السلامة', width: 160, sortValue: (r) => r.score, render: (r) => h('div', { class: 'progress-row' }, C.progress({ value: r.score, max: 100, tone: scoreTone(r.score), label: `مؤشر السلامة ${fmt.num(r.score)}` }), h('span', { class: 'progress-value' }, fmt.num(r.score))) },
-        { key: 'trend', label: 'الاتجاه', sortable: false, render: (r) => tryEl(() => charts.sparkline({ values: arr(r.trend), width: 80, height: 24 }), 'sparkline') || '—' },
-        { key: 'openRisks', label: 'مخاطر مفتوحة', align: 'end', sortValue: (r) => r.openRisks, render: (r) => (r.criticalRisks > 0 ? h('span', { class: 'row gap-2', style: { justifyContent: 'flex-end' } }, C.badge(`${fmt.num(r.criticalRisks)} حرج`, 'critical'), fmt.num(r.openRisks)) : fmt.num(r.openRisks)) },
-        { key: 'openIncidents', label: 'حوادث مفتوحة', align: 'end', sortValue: (r) => r.openIncidents, render: (r) => fmt.num(r.openIncidents) },
+        { key: 'name', label: 'الموقع', priority: 'high', sortValue: (r) => r.site.name, render: (r) => h('div', { class: 'stack gap-1', style: { minInlineSize: '120px' } }, h('strong', { style: { whiteSpace: 'normal' } }, r.site.name), h('span', { class: 'muted text-xs mono' }, String(r.site.code || ''))) },
+        { key: 'city', label: 'المدينة', priority: 'low', sortValue: (r) => r.site.city, render: (r) => String(r.site.city || '') },
+        { key: 'phase', label: 'المرحلة', priority: 'low', sortValue: (r) => r.site.phase, render: (r) => h('span', { style: { display: 'inline-block', maxInlineSize: '170px', verticalAlign: 'middle', whiteSpace: 'normal' }, title: String(r.site.phase || '') }, String(r.site.phase || '')) },
+        { key: 'workers', label: 'العمال', priority: 'medium', align: 'end', sortValue: (r) => Number(r.site.workers) || 0, render: (r) => fmt.num(Number(r.site.workers) || 0) },
+        { key: 'score', label: 'مؤشر السلامة', priority: 'high', width: 160, sortValue: (r) => r.score, render: (r) => h('div', { class: 'progress-row' }, C.progress({ value: r.score, max: 100, tone: scoreTone(r.score), label: `مؤشر السلامة ${fmt.num(r.score)}` }), h('span', { class: 'progress-value' }, fmt.num(r.score))) },
+        { key: 'trend', label: 'الاتجاه', priority: 'low', sortable: false, render: (r) => tryEl(() => charts.sparkline({ values: arr(r.trend), width: 80, height: 24 }), 'sparkline') || '—' },
+        { key: 'openRisks', label: 'مخاطر مفتوحة', priority: 'high', align: 'end', sortValue: (r) => r.openRisks, render: (r) => (r.criticalRisks > 0 ? h('span', { class: 'row gap-2', style: { justifyContent: 'flex-end' } }, C.badge(`${fmt.num(r.criticalRisks)} حرج`, 'critical'), fmt.num(r.openRisks)) : fmt.num(r.openRisks)) },
+        { key: 'openIncidents', label: 'حوادث مفتوحة', priority: 'medium', align: 'end', sortValue: (r) => r.openIncidents, render: (r) => fmt.num(r.openIncidents) },
       ];
     }
 
@@ -540,7 +550,7 @@ export default {
       const rows = safe(() => sel.siteScores(st), [], 'siteScores').filter((r) => r && r.site).map((r) => ({ id: r.site.id, ...r }));
       if (!sitesTable) {
         sitesTable = C.dataTable({
-          columns: siteColumns(), rows, rowKey: 'id', pageSize: 6, dense: true, caption: 'أداء المواقع',
+          columns: siteColumns(), rows, rowKey: 'id', pageSize: 6, dense: true, caption: 'أداء المواقع', stickyFirst: true,
           initialSort: { key: 'score', dir: 'asc' }, emptyText: 'لا توجد مواقع مسجلة',
           onRowClick: (row) => {
             const previous = filters().siteId;
@@ -669,15 +679,15 @@ export default {
           ['مخاطرة حرجة مفتوحة', `${minus(W.criticalOpen)} نقطة لكل مخاطرة`],
           ['مخاطرة عالية مفتوحة', `${minus(W.highOpen)} نقطة لكل مخاطرة`],
           ['مخاطرة تجاوزت موعد المعالجة', `${minus(W.overdueOpen)} نقطة لكل مخاطرة`],
-          ['إصابة مضيعة للوقت (آخر 90 يومًا)', `${minus(W.lti90)} نقطة لكل إصابة`],
-          ['إصابة تطلبت علاجًا طبيًا (آخر 90 يومًا)', `${minus(W.mtc90)} نقطة لكل إصابة`],
-          ['حادث وشيك (آخر 30 يومًا)', `${minus(W.nearMiss30)} نقطة لكل حادث`],
+          [`إصابة مضيعة للوقت (آخر ${fmt.num(90)} يوماً)`, `${minus(W.lti90)} نقطة لكل إصابة`],
+          [`إصابة تطلبت علاجاً طبياً (آخر ${fmt.num(90)} يوماً)`, `${minus(W.mtc90)} نقطة لكل إصابة`],
+          [`حادث وشيك (آخر ${fmt.num(30)} يوماً)`, `${minus(W.nearMiss30)} نقطة لكل حادث`],
           ['الامتثال التدريبي', `+${fmt.num(W.trainingPct, { maximumFractionDigits: 1 })} نقطة لكل ${fmt.pct(1)}`],
         ]),
         h('div', { class: 'note' },
           h('strong', {}, 'LTIFR'), ` = (الإصابات المضيعة للوقت × ${fmt.num(ltiBase)}) ÷ ساعات العمل · `,
-          h('strong', {}, 'TRIR'), ` = (الإصابات المسجلة × ${fmt.num(trirBase)}) ÷ ساعات العمل، بافتراض ${fmt.num(hoursDay)} ساعات لكل عامل يوميًا ضمن الفترة المحددة.`));
-      overlay = C.modal({ title: 'كيف يُحسب مؤشر السلامة؟', subtitle: 'الصيغة المعتمدة في مركز القيادة', body, actions: [{ label: 'حسنًا', variant: 'primary' }], size: 'md', onClose: () => { overlay = null; } });
+          h('strong', {}, 'TRIR'), ` = (الإصابات المسجلة × ${fmt.num(trirBase)}) ÷ ساعات العمل، بافتراض ${fmt.num(hoursDay)} ساعات لكل عامل يومياً ضمن الفترة المحددة.`));
+      overlay = C.modal({ title: 'كيف يُحسب مؤشر السلامة؟', subtitle: 'الصيغة المعتمدة في مركز القيادة', body, actions: [{ label: 'حسناً', variant: 'primary' }], size: 'md', onClose: () => { overlay = null; } });
       overlay.open();
     }
 
@@ -688,6 +698,10 @@ export default {
       const f = filters();
       const k = safe(() => sel.kpis(st, f), null, 'kpis');
       renderScope(f);
+      // Static subtitles carry numbers → re-set so a numerals change is honoured everywhere.
+      setSub(radarCard, `${fmt.num(12)} قطاعاً بحسب فئة الخطر — المخاطر الأشد تقترب من المركز`);
+      setSub(trendCard, `آخر ${fmt.num(12)} أسبوعاً — الحوادث مقابل الحوادث الوشيكة`);
+      setSub(sitesCard, `مؤشر السلامة لكل موقع مع اتجاه ${fmt.num(12)} أسبوعاً — انقر موقعاً لتصفية اللوحة عليه`);
       renderHero(k, st, f);
       renderTiles(k, st, f);
       renderMatrix(st, f);
@@ -702,8 +716,12 @@ export default {
       raf = requestAnimationFrame(() => { raf = 0; refresh(); });
     }
     function tickClock() {
+      // Paused while the tab is hidden (no DOM writes nobody can see); resumes on visibilitychange.
+      if (document.hidden) return;
       updatedText.textContent = `آخر تحديث ${fmt.relative(lastChangeAt)}`;
     }
+    const onVisibility = () => { if (!destroyed && !document.hidden) tickClock(); };
+    document.addEventListener('visibilitychange', onVisibility);
 
     refresh();
     tickClock();
@@ -712,7 +730,7 @@ export default {
     subs.push(bus.on('store:change', (p) => {
       lastChangeAt = Date.now();
       const path = String((p && p.path) || '*');
-      if (/^(feed|sensors|integrations)/.test(path)) return;
+      if (/^(feed|sensors|integrations|platform\.(?!aiRisks|tasks|alerts))/.test(path)) return;
       schedule();
     }));
     subs.push(bus.on('filters:change', schedule));
@@ -722,6 +740,7 @@ export default {
     /* ───────────── cleanup ───────────── */
     return function cleanup() {
       destroyed = true;
+      document.removeEventListener('visibilitychange', onVisibility);
       subs.splice(0).forEach((off) => { try { off(); } catch { /* ignore */ } });
       timers.splice(0).forEach((t) => { clearInterval(t); clearTimeout(t); });
       if (raf) { cancelAnimationFrame(raf); raf = 0; }

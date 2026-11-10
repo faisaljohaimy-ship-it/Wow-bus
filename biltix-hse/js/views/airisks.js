@@ -92,6 +92,18 @@ const FLOW_STAGES = ['مُلتقط', 'مُتحقق', 'في بحيرة البيا
 const TIMELINE_TONE = { override: 'warning', alert: 'critical', escalate: 'critical', writeback: 'accent', task: 'brand', 'task-closed': 'good', close: 'good', closed: 'good', accept: 'good', dismiss: 'neutral', history: 'brand', detected: 'accent', ack: 'good' };
 const TIMELINE_KIND_LABEL = { override: 'تجاوز', alert: 'تنبيه', escalate: 'تصعيد', writeback: 'كتابة عكسية', task: 'مهمة', 'task-closed': 'إغلاق مهمة', close: 'إغلاق', closed: 'إغلاق', accept: 'قبول', dismiss: 'تجاهل', history: 'سجل', detected: 'اكتشاف', ack: 'إقرار' };
 const CHANNELS = [['email', 'البريد الإلكتروني'], ['slack', 'Slack'], ['teams', 'Microsoft Teams'], ['whatsapp', 'واتساب للأعمال']];
+const PM_NAME = 'Biltix PM';
+const CODE_RE = /\b[A-Z]{1,5}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
+const STYLE_ID = 'view-airisks-style';
+const STYLE_TEXT = `@layer views {
+  .view-airisks .airisks-main, .view-airisks .airisks-side-row { align-items: start; }
+  .view-airisks .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
+  .view-airisks .chips.is-scroll { min-inline-size: 0; max-inline-size: 100%; }
+  @media (max-width: 599.98px) {
+    .view-airisks .chips.is-scroll { flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; padding-block-end: 4px; scrollbar-width: thin; }
+    .view-airisks .chips.is-scroll > .chip { flex: none; scroll-snap-align: start; }
+  }
+}`;
 const SORTS = [
   { value: 'score-desc', label: 'الدرجة: الأعلى أولاً' },
   { value: 'score-asc', label: 'الدرجة: الأدنى أولاً' },
@@ -110,6 +122,19 @@ function warnOnce(key, err) {
   if (warned.has(key)) return;
   warned.add(key);
   console.warn(`[airisks] ${key} غير متاح — استخدام بديل محلي:`, err && err.message ? err.message : err);
+}
+function ensureStyle() {
+  if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = STYLE_TEXT;
+  document.head.appendChild(style);
+}
+/** Only http(s) URLs become links; anything else (javascript:, data:, relative junk) renders as plain text (C-5). */
+function safeHttpUrl(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return null;
+  try { const u = new URL(raw); return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : null; } catch { return null; }
 }
 function safe(key, fn, fallback) {
   try {
@@ -158,10 +183,23 @@ function categoryChip(psel, cat) { return h('span', { class: 'cat-chip', 'data-c
 function pipelineLabel(psel, id) { return viaPsel(psel, 'pipelineLabel', () => psel.pipelineLabel(id), PIPELINE_FALLBACK[id] || String(id || '—')); }
 const statusBadge = (status) => badge(status || '—', STATUS_TONE[status] || 'neutral');
 const sourceBadge = (source) => h('span', { class: 'source-badge', 'data-source': source || '' }, SOURCE_LABEL[source] || source || '—');
+/** Latin product / vendor names get lang="en" dir="ltr" (RTL-28). */
+const latin = (label) => h('span', { lang: 'en', dir: 'ltr' }, String(label ?? ''));
+/** A code such as AIR-0042 as an isolated LTR mono run that never breaks (RTL-5). */
+const codeSpan = (code, extra = null) => h('span', { class: ['code', 'mono', 'nowrap', extra], dir: 'ltr' }, String(code ?? ''));
+/** Split a title mixing Arabic prose and Latin codes into text + code spans. */
+function withCodes(str) {
+  const s = String(str ?? ''); const out = []; let last = 0; let m;
+  CODE_RE.lastIndex = 0;
+  while ((m = CODE_RE.exec(s))) { if (m.index > last) out.push(s.slice(last, m.index)); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
+  if (last < s.length) out.push(s.slice(last));
+  return out.length ? out : [s];
+}
+/** Static chip — write-back changes are announced once through a toast, so no live region here (RTL-18). */
 function writebackChip(wb) {
   const status = wb && wb.status ? String(wb.status) : '';
   const meta = WRITEBACK_META[status] || { label: status || 'بدون كتابة عكسية', tone: 'neutral' };
-  return h('span', { class: 'writeback-chip', 'data-status': status, role: 'status' }, glyph(meta.tone === 'neutral' ? 'neutral' : meta.tone, 11), meta.label);
+  return h('span', { class: 'writeback-chip', 'data-status': status }, glyph(meta.tone === 'neutral' ? 'neutral' : meta.tone, 11), status === 'synced' ? h('span', {}, 'مُزامن مع ', latin(PM_NAME)) : meta.label);
 }
 
 function viewHead({ code, title, lead, actions = [] }) {
@@ -169,7 +207,7 @@ function viewHead({ code, title, lead, actions = [] }) {
   return h('div', { class: 'view-head' }, textEl, actions.length ? h('div', { class: 'view-actions' }, actions) : null);
 }
 function section(tag, title, ...children) {
-  return h('section', { class: 'drawer-section' }, h('h3', { class: 'drawer-section-title is-platform' }, h('span', { class: 'mono', 'aria-hidden': 'true' }, tag), title), ...children);
+  return h('section', { class: 'drawer-section' }, h('h3', { class: 'drawer-section-title is-platform' }, h('span', { class: 'mono', 'aria-hidden': 'true' }, tag), ...(Array.isArray(title) ? title : [title])), ...children);
 }
 
 /** Local formatter for stakeholder response parameters when psel.responseParams is absent. */
@@ -231,6 +269,7 @@ export default {
     const defaultDue = (risk, now) => (risk.dueDate && (Date.parse(risk.dueDate) || 0) >= startOfDay(now) ? risk.dueDate : plusDays(now, 14));
     const scoreNum = (score, rating, { big = false } = {}) => h('span', { class: ['score-num', 'num', `is-${rating}`, big ? 'is-big' : null], 'data-rating': rating }, fmt.num(Math.round(num(score))));
 
+    ensureStyle();
     if (!psel) loadPsel().then((p) => { if (p && alive && !psel) { psel = p; schedule(); } });
 
     /* ---------------- chart helpers ---------------- */
@@ -253,7 +292,7 @@ export default {
     function fallbackBars(items, valueFormat = fmt.num) {
       const max = Math.max(...items.map((i) => num(i.value)), 1);
       return h('div', { class: 'stack gap-2 bars-fallback' }, items.map((i) => h('div', { class: 'progress-row row gap-2' },
-        h('span', { class: 'text-sm grow truncate', title: i.label }, i.label),
+        h('span', { class: 'text-sm grow', style: { overflowWrap: 'anywhere' }, title: i.label }, i.label),
         progress({ value: (num(i.value) / max) * 100, max: 100, tone: i.tone || null, label: i.label }),
         h('span', { class: 'mono num text-xs' }, valueFormat(num(i.value))))));
     }
@@ -280,7 +319,7 @@ export default {
     root.appendChild(viewHead({
       code: 'AIR-01',
       title: 'سجل المخاطر الذكي',
-      lead: 'كل مخاطرة يكتشفها محرك الذكاء الاصطناعي مع درجتها 0–100 وتصنيفها (أحمر / أصفر / أخضر) ونوعها (مالي / سلامة / تأخير / نزاع). افتح أي صف لمراجعة الدليل من المصدر وتفسير المحرك ثم قبول التوصية أو تعديلها أو تصعيدها — كل قرار يُسجَّل ويُغذّي إعادة معايرة النماذج.',
+      lead: `كل مخاطرة يكتشفها محرك الذكاء الاصطناعي مع درجتها من ${fmt.num(0)} إلى ${fmt.num(100)} وتصنيفها (أحمر / أصفر / أخضر) ونوعها (مالي / سلامة / تأخير / نزاع). افتح أي صف لمراجعة الدليل من المصدر وتفسير المحرك ثم قبول التوصية أو تعديلها أو تصعيدها — كل قرار يُسجَّل ويُغذّي إعادة معايرة النماذج.`,
       actions: [
         button('قمرة القيادة', { variant: 'ghost', size: 'sm', icon: 'radar', onClick: () => navigate('cockpit') }),
         button('مهام المعالجة', { variant: 'outline', size: 'sm', icon: 'file-check', onClick: () => navigate('tasks') }),
@@ -293,7 +332,7 @@ export default {
     /* ---------------- toolbar ---------------- */
 
     function chipGroup(key, options, ariaLabel) {
-      const group = h('div', { class: 'chip-group', role: 'group', 'aria-label': ariaLabel });
+      const group = h('div', { class: 'chip-group chips is-scroll', role: 'group', 'aria-label': ariaLabel, style: { overflowX: 'auto' } });
       options.forEach((o) => {
         group.appendChild(h('button', {
           type: 'button', class: ['chip', local[key] === o.value ? 'is-active' : null], 'aria-pressed': local[key] === o.value ? 'true' : 'false', 'data-key': key, 'data-value': o.value,
@@ -389,17 +428,17 @@ export default {
     function buildTable(rows) {
       return dataTable({
         caption: 'سجل المخاطر المكتشفة بالذكاء الاصطناعي',
-        rows, rowKey: 'id', pageSize: 12, dense: true, emptyText: 'لا توجد مخاطر مطابقة لعوامل التصفية الحالية',
+        rows, rowKey: 'id', pageSize: 10, dense: true, stickyFirst: true, emptyText: 'لا توجد مخاطر مطابقة لعوامل التصفية الحالية',
         onRowClick: (row) => openRisk(row.id),
         columns: [
-          { key: 'title', label: 'المخاطرة', width: 240, render: (r) => h('span', { class: 'stack gap-1', title: text(r.driverExplanation) || undefined, style: { minInlineSize: '220px' } }, h('span', { class: 'semibold' }, r.title), h('span', { class: 'mono text-xs muted', style: { whiteSpace: 'nowrap' } }, r.code)), sortValue: (r) => r.title },
-          { key: 'projectId', label: 'المشروع', render: (r) => projectName(r.projectId), sortValue: (r) => projectName(r.projectId) },
-          { key: 'category', label: 'المجال / النوع', render: (r) => h('span', { class: 'stack gap-1', style: { alignItems: 'flex-start' } }, categoryChip(psel, r.category), typeChip(psel, r.type)), sortValue: (r) => `${categoryLabel(psel, r.category)} ${typeLabel(psel, r.type)}` },
-          { key: 'score', label: 'الدرجة والتصنيف', render: (r) => h('span', { class: 'row gap-2 score-cell' }, scoreNum(r.score, r.rating), ratingBadge(psel, r.rating)), sortValue: (r) => num(r.score) },
-          { key: 'pipeline', label: 'خط المعالجة / الثقة', render: (r) => h('span', { class: 'stack gap-1' }, h('span', { class: 'text-xs' }, pipelineLabel(psel, r.pipeline)), h('span', { class: 'mono num text-xs muted' }, `ثقة ${fmt.pct(num(r.confidence) * 100)}`)), sortValue: (r) => num(r.confidence) },
-          { key: 'detectedAt', label: 'اكتُشف', render: (r) => h('span', { title: fmt.dateTime(r.detectedAt), style: { whiteSpace: 'nowrap' } }, fmt.relative(r.detectedAt)), sortValue: (r) => Date.parse(r.detectedAt) || 0 },
-          { key: 'owner', label: 'المالك', render: (r) => r.owner || '—' },
-          { key: 'status', label: 'الحالة', render: (r) => statusBadge(r.status), sortValue: (r) => RISK_STATUSES.indexOf(r.status) },
+          { key: 'title', label: 'المخاطرة', width: 260, priority: 'high', render: (r) => h('span', { class: 'stack gap-1', title: text(r.driverExplanation) || undefined, style: { minInlineSize: '220px' } }, h('span', { class: 'semibold' }, ...withCodes(r.title)), codeSpan(r.code, 'text-xs muted')), sortValue: (r) => r.title },
+          { key: 'projectId', label: 'المشروع', priority: 'medium', render: (r) => h('span', { class: 'site-name', style: { display: 'inline-block', minInlineSize: '7em', overflowWrap: 'break-word' } }, projectName(r.projectId)), sortValue: (r) => projectName(r.projectId) },
+          { key: 'category', label: 'المجال / النوع', priority: 'medium', render: (r) => h('span', { class: 'stack gap-1', style: { alignItems: 'flex-start' } }, categoryChip(psel, r.category), typeChip(psel, r.type)), sortValue: (r) => `${categoryLabel(psel, r.category)} ${typeLabel(psel, r.type)}` },
+          { key: 'score', label: 'الدرجة والتصنيف', priority: 'high', render: (r) => h('span', { class: 'row gap-2 score-cell' }, scoreNum(r.score, r.rating), ratingBadge(psel, r.rating)), sortValue: (r) => num(r.score) },
+          { key: 'pipeline', label: 'خط المعالجة / الثقة', priority: 'low', render: (r) => h('span', { class: 'stack gap-1' }, h('span', { class: 'text-xs' }, pipelineLabel(psel, r.pipeline)), h('span', { class: 'text-xs muted' }, 'ثقة ', h('span', { class: 'mono num' }, fmt.pct(num(r.confidence) * 100)))), sortValue: (r) => num(r.confidence) },
+          { key: 'detectedAt', label: 'اكتُشف', priority: 'low', render: (r) => h('span', { title: fmt.dateTime(r.detectedAt), style: { whiteSpace: 'nowrap' } }, fmt.relative(r.detectedAt)), sortValue: (r) => Date.parse(r.detectedAt) || 0 },
+          { key: 'owner', label: 'المالك', priority: 'low', render: (r) => r.owner || '—' },
+          { key: 'status', label: 'الحالة', priority: 'medium', render: (r) => statusBadge(r.status), sortValue: (r) => RISK_STATUSES.indexOf(r.status) },
         ],
       });
     }
@@ -424,7 +463,7 @@ export default {
         ? chartOr('segmentedBar', () => charts.segmentedBar({ parts: typeParts, tall: true, valueFormat: fmt.num, ariaLabel: 'توزيع المخاطر المفتوحة حسب النوع' }), () => fallbackBars(typeParts))
         : emptyState({ title: 'لا توجد مخاطر مفتوحة ضمن النتائج' });
       const typeLegend = h('div', { class: 'row wrap gap-2', role: 'list' }, typeParts.map((p) => h('span', { class: 'row gap-1 text-xs', role: 'listitem' }, typeChip(psel, p.id), h('span', { class: 'mono num muted' }, fmt.num(p.value)))));
-      const typeCard = card({ code: 'DST-01', title: 'التوزيع حسب النوع', subtitle: 'المخاطر المفتوحة ضمن النتائج الحالية', body: h('div', { class: 'stack gap-3' }, typeSeg, typeLegend), tableView: tableViewOf(typeSeg) });
+      const typeCard = card({ code: 'DST-01', title: 'التوزيع حسب النوع', subtitle: 'المخاطر المفتوحة ضمن النتائج الحالية', className: 'col-span-6', body: h('div', { class: 'stack gap-3' }, typeSeg, typeLegend), tableView: tableViewOf(typeSeg) });
 
       const redByProject = new Map();
       open.filter((r) => r.rating === 'red').forEach((r) => redByProject.set(r.projectId, (redByProject.get(r.projectId) || 0) + 1));
@@ -432,7 +471,7 @@ export default {
       const bars = items.length
         ? chartOr('barChart', () => charts.barChart({ items, horizontal: true, height: Math.max(120, 34 * items.length + 24), valueFormat: fmt.num, color: 'var(--critical)', showValues: true, maxBars: 6, ariaLabel: 'المشاريع الأعلى في عدد المخاطر الحمراء' }), () => fallbackBars(items.map((i) => ({ ...i, tone: 'critical' }))))
         : emptyState({ title: 'لا توجد مخاطر حمراء مفتوحة ضمن النتائج' });
-      const projectsCard = card({ code: 'DST-03', title: 'أعلى المشاريع بالمخاطر الحمراء', subtitle: 'عدد المخاطر الحمراء المفتوحة لكل مشروع', body: bars, tableView: tableViewOf(bars) });
+      const projectsCard = card({ code: 'DST-03', title: 'أعلى المشاريع بالمخاطر الحمراء', subtitle: 'عدد المخاطر الحمراء المفتوحة لكل مشروع', className: 'col-span-6', body: bars, tableView: tableViewOf(bars) });
       return [typeCard, projectsCard];
     }
 
@@ -453,9 +492,9 @@ export default {
       const ring = chartOr('ring', () => charts.ring({ value: score, max: 100, size: 72, color: `var(--${tone})`, label: '', format: (v) => fmt.num(Math.round(v)) }), () => scoreNum(score, rating, { big: true }));
       const head = h('div', { class: 'risk-drawer-head' },
         h('div', { class: 'risk-drawer-titles' },
-          h('span', { class: 'mono' }, `${risk.code || risk.id} · ${pipelineLabel(psel, risk.pipeline)}${risk.modelVersion ? ` ${risk.modelVersion}` : ''}`),
+          h('span', { class: 'row gap-1 wrap text-xs muted' }, codeSpan(risk.code || risk.id), ' · ', h('span', {}, pipelineLabel(psel, risk.pipeline)), risk.modelVersion ? h('span', { class: 'mono', lang: 'en', dir: 'ltr' }, risk.modelVersion) : null),
           h('div', { class: 'risk-drawer-chips' }, ratingBadge(psel, rating), typeChip(psel, risk.type), categoryChip(psel, risk.category), statusBadge(risk.status), risk.escalated ? badge('مُصعَّد', 'critical', { icon: 'bell' }) : null)),
-        h('div', { class: ['risk-drawer-score', `tone-${tone}`], role: 'img', 'aria-label': `الدرجة ${fmt.num(score)} من 100 — ${ratingLabel(psel, rating)}` }, ring, h('small', {}, 'الدرجة من 100')));
+        h('div', { class: ['risk-drawer-score', `tone-${tone}`], role: 'img', 'aria-label': `الدرجة ${fmt.num(score)} من ${fmt.num(100)} — ${ratingLabel(psel, rating)}` }, ring, h('small', {}, `الدرجة من ${fmt.num(100)}`)));
       const details = kv([
         ['المشروع', projectName(risk.projectId)],
         ['ثقة النموذج', h('span', { class: 'mono num' }, fmt.pct(num(risk.confidence) * 100))],
@@ -474,13 +513,13 @@ export default {
       const sourceIcon = SOURCE_ICON[ev.sourceSystem] || (String(ev.sourceSystem || '').startsWith('Biltix') ? 'biltix' : 'external');
       return section('01', 'الدليل من المصدر', h('div', { class: 'evidence' },
         h('div', { class: 'evidence-head' },
-          h('span', { class: 'evidence-ref mono' }, ev.ref || '—'),
+          h('span', { class: 'evidence-ref mono', dir: 'ltr' }, ev.ref || '—'),
           h('span', { class: 'source-chip' }, svgIcon(sourceIcon, 12), ev.sourceSystem || 'النظام المصدر')),
         ev.excerpt ? h('blockquote', { class: 'evidence-excerpt' }, ev.excerpt) : h('p', { class: 'muted text-sm' }, 'لا يتوفر مقتطف نصي لهذا الدليل.'),
         h('div', { class: 'evidence-meta' },
           ev.kind ? h('span', { class: 'evidence-kind' }, `نوع الدليل: ${EVIDENCE_KIND[ev.kind] || ev.kind}`) : null,
           h('span', {}, 'قراءة فقط — لا تُعدَّل بيانات العميل الأصلية'),
-          ev.link ? h('a', { href: String(ev.link), target: '_blank', rel: 'noopener noreferrer' }, 'فتح في النظام المصدر') : null)));
+          (() => { const url = safeHttpUrl(ev.link); if (url) return h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, 'فتح في النظام المصدر'); return ev.link ? h('span', { class: 'mono text-xs muted', dir: 'ltr', title: 'مرجع غير قابل للفتح' }, String(ev.link)) : null; })())));
     }
 
     function explanationSection(risk, pipeline) {
@@ -501,7 +540,7 @@ export default {
         meter,
         h('div', { class: 'explain-meta' },
           h('span', {}, 'خط المعالجة: ', h('span', { class: 'mono' }, (pipeline && pipeline.nameAr) || pipelineLabel(psel, risk.pipeline))),
-          h('span', {}, 'إصدار النموذج: ', h('span', { class: 'mono' }, risk.modelVersion || (pipeline && pipeline.version) || '—')),
+          h('span', {}, 'إصدار النموذج: ', h('span', { class: 'mono', lang: 'en', dir: 'ltr' }, risk.modelVersion || (pipeline && pipeline.version) || '—')),
           pipeline && isNum(pipeline.precision) ? h('span', {}, 'الدقة: ', h('span', { class: 'mono' }, fmt.pct(pipeline.precision <= 1 ? pipeline.precision * 100 : pipeline.precision))) : null),
         bars ? h('span', { class: 'text-xs muted' }, 'أهمية العوامل في النموذج (أعلى خمسة)') : null,
         bars));
@@ -613,17 +652,17 @@ export default {
       const children = [];
       if (!enabled) children.push(h('p', { class: 'note tone-warning text-xs' }, 'الكتابة العكسية معطّلة في الإعدادات — تُسجَّل الأعلام محلياً فقط.'));
       if (!task) {
-        children.push(h('p', { class: 'note text-sm' }, 'لا توجد مهمة مرتبطة بعد. عند قبول التوصية أو تعديلها تُنشأ مهمة معالجة وتُكتب الأعلام والدرجة والمهمة عكسياً إلى Biltix PM — المنصة لا تعدّل بيانات العميل الأصلية.'));
-        return section('06', 'الكتابة العكسية إلى Biltix PM', ...children);
+        children.push(h('p', { class: 'note text-sm' }, 'لا توجد مهمة مرتبطة بعد. عند قبول التوصية أو تعديلها تُنشأ مهمة معالجة وتُكتب الأعلام والدرجة والمهمة عكسياً إلى ', latin(PM_NAME), ' — المنصة لا تعدّل بيانات العميل الأصلية.'));
+        return section('06', ['الكتابة العكسية إلى ', latin(PM_NAME)], ...children);
       }
       const wb = task.writeback || {};
       const dl = kv([
-        ['المهمة', h('span', { class: 'mono' }, task.code || task.id)],
+        ['المهمة', codeSpan(task.code || task.id)],
         ['حالة المهمة', badge(task.status || '—', TASK_STATUS_TONE[task.status] || 'neutral')],
         ['المالك', task.owner || '—'],
         ['الاستحقاق', task.dueDate ? dueCell(task.dueDate, now, task.status === 'مغلقة') : '—'],
         ['المصدر', sourceBadge(task.source)],
-        ['الهدف', wb.target || 'Biltix PM'],
+        ['الهدف', latin(wb.target || PM_NAME)],
         ['حالة الكتابة العكسية', h('span', { class: 'row gap-2 wrap' }, writebackChip(wb), wb.at ? h('span', { class: 'text-xs muted', title: fmt.dateTime(wb.at) }, fmt.relative(wb.at)) : null)],
       ]);
       dl.classList.add('is-compact');
@@ -631,7 +670,7 @@ export default {
       children.push(h('div', { class: 'row wrap gap-2' },
         button('فتح في مهام المعالجة', { variant: 'outline', size: 'sm', icon: 'file-check', onClick: () => { closeDrawer(); navigate('tasks'); } }),
         wb.status === 'failed' && (canStore('retryWriteback') || canStore('updateTask')) ? button('إعادة المزامنة', { variant: 'primary', size: 'sm', icon: 'refresh', onClick: () => resync(task) }) : null));
-      return section('06', 'الكتابة العكسية إلى Biltix PM', ...children);
+      return section('06', ['الكتابة العكسية إلى ', latin(PM_NAME)], ...children);
     }
 
     function buildDrawerBody(risk) {
@@ -835,9 +874,9 @@ export default {
       }
       const { base, rows } = computeRows();
       table = buildTable(rows);
-      ui.tableCard = card({ code: 'AIR-01', title: 'المخاطر المكتشفة', subtitle: summaryText(rows), className: 'col-span-8 airisks-table-card', body: table.el });
-      ui.side = h('div', { class: 'col-span-4 stack gap-4 airisks-side' }, sideCards(rows));
-      body.appendChild(h('div', { class: 'grid-12 airisks-main' }, ui.tableCard, ui.side));
+      ui.tableCard = card({ code: 'AIR-01', title: 'المخاطر المكتشفة', subtitle: summaryText(rows), className: 'col-span-12 airisks-table-card', body: table.el });
+      ui.side = h('div', { class: 'grid-12 airisks-side-row airisks-side' }, sideCards(rows));
+      body.appendChild(h('div', { class: 'grid-12 airisks-main' }, ui.tableCard, h('div', { class: 'col-span-12' }, ui.side)));
       summary.textContent = summaryText(rows);
       updateCounts(base);
       highlightRow();

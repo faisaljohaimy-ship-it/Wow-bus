@@ -13,7 +13,7 @@
   --bg-3: #182540;  /* active / pressed */
   --line: #1E2B45;         /* hairline borders & gridlines */
   --line-2: #2A3A5C;       /* axis baseline / stronger border */
-  --ink-1: #EEF2F8;  --ink-2: #AAB6CC;  --ink-3: #74829C;  /* primary / secondary / muted text */
+  --ink-1: #EEF2F8;  --ink-2: #AAB6CC;  --ink-3: #8290AA;  /* primary / secondary / muted text (ink-3 ≥4.7:1 on bg-0…bg-3) */
   --brand: #2F6FED;  --brand-ink: #FFFFFF;   /* buttons, active nav, links */
   --accent: #19C6E6;                          /* radar sweep, live indicators, focus ring, highlights */
   --gold: #D4A017;                            /* logo + architectural ornament lines ONLY (never status) */
@@ -35,7 +35,7 @@
   color-scheme: light;
   --bg-0: #F2F5FA; --bg-1: #FFFFFF; --bg-2: #F6F8FC; --bg-3: #EAF0F9;
   --line: #E3E8F0; --line-2: #C9D3E3;
-  --ink-1: #0E1726; --ink-2: #4A5568; --ink-3: #6B7890;
+  --ink-1: #0E1726; --ink-2: #4A5568; --ink-3: #5B6880;   /* ink-3 ≥4.9:1 on bg-0…bg-3 */
   --brand: #2F6FED; --brand-ink: #FFFFFF; --accent: #0E93AC; --gold: #B8860B;
   --good: #0CA30C; --warning: #FAB219; --serious: #EC835A; --critical: #D03B3B;
   --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
@@ -57,10 +57,16 @@
      keep Latin/digits in Plex Mono and let Arabic letters fall to Plex Sans Arabic instead
      of the system monospace. Used by every mono context in the stylesheets. */
   --font-mono-mixed: "IBM Plex Mono", "IBM Plex Sans Arabic", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Link ink: brand blue is only 4.1:1 on the dark card surface, so links lift it toward white (5.7:1). */
+  --link: color-mix(in srgb, var(--brand) 80%, white);
+  /* Blueprint grid strength on the page plane (base.css); lighter in the light theme. */
+  --grid-alpha: 4%;
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23AAB6CC' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 }
 :root[data-theme="light"] {
-  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236B7890' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  --link: var(--brand);
+  --grid-alpha: 2.5%;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235B6880' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 }
 
 /* --------------------------------------------------------------------------
@@ -94,7 +100,7 @@ h1, h2, h3, h4, h5, h6 {
   text-wrap: balance;
   overflow-wrap: anywhere;
 }
-h1 { font-size: var(--fs-2xl); letter-spacing: -0.01em; }
+h1 { font-size: var(--fs-2xl); letter-spacing: 0; }   /* Arabic script: never track headings */
 h2 { font-size: var(--fs-xl); }
 h3 { font-size: var(--fs-lg); }
 h4 { font-size: var(--fs-md); }
@@ -107,7 +113,7 @@ small { font-size: var(--fs-xs); }
 strong, b { font-weight: 600; }
 
 a {
-  color: var(--brand);
+  color: var(--link);
   text-decoration: none;
   text-underline-offset: 3px;
   transition: color var(--dur-1) var(--ease);
@@ -139,6 +145,12 @@ pre {
 
 /* Short Latin codes embedded in Arabic text keep their own direction. */
 .mono, .code-tag, kbd {
+  unicode-bidi: isolate;
+}
+/* Codes (CT-2026-014, AIR-1042) never break across lines: views wrap them in
+   <span class="code"> or <span class="mono nowrap">; .mono alone may still wrap. */
+.code, .code-tag, .mono.nowrap {
+  white-space: nowrap;
   unicode-bidi: isolate;
 }
 

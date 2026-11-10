@@ -18,15 +18,20 @@
 const DAY_MS = 86_400_000;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const REPORT_TITLE = 'تقرير السلامة والصحة المهنية';
-const PREPARED_BY = 'بلتكس HSE';
+/** One product name everywhere; HSE is the pillar, not the product. */
+const PREPARED_BY = 'بلتكس Risk AI';
+const PILLAR = 'ركيزة السلامة والصحة المهنية';
 const TRAINING_TARGET = 85;
 const ISO_TARGET = 85;
 
 const PERIODS = [
-  { value: 'month', label: 'هذا الشهر' },
-  { value: '30d', label: 'آخر 30 يوماً' },
-  { value: 'quarter', label: 'الربع الحالي' },
+  { value: 'month', label: () => 'هذا الشهر' },
+  { value: '30d', label: (fmt) => `آخر ${fmt.num(30)} يوماً` },
+  { value: 'quarter', label: () => 'الربع الحالي' },
 ];
+const periodOptions = (fmt) => PERIODS.map((p) => ({ value: p.value, label: p.label(fmt) }));
+/** Digit runs inside selector-made labels ("أسبوع 36") and clause ids follow the numerals setting. */
+const digits = (fmt, s) => String(s ?? '').replace(/\d+(?:\.\d+)?/g, (m) => fmt.num(Number(m), { maximumFractionDigits: 2 }));
 const QUARTER_NAMES = ['الأول', 'الثاني', 'الثالث', 'الرابع'];
 const TONE_RANK = { critical: 0, serious: 1, warning: 2, good: 3, accent: 4, brand: 4, neutral: 5 };
 const PRIORITY_LABEL = { critical: 'عاجل', serious: 'مرتفع', warning: 'متوسط', good: 'إيجابي', neutral: 'معلومة', accent: 'معلومة', brand: 'معلومة' };
@@ -203,8 +208,9 @@ function resolvePeriod(key, now, fmt) {
   let label;
   if (kind === 'month') label = monthYear(from, fmt);
   else if (kind === 'quarter') label = `الربع ${QUARTER_NAMES[Math.floor(from.getMonth() / 3)]} ${yearLabel(from, fmt)}`;
-  else label = 'آخر 30 يوماً';
-  const rangeLabel = `${fmt.date(from)} – ${fmt.date(today)}`;
+  else label = `آخر ${fmt.num(30)} يوماً`;
+  // Phrased "من … إلى …" so the range never reads reversed in RTL text.
+  const rangeLabel = `من ${fmt.date(from)} إلى ${fmt.date(today)}`;
   const suffix = kind === 'quarter' ? 'الربعي' : 'الشهري';
   return { key: kind, from, to: today, now, range, label, rangeLabel, title: `${REPORT_TITLE} ${suffix}` };
 }
@@ -363,7 +369,7 @@ function render(container, ctx) {
 
   /* ── header ── */
   const periodSeg = segmented({
-    options: PERIODS,
+    options: periodOptions(fmt),
     value: currentPeriod,
     ariaLabel: 'فترة التقرير',
     onChange: (value) => { currentPeriod = value; rebuild(); },
@@ -619,7 +625,7 @@ function render(container, ctx) {
     const top = d.pareto[0];
 
     const p1 = `يغطي هذا التقرير فترة ${d.period.label} (${d.period.rangeLabel}) ${scope}، ويستند إلى بيانات سجل المخاطر والحوادث وتصاريح العمل والتفتيش والتدريب حتى ${fmt.dateTime(d.now)}. `
-      + `بلغ مؤشر السلامة العام ${fmt.num(si)} من 100، ${delta(k.deltas.safetyIndex)}، ${siQual}.`;
+      + `بلغ مؤشر السلامة العام ${fmt.num(si)} من ${fmt.num(100)}، ${delta(k.deltas.safetyIndex)}، ${siQual}.`;
 
     const p2 = `سُجّل خلال الفترة ${count(total, NOUNS.report)}${total ? `: ${count(d.incidentsOnly, NOUNS.incident)} و${count(d.nearMissInPeriod, NOUNS.nearMiss)}` : ''}، `
       + `${k.lti ? `من بينها ${count(k.lti, NOUNS.lti)}` : 'دون أي إصابة مضيعة للوقت'}، مقابل ${count(prev.incidentsInPeriod, NOUNS.report)} في الفترة السابقة. `
@@ -632,7 +638,7 @@ function render(container, ctx) {
       + `${topCat ? `، وتتركز المخاطر المفتوحة في فئة «${topCat.label}» (${fmt.num(topCat.value)})` : ''}. `
       + `هناك ${count(k.activePermits, NOUNS.permit)} نشطة و${count(pending, NOUNS.permit)} بانتظار الاعتماد، و${count(k.inspectionsDue, NOUNS.inspection)} مستحقة أو متأخرة خلال الأسبوع.`;
 
-    const p4 = `بلغت نسبة الامتثال التدريبي ${fmt.pct(k.trainingCompliance)} ${delta(k.deltas.trainingCompliance, NOUNS.pp)}، وتنتهي صلاحية ${count(d.expiring.length, NOUNS.cert)} خلال 60 يوماً. `
+    const p4 = `بلغت نسبة الامتثال التدريبي ${fmt.pct(k.trainingCompliance)} ${delta(k.deltas.trainingCompliance, NOUNS.pp)}، وتنتهي صلاحية ${count(d.expiring.length, NOUNS.cert)} خلال ${fmt.num(60)} يوماً. `
       + `وأُغلق ${fmt.pct(k.capaClosure)} من الإجراءات التصحيحية (${fmt.num(k.actionsDone)} من ${fmt.num(k.actionsTotal)}). `
       + (d.iso.length
         ? `يبلغ متوسط الامتثال لمتطلبات ISO 45001 ${fmt.pct(d.isoOverall)}، وأدنى البنود «${weakest.title}» بنسبة ${fmt.pct(weakest.score)} مع ${count(gaps, NOUNS.gap)} موثقة تتطلب خطة معالجة.`
@@ -645,7 +651,7 @@ function render(container, ctx) {
     const k = d.kpis;
     const paragraphs = summaryParagraphs(d);
     const strip = h('div', { class: 'summary-strip', style: { gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' } },
-      stripCell('مؤشر السلامة', fmt.num(k.safetyIndex), '/100', k.deltas.safetyIndex, 'up'),
+      stripCell('مؤشر السلامة', fmt.num(k.safetyIndex), `/${fmt.num(100)}`, k.deltas.safetyIndex, 'up'),
       stripCell('البلاغات في الفترة', fmt.num(k.incidentsInPeriod), '', k.deltas.incidentsInPeriod, 'down'),
       stripCell('المخاطر الحرجة المفتوحة', fmt.num(k.criticalRisks), '', k.deltas.criticalRisks, 'down'),
       stripCell('الامتثال التدريبي', fmt.pct(k.trainingCompliance), '', k.deltas.trainingCompliance, 'up'));
@@ -674,12 +680,15 @@ function render(container, ctx) {
   function kpiSection(d) {
     const k = d.kpis;
     const dl = k.deltas || {};
+    // Deltas are passed as numbers: the tile formats them (a pre-formatted fmt.signed string carries
+    // bidi marks → NaN → inverted arrow/tone). Rounded to two decimals for the rate metrics.
+    const rate = (v) => Number((Number(v) || 0).toFixed(2));
     const tiles = h('div', { class: 'kpi-row' },
-      statTile({ label: 'مؤشر السلامة', value: k.safetyIndex, unit: '/100', delta: dl.safetyIndex, deltaGoodWhen: 'up', tone: toneFor(k.safetyIndex), hint: 'مؤشر مركّب من المخاطر المفتوحة والإصابات والحوادث الوشيكة والامتثال التدريبي' }),
-      statTile({ label: 'LTIFR', value: fmt.num(k.ltifr, { maximumFractionDigits: 2 }), delta: fmt.signed(dl.ltifr || 0, 2), deltaGoodWhen: 'down', hint: 'إصابات مضيعة للوقت لكل مليون ساعة عمل' }),
-      statTile({ label: 'TRIR', value: fmt.num(k.trir, { maximumFractionDigits: 2 }), delta: fmt.signed(dl.trir || 0, 2), deltaGoodWhen: 'down', hint: 'الحوادث المسجلة لكل 200 ألف ساعة عمل' }),
+      statTile({ label: 'مؤشر السلامة', value: k.safetyIndex, unit: `/${fmt.num(100)}`, delta: dl.safetyIndex, deltaGoodWhen: 'up', tone: toneFor(k.safetyIndex), hint: 'مؤشر مركّب من المخاطر المفتوحة والإصابات والحوادث الوشيكة والامتثال التدريبي' }),
+      statTile({ label: 'LTIFR', value: fmt.num(k.ltifr, { maximumFractionDigits: 2 }), delta: rate(dl.ltifr), deltaGoodWhen: 'down', hint: 'إصابات مضيعة للوقت لكل مليون ساعة عمل' }),
+      statTile({ label: 'TRIR', value: fmt.num(k.trir, { maximumFractionDigits: 2 }), delta: rate(dl.trir), deltaGoodWhen: 'down', hint: `الحوادث المسجلة لكل ${fmt.num(200)} ألف ساعة عمل` }),
       statTile({ label: 'الحوادث المسجلة', value: d.incidentsOnly, delta: (dl.incidentsInPeriod || 0), deltaGoodWhen: 'down', hint: 'الإصابات وتلف الممتلكات والحوادث البيئية خلال الفترة (دون الحوادث الوشيكة)' }),
-      statTile({ label: 'الحوادث الوشيكة (30 يوماً)', value: k.nearMisses30d, delta: dl.nearMisses30d, deltaGoodWhen: 'up', hint: 'ارتفاع الإبلاغ عن الحوادث الوشيكة مؤشر إيجابي على ثقافة الإبلاغ' }),
+      statTile({ label: `الحوادث الوشيكة (${fmt.num(30)} يوماً)`, value: k.nearMisses30d, delta: dl.nearMisses30d, deltaGoodWhen: 'up', hint: 'ارتفاع الإبلاغ عن الحوادث الوشيكة مؤشر إيجابي على ثقافة الإبلاغ' }),
       statTile({ label: 'المخاطر الحرجة المفتوحة', value: k.criticalRisks, delta: dl.criticalRisks, deltaGoodWhen: 'down', tone: k.criticalRisks > 0 ? 'critical' : 'good' }),
       statTile({ label: 'إغلاق الإجراءات التصحيحية', value: k.capaClosure, unit: '%', delta: dl.capaClosure, deltaGoodWhen: 'up', tone: toneFor(k.capaClosure) }),
       statTile({ label: 'الامتثال التدريبي', value: k.trainingCompliance, unit: '%', delta: dl.trainingCompliance, deltaGoodWhen: 'up', tone: toneFor(k.trainingCompliance) }));
@@ -691,7 +700,7 @@ function render(container, ctx) {
   /* ── incidents ── */
 
   function incidentsSection(d) {
-    const labels = d.trend.map((b) => b.label);
+    const labels = d.trend.map((b) => digits(fmt, b.label));
     const line = mountChart(
       () => charts.lineChart({
         series: [
@@ -700,7 +709,7 @@ function render(container, ctx) {
         ],
         labels, height: 240, yFormat: fmt.num, ariaLabel: 'اتجاه الحوادث والحوادث الوشيكة أسبوعياً',
       }),
-      () => simpleTable('اتجاه الحوادث أسبوعياً', ['الأسبوع', 'الحوادث', 'الحوادث الوشيكة'], d.trend.map((b) => [b.label, fmt.num(b.incidents), fmt.num(b.nearMisses)])),
+      () => simpleTable('اتجاه الحوادث أسبوعياً', ['الأسبوع', 'الحوادث', 'الحوادث الوشيكة'], d.trend.map((b, i) => [labels[i], fmt.num(b.incidents), fmt.num(b.nearMisses)])),
     );
     const typeParts = d.byType.map((t, i) => ({ id: t.id, label: t.label, value: t.value, color: paletteFor(i) }));
     const seg = mountChart(
@@ -741,7 +750,7 @@ function render(container, ctx) {
         cells,
         colorFor: (value, ri, ci) => `color-mix(in srgb, var(--${toneAt(ri, ci)}) ${value > 0 ? 72 : 16}%, var(--bg-1))`,
         labelFor: (value) => (value > 0 ? fmt.num(value) : ''),
-        ariaLabel: 'مصفوفة المخاطر 5×5 — عدد المخاطر المفتوحة لكل خلية',
+        ariaLabel: `مصفوفة المخاطر ${fmt.num(5)}×${fmt.num(5)} — عدد المخاطر المفتوحة لكل خلية`,
         rowTitle: 'الشدة',
         colTitle: 'الاحتمالية',
       }),
@@ -802,7 +811,7 @@ function render(container, ctx) {
     const below = items.filter((c) => c.pct < TRAINING_TARGET);
     const facts = h('div', { class: 'hero-facts' },
       factEl('الامتثال التدريبي', fmt.pct(d.kpis.trainingCompliance), { tone: toneFor(d.kpis.trainingCompliance) }),
-      factEl('تنتهي خلال 60 يوماً', fmt.num(d.expiring.length), { tone: d.expiring.length ? 'warning' : null }),
+      factEl(`تنتهي خلال ${fmt.num(60)} يوماً`, fmt.num(d.expiring.length), { tone: d.expiring.length ? 'warning' : null }),
       factEl(`دورات دون ${fmt.pct(TRAINING_TARGET)}`, fmt.num(below.length), { tone: below.length ? 'serious' : 'good' }));
     const soon = d.expiring.slice(0, 5);
     const list = soon.length
@@ -822,10 +831,11 @@ function render(container, ctx) {
   /* ── compliance ── */
 
   function complianceSection(d) {
-    const axes = d.iso.map((c) => ({ id: c.id, label: `${c.id} ${c.title}` }));
+    const axes = d.iso.map((c) => ({ id: c.id, label: `${digits(fmt, c.id)} ${c.title}` }));
     const spider = mountChart(
-      () => charts.spider({ axes, series: [{ id: 'score', label: 'درجة الامتثال', color: 'var(--s1)', values: d.iso.map((c) => c.score) }], max: 100, size: 280, ariaLabel: 'درجات بنود ISO 45001 من 4 إلى 10' }),
-      () => simpleTable('درجات بنود ISO 45001', ['البند', 'الدرجة', 'الفجوات'], d.iso.map((c) => [`${c.id} — ${c.title}`, fmt.pct(c.score), fmt.num(c.gaps)])),
+      // size ≥ 360 so the seven clause labels stay legible (RPT-07B).
+      () => charts.spider({ axes, series: [{ id: 'score', label: 'درجة الامتثال', color: 'var(--s1)', values: d.iso.map((c) => c.score) }], max: 100, size: 360, ariaLabel: `درجات بنود ISO 45001 من ${fmt.num(4)} إلى ${fmt.num(10)}` }),
+      () => simpleTable('درجات بنود ISO 45001', ['البند', 'الدرجة', 'الفجوات'], d.iso.map((c) => [`${digits(fmt, c.id)} — ${c.title}`, fmt.pct(c.score), fmt.num(c.gaps)])),
     );
     const ring = mountChart(
       () => charts.ring({ value: d.isoOverall, max: 100, size: 112, color: 'var(--brand)', label: 'ISO 45001' }),
@@ -853,8 +863,8 @@ function render(container, ctx) {
     sec.appendChild(h('div', { class: 'grid-12' },
       h('div', { class: 'col-span-5' }, card({ code: 'RPT-07A', title: 'الامتثال العام', body: overall })),
       h('div', { class: 'col-span-7' }, d.iso.length
-        ? chartCard({ code: 'RPT-07B', title: 'درجات البنود 4–10', subtitle: 'متوسط درجات البنود الفرعية لكل بند رئيسي', chart: spider })
-        : card({ code: 'RPT-07B', title: 'درجات البنود 4–10', body: emptyState({ title: 'لا تتوفر بيانات امتثال' }) }))));
+        ? chartCard({ code: 'RPT-07B', title: `درجات البنود ${fmt.num(4)}–${fmt.num(10)}`, subtitle: 'متوسط درجات البنود الفرعية لكل بند رئيسي', chart: spider })
+        : card({ code: 'RPT-07B', title: `درجات البنود ${fmt.num(4)}–${fmt.num(10)}`, body: emptyState({ title: 'لا تتوفر بيانات امتثال' }) }))));
     return sec;
   }
 
@@ -884,7 +894,7 @@ function render(container, ctx) {
     }
     const certs = byKind('cert');
     if (certs.length) {
-      out.push({ tone: 'warning', title: `تجديد ${count(certs.length, NOUNS.cert)} تنتهي خلال 14 يوماً`, detail: 'حجز مقاعد إعادة التأهيل قبل انتهاء الصلاحية حتى لا يُمنع العمال من مباشرة الأعمال الخطرة.', href: '#/training', section: 'التدريب والكفاءات' });
+      out.push({ tone: 'warning', title: `تجديد ${count(certs.length, NOUNS.cert)} تنتهي خلال ${fmt.num(14)} يوماً`, detail: 'حجز مقاعد إعادة التأهيل قبل انتهاء الصلاحية حتى لا يُمنع العمال من مباشرة الأعمال الخطرة.', href: '#/training', section: 'التدريب والكفاءات' });
     }
 
     const weakSubs = d.iso
@@ -893,7 +903,7 @@ function render(container, ctx) {
       .sort((a, b) => (Number(a.score) || 0) - (Number(b.score) || 0))
       .slice(0, 2);
     for (const s of weakSubs) {
-      out.push({ tone: (Number(s.score) || 0) < 70 ? 'serious' : 'warning', title: `سدّ فجوات البند ${s.id} «${s.title}» (${fmt.pct(Number(s.score) || 0)})`, detail: s.gaps.map((g) => (typeof g === 'string' ? g : (g && g.text) || '')).filter(Boolean).join('؛ ') || 'توثيق خطة معالجة بمسؤول وموعد محددين.', href: '#/compliance', section: 'الامتثال' });
+      out.push({ tone: (Number(s.score) || 0) < 70 ? 'serious' : 'warning', title: `سدّ فجوات البند ${digits(fmt, s.id)} «${s.title}» (${fmt.pct(Number(s.score) || 0)})`, detail: s.gaps.map((g) => (typeof g === 'string' ? g : (g && g.text) || '')).filter(Boolean).join('؛ ') || 'توثيق خطة معالجة بمسؤول وموعد محددين.', href: '#/compliance', section: 'الامتثال' });
     }
 
     const below = d.training.filter((c) => c.pct < TRAINING_TARGET).sort((a, b) => (b.mandatory - a.mandatory) || (a.pct - b.pct)).slice(0, 2);
@@ -909,7 +919,7 @@ function render(container, ctx) {
     // Engine recommendations (sources.buildReport) for topics the derived list does not cover.
     const engine = builtSection(d, 'recommendations');
     const engineItems = engine && Array.isArray(engine.items) ? engine.items : [];
-    const ENGINE_TOPICS = ['تكامل', 'الإجراءات التصحيحية', 'السجل القانوني', 'الامتثال التدريبي', 'متطلبًا نظاميًا'];
+    const ENGINE_TOPICS = ['تكامل', 'الإجراءات التصحيحية', 'السجل القانوني', 'الامتثال التدريبي', 'متطلباً نظامياً'];
     for (const item of engineItems) {
       const text = item && typeof item.text === 'string' ? item.text.trim() : '';
       if (!text || !ENGINE_TOPICS.some((t) => text.includes(t))) continue;
@@ -954,7 +964,7 @@ function render(container, ctx) {
       h('div', { class: 'row between wrap gap-3' },
         h('div', { class: 'row gap-3 wrap' }, lockup(), h('div', { class: 'stack gap-1' },
           h('h2', { class: 'text-lg', style: { fontSize: 'var(--fs-xl)' } }, d.period.title),
-          h('span', { class: 'muted text-sm' }, `${d.period.rangeLabel} · إعداد: ${PREPARED_BY}`))),
+          h('span', { class: 'muted text-sm' }, `${d.period.rangeLabel} · إعداد: ${PREPARED_BY} — ${PILLAR}`))),
         h('div', { class: 'row gap-2 wrap' }, badge(`${fmt.num(d.period.range)} يوماً`, 'accent'), d.site ? badge(d.site.code || d.site.id, 'brand') : badge('كل المواقع', 'brand'))),
       meta);
     return h('div', { class: 'print-hide' }, card({ hero: true, framed: true, body }));
@@ -965,6 +975,7 @@ function render(container, ctx) {
       h('div', { class: 'stack gap-2', style: { flex: '1 1 auto', minInlineSize: '0' } },
         lockup(),
         h('div', { class: 'report-cover-title' }, d.period.title),
+        h('div', { class: 'muted' }, PILLAR),
         h('div', {}, `${d.period.label} · ${d.period.rangeLabel}`),
         h('div', {}, d.site ? `النطاق: ${d.site.name} (${d.site.code || d.site.id})` : 'النطاق: جميع المواقع')),
       h('div', { class: 'report-cover-meta stack gap-1', style: { flex: '0 0 auto', whiteSpace: 'nowrap', fontFamily: 'var(--font-sans)' } },
@@ -977,7 +988,7 @@ function render(container, ctx) {
 
   function printFooter(d) {
     const foot = h('footer', { class: 'report-only is-row report-footer' },
-      h('span', {}, `${PREPARED_BY} — مركز قيادة السلامة والصحة المهنية`),
+      h('span', {}, `${PREPARED_BY} — ${PILLAR}`),
       h('span', {}, `أُنشئ آلياً بتاريخ ${fmt.dateTime(d.now)} · البيانات توضيحية ما لم يُربط مصدر بيانات حقيقي`));
     const sign = h('div', { class: 'report-only is-grid report-sign' },
       h('div', {}, 'مدير السلامة والصحة المهنية'),
@@ -1029,10 +1040,14 @@ function render(container, ctx) {
 
   rebuild();
 
-  /* ── subscriptions ── */
+  /* ── subscriptions ──
+     Rebuild only for collections the report displays. Feed / sensor / integration ticks and the
+     platform engine's own churn (validation, pipelines, connectors, auditLog…) never touch the
+     report; platform.aiRisks / tasks / alerts may feed urgent actions, so they do. */
+  const DISPLAYED = /^(\*|risks|incidents|permits|inspections|workers|courses|sites|isoClauses|legalRegister|documents|platform\.(aiRisks|tasks|alerts))(\.|$)/;
   subs.push(bus.on('store:change', (payload) => {
     const path = String((payload && payload.path) || '*');
-    if (path === 'feed' || path === 'settings' || path.startsWith('integrations')) return;
+    if (!DISPLAYED.test(path)) return;
     scheduleRebuild();
   }));
   subs.push(bus.on('settings:change', () => scheduleRebuild()));

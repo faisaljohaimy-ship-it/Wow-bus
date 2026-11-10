@@ -131,7 +131,8 @@ function sameDay(a, b) {
 const lines = (value) => String(value || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
 
 function chipGroup({ options, value, onChange, ariaLabel, fmt }) {
-  const el = h('div', { class: 'chip-group', role: 'group', 'aria-label': ariaLabel });
+  // `chips is-scroll`: horizontal snap scroller on phones instead of a tall wrapped block.
+  const el = h('div', { class: 'chip-group chips is-scroll', role: 'group', 'aria-label': ariaLabel });
   const buttons = new Map();
   let current = value;
   const paint = () => { for (const [v, b] of buttons) b.setAttribute('aria-pressed', String(v) === String(current) ? 'true' : 'false'); };
@@ -282,9 +283,10 @@ export const permitsView = {
           h('span', { class: 'urgent-due' }, cd.el, h('span', {}, fmt.time(p.expiresAt))));
         ul.appendChild(h('li', {}, item));
       });
+      // Nested inside the strip region → plain (unframed) card so the page keeps one framing level.
       expiringHost.appendChild(card({
-        code: 'SEC-05.A', title: 'تنتهي خلال 60 دقيقة', subtitle: 'تصاريح نشطة تحتاج إلى تمديد أو إغلاق قبل انتهاء صلاحيتها',
-        body: ul, framed: true,
+        code: 'SEC-05.A', title: `تنتهي خلال ${fmt.num(EXPIRING_MINUTES)} دقيقة`, subtitle: 'تصاريح نشطة تحتاج إلى تمديد أو إغلاق قبل انتهاء صلاحيتها',
+        body: ul, framed: false, className: 'is-plain',
       }));
     }
 
@@ -295,16 +297,27 @@ export const permitsView = {
       GAS.forEach((g) => {
         const v = Number(gas[g.key]);
         if (!Number.isFinite(v)) return;
-        row.appendChild(badge(`${g.label} ${fmt.num(v, { maximumFractionDigits: g.digits })}${g.unit === '%' ? '%' : ` ${g.unit}`}`, g.tone(v)));
+        // fmt.pct localises the percent sign with the numerals; other units keep a space before the unit.
+        const reading = g.unit === '%' ? fmt.pct(v, g.digits) : `${fmt.num(v, { maximumFractionDigits: g.digits })} ${g.unit}`;
+        row.appendChild(badge(`${g.label} ${reading}`, g.tone(v)));
       });
       return row.childNodes.length ? row : null;
     }
 
+    /**
+     * Permit window. Same-day ranges are an isolated LTR numeric run ("08:00–16:00") so the
+     * dash never flips in RTL text; multi-day windows are phrased "من … إلى …".
+     */
     function timeLabel(p) {
       const start = p.startsAt; const end = p.expiresAt;
       if (!start || !end) return '—';
-      if (sameDay(start, end)) return `${fmt.date(start, { style: 'short' })} · ${fmt.time(start)}–${fmt.time(end)}`;
-      return `${fmt.dateTime(start)} ← ${fmt.dateTime(end)}`;
+      if (sameDay(start, end)) {
+        return h('span', { class: 'row gap-1 wrap' },
+          h('span', {}, fmt.date(start, { style: 'short' })),
+          h('span', { 'aria-hidden': 'true' }, '·'),
+          h('span', { class: 'num', dir: 'ltr' }, `${fmt.time(start)}–${fmt.time(end)}`));
+      }
+      return h('span', { class: 'row gap-1 wrap' }, h('span', {}, `من ${fmt.dateTime(start)}`), h('span', {}, `إلى ${fmt.dateTime(end)}`));
     }
 
     function permitCardContent(p) {
@@ -482,7 +495,7 @@ export const permitsView = {
         formField({ label: 'المعتمِد', name: 'approver', required: true, placeholder: 'مهندس السلامة المسؤول' }),
         h('h3', { class: 'form-section-title' }, 'الفترة والطاقم'),
         formField({ label: 'بداية التصريح', name: 'startsAt', type: 'datetime-local', value: toDatetimeLocal(start), required: true }),
-        formField({ label: 'انتهاء التصريح', name: 'expiresAt', type: 'datetime-local', value: toDatetimeLocal(end), required: true, hint: 'الحد الأقصى المعتاد 12 ساعة لكل وردية' }),
+        formField({ label: 'انتهاء التصريح', name: 'expiresAt', type: 'datetime-local', value: toDatetimeLocal(end), required: true, hint: `الحد الأقصى المعتاد ${fmt.num(12)} ساعة لكل وردية` }),
         formField({ label: 'عدد العمال', name: 'workers', type: 'number', value: 4, min: 1, max: 500, step: 1, required: true }),
         h('h3', { class: 'form-section-title' }, 'المخاطر والضوابط'),
         formField({ label: 'المخاطر المحددة', name: 'hazards', type: 'textarea', rows: 3, required: true, placeholder: 'خطر واحد في كل سطر', hint: 'سطر لكل خطر' }),

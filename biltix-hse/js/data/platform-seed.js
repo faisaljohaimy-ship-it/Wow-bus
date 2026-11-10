@@ -147,7 +147,7 @@ const projects = [
     startDate: '2024-09-01', plannedFinish: '2027-02-28', forecastFinish: '2027-04-10',
     percentComplete: 81, plannedPercent: 84, cpi: 0.98,
     currencyExposure: [{ code: 'USD', pct: 7 }, { code: 'EUR', pct: 11 }, { code: 'CNY', pct: 4 }],
-    nextMilestone: { name: 'التشغيل التجريبي للمصاعد — المبنى A', date: d(33) },
+    nextMilestone: { name: 'التشغيل التجريبي للمصاعد — المبنى أ', date: d(33) },
   }),
   project({
     id: 'S3', budgetSAR: 2_400_000_000, contractValueSAR: 2_290_000_000,
@@ -320,16 +320,16 @@ const contracts = [
         id: 'CT3-C4', ref: '4.19', title: 'توصيل المرافق الدائمة',
         excerpt: 'يتحمل المقاول مسؤولية التنسيق مع الجهات الخدمية لتوصيل الكهرباء والمياه الدائمة قبل التسلّم، ويتحمل تبعات أي تأخير فيها.',
         flag: 'ambiguous', severity: 63,
-        explanation: 'تحميل المقاول تبعات تأخير جهات خارجية (الشركة السعودية للكهرباء، شركة المياه الوطنية) خارج سيطرته؛ طلب التوصيل للمبنى C قائم منذ 94 يوماً.',
+        explanation: 'تحميل المقاول تبعات تأخير جهات خارجية (الشركة السعودية للكهرباء، شركة المياه الوطنية) خارج سيطرته؛ طلب التوصيل للمبنى ج قائم منذ 94 يوماً.',
         redline: 'يتولى المقاول التنسيق وتقديم الطلبات، ويُعد تأخر الجهات الخدمية عن مددها النظامية سبباً لتمديد مدة التنفيذ دون غرامة.',
         benchmark: 'المعيار السوقي (FIDIC 8.5): تأخر السلطات سبب للتمديد؛ البند الحالي يحمّل المقاول.',
         status: 'مفتوح',
       },
     ],
     obligations: [
-      { id: 'CT3-O1', text: 'طلب التسلّم الابتدائي للمبنى A مع شهادات الاختبار والتشغيل', due: d(40), owner: 'م. نورة الزهراني', status: 'قادم', clauseRef: '10.1' },
-      { id: 'CT3-O2', text: 'تقديم دليل التشغيل والصيانة O&M للمبنى A', due: d(33), owner: 'المكتب الفني', status: 'قادم', clauseRef: '4.1' },
-      { id: 'CT3-O3', text: 'متابعة طلب التيار الدائم للمبنى C لدى الشركة السعودية للكهرباء', due: d(-10), owner: 'م. عمر باجابر', status: 'متأخر', clauseRef: '4.19' },
+      { id: 'CT3-O1', text: 'طلب التسلّم الابتدائي للمبنى أ مع شهادات الاختبار والتشغيل', due: d(40), owner: 'م. نورة الزهراني', status: 'قادم', clauseRef: '10.1' },
+      { id: 'CT3-O2', text: 'تقديم دليل التشغيل والصيانة O&M للمبنى أ', due: d(33), owner: 'المكتب الفني', status: 'قادم', clauseRef: '4.1' },
+      { id: 'CT3-O3', text: 'متابعة طلب التيار الدائم للمبنى ج لدى الشركة السعودية للكهرباء', due: d(-10), owner: 'م. عمر باجابر', status: 'متأخر', clauseRef: '4.19' },
     ],
   },
   {
@@ -366,16 +366,16 @@ const contracts = [
         status: 'قيد المراجعة القانونية',
       },
       {
-        id: 'CT4-C4', ref: '8.2', title: 'موعد إنجاز المبنى A',
-        excerpt: 'يُنجز المقاول من الباطن أعمال المبنى A بما فيها التشغيل التجريبي في موعد أقصاه 15 ديسمبر 2026.',
+        id: 'CT4-C4', ref: '8.2', title: 'موعد إنجاز المبنى أ',
+        excerpt: 'يُنجز المقاول من الباطن أعمال المبنى أ بما فيها التشغيل التجريبي في موعد أقصاه 15 ديسمبر 2026.',
         flag: 'obligation', severity: 49,
         explanation: 'الموعد التعاقدي بعد 36 يوماً فيما نسبة الإنجاز الفعلية للمصاعد 71% مقابل 88% مخطط؛ احتمال التأخير 0.62.',
         redline: '', benchmark: 'التزام تعاقدي؛ يُراقب أسبوعياً.', status: 'مفتوح',
       },
     ],
     obligations: [
-      { id: 'CT4-O1', text: 'إنجاز التشغيل التجريبي للمبنى A (المصاعد والتكييف)', due: d(36), owner: 'الخليج للكهروميكانيك', status: 'قادم', clauseRef: '8.2' },
-      { id: 'CT4-O2', text: 'تقديم تقارير موازنة الهواء للمبنى B', due: d(-6), owner: 'الخليج للكهروميكانيك', status: 'متأخر', clauseRef: '7.3' },
+      { id: 'CT4-O1', text: 'إنجاز التشغيل التجريبي للمبنى أ (المصاعد والتكييف)', due: d(36), owner: 'الخليج للكهروميكانيك', status: 'قادم', clauseRef: '8.2' },
+      { id: 'CT4-O2', text: 'تقديم تقارير موازنة الهواء للمبنى ب', due: d(-6), owner: 'الخليج للكهروميكانيك', status: 'متأخر', clauseRef: '7.3' },
     ],
   },
   {
@@ -771,7 +771,7 @@ const contracts = [
       },
       {
         id: 'CT13-C2', ref: '5.2', title: 'موعد التسليم والتشغيل',
-        excerpt: 'تُسلَّم المصاعد وتُشغَّل تجريبياً في المبنى A قبل 10 ديسمبر 2026.',
+        excerpt: 'تُسلَّم المصاعد وتُشغَّل تجريبياً في المبنى أ قبل 10 ديسمبر 2026.',
         flag: 'obligation', severity: 59,
         explanation: 'الشحنة الأخيرة (4 مصاعد) غادرت هامبورغ قبل 6 أيام وتصل جدة خلال 17 يوماً؛ يبقى 13 يوماً للتركيب والتشغيل مقابل 21 يوماً معتاداً.',
         redline: '', benchmark: 'التزام تعاقدي على المسار الحرج.', status: 'مفتوح',
@@ -792,7 +792,7 @@ const contracts = [
       },
     ],
     obligations: [
-      { id: 'CT13-O1', text: 'حجز جهة فحص الطرف الثالث للمصاعد (المبنى A)', due: d(6), owner: 'إدارة الجودة', status: 'قادم', clauseRef: '6.1' },
+      { id: 'CT13-O1', text: 'حجز جهة فحص الطرف الثالث للمصاعد (المبنى أ)', due: d(6), owner: 'إدارة الجودة', status: 'قادم', clauseRef: '6.1' },
       { id: 'CT13-O2', text: 'سداد الدفعة قبل الأخيرة (30%) عند وصول الشحنة', due: d(17), owner: 'الإدارة المالية', status: 'قادم', clauseRef: '2.3' },
     ],
   },
@@ -943,10 +943,10 @@ const scheduleTasks = [
   task({ id: 'T5',  code: 'A1210', projectId: 'S1', name: 'تمديدات الكهروميكانيك الرأسية — الطوابق 1–12',          wbs: '1.6.1', floatDays: 21, critical: false, percentComplete: 38, delayProbability: 0.22, expectedDelayDays: 3,  subcontractorId: null,  trade: 'كهروميكانيك',      weatherSensitive: false }, -40, 60, 60),
   task({ id: 'T6',  code: 'A1250', projectId: 'S1', name: 'تركيب المصاعد عالية السرعة — المجموعة الأولى',           wbs: '1.6.4', floatDays: 14, critical: false, percentComplete: 0,  delayProbability: 0.41, expectedDelayDays: 10, subcontractorId: null,  trade: 'مصاعد',            weatherSensitive: false }, 210, 300, 290),
   // S2 — مجمع البحر الأحمر: المصاعد والتشغيل التجريبي → التسلّم
-  task({ id: 'T7',  code: 'B2040', projectId: 'S2', name: 'تركيب وتشغيل المصاعد — المبنى A (6 وحدات)',              wbs: '2.6.3', floatDays: 0,  critical: true,  percentComplete: 71, delayProbability: 0.62, expectedDelayDays: 14, subcontractorId: 'SC3', trade: 'مصاعد',            weatherSensitive: false }, -35, 36, 30),
-  task({ id: 'T8',  code: 'B2050', projectId: 'S2', name: 'اختبارات التشغيل والموازنة للتكييف — المبنى A',           wbs: '2.6.5', floatDays: 0,  critical: true,  percentComplete: 44, delayProbability: 0.55, expectedDelayDays: 10, subcontractorId: 'SC3', trade: 'كهروميكانيك',      weatherSensitive: false }, -12, 34, 28),
-  task({ id: 'T9',  code: 'B2070', projectId: 'S2', name: 'توصيل التيار الكهربائي الدائم — المبنى C',               wbs: '2.7.1', floatDays: 0,  critical: true,  percentComplete: 30, delayProbability: 0.66, expectedDelayDays: 21, subcontractorId: null,  trade: 'جهات خدمية',       weatherSensitive: false }, -94, 40, 15),
-  task({ id: 'T10', code: 'B2110', projectId: 'S2', name: 'تشطيبات الوحدات — المبنى C (الطوابق 5–9)',                wbs: '2.5.3', floatDays: 12, critical: false, percentComplete: 68, delayProbability: 0.18, expectedDelayDays: 2,  subcontractorId: 'SC4', trade: 'تشطيبات',          weatherSensitive: false }, -50, 28, 28),
+  task({ id: 'T7',  code: 'B2040', projectId: 'S2', name: 'تركيب وتشغيل المصاعد — المبنى أ (6 وحدات)',              wbs: '2.6.3', floatDays: 0,  critical: true,  percentComplete: 71, delayProbability: 0.62, expectedDelayDays: 14, subcontractorId: 'SC3', trade: 'مصاعد',            weatherSensitive: false }, -35, 36, 30),
+  task({ id: 'T8',  code: 'B2050', projectId: 'S2', name: 'اختبارات التشغيل والموازنة للتكييف — المبنى أ',           wbs: '2.6.5', floatDays: 0,  critical: true,  percentComplete: 44, delayProbability: 0.55, expectedDelayDays: 10, subcontractorId: 'SC3', trade: 'كهروميكانيك',      weatherSensitive: false }, -12, 34, 28),
+  task({ id: 'T9',  code: 'B2070', projectId: 'S2', name: 'توصيل التيار الكهربائي الدائم — المبنى ج',               wbs: '2.7.1', floatDays: 0,  critical: true,  percentComplete: 30, delayProbability: 0.66, expectedDelayDays: 21, subcontractorId: null,  trade: 'جهات خدمية',       weatherSensitive: false }, -94, 40, 15),
+  task({ id: 'T10', code: 'B2110', projectId: 'S2', name: 'تشطيبات الوحدات — المبنى ج (الطوابق 5–9)',                wbs: '2.5.3', floatDays: 12, critical: false, percentComplete: 68, delayProbability: 0.18, expectedDelayDays: 2,  subcontractorId: 'SC4', trade: 'تشطيبات',          weatherSensitive: false }, -50, 28, 28),
   task({ id: 'T11', code: 'B2130', projectId: 'S2', name: 'العزل المائي للأسطح — المباني A وB',                     wbs: '2.4.2', floatDays: 9,  critical: false, percentComplete: 55, delayProbability: 0.37, expectedDelayDays: 5,  subcontractorId: null,  trade: 'عزل',              weatherSensitive: true },  -15, 24, 20),
   // S3 — نيوم: المحولات → المحطة الفرعية → التنشيط → الربط بالشبكة
   task({ id: 'T12', code: 'C3010', projectId: 'S3', name: 'توريد محولات الرفع 33/380 ك.ف (2 وحدة)',                 wbs: '3.4.1', floatDays: 0,  critical: true,  percentComplete: 55, delayProbability: 0.78, expectedDelayDays: 45, subcontractorId: 'SC6', trade: 'معدات جهد عالٍ',   weatherSensitive: false }, -150, 72, 30),
@@ -1048,8 +1048,8 @@ function approval(a, submittedOff) {
 const approvals = [
   approval({ id: 'AP1',  projectId: 'S1', authority: 'أمانة منطقة الرياض',                                   type: 'ترخيص إغلاق جزئي لطريق الملك فهد الخدمي (رفع وحدات الواجهة)', statutoryDays: 30, status: 'قيد المعالجة',   riskScore: 61 }, -26),
   approval({ id: 'AP2',  projectId: 'S1', authority: 'الدفاع المدني',                                        type: 'اعتماد مخططات أنظمة الإطفاء — الطوابق 1–30',               statutoryDays: 21, status: 'مطلوب استكمال',  riskScore: 55 }, -34),
-  approval({ id: 'AP3',  projectId: 'S2', authority: 'الشركة السعودية للكهرباء',                              type: 'توصيل التيار الدائم — المبنى C (محطة محولات 13.8 ك.ف)',     statutoryDays: 60, status: 'متأخر',          riskScore: 83 }, -94),
-  approval({ id: 'AP4',  projectId: 'S2', authority: 'أمانة محافظة جدة',                                     type: 'شهادة إشغال — المبنى A',                                   statutoryDays: 15, status: 'قيد المعالجة',   riskScore: 38 }, -4),
+  approval({ id: 'AP3',  projectId: 'S2', authority: 'الشركة السعودية للكهرباء',                              type: 'توصيل التيار الدائم — المبنى ج (محطة محولات 13.8 ك.ف)',     statutoryDays: 60, status: 'متأخر',          riskScore: 83 }, -94),
+  approval({ id: 'AP4',  projectId: 'S2', authority: 'أمانة محافظة جدة',                                     type: 'شهادة إشغال — المبنى أ',                                   statutoryDays: 15, status: 'قيد المعالجة',   riskScore: 38 }, -4),
   approval({ id: 'AP5',  projectId: 'S3', authority: 'المركز الوطني للرقابة على الالتزام البيئي',               type: 'تجديد التصريح البيئي للتشغيل — الرصد الربع سنوي',           statutoryDays: 45, status: 'قيد المعالجة',   riskScore: 47 }, -31),
   approval({ id: 'AP6',  projectId: 'S3', authority: 'الشركة السعودية للكهرباء — شبكة النقل',                   type: 'اتفاقية الربط بالشبكة ومواصفات التنشيط 380 ك.ف',            statutoryDays: 90, status: 'متأخر',          riskScore: 86 }, -121),
   approval({ id: 'AP7',  projectId: 'S4', authority: 'الهيئة العامة للموانئ (موانئ)',                          type: 'تصاريح دخول المركبات الثقيلة لحرم الميناء — نوفمبر',        statutoryDays: 10, status: 'معتمد',          riskScore: 12 }, -9),
@@ -1176,7 +1176,7 @@ const changeOrders = [
   { id: 'CO1',  code: 'CO-027', projectId: 'S1', title: 'تعديل تصميم نواة البرج — زيادة سماكة الجدران 24–30',            amountSAR: 18_400_000, status: 'معتمد',        submittedAt: d(-74), impactDays: 12, driver: 'تغيير تصميمي من الاستشاري' },
   { id: 'CO2',  code: 'CO-031', projectId: 'S1', title: 'تعويض إيقاف الأعمال بسبب العواصف الترابية (11 يوماً)',           amountSAR: 6_900_000,  status: 'مرفوض',        submittedAt: d(-41), impactDays: 11, driver: 'ظروف جوية' },
   { id: 'CO3',  code: 'CO-034', projectId: 'S1', title: 'تغيير مواصفة الزجاج العازل إلى ثلاثي الطبقات',                 amountSAR: 14_200_000, status: 'قيد الاعتماد', submittedAt: d(-16), impactDays: 0,  driver: 'طلب صاحب العمل' },
-  { id: 'CO4',  code: 'CO-012', projectId: 'S2', title: 'تمديد شبكة الصرف لربط المبنى C بغرفة التفتيش الجديدة',          amountSAR: 2_350_000,  status: 'معتمد',        submittedAt: d(-120), impactDays: 6, driver: 'اشتراطات الجهات الخدمية' },
+  { id: 'CO4',  code: 'CO-012', projectId: 'S2', title: 'تمديد شبكة الصرف لربط المبنى ج بغرفة التفتيش الجديدة',          amountSAR: 2_350_000,  status: 'معتمد',        submittedAt: d(-120), impactDays: 6, driver: 'اشتراطات الجهات الخدمية' },
   { id: 'CO5',  code: 'CO-015', projectId: 'S2', title: 'استبدال بلاط البورسلين غير المطابق (الدفعة 4)',                 amountSAR: 1_120_000,  status: 'مقترح',        submittedAt: d(-9),  impactDays: 8,  driver: 'عدم مطابقة المواصفات' },
   { id: 'CO6',  code: 'CO-048', projectId: 'S3', title: 'زيادة سعة BESS من 300 إلى 320 ميجاواط ساعة (4 حاويات إضافية)',  amountSAR: 27_600_000, status: 'قيد الاعتماد', submittedAt: d(-22), impactDays: 15, driver: 'طلب صاحب العمل' },
   { id: 'CO7',  code: 'CO-052', projectId: 'S3', title: 'تعويض تأخر جاهزية محطة النقل 380 ك.ف',                          amountSAR: 41_000_000, status: 'مقترح',        submittedAt: d(-5),  impactDays: 40, driver: 'تأخر جهة خارجية' },
@@ -1374,10 +1374,10 @@ const aiRisks = [
   }),
   air(7, {
     projectId: 'S2', category: 'schedule', type: 'Delay', score: 79,
-    title: 'تأخر توصيل التيار الدائم للمبنى C (B2070) — موافقة الكهرباء 94 يوماً',
-    driverExplanation: 'النشاط الحرج B2070 (توصيل التيار الدائم) متوقف على طلب الشركة السعودية للكهرباء المقدم قبل 94 يوماً مقابل مدة نظامية 60 يوماً (نسبة 1.57). كل يوم تأخير إضافي يؤخر التشغيل التجريبي والتسلّم الابتدائي للمبنى C؛ احتمال التأخير 0.66 وأثر متوقع 21 يوماً، والعقد (§4.19) يحمّل المقاول تبعات تأخر الجهات الخدمية.',
-    evidence: { kind: 'approval', ref: 'AP3 — SEC/JED/2026/4471', excerpt: 'طلب توصيل التيار الدائم — المبنى C (محطة محولات 13.8 ك.ف) · مقدم منذ 94 يوماً · المدة النظامية 60 يوماً · الحالة: متأخر — بانتظار جدولة فحص المحطة', sourceSystem: 'Primavera P6' },
-    recommendation: { action: 'تصعيد رسمي عبر مكتب خدمات كبار العملاء في الشركة السعودية للكهرباء مع طلب فحص المحطة خلال 10 أيام، وتقديم إشعار تمديد وقت (§20.1) استناداً إلى تجاوز المدة النظامية.', rationale: 'التصعيد المؤسسي يختصر زمن الجدولة عادة إلى أسبوعين؛ الإشعار يحمي المقاول من الغرامات.', effort: 'منخفض', impact: 'خفض الدرجة إلى ~45', alternatives: ['تشغيل المبنى C على مولدات مؤقتة للتشغيل التجريبي (تكلفة ~420 ألف ريال/شهر)'] },
+    title: 'تأخر توصيل التيار الدائم للمبنى ج (B2070) — موافقة الكهرباء 94 يوماً',
+    driverExplanation: 'النشاط الحرج B2070 (توصيل التيار الدائم) متوقف على طلب الشركة السعودية للكهرباء المقدم قبل 94 يوماً مقابل مدة نظامية 60 يوماً (نسبة 1.57). كل يوم تأخير إضافي يؤخر التشغيل التجريبي والتسلّم الابتدائي للمبنى ج؛ احتمال التأخير 0.66 وأثر متوقع 21 يوماً، والعقد (§4.19) يحمّل المقاول تبعات تأخر الجهات الخدمية.',
+    evidence: { kind: 'approval', ref: 'AP3 — SEC/JED/2026/4471', excerpt: 'طلب توصيل التيار الدائم — المبنى ج (محطة محولات 13.8 ك.ف) · مقدم منذ 94 يوماً · المدة النظامية 60 يوماً · الحالة: متأخر — بانتظار جدولة فحص المحطة', sourceSystem: 'Primavera P6' },
+    recommendation: { action: 'تصعيد رسمي عبر مكتب خدمات كبار العملاء في الشركة السعودية للكهرباء مع طلب فحص المحطة خلال 10 أيام، وتقديم إشعار تمديد وقت (§20.1) استناداً إلى تجاوز المدة النظامية.', rationale: 'التصعيد المؤسسي يختصر زمن الجدولة عادة إلى أسبوعين؛ الإشعار يحمي المقاول من الغرامات.', effort: 'منخفض', impact: 'خفض الدرجة إلى ~45', alternatives: ['تشغيل المبنى ج على مولدات مؤقتة للتشغيل التجريبي (تكلفة ~420 ألف ريال/شهر)'] },
     pipeline: 'schedule-model', confidence: 0.87, detectedAt: t(-34, '07:30'), updatedAt: t(-4, '15:20'),
     status: 'قيد المعالجة', owner: OWNERS.pm.S2, dueDate: d(7), taskId: 'MT5', escalated: true,
     stakeholders: ['PM', 'Legal', 'PMO'],
@@ -1394,9 +1394,9 @@ const aiRisks = [
   }),
   air(8, {
     projectId: 'S2', category: 'schedule', type: 'Delay', score: 72,
-    title: 'فجوة فنيي المصاعد تهدد الموعد التعاقدي للمبنى A (B2040)',
-    driverExplanation: 'تركيب المصاعد الستة في المبنى A عند 71% مقابل 88% مخطط، والموعد التعاقدي (§8.2 من عقد الباطن) بعد 36 يوماً. المورد RS4 يُظهر 16 فنياً متاحاً من 24 مطلوباً (تخصيص 150%). احتمال التأخير 0.62 بأثر 14 يوماً على التسلّم الابتدائي.',
-    evidence: { kind: 'task', ref: 'B2040 — WBS 2.6.3', excerpt: 'تركيب وتشغيل المصاعد — المبنى A · % Complete 71 · Planned 88 · Finish d+36 · Baseline d+30 · Float 0 · Resource: فنيو مصاعد 16/24', sourceSystem: 'Primavera P6' },
+    title: 'فجوة فنيي المصاعد تهدد الموعد التعاقدي للمبنى أ (B2040)',
+    driverExplanation: 'تركيب المصاعد الستة في المبنى أ عند 71% مقابل 88% مخطط، والموعد التعاقدي (§8.2 من عقد الباطن) بعد 36 يوماً. المورد RS4 يُظهر 16 فنياً متاحاً من 24 مطلوباً (تخصيص 150%). احتمال التأخير 0.62 بأثر 14 يوماً على التسلّم الابتدائي.',
+    evidence: { kind: 'task', ref: 'B2040 — WBS 2.6.3', excerpt: 'تركيب وتشغيل المصاعد — المبنى أ · % Complete 71 · Planned 88 · Finish d+36 · Baseline d+30 · Float 0 · Resource: فنيو مصاعد 16/24', sourceSystem: 'Primavera P6' },
     recommendation: { action: 'استقدام 8 فنيين من فريق مشروع برج الواجهة المالية (تركيب المصاعد هناك يبدأ بعد 210 أيام) لمدة 5 أسابيع.', rationale: 'الموارد متاحة داخل المحفظة بلا تكلفة تعاقد خارجية، ويغلق الفجوة كاملة.', effort: 'منخفض', impact: 'خفض الدرجة إلى ~35', alternatives: ['ورديات ليلية للفريق الحالي (+35% تكلفة عمالة)', 'طلب فريق تعزيز من المورد الألماني (14 يوماً للوصول)'] },
     pipeline: 'schedule-model', confidence: 0.83, detectedAt: t(-16, '07:30'), updatedAt: t(-11, '10:00'),
     status: 'مهمة مُسندة', owner: OWNERS.planning, dueDate: d(4), taskId: 'MT6',
@@ -1760,7 +1760,7 @@ const aiRisks = [
     title: 'دفعة بلاط بورسلين غير مطابقة للمواصفة (امتصاص الماء 0.8% > 0.5%)',
     driverExplanation: 'الدفعة الرابعة من بلاط البورسلين (12,400 م²) رسبت في اختبار امتصاص الماء (0.8% مقابل حد 0.5% في المواصفة)؛ المورد الهندي بأداء تسليم 79%. أمر التغيير CO-015 لاستبدالها (1.12 مليون ريال) مقترح، والكمية المطلوبة من النموذج أقل 5% من جدول الكميات ما يخفف الأثر جزئياً.',
     evidence: { kind: 'boq', ref: 'BQ-S2-09.03.050 · تقرير مختبر LAB-2026-1187', excerpt: 'بلاط بورسلين 60×60 · الدفعة 4 (12,400 م²) · امتصاص الماء 0.8% (الحد 0.5%) · الحالة: غير مطابق · BoQ 96,000 · BIM 91,200 (−5.0%)', sourceSystem: 'Biltix — تقارير الموقع' },
-    recommendation: { action: 'رفض الدفعة واستبدالها على حساب المورد (§6.3 من أمر الشراء) مع تحويل 30% من الكمية المتبقية إلى مورد محلي معتمد لتفادي زمن التوريد 50 يوماً.', rationale: 'يحمّل المورد التكلفة ويؤمّن استمرارية التشطيبات في المبنى C.', effort: 'منخفض', impact: 'خفض الدرجة إلى ~20', alternatives: ['قبول الدفعة للمناطق الجافة (الممرات) بخصم 25%'] },
+    recommendation: { action: 'رفض الدفعة واستبدالها على حساب المورد (§6.3 من أمر الشراء) مع تحويل 30% من الكمية المتبقية إلى مورد محلي معتمد لتفادي زمن التوريد 50 يوماً.', rationale: 'يحمّل المورد التكلفة ويؤمّن استمرارية التشطيبات في المبنى ج.', effort: 'منخفض', impact: 'خفض الدرجة إلى ~20', alternatives: ['قبول الدفعة للمناطق الجافة (الممرات) بخصم 25%'] },
     pipeline: 'bom-forecast', confidence: 0.88, detectedAt: t(-10, '10:20'), updatedAt: t(-9, '13:00'),
     status: 'مهمة مُسندة', owner: OWNERS.procurement, dueDate: d(6), taskId: 'MT19',
     stakeholders: ['Procurement', 'PM'],
@@ -1786,7 +1786,7 @@ const aiRisks = [
   air(32, {
     projectId: 'S2', category: 'bom', type: 'Delay', score: 61,
     title: 'الشحنة الأخيرة من المصاعد تصل قبل 13 يوماً فقط من موعد التشغيل',
-    driverExplanation: 'آخر 4 مصاعد للمبنى A غادرت هامبورغ قبل 6 أيام وتصل جدة خلال 17 يوماً (زمن توريد إجمالي 140 يوماً)؛ يبقى 13 يوماً للتركيب والتشغيل مقابل 21 يوماً معتاداً لكل دفعة. حجز جهة فحص الطرف الثالث لم يتم بعد (يتطلب أسبوعين).',
+    driverExplanation: 'آخر 4 مصاعد للمبنى أ غادرت هامبورغ قبل 6 أيام وتصل جدة خلال 17 يوماً (زمن توريد إجمالي 140 يوماً)؛ يبقى 13 يوماً للتركيب والتشغيل مقابل 21 يوماً معتاداً لكل دفعة. حجز جهة فحص الطرف الثالث لم يتم بعد (يتطلب أسبوعين).',
     evidence: { kind: 'boq', ref: 'BQ-S2-14.01.010 · PO-2026-0512', excerpt: 'مصاعد بدون غرفة آلات — 14 وحدة · الشحنة 3/3 (4 وحدات): ETD هامبورغ d−6 · ETA جدة d+17 · الموعد التعاقدي d+31 · زمن التوريد 140 يوماً', sourceSystem: 'Oracle ERP' },
     recommendation: { action: 'التخليص الجمركي المسبق (Pre-clearance) عبر منصة فسح وحجز جهة الفحص اليوم، والبدء بتركيب الأدلة والأبواب للمصاعد الأربعة قبل وصول الكبائن.', rationale: 'يختصر 5–7 أيام من الفجوة ويجعل الموعد قابلاً للتحقيق.', effort: 'منخفض', impact: 'خفض الدرجة إلى ~35', alternatives: ['شحن جوي للمكونات الإلكترونية الحرجة (الكبائن بحراً)'] },
     pipeline: 'bom-forecast', confidence: 0.85, detectedAt: t(-5, '10:20'),
@@ -2133,16 +2133,16 @@ const aiRisks = [
     pipeline: 'site-ai', confidence: 0.78, detectedAt: t(-1, '18:00'),
     status: 'مكتشف', stakeholders: ['Site', 'PM'],
     responseParams: {
-      Site: { location: 'أسطح المبنيين A وB · شبكة الصرف وغرف التفتيش', hazard: 'انهيار خنادق / انزلاق — أمطار', controls: ['تغطية الخنادق', 'مضخات نزح', 'تأجيل العزل'] },
+      Site: { location: 'أسطح المبنيين أ وب · شبكة الصرف وغرف التفتيش', hazard: 'انهيار خنادق / انزلاق — أمطار', controls: ['تغطية الخنادق', 'مضخات نزح', 'تأجيل العزل'] },
       PM: { scheduleImpactDays: 2, costImpactSAR: 40_000, criticalPath: false },
     },
   }),
   air(57, {
     projectId: 'S2', category: 'schedule', type: 'Delay', score: 22,
-    title: 'تشطيبات المبنى C متقدمة على الخطة (81% مقابل 79%)',
+    title: 'تشطيبات المبنى ج متقدمة على الخطة (81% مقابل 79%)',
     driverExplanation: 'النشاط B2110 (تشطيبات الطوابق 5–9) عند 68% مع تقدم المقاول من الباطن 81% مقابل 79% مخطط وبطاقة أداء 86/100، وطفو 12 يوماً. احتمال التأخير 0.18 فقط.',
-    evidence: { kind: 'task', ref: 'B2110 — WBS 2.5.3', excerpt: 'تشطيبات الوحدات — المبنى C (الطوابق 5–9) · % Complete 68 · Float 12 · Delay probability 0.18 · Subcontractor SC4 scorecard 86', sourceSystem: 'Primavera P6' },
-    recommendation: { action: 'لا إجراء — إمكانية نقل جزء من فريق التشطيبات لدعم المبنى A بعد التشغيل التجريبي.', rationale: 'الأداء إيجابي؛ فرصة لإعادة توزيع الموارد.', effort: 'منخفض', impact: 'لا تغيير', alternatives: [] },
+    evidence: { kind: 'task', ref: 'B2110 — WBS 2.5.3', excerpt: 'تشطيبات الوحدات — المبنى ج (الطوابق 5–9) · % Complete 68 · Float 12 · Delay probability 0.18 · Subcontractor SC4 scorecard 86', sourceSystem: 'Primavera P6' },
+    recommendation: { action: 'لا إجراء — إمكانية نقل جزء من فريق التشطيبات لدعم المبنى أ بعد التشغيل التجريبي.', rationale: 'الأداء إيجابي؛ فرصة لإعادة توزيع الموارد.', effort: 'منخفض', impact: 'لا تغيير', alternatives: [] },
     pipeline: 'schedule-model', confidence: 0.86, detectedAt: t(-8, '07:30'),
     status: 'مكتشف', stakeholders: ['PM'],
     responseParams: { PM: { scheduleImpactDays: 0, costImpactSAR: 0, criticalPath: false } },
@@ -2152,7 +2152,7 @@ const aiRisks = [
     title: 'التسلّم الابتدائي على مراحل مسموح به — بند مواتٍ (§10.1)',
     driverExplanation: 'البند 10.1 يجيز تسلّم كل مبنى منفرداً ويبدأ فترة إصلاح العيوب لكل مبنى من تاريخ تسلّمه، ما يقلّص تعرض غرامات التأخير على المباني المكتملة (A وB).',
     evidence: { kind: 'clause', ref: 'CT-2025-087 §10.1', excerpt: 'يجوز لصاحب العمل تسلّم أي مبنى منفرداً متى اكتملت أعماله، ويبدأ احتساب فترة إصلاح العيوب لكل مبنى من تاريخ تسلّمه.', sourceSystem: 'Biltix — العقود' },
-    recommendation: { action: 'تقديم طلب التسلّم الابتدائي للمبنى A فور التشغيل التجريبي لتفعيل البند.', rationale: 'يحوّل بنداً مواتياً إلى خفض فعلي للتعرض.', effort: 'منخفض', impact: 'لا تغيير', alternatives: [] },
+    recommendation: { action: 'تقديم طلب التسلّم الابتدائي للمبنى أ فور التشغيل التجريبي لتفعيل البند.', rationale: 'يحوّل بنداً مواتياً إلى خفض فعلي للتعرض.', effort: 'منخفض', impact: 'لا تغيير', alternatives: [] },
     pipeline: 'contract-nlp', confidence: 0.92, detectedAt: t(-70, '09:14'), updatedAt: t(-66, '09:00'),
     status: 'مغلق', stakeholders: ['Legal', 'PM'],
     responseParams: {
@@ -2299,7 +2299,7 @@ const tasks = [
   mt(2,  { riskId: 'AR2',  projectId: 'S1', title: 'تعديل أجل السداد إلى 30 يوماً + ترتيب تسهيل تمويل المستخلصات (150 مليون ريال)', owner: OWNERS.finance, dueDate: d(20), status: 'قيد التنفيذ', source: 'ai-edited', createdAt: t(-55, '09:20') }),
   mt(3,  { riskId: 'AR4',  projectId: 'S1', title: 'إيقاف الصب في الطابق 23 حتى تركيب حواجز الحافة على الجهات الثلاث وتوثيق التفتيش', owner: OWNERS.hse.S1, dueDate: d(1), status: 'جديدة', source: 'ai-accepted', createdAt: t(-1, '13:10') }),
   mt(4,  { riskId: 'AR6',  projectId: 'S1', title: 'إعادة تخطيط المصاريف العامة وتثبيت سعر حديد الطوابق 28–30 بعقد توريد آجل', owner: OWNERS.finance, dueDate: d(16), status: 'جديدة', source: 'ai-accepted', createdAt: t(-8, '12:00') }),
-  mt(5,  { riskId: 'AR7',  projectId: 'S2', title: 'تصعيد طلب التيار الدائم للمبنى C لدى الشركة السعودية للكهرباء وإرسال إشعار تمديد الوقت', owner: OWNERS.pm.S2, dueDate: d(7), status: 'قيد التنفيذ', source: 'ai-accepted', createdAt: t(-29, '11:15') }),
+  mt(5,  { riskId: 'AR7',  projectId: 'S2', title: 'تصعيد طلب التيار الدائم للمبنى ج لدى الشركة السعودية للكهرباء وإرسال إشعار تمديد الوقت', owner: OWNERS.pm.S2, dueDate: d(7), status: 'قيد التنفيذ', source: 'ai-accepted', createdAt: t(-29, '11:15') }),
   mt(6,  { riskId: 'AR8',  projectId: 'S2', title: 'نقل 8 فنيي مصاعد من مشروع برج الواجهة المالية لمدة 5 أسابيع', owner: OWNERS.planning, dueDate: d(4), status: 'جديدة', source: 'ai-accepted', createdAt: t(-11, '10:00') }),
   mt(7,  { riskId: 'AR10', projectId: 'S3', title: 'فريق فحص مقيم في مصنع المحولات + ربط الدفعة بمعلم FAT + تعاقد احتياطي على محول بديل', owner: OWNERS.pm.S3, dueDate: d(14), status: 'قيد التنفيذ', source: 'ai-edited', createdAt: t(-40, '12:00') }),
   mt(8,  { riskId: 'AR11', projectId: 'S3', title: 'إشعار تمديد وقت عن تأخر اتفاقية الربط والتفاوض على "تاريخ التشغيل التجاري المعدّل"', owner: OWNERS.legal, dueDate: d(17), status: 'جديدة', source: 'ai-accepted', createdAt: t(-20, '10:30') }),
@@ -2330,7 +2330,7 @@ const tasks = [
 // ------------------------------------------------------------------
 
 function alert(n, x) {
-  return { id: `AL${n}`, acknowledged: false, ackBy: null, ackAt: null, ...x };
+  return { id: `AL${n}`, code: `AL-${String(n).padStart(4, '0')}`, acknowledged: false, ackBy: null, ackAt: null, ...x };
 }
 
 const alerts = [
@@ -2339,7 +2339,7 @@ const alerts = [
   alert(3,  { riskId: 'AR1',  projectId: 'S1', severity: 'critical', queue: 'immediate', channels: ['email', 'slack'], sentAt: t(-61, '14:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-61, '15:20'), title: 'تصعيد فوري: غرامة تأخير بلا سقف CT-2026-014 §8.7 — الدرجة 88' }),
   alert(4,  { riskId: 'AR17', projectId: 'S5', severity: 'critical', queue: 'immediate', channels: ['email', 'slack'], sentAt: t(-9, '09:20'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-9, '10:00'), title: 'تصعيد فوري: مهلة إشعار المطالبة الجيوتقنية تنتهي خلال أيام — الدرجة 86' }),
   alert(5,  { riskId: 'AR20', projectId: 'S5', severity: 'critical', queue: 'immediate', channels: ['email', 'slack', 'whatsapp'], sentAt: t(-1, '05:35'), acknowledged: true, ackBy: OWNERS.hse.S5, ackAt: t(-1, '05:52'), title: 'تصعيد فوري: عدم استقرار منحدر الحفر الشمالي — إزاحة 14 مم/أسبوع — الدرجة 85' }),
-  alert(6,  { riskId: 'AR7',  projectId: 'S2', severity: 'critical', queue: 'immediate', channels: ['email', 'slack', 'teams'], sentAt: t(-4, '15:20'), title: 'تصعيد يدوي: تأخر توصيل التيار الدائم للمبنى C — 94 يوماً دون جدولة فحص' }),
+  alert(6,  { riskId: 'AR7',  projectId: 'S2', severity: 'critical', queue: 'immediate', channels: ['email', 'slack', 'teams'], sentAt: t(-4, '15:20'), title: 'تصعيد يدوي: تأخر توصيل التيار الدائم للمبنى ج — 94 يوماً دون جدولة فحص' }),
   alert(7,  { riskId: 'AR11', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-48, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-47, '08:00'), title: 'تنبيه: غرامة 1.2 مليون ريال يومياً مرتبطة بتاريخ خارج سيطرة المقاول — الدرجة 84' }),
   alert(8,  { riskId: 'AR19', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-5, '05:10'), title: 'تنبيه: أمر تغيير 62.8 مليون ريال غير معتمد وبند الأعمال الترابية +21% — الدرجة 83' }),
   alert(9,  { riskId: 'AR13', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-26, '05:10'), acknowledged: true, ackBy: OWNERS.finance, ackAt: t(-25, '09:00'), title: 'تنبيه: EAC يتجاوز الميزانية بـ 237 مليون ريال — CPI 0.91' }),
@@ -2350,7 +2350,7 @@ const alerts = [
   alert(14, { riskId: 'AR21', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-8, '10:30'), title: 'تنبيه: كمية الحفر الصخري في النموذج أعلى 20% من جدول الكميات — الدرجة 75' }),
   alert(15, { riskId: 'AR4',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack', 'whatsapp'], sentAt: t(-2, '06:50'), acknowledged: true, ackBy: OWNERS.hse.S1, ackAt: t(-2, '07:15'), title: 'تنبيه: حواف بلاطة مكشوفة بلا حواجز — الطابق 23 — الدرجة 74' }),
   alert(16, { riskId: 'AR5',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-13, '10:30'), title: 'تنبيه: مورد وحيد للواجهة الزجاجية مع تجاوز تاريخ الطلب — الدرجة 73' }),
-  alert(17, { riskId: 'AR8',  projectId: 'S2', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-16, '07:40'), acknowledged: true, ackBy: OWNERS.planning, ackAt: t(-15, '09:00'), title: 'تنبيه: فجوة فنيي المصاعد تهدد الموعد التعاقدي للمبنى A — الدرجة 72' }),
+  alert(17, { riskId: 'AR8',  projectId: 'S2', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-16, '07:40'), acknowledged: true, ackBy: OWNERS.planning, ackAt: t(-15, '09:00'), title: 'تنبيه: فجوة فنيي المصاعد تهدد الموعد التعاقدي للمبنى أ — الدرجة 72' }),
   alert(18, { riskId: 'AR16', projectId: 'S4', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-1, '07:15'), acknowledged: true, ackBy: OWNERS.hse.S4, ackAt: t(-1, '07:40'), title: 'تنبيه: دخول غير مصرح به إلى منطقة تركيب الهياكل — المستودع 3 — الدرجة 72' }),
   alert(19, { riskId: 'AR22', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-14, '06:50'), acknowledged: true, ackBy: OWNERS.hse.S5, ackAt: t(-13, '08:00'), title: 'تنبيه: عدم استخدام واقيات السمع في منطقة التفجير — 38% — الدرجة 71' }),
   alert(20, { riskId: 'AR6',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-30, '05:10'), acknowledged: true, ackBy: OWNERS.finance, ackAt: t(-29, '10:00'), title: 'تنبيه: تجاوز الميزانية المتوقع 118 مليون ريال — CPI 0.94 — الدرجة 70' }),

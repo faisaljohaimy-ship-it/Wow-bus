@@ -231,21 +231,24 @@ export const inspectionsView = {
       initialSort: { key: 'date', dir: 'asc' },
       emptyText: 'لا توجد تفتيشات ضمن النافذة الزمنية والموقع المحددين',
       onRowClick: (row) => openDrawer(row.id),
+      stickyFirst: true,
+      /* `priority` drives container-width column hiding (low → medium → never high); the code column stays sticky. */
       columns: [
-        { key: 'code', label: 'الرمز', mono: true, width: 92, render: (r) => h('span', { class: 'mono' }, r.code) },
-        { key: 'type', label: 'النوع', render: (r) => h('span', { class: 'row gap-1' }, svgIcon(typeIcon(r.type), 14), r.type) },
+        { key: 'code', label: 'الرمز', priority: 'high', mono: true, width: 92, render: (r) => h('span', { class: 'mono' }, r.code) },
+        { key: 'type', label: 'النوع', priority: 'high', render: (r) => h('span', { class: 'row gap-1' }, svgIcon(typeIcon(r.type), 14), r.type) },
         {
-          key: 'siteId', label: 'الموقع', sortValue: (r) => siteName(state(), r.siteId),
+          key: 'siteId', label: 'الموقع', priority: 'high', sortValue: (r) => siteName(state(), r.siteId),
           render: (r) => {
             const site = (state().sites || []).find((s) => s && s.id === r.siteId);
-            return h('span', { class: 'stack gap-1', title: site ? site.name : '' },
-              h('span', { class: 'truncate', style: { maxInlineSize: '14ch' } }, site ? site.name : '—'),
+            // Site names wrap on two lines (no ellipsis) with the mono code beneath.
+            return h('span', { class: 'stack gap-1', style: { minInlineSize: '11ch', maxInlineSize: '18ch' } },
+              h('span', { style: { whiteSpace: 'normal', lineHeight: '1.35' } }, site ? site.name : '—'),
               site ? h('span', { class: 'mono text-xs muted' }, site.code) : null);
           },
         },
-        { key: 'inspector', label: 'المفتش', render: (r) => h('span', { class: 'truncate', style: { maxInlineSize: '14ch', display: 'inline-block', verticalAlign: 'middle' }, title: r.inspector || '' }, r.inspector || '—') },
+        { key: 'inspector', label: 'المفتش', priority: 'low', render: (r) => h('span', { class: 'truncate', style: { maxInlineSize: '14ch', display: 'inline-block', verticalAlign: 'middle' }, title: r.inspector || '' }, r.inspector || '—') },
         {
-          key: 'date', label: 'التاريخ', sortValue: (r) => parseDate(r.date),
+          key: 'date', label: 'التاريخ', priority: 'high', sortValue: (r) => parseDate(r.date),
           render: (r) => {
             const n = daysFromToday(r.date);
             return h('span', { class: 'stack gap-1' },
@@ -253,9 +256,9 @@ export const inspectionsView = {
               h('span', { class: ['text-xs', 'nowrap', r.status !== DONE && n < 0 ? 'is-overdue' : 'muted'] }, dayPhrase(n, fmt)));
           },
         },
-        { key: 'status', label: 'الحالة', render: (r) => badge(r.status, statusTone(r.status)) },
+        { key: 'status', label: 'الحالة', priority: 'high', render: (r) => badge(r.status, statusTone(r.status)) },
         {
-          key: 'score', label: 'الدرجة', align: 'end', sortValue: (r) => (r.score === null || r.score === undefined ? null : Number(r.score)),
+          key: 'score', label: 'الدرجة', priority: 'medium', align: 'end', sortValue: (r) => (r.score === null || r.score === undefined ? null : Number(r.score)),
           render: (r) => {
             if (r.score === null || r.score === undefined) return h('span', { class: 'muted' }, '—');
             const row = h('span', { class: 'progress-row', style: { minInlineSize: '88px' } });
@@ -265,7 +268,7 @@ export const inspectionsView = {
           },
         },
         {
-          key: 'checklistDone', label: 'قائمة التحقق', sortValue: (r) => (Number(r.checklistTotal) ? (Number(r.checklistDone) || 0) / Number(r.checklistTotal) : 0),
+          key: 'checklistDone', label: 'قائمة التحقق', priority: 'low', sortValue: (r) => (Number(r.checklistTotal) ? (Number(r.checklistDone) || 0) / Number(r.checklistTotal) : 0),
           render: (r) => {
             const total = Number(r.checklistTotal) || 0; const done = Number(r.checklistDone) || 0;
             const row = h('span', { class: 'progress-row', style: { minInlineSize: '96px' } });
@@ -285,6 +288,8 @@ export const inspectionsView = {
     tableCard.querySelector('.card-body').classList.add('is-flush');
     const completionHost = h('div', { class: 'col-span-6' });
     const findingsHost = h('div', { class: 'col-span-6' });
+    // Partner cards (SEC-06.B / SEC-06.C) align to the row start instead of stretching into a void.
+    gridHost.style.alignItems = 'start';
     gridHost.append(h('div', { class: 'col-span-12' }, tableCard), completionHost, findingsHost);
 
     const upcomingHost = h('div', { class: 'cards-grid', role: 'list', 'aria-label': 'التدقيقات القادمة' });
@@ -348,7 +353,8 @@ export const inspectionsView = {
       const completionChart = withData.length
         ? safeChart(charts, 'barChart', {
           items: withData.map((c) => ({ id: c.id, label: c.label, value: c.value })),
-          horizontal: true, height: Math.max(160, 36 * withData.length + 24), valueFormat: (v) => fmt.pct(v), color: 'var(--s1)', showValues: true, maxBars: 6,
+          // Capped so the bar card stays a close height partner of the findings card beside it.
+          horizontal: true, height: Math.min(236, Math.max(160, 32 * withData.length + 24)), valueFormat: (v) => fmt.pct(v), color: 'var(--s1)', showValues: true, maxBars: 6,
           ariaLabel: 'نسبة إنجاز التفتيش حسب الموقع',
         }, completionTable)
         : { el: emptyState({ title: 'لا توجد تفتيشات ضمن النافذة الزمنية', text: 'وسّع الفترة أو غيّر الموقع لعرض نسب الإنجاز.' }), table: completionTable };
@@ -370,9 +376,16 @@ export const inspectionsView = {
         : { el: emptyState({ title: 'لا توجد ملاحظات مسجلة', text: 'تظهر الملاحظات بعد إنجاز التفتيشات وتسجيل نتائجها.' }), table: findingsTable };
       const sevRow = h('div', { class: 'row wrap gap-2', 'aria-label': 'الملاحظات حسب الخطورة' });
       ['عالٍ', 'متوسط', 'منخفض'].forEach((sev) => { const n = f.bySeverity[sev] || 0; if (n) sevRow.appendChild(badge(`${sev}: ${fmt.num(n)}`, severityTone(sev))); });
+      // Three facts give this card a second block so it pairs evenly with the completion bars.
+      const closurePct = f.total ? Math.round((f.closed / f.total) * 100) : 0;
+      const fact = (label, value, tone) => h('div', { class: ['fact', tone ? `tone-${tone}` : null] }, h('span', { class: 'fact-label' }, label), h('span', { class: 'fact-value' }, value));
+      const facts = h('div', { class: 'hero-facts' },
+        fact('مفتوحة', fmt.num(f.open), f.open ? 'serious' : 'good'),
+        fact('مغلقة', fmt.num(f.closed), 'good'),
+        fact('نسبة الإغلاق', fmt.pct(closurePct), closurePct >= 85 ? 'good' : closurePct >= 60 ? 'warning' : 'serious'));
       findingsHost.appendChild(card({
-        code: 'SEC-06.C', title: 'ملاحظات التفتيش', subtitle: `${fmt.num(f.open)} مفتوحة من أصل ${fmt.num(f.total)} — نسبة الإغلاق ${fmt.pct(f.total ? Math.round((f.closed / f.total) * 100) : 0)}`,
-        body: h('div', { class: 'stack gap-3' }, findingsChart.el, sevRow.childNodes.length ? sevRow : null), tableView: findingsChart.table,
+        code: 'SEC-06.C', title: 'ملاحظات التفتيش', subtitle: `${fmt.num(f.open)} مفتوحة من أصل ${fmt.num(f.total)} — نسبة الإغلاق ${fmt.pct(closurePct)}`,
+        body: h('div', { class: 'stack gap-3' }, findingsChart.el, f.total ? facts : null, sevRow.childNodes.length ? sevRow : null), tableView: findingsChart.table,
       }));
     }
 
@@ -397,7 +410,8 @@ export const inspectionsView = {
         const prog = h('div', { class: 'progress-row' });
         prog.appendChild(progress({ value: done, max: Math.max(total, 1), label: `بنود قائمة التحقق ${fmt.num(done)} من ${fmt.num(total)}` }));
         prog.appendChild(h('span', { class: 'progress-value' }, `${fmt.num(done)}/${fmt.num(total)}`));
-        upcomingHost.appendChild(h('article', { class: 'card', role: 'listitem', 'aria-labelledby': titleId },
+        // Nested list cards are plain (no CAD frame) so only top-level cards carry the frame.
+        upcomingHost.appendChild(h('article', { class: 'card is-plain', role: 'listitem', 'aria-labelledby': titleId },
           h('div', { class: 'card-body stack gap-3' },
             h('div', { class: 'row between gap-2' }, badge(ins.type, 'neutral', { icon: typeIcon(ins.type) }), h('span', { class: 'mono text-xs muted' }, ins.code)),
             h('h3', { class: 'card-title', id: titleId }, siteName(st, ins.siteId)),
@@ -515,7 +529,7 @@ export const inspectionsView = {
         const data = readForm(form);
         const score = Math.max(0, Math.min(100, Number(data.score)));
         const checklistDone = Math.max(0, Math.min(total || Number.MAX_SAFE_INTEGER, Number(data.checklistDone) || 0));
-        if (!Number.isFinite(score)) { toast('أدخل درجة صحيحة بين 0 و100', { tone: 'warning' }); return false; }
+        if (!Number.isFinite(score)) { toast(`أدخل درجة صحيحة بين ${fmt.num(0)} و${fmt.num(100)}`, { tone: 'warning' }); return false; }
         const updated = store.updateInspection(id, { status: DONE, score, checklistDone });
         if (!updated) { toast('تعذر حفظ النتيجة', { tone: 'critical' }); return false; }
         toast(`تم تسجيل ${ins.code} كمنجز بدرجة ${fmt.pct(score)}`, { tone: 'good', title: 'تم الحفظ' });

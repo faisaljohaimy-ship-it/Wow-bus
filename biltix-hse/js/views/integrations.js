@@ -45,6 +45,9 @@ const FIELD_TYPES = new Set(['text', 'url', 'password', 'number', 'select', 'tex
 
 /** Rolling eventsPerHour history per connector id (module scope, survives navigation). */
 const history = new Map();
+/** Connector grid presentation ('cards' | 'list'), remembered for the session. */
+let viewMode = 'cards';
+const PRODUCT_NAME = 'بلتكس Risk AI';
 
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -117,7 +120,10 @@ export default {
     const summaryRefs = new Map();  // key → value node
     let chipGroup = null;
     let gridEl = null;
+    let modeSeg = null;             // بطاقات / قائمة toggle
     let dsPanel = null;             // data-source panel handle { el, sync() }
+    const params = (ctx && ctx.params) || {};
+    let sectionHandled = false;     // ?section=datasource is honoured once per mount
 
     /* ───────────────────────── helpers ───────────────────────── */
 
@@ -222,7 +228,8 @@ export default {
       const l = list();
       const cats = ['all', ...Object.keys(CATEGORY_LABEL).filter((c) => l.some((g) => g.category === c))];
       l.forEach((g) => { if (g.category && !CATEGORY_LABEL[g.category] && !cats.includes(g.category)) cats.push(g.category); });
-      const group = h('div', { class: 'chip-group', role: 'group', 'aria-label': 'تصفية حسب الفئة' });
+      // `chips is-scroll`: horizontal snap scroller on phones instead of a tall wrapped block.
+      const group = h('div', { class: 'chip-group chips is-scroll', role: 'group', 'aria-label': 'تصفية حسب الفئة' });
       cats.forEach((c) => {
         const count = c === 'all' ? l.length : l.filter((g) => g.category === c).length;
         const chip = h('button', { type: 'button', class: ['chip', c === category ? 'is-active' : null], 'aria-pressed': c === category ? 'true' : 'false', 'data-category': c,
@@ -258,27 +265,57 @@ export default {
       refs.meta = h('div', { class: 'int-meta' });
       refs.error = h('div', { class: 'stack', hidden: true });
 
-      const el = h('article', { class: 'int-card', 'data-status': g.status || 'configurable', 'data-id': g.id, 'aria-label': g.name || g.id },
-        h('div', { class: 'int-head' },
-          h('span', { class: 'int-icon', 'aria-hidden': 'true' }, connectorIcon(g, 22)),
-          h('div', { class: 'int-titles' }, h('span', { class: 'int-name' }, g.name || g.id), h('span', { class: 'int-vendor' }, g.vendor || '—')),
-          refs.statusHost,
-        ),
-        g.description ? h('p', { class: 'int-desc' }, g.description) : null,
-        refs.error,
-        refs.meta,
-        h('div', { class: 'int-stats' },
-          h('div', { class: 'int-stat' }, h('span', { class: 'int-stat-label' }, 'آخر مزامنة'), refs.sync),
-          h('div', { class: 'int-stat' }, h('span', { class: 'int-stat-label' }, 'زمن الاستجابة'), refs.latency),
-          h('div', { class: 'int-stat' }, h('span', { class: 'int-stat-label' }, 'أحداث / ساعة'), refs.events),
-        ),
-        h('div', { class: 'row between gap-2' }, h('span', { class: 'text-xs muted' }, 'الأحداث بالساعة — آخر القراءات'), refs.sparkHost),
-        h('div', { class: 'int-foot' }, refs.footSync, refs.actions),
+      /* Compact anatomy: head → 2-line description → meta badges → stats (with the sparkline as a
+         fourth cell) → actions. The footer "last sync" line is dropped: the stat already carries it. */
+      refs.desc = g.description ? h('p', { class: 'int-desc', title: g.description, style: { display: '-webkit-box', webkitBoxOrient: 'vertical', webkitLineClamp: '2', overflow: 'hidden' } }, g.description) : null;
+      refs.head = h('div', { class: 'int-head' },
+        h('span', { class: 'int-icon', 'aria-hidden': 'true' }, connectorIcon(g, 22)),
+        h('div', { class: 'int-titles' }, h('span', { class: 'int-name' }, g.name || g.id), h('span', { class: 'int-vendor' }, g.vendor || '—')),
+        refs.statusHost,
       );
+      refs.stats = h('div', { class: 'int-stats', style: { gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' } },
+        h('div', { class: 'int-stat' }, h('span', { class: 'int-stat-label' }, 'آخر مزامنة'), refs.sync),
+        h('div', { class: 'int-stat' }, h('span', { class: 'int-stat-label' }, 'زمن الاستجابة'), refs.latency),
+        h('div', { class: 'int-stat' }, h('span', { class: 'int-stat-label' }, 'أحداث / ساعة'), refs.events),
+        h('div', { class: 'int-stat' }, h('span', { class: 'int-stat-label' }, 'آخر القراءات'), refs.sparkHost),
+      );
+      refs.foot = h('div', { class: 'int-foot' }, refs.actions);
+      const el = h('article', { class: 'int-card is-compact', 'data-status': g.status || 'configurable', 'data-id': g.id, 'aria-label': g.name || g.id },
+        refs.head, refs.desc, refs.error, refs.meta, refs.stats, refs.foot);
       const entry = { el, refs };
       cardRefs.set(g.id, entry);
       paintCard(g, entry, true);
+      applyMode(entry);
       return el;
+    }
+
+    /** Cards ↔ list: list rows hide the description/meta and lay head · stats · actions on one line. */
+    function applyMode(entry) {
+      const { el, refs } = entry;
+      const list = viewMode === 'list';
+      el.classList.toggle('is-list', list);
+      if (refs.desc) refs.desc.hidden = list;
+      refs.meta.hidden = list;
+      if (list) {
+        Object.assign(el.style, { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px 16px' });
+        Object.assign(refs.head.style, { flex: '1 1 240px', minInlineSize: '0' });
+        Object.assign(refs.stats.style, { flex: '1 1 340px', borderBlock: '0', paddingBlock: '0' });
+        Object.assign(refs.foot.style, { flex: '0 0 auto', marginInlineStart: 'auto' });
+      } else {
+        ['display', 'flexWrap', 'alignItems', 'gap'].forEach((k) => { el.style[k] = ''; });
+        ['flex', 'minInlineSize'].forEach((k) => { refs.head.style[k] = ''; });
+        ['flex', 'borderBlock', 'paddingBlock'].forEach((k) => { refs.stats.style[k] = ''; });
+        ['flex', 'marginInlineStart'].forEach((k) => { refs.foot.style[k] = ''; });
+      }
+    }
+    function applyGridMode() {
+      if (!gridEl) return;
+      const list = viewMode === 'list';
+      gridEl.classList.toggle('is-list', list);
+      // Cards: at most three columns, each ≥ 240px (max(240px, 30%) caps the column count at 3). List: one column.
+      gridEl.style.gridTemplateColumns = list ? 'minmax(0, 1fr)' : 'repeat(auto-fill, minmax(min(100%, max(240px, 30%)), 1fr))';
+      gridEl.style.gap = list ? 'var(--space-2)' : '';
+      for (const entry of cardRefs.values()) applyMode(entry);
     }
 
     function paintCard(g, entry, full = false) {
@@ -305,7 +342,6 @@ export default {
       const latency = g.latencyMs === null || g.latencyMs === undefined || g.latencyMs === '' ? NaN : Number(g.latencyMs);
       refs.latency.textContent = g.status === 'configurable' || !Number.isFinite(latency) ? '—' : `${fmt.num(latency)} م.ث`;
       refs.events.textContent = g.status === 'configurable' ? '—' : fmt.num(g.eventsPerHour || 0);
-      refs.footSync.replaceChildren(glyph('clock', 12), h('span', {}, hasSync ? `آخر مزامنة ${fmt.relative(g.lastSync)}` : 'لم تتم المزامنة بعد'));
       refs.sparkHost.replaceChildren(sparkFor(g));
       const uptime = g.uptimePct === null || g.uptimePct === undefined || g.uptimePct === '' ? NaN : Number(g.uptimePct);
       const realType = testTypeFor(g);
@@ -333,6 +369,7 @@ export default {
       const frag = document.createDocumentFragment();
       l.forEach((g) => frag.appendChild(buildCard(g)));
       gridEl.replaceChildren(frag);
+      applyGridMode();
     }
 
     function refreshCards(ids = null) {
@@ -345,11 +382,11 @@ export default {
     }
 
     function refreshRelative() {
+      if (document.hidden) return; // paused while the tab is hidden; resumed on visibilitychange
       for (const g of list()) {
         const entry = cardRefs.get(g.id);
         if (!entry || !g.lastSync || g.status === 'configurable') continue;
         entry.refs.sync.textContent = fmt.relative(g.lastSync);
-        entry.refs.footSync.replaceChildren(glyph('clock', 12), h('span', {}, `آخر مزامنة ${fmt.relative(g.lastSync)}`));
       }
     }
 
@@ -531,7 +568,7 @@ export default {
         setNote(hookResult, 'accent', 'جارٍ إرسال التنبيه التجريبي…');
         try {
           if (!sources || typeof sources.postWebhook !== 'function') throw new Error('مكوّن المصادر الخارجية غير متاح حالياً.');
-          const payload = { type: 'test', severity: 'info', tone: 'accent', title: 'تنبيه تجريبي من بلتكس HSE', detail: 'هذه رسالة اختبار للتأكد من وصول تنبيهات مركز قيادة السلامة والصحة المهنية.', siteId: null, ts: new Date().toISOString(), source: 'biltix-hse' };
+          const payload = { type: 'test', severity: 'info', tone: 'accent', title: `تنبيه تجريبي من ${PRODUCT_NAME}`, detail: 'هذه رسالة اختبار للتأكد من وصول تنبيهات ركيزة السلامة والصحة المهنية.', siteId: null, ts: new Date().toISOString(), source: 'biltix-hse' };
           const r = await sources.postWebhook(url, payload);
           const ok = !!(r && r.ok);
           setNote(hookResult, ok ? 'good' : 'critical', ok ? 'تم إرسال التنبيه التجريبي بنجاح.' : 'لم يقبل الخادم الطلب.', r && r.status ? `رمز الاستجابة ${fmt.num(r.status)}` : (r && r.message) || null);
@@ -550,7 +587,8 @@ export default {
         h('div', { class: 'stack gap-2' }, h('span', { class: 'form-section-title' }, 'قناة التنبيهات'), fHook, h('div', { class: 'row wrap gap-2' }, hookBtn), hookResult),
       );
 
-      const el = card({ code: 'DATA-SRC', title: 'مصدر البيانات', subtitle: 'اختر من أين يقرأ المركز بيانات المخاطر، واختبر الاتصال واستورد السجلات', className: 'col-span-8', body });
+      const el = card({ code: 'DATA-SRC', title: 'مصدر البيانات', subtitle: 'اختر من أين يقرأ المركز بيانات المخاطر، واختبر الاتصال واستورد السجلات', className: 'col-span-8', body, id: 'int-datasource' });
+      el.tabIndex = -1; // focus target for the ?section=datasource deep link
 
       function sync() {
         const s = store.state.settings || {};
@@ -566,7 +604,7 @@ export default {
     function buildTemplateGuide() {
       const cols = [
         ['code', 'رمز المخاطرة (اختياري، يُولَّد تلقائياً)'], ['siteId', 'معرّف الموقع S1…S6'], ['categoryId', 'فئة الخطر (height, electrical, …)'],
-        ['hazard', 'وصف الخطر'], ['activity', 'النشاط'], ['likelihood', 'الاحتمالية 1–5'], ['severity', 'الشدة 1–5'],
+        ['hazard', 'وصف الخطر'], ['activity', 'النشاط'], ['likelihood', `الاحتمالية ${fmt.num(1)}–${fmt.num(5)}`], ['severity', `الشدة ${fmt.num(1)}–${fmt.num(5)}`],
         ['owner', 'المسؤول'], ['dueDate', 'تاريخ الاستحقاق YYYY-MM-DD'], ['status', 'الحالة (مفتوح، قيد المعالجة، …)'],
       ];
       const table = h('table', { class: 'table is-dense' }, h('caption', { class: 'sr-only' }, 'أعمدة قالب CSV'),
@@ -575,7 +613,7 @@ export default {
       const body = h('div', { class: 'stack gap-3' },
         h('p', { class: 'text-sm ink-2' }, 'يُطابق المستورد صف العناوين التالي حرفياً (بالإنجليزية) ثم يحوّل كل صف إلى مخاطرة في السجل مع احتساب الدرجة تلقائياً.'),
         h('div', { class: 'table-wrap' }, table),
-        h('p', { class: 'text-xs muted' }, 'الحقول غير المعروفة تُتجاهل، والقيم الناقصة تُستكمل بالافتراضيات (الاحتمالية والشدة 3، الحالة «مفتوح»).'),
+        h('p', { class: 'text-xs muted' }, `الحقول غير المعروفة تُتجاهل، والقيم الناقصة تُستكمل بالافتراضيات (الاحتمالية والشدة ${fmt.num(3)}، الحالة «مفتوح»).`),
       );
       return card({ code: 'DATA-TPL', title: 'دليل قالب الاستيراد', subtitle: 'أعمدة CSV / JSON المدعومة', className: 'col-span-4', body });
     }
@@ -600,7 +638,13 @@ export default {
       raf = 0;
       cardRefs.clear();
       chipGroup = buildChips();
-      gridEl = h('div', { class: 'cards-grid', role: 'list', 'aria-label': 'بطاقات التكاملات' });
+      gridEl = h('div', { class: 'cards-grid int-grid is-compact', role: 'list', 'aria-label': 'بطاقات التكاملات' });
+      modeSeg = segmented({
+        options: [{ value: 'cards', label: 'بطاقات', icon: svgIcon('grid', 14) }, { value: 'list', label: 'قائمة', icon: glyph('table', 14) }],
+        value: viewMode, ariaLabel: 'طريقة عرض الموصلات',
+        onChange: (v) => { viewMode = v === 'list' ? 'list' : 'cards'; applyGridMode(); },
+      });
+      modeSeg.el.classList.add('seg-sm');
       dsPanel = buildDataSource();
       const frag = document.createDocumentFragment();
       frag.append(
@@ -609,7 +653,7 @@ export default {
         h('section', { class: 'stack gap-3', 'aria-labelledby': 'int-grid-title' },
           h('div', { class: 'row between wrap gap-3' },
             h('div', { class: 'card-titles' }, h('span', { class: 'card-code', 'aria-hidden': 'true' }, 'INT-01'), h('h2', { class: 'card-title', id: 'int-grid-title' }, 'الموصلات')),
-            chipGroup,
+            h('div', { class: 'row wrap gap-3', style: { minInlineSize: '0', flex: '1 1 auto', justifyContent: 'flex-end' } }, chipGroup, modeSeg.el),
           ),
           gridEl,
         ),
@@ -617,6 +661,23 @@ export default {
       );
       root.replaceChildren(frag);
       renderGrid();
+      revealSection();
+    }
+
+    /** ?section=datasource → scroll to and briefly highlight the data-source card, then drop the param. */
+    function revealSection() {
+      if (sectionHandled || params.section !== 'datasource' || !dsPanel) return;
+      sectionHandled = true;
+      const el = dsPanel.el;
+      requestAnimationFrame(() => {
+        try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { el.scrollIntoView(); }
+        el.classList.add('is-highlight');
+        el.style.boxShadow = 'var(--glow-accent)';
+        el.style.transition = 'box-shadow var(--dur-2) var(--ease)';
+        try { el.focus({ preventScroll: true }); } catch { /* ignore */ }
+        setTimeout(() => { el.classList.remove('is-highlight'); el.style.boxShadow = ''; }, 2600);
+        try { history.replaceState(null, '', router && typeof router.href === 'function' ? router.href('integrations') : '#/integrations'); } catch { /* ignore */ }
+      });
     }
 
     function schedule() { if (!raf) raf = requestAnimationFrame(build); }
@@ -646,6 +707,8 @@ export default {
       }),
     ];
     const relTimer = setInterval(refreshRelative, RELATIVE_REFRESH_MS);
+    const onVisibility = () => { if (!document.hidden) refreshRelative(); };
+    document.addEventListener('visibilitychange', onVisibility);
 
     build();
 
@@ -653,6 +716,7 @@ export default {
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
       clearInterval(relTimer);
+      document.removeEventListener('visibilitychange', onVisibility);
       unsubs.forEach((u) => { try { if (typeof u === 'function') u(); } catch { /* ignore */ } });
       if (openModal) { try { openModal.close(); } catch { /* ignore */ } openModal = null; }
       cardRefs.clear();

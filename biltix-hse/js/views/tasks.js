@@ -32,8 +32,9 @@ const WRITEBACK_RESYNC_MS = 1500;
 const TASK_STATUSES = ['جديدة', 'قيد التنفيذ', 'متأخرة', 'مغلقة'];
 const TASK_STATUS_TONE = { 'جديدة': 'brand', 'قيد التنفيذ': 'accent', 'متأخرة': 'critical', 'مغلقة': 'good' };
 const SOURCE_LABEL = { 'ai-accepted': 'توصية مقبولة', 'ai-edited': 'توصية مُعدّلة', manual: 'يدوية' };
+const PM_NAME = 'Biltix PM';
 const WRITEBACK_META = {
-  synced: { label: 'مُزامن مع Biltix PM', tone: 'good' },
+  synced: { label: 'مُزامن مع ', product: PM_NAME, tone: 'good' },
   pending: { label: 'بانتظار المزامنة', tone: 'warning' },
   failed: { label: 'فشلت المزامنة', tone: 'critical' },
 };
@@ -104,10 +105,13 @@ function typeChip(psel, type) {
 }
 const statusBadge = (status) => badge(status || '—', TASK_STATUS_TONE[status] || 'neutral');
 const sourceBadge = (source) => h('span', { class: 'source-badge', 'data-source': source || '' }, SOURCE_LABEL[source] || source || '—');
+/** Latin product / vendor names get lang="en" dir="ltr" (RTL-28). */
+const latin = (label) => h('span', { lang: 'en', dir: 'ltr' }, String(label ?? ''));
+/** Static chip — write-back changes are announced once through a toast, so no live region here (RTL-18). */
 function writebackChip(wb) {
   const status = wb && wb.status ? String(wb.status) : '';
   const meta = WRITEBACK_META[status] || { label: status || 'بدون كتابة عكسية', tone: 'neutral' };
-  return h('span', { class: 'writeback-chip', 'data-status': status, role: 'status' }, glyph(meta.tone === 'neutral' ? 'neutral' : meta.tone, 11), meta.label);
+  return h('span', { class: 'writeback-chip', 'data-status': status }, glyph(meta.tone === 'neutral' ? 'neutral' : meta.tone, 11), meta.label, meta.product ? latin(meta.product) : null);
 }
 
 function viewHead({ code, title, lead, actions = [] }) {
@@ -115,7 +119,7 @@ function viewHead({ code, title, lead, actions = [] }) {
   return h('div', { class: 'view-head' }, textEl, actions.length ? h('div', { class: 'view-actions' }, actions) : null);
 }
 function section(tag, title, ...children) {
-  return h('section', { class: 'drawer-section' }, h('h3', { class: 'drawer-section-title is-platform' }, h('span', { class: 'mono', 'aria-hidden': 'true' }, tag), title), ...children);
+  return h('section', { class: 'drawer-section' }, h('h3', { class: 'drawer-section-title is-platform' }, h('span', { class: 'mono', 'aria-hidden': 'true' }, tag), ...(Array.isArray(title) ? title : [title])), ...children);
 }
 
 /* ------------------------------------------------------------------ */
@@ -171,7 +175,7 @@ export default {
     root.appendChild(viewHead({
       code: 'AIR-02',
       title: 'مهام المعالجة',
-      lead: 'كل مهمة تُولَّد من قبول توصية المحرك أو تعديلها (أو تُضاف يدوياً)، تُسند إلى مالك، وتُكتب عكسياً إلى Biltix PM. اسحب البطاقات بين الأعمدة أو استخدم زر النقل؛ إغلاق المهمة يتطلب تسجيل النتيجة لتغذية إعادة معايرة النماذج.',
+      lead: h('span', {}, 'كل مهمة تُولَّد من قبول توصية المحرك أو تعديلها (أو تُضاف يدوياً)، تُسند إلى مالك، وتُكتب عكسياً إلى ', latin(PM_NAME), '. اسحب البطاقات بين الأعمدة أو استخدم زر النقل؛ إغلاق المهمة يتطلب تسجيل النتيجة لتغذية إعادة معايرة النماذج.'),
       actions: [
         button('سجل المخاطر الذكي', { variant: 'ghost', size: 'sm', icon: 'shield-alert', onClick: () => navigate('airisks') }),
         button('مهمة يدوية', { variant: 'primary', size: 'sm', icon: 'plus', onClick: () => manualTaskFlow() }),
@@ -237,7 +241,7 @@ export default {
         statTile({ label: 'متأخرة', value: k.overdue.length, icon: 'clock', tone: k.overdue.length ? 'critical' : 'good', hint: k.overdue.length ? 'تجاوزت تاريخ الاستحقاق دون إغلاق' : 'لا توجد مهام متأخرة' }),
         statTile({ label: 'أُغلقت هذا الشهر', value: k.closedThisMonth, icon: 'check-circle', tone: 'good', delta: k.closedThisMonth - k.closedLastMonth, deltaGoodWhen: 'up', hint: 'مقارنة بالشهر الماضي' }),
         statTile({ label: 'متوسط زمن الإغلاق', value: k.avgClose, unit: 'يوم', icon: 'clock', hint: 'من إنشاء المهمة حتى إغلاقها' }),
-        statTile({ label: 'القبول مقابل التعديل', value: k.acceptance, unit: '%', icon: 'sliders', tone: k.acceptance === null ? null : (k.acceptance >= 70 ? 'good' : 'warning'), hint: `${fmt.num(k.accepted)} مقبولة كما هي · ${fmt.num(k.edited)} مُعدّلة · ${fmt.num(k.manual)} يدوية` }),
+        statTile({ label: 'القبول مقابل التعديل', value: k.acceptance === null ? null : fmt.pct(k.acceptance), icon: 'sliders', tone: k.acceptance === null ? null : (k.acceptance >= 70 ? 'good' : 'warning'), hint: `${fmt.num(k.accepted)} مقبولة كما هي · ${fmt.num(k.edited)} مُعدّلة · ${fmt.num(k.manual)} يدوية` }),
       );
     }
 
@@ -255,9 +259,9 @@ export default {
       const wb = task.writeback || {};
       const el = h('div', { class: ['task-card stack gap-2', overdue ? 'is-overdue' : null], 'data-task': task.id },
         h('div', { class: 'row between gap-2 wrap' },
-          h('span', { class: 'mono text-xs muted' }, task.code || task.id),
+          h('span', { class: 'code mono nowrap text-xs muted', dir: 'ltr' }, task.code || task.id),
           risk
-            ? h('span', { class: 'row gap-1 task-risk-ref', title: risk.title }, h('span', { class: 'mono text-xs' }, risk.code), ratingBadge(psel, ratingOf(psel, num(risk.score)), { sm: true }))
+            ? h('span', { class: 'row gap-1 task-risk-ref', title: risk.title }, h('span', { class: 'code mono nowrap text-xs', dir: 'ltr' }, risk.code), ratingBadge(psel, ratingOf(psel, num(risk.score)), { sm: true }))
             : badge('بدون مخاطرة مرتبطة', 'neutral')),
         h('p', { class: 'kanban-card-title' }, task.title || '—'),
         h('div', { class: 'kanban-card-meta' },
@@ -373,7 +377,7 @@ export default {
       const riskBlock = risk
         ? h('div', { class: 'recommendation is-decided' },
           h('div', { class: 'recommendation-head' },
-            h('h4', {}, h('span', { class: 'mono' }, risk.code)),
+            h('h4', {}, h('span', { class: 'code mono nowrap', dir: 'ltr' }, risk.code)),
             h('div', { class: 'recommendation-chips' }, ratingBadge(psel, ratingOf(psel, num(risk.score))), typeChip(psel, risk.type), h('span', { class: 'recommendation-chip' }, 'الدرجة ', h('span', { class: 'mono' }, fmt.num(num(risk.score)))))),
           h('p', { class: 'recommendation-action' }, risk.title),
           risk.recommendation && risk.recommendation.action ? h('p', { class: 'recommendation-rationale' }, risk.recommendation.action) : null,
@@ -381,7 +385,7 @@ export default {
         : h('p', { class: 'note text-sm' }, 'هذه مهمة يدوية غير مرتبطة بمخاطرة مكتشفة.');
 
       const wbBlock = h('div', { class: 'stack gap-2' },
-        kv([['الهدف', wb.target || 'Biltix PM'], ['الحالة', h('span', { class: 'row gap-2 wrap' }, writebackChip(wb), wb.at ? h('span', { class: 'text-xs muted', title: fmt.dateTime(wb.at) }, fmt.relative(wb.at)) : null)]]),
+        kv([['الهدف', latin(wb.target || PM_NAME)], ['الحالة', h('span', { class: 'row gap-2 wrap' }, writebackChip(wb), wb.at ? h('span', { class: 'text-xs muted', title: fmt.dateTime(wb.at) }, fmt.relative(wb.at)) : null)]]),
         wb.status === 'failed' && (canStore('retryWriteback') || canStore('updateTask')) ? h('div', { class: 'row' }, button('إعادة المزامنة', { variant: 'primary', size: 'sm', icon: 'refresh', onClick: () => resync(task) })) : null,
         settings().platform && settings().platform.writebackEnabled === false ? h('p', { class: 'note tone-warning text-xs' }, 'الكتابة العكسية معطّلة في الإعدادات.') : null);
 
@@ -396,7 +400,7 @@ export default {
       return h('div', { class: 'task-drawer-body' },
         h('div', { class: 'drawer-section' }, details),
         section('01', 'المخاطرة المرتبطة', riskBlock),
-        section('02', 'الكتابة العكسية إلى Biltix PM', wbBlock),
+        section('02', ['الكتابة العكسية إلى ', latin(PM_NAME)], wbBlock),
         section('03', 'الإجراءات', actions));
     }
 
@@ -484,6 +488,20 @@ export default {
     subs.push(bus.on('settings:change', schedule));
 
     paint();
+
+    // Deep links (C-2): ?id=TASK opens the task drawer, ?new=1 opens the manual-task modal; the param is dropped from the URL.
+    const params = ctx.params || {};
+    const dropParams = () => { try { if (/^#\/tasks\?/.test(location.hash || '')) history.replaceState(null, '', '#/tasks'); } catch { /* ignore */ } };
+    if (params.new === '1' || params.new === 'true') {
+      addTimer(() => { manualTaskFlow(); dropParams(); }, 0);
+    } else if (params.id || params.task) {
+      const wanted = params.id || params.task;
+      addTimer(() => {
+        const task = findTask(wanted) || (platformOf().tasks || []).find((t) => t && t.code === wanted) || null;
+        if (task) openTask(task.id); else toast('لم يتم العثور على المهمة المطلوبة', { tone: 'warning' });
+        dropParams();
+      }, 0);
+    }
 
     return () => {
       alive = false;

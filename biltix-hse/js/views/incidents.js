@@ -144,8 +144,8 @@ function checkMark(size = 12) {
   return svg;
 }
 
-/** 5-step investigation stepper (.stepper from components.css). */
-function stepper(step, status, { small = false, vertical = false } = {}) {
+/** 5-step investigation stepper (.stepper from components.css). Step names pass through `fmt` so "5 لماذا" follows the numerals. */
+function stepper(step, status, { small = false, vertical = false, fmt = null } = {}) {
   const current = Math.max(0, Math.min(STEPS.length - 1, Number(step) || 0));
   const closed = status === CLOSED;
   const ol = h('ol', { class: ['stepper', small ? 'is-sm' : null, vertical ? 'is-vertical' : null], role: 'list', 'aria-label': 'خطوات التحقيق' });
@@ -156,7 +156,7 @@ function stepper(step, status, { small = false, vertical = false } = {}) {
     const dot = h('span', { class: 'step-dot', 'aria-hidden': 'true' });
     if (done) dot.appendChild(checkMark(small ? 10 : 12));
     li.appendChild(dot);
-    li.appendChild(h('span', { class: 'step-label' }, label));
+    li.appendChild(h('span', { class: 'step-label' }, fmt ? digits(fmt, label) : label));
     li.appendChild(h('span', { class: 'sr-only' }, done ? ' — منجزة' : (isCurrent ? ' — الخطوة الحالية' : ' — لاحقة')));
     ol.appendChild(li);
   });
@@ -193,8 +193,12 @@ function safeChart(charts, name, opts, fallbackTable) {
   return { el: host, table: fallbackTable, native: false };
 }
 
+/** Digit runs inside selector-made labels ("أسبوع 36") follow the numerals setting. */
+const digits = (fmt, s) => String(s ?? '').replace(/\d+(?:\.\d+)?/g, (m) => fmt.num(Number(m), { maximumFractionDigits: 2 }));
+
 function chipGroup({ options, value, onChange, ariaLabel, fmt }) {
-  const el = h('div', { class: 'chip-group', role: 'group', 'aria-label': ariaLabel });
+  // `chips is-scroll`: horizontal snap scroller on phones instead of a tall wrapped block.
+  const el = h('div', { class: 'chip-group chips is-scroll', role: 'group', 'aria-label': ariaLabel });
   const buttons = new Map();
   let current = value;
   const paint = () => { for (const [v, b] of buttons) b.setAttribute('aria-pressed', String(v) === String(current) ? 'true' : 'false'); };
@@ -320,7 +324,7 @@ export const incidentsView = {
           onClick: () => { statusFilter = 'مفتوح'; typeFilter = 'all'; showAll = false; paintList(); listSection.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
         }),
         statTile({
-          label: 'الحوادث الوشيكة (30 يوماً)', value: k ? k.nearMisses30d : 0, icon: 'alert-triangle',
+          label: `الحوادث الوشيكة (${fmt.num(30)} يوماً)`, value: k ? k.nearMisses30d : 0, icon: 'alert-triangle',
           delta: k ? k.deltas.nearMisses30d : null, deltaGoodWhen: 'up',
           spark: spark(weeklyCounts(siteItems, 12, (i) => i.type === NEAR_MISS_TYPE, now)),
           hint: 'ارتفاع الإبلاغ عن الحوادث الوشيكة مؤشر إيجابي على ثقافة السلامة',
@@ -349,23 +353,24 @@ export const incidentsView = {
 
       /* trend: incidents vs near-misses, 12 weeks */
       const trend = sel.incidentTrend(st, 12, gf);
-      const trendTable = () => simpleTable('اتجاه الحوادث الأسبوعي', ['الأسبوع', 'الحوادث', 'الحوادث الوشيكة'], trend.map((b) => [b.label, fmt.num(b.incidents), fmt.num(b.nearMisses)]));
+      const weekLabel = (b) => digits(fmt, b.label);
+      const trendTable = () => simpleTable('اتجاه الحوادث الأسبوعي', ['الأسبوع', 'الحوادث', 'الحوادث الوشيكة'], trend.map((b) => [weekLabel(b), fmt.num(b.incidents), fmt.num(b.nearMisses)]));
       const trendChart = safeChart(charts, 'lineChart', {
         series: [
           { id: 'incidents', label: 'الحوادث', color: 'var(--s1)', values: trend.map((b) => b.incidents) },
           { id: 'nearMisses', label: 'الحوادث الوشيكة', color: 'var(--s2)', values: trend.map((b) => b.nearMisses) },
         ],
-        labels: trend.map((b) => b.label),
+        labels: trend.map(weekLabel),
         height: 220,
         yFormat: (v) => fmt.num(v),
-        ariaLabel: 'اتجاه الحوادث والحوادث الوشيكة خلال آخر 12 أسبوعاً',
+        ariaLabel: `اتجاه الحوادث والحوادث الوشيكة خلال آخر ${fmt.num(12)} أسبوعاً`,
       }, trendTable);
       const totalInc = trend.reduce((s, b) => s + b.incidents, 0);
       const totalNm = trend.reduce((s, b) => s + b.nearMisses, 0);
       /* inline-start column: trend above the type distribution; Pareto fills the other column */
       const mainCol = h('div', { class: 'col-span-7 stack gap-4' });
       mainCol.appendChild(card({
-        code: 'SEC-04.A', title: 'اتجاه الحوادث', subtitle: `آخر 12 أسبوعاً — ${fmt.num(totalInc)} حادثاً و${fmt.num(totalNm)} حادثاً وشيكاً`,
+        code: 'SEC-04.A', title: 'اتجاه الحوادث', subtitle: `آخر ${fmt.num(12)} أسبوعاً — ${fmt.num(totalInc)} حادثاً و${fmt.num(totalNm)} حادثاً وشيكاً`,
         body: trendChart.el, tableView: trendChart.table,
       }));
       chartsHost.appendChild(mainCol);
@@ -416,8 +421,13 @@ export const incidentsView = {
             value),
           bar));
       });
-      return h('div', { class: 'stack gap-3' }, ol,
-        h('p', { class: 'chart-note' }, 'الأسباب البارزة (باللون الأساسي) تمثّل نحو 80% من الحوادث في الفترة المحددة وفق قاعدة باريتو؛ الباقي بلون محايد.'));
+      /* Two-key legend: the strong (brand) bars are the vital few up to the 80 % cumulative mark,
+         the muted (neutral) bars are the rest — the colour difference is never left unexplained. */
+      const legend = h('ul', { class: 'legend', 'aria-label': 'مفتاح الألوان' },
+        h('li', { class: 'legend-item' }, h('span', { class: 'legend-key', style: { '--key': 'var(--brand)', background: 'var(--brand)' } }), h('span', { class: 'legend-label' }, `الأسباب الحيوية — حتى ${fmt.pct(80)} تراكمياً`)),
+        h('li', { class: 'legend-item' }, h('span', { class: 'legend-key', style: { '--key': 'var(--ink-3)', background: 'var(--ink-3)' } }), h('span', { class: 'legend-label' }, 'الباقي')));
+      return h('div', { class: 'stack gap-3' }, legend, ol,
+        h('p', { class: 'chart-note' }, `الأسباب الحيوية تمثّل نحو ${fmt.pct(80)} من الحوادث في الفترة المحددة وفق قاعدة باريتو؛ الباقي بلون محايد.`));
     }
 
     /* ── incident cards ── */
@@ -447,7 +457,7 @@ export const incidentsView = {
         h('span', { class: 'nowrap' }, siteName(st, inc.siteId)),
         h('span', { class: 'nowrap mono' }, `${fmt.date(inc.date, { style: 'short' })} · ${fmt.time(inc.time || '')}`)));
 
-      body.appendChild(stepper(inc.investigationStep, inc.status, { small: true }));
+      body.appendChild(stepper(inc.investigationStep, inc.status, { small: true, fmt }));
 
       const prog = h('div', { class: 'progress-row grow', title: 'إنجاز الإجراءات التصحيحية' });
       prog.appendChild(progress({ value: done, max: Math.max(actions.length, 1), tone: actions.length && done === actions.length ? 'good' : null, label: `الإجراءات التصحيحية: ${fmt.num(done)} من ${fmt.num(actions.length)}` }));
@@ -518,7 +528,7 @@ export const incidentsView = {
         api.setTitle(inc.code);
 
         nextBtn.disabled = closed;
-        nextBtn.querySelector('.btn-label').textContent = closed ? 'التحقيق مغلق' : (step >= 4 ? 'إغلاق الحادث' : `الخطوة التالية: ${STEPS[step + 1]}`);
+        nextBtn.querySelector('.btn-label').textContent = closed ? 'التحقيق مغلق' : (step >= 4 ? 'إغلاق الحادث' : `الخطوة التالية: ${digits(fmt, STEPS[step + 1])}`);
 
         /* summary */
         body.appendChild(section('الملخص',
@@ -544,8 +554,8 @@ export const incidentsView = {
         /* investigation path */
         const noteText = closed
           ? 'اكتمل التحقيق وأُغلق الحادث.'
-          : (step >= 4 ? 'جميع الخطوات منجزة — يمكن إغلاق الحادث متى اكتملت الإجراءات التصحيحية.' : `الخطوة الحالية: ${STEPS[step]}. الانتقال للخطوة التالية يحدّث حالة الحادث تلقائياً إلى «${STATUS_FOR_STEP[step + 1]}».`);
-        body.appendChild(section('مسار التحقيق', stepper(step, inc.status, { vertical: true }), h('p', { class: ['note', closed ? 'tone-good' : 'tone-brand'] }, noteText)));
+          : (step >= 4 ? 'جميع الخطوات منجزة — يمكن إغلاق الحادث متى اكتملت الإجراءات التصحيحية.' : `الخطوة الحالية: ${digits(fmt, STEPS[step])}. الانتقال للخطوة التالية يحدّث حالة الحادث تلقائياً إلى «${STATUS_FOR_STEP[step + 1]}».`);
+        body.appendChild(section('مسار التحقيق', stepper(step, inc.status, { vertical: true, fmt }), h('p', { class: ['note', closed ? 'tone-good' : 'tone-brand'] }, noteText)));
 
         /* corrective actions checklist */
         const checklist = h('ul', { class: 'list-reset stack gap-2' });
@@ -605,7 +615,7 @@ export const incidentsView = {
       const patch = { investigationStep: next, status: STATUS_FOR_STEP[next] };
       store.updateIncident(id, patch);
       if (next === 4) toast(`تم إغلاق الحادث ${inc.code}`, { tone: 'good' });
-      else toast(`انتقل التحقيق إلى «${STEPS[next]}» — الحالة: ${STATUS_FOR_STEP[next]}`, { tone: 'brand' });
+      else toast(`انتقل التحقيق إلى «${digits(fmt, STEPS[next])}» — الحالة: ${STATUS_FOR_STEP[next]}`, { tone: 'brand' });
     }
 
     /* ── report modal ── */
@@ -621,7 +631,7 @@ export const incidentsView = {
         h('h3', { class: 'form-section-title' }, 'بيانات الحادث'),
         formField({ label: 'عنوان الحادث', name: 'title', required: true, placeholder: 'وصف موجز لما حدث' }),
         formField({ label: 'نوع الحادث', name: 'type', type: 'select', value: NEAR_MISS_TYPE, options: INCIDENT_TYPES, required: true }),
-        formField({ label: 'الشدة', name: 'severity', type: 'select', value: '2', required: true, options: [1, 2, 3, 4, 5].map((n) => ({ value: n, label: `${n} — ${SEVERITY_LABEL[n]}` })), hint: '1 طفيف … 5 جسيم' }),
+        formField({ label: 'الشدة', name: 'severity', type: 'select', value: '2', required: true, options: [1, 2, 3, 4, 5].map((n) => ({ value: n, label: `${fmt.num(n)} — ${SEVERITY_LABEL[n]}` })), hint: `${fmt.num(1)} طفيف … ${fmt.num(5)} جسيم` }),
         formField({ label: 'الموقع', name: 'siteId', type: 'select', value: defaultSite, options: sites, required: true }),
         formField({ label: 'المكان داخل الموقع', name: 'location', required: true, placeholder: 'مثال: المنطقة ب — الطابق 12' }),
         formField({ label: 'فئة الخطر', name: 'categoryId', type: 'select', value: CATEGORIES[0] ? CATEGORIES[0].id : 'height', options: CATEGORIES.map((c) => ({ value: c.id, label: c.name })), required: true }),
@@ -632,7 +642,7 @@ export const incidentsView = {
         formField({ label: 'أيام العمل المفقودة', name: 'daysLost', type: 'number', value: 0, min: 0, max: 365, step: 1 }),
         h('h3', { class: 'form-section-title' }, 'الأسباب والوصف'),
         formField({ label: 'السبب المباشر', name: 'immediateCause', required: true, placeholder: 'ما الذي أدى مباشرة إلى الحادث؟' }),
-        formField({ label: 'السبب الجذري الأولي', name: 'rootCause', type: 'select', value: ROOT_CAUSES[0], options: ROOT_CAUSES, hint: 'يمكن تعديله بعد تحليل الأسباب (5 لماذا)' }),
+        formField({ label: 'السبب الجذري الأولي', name: 'rootCause', type: 'select', value: ROOT_CAUSES[0], options: ROOT_CAUSES, hint: `يمكن تعديله بعد تحليل الأسباب (${fmt.num(5)} لماذا)` }),
         formField({ label: 'الوصف التفصيلي', name: 'description', type: 'textarea', rows: 4, placeholder: 'تسلسل الأحداث، الأشخاص المعنيون، الظروف المحيطة…' }),
       );
 

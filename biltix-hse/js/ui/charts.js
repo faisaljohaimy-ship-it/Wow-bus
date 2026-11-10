@@ -17,8 +17,9 @@
  *     square at the baseline; 2px lines with round joins; ≥ 8px end markers with a
  *     2px surface ring; 2px surface gaps between touching fills.
  *   - Legend for ≥ 2 series (none for one); selective direct labels (endpoint / max).
- *   - Hover AND keyboard focus show the same tooltip (marks are tabindex=0 with an
- *     Arabic value-first aria-label); lines use a crosshair listing every series.
+ *   - Hover AND keyboard focus show the same tooltip; marks carry an Arabic value-first
+ *     aria-label and use a roving tabindex (one tab stop per chart, arrows / Home / End
+ *     move between marks); lines use a crosshair listing every series.
  *   - Responsive via ResizeObserver (debounced 60ms) → viewBox sized to the
  *     container width; heights fixed per call. RTL: the y-axis sits on the
  *     inline-start (right) side while the x-axis still flows left→right in time.
@@ -396,30 +397,32 @@ function chartShell({ className = '', ariaLabel = '', role = 'group', render }) 
   let offTheme = null;
   let dispose = null;
 
-  const draw = (w) => {
+  const shell = {
+    el, svg, legendHost,
+    get width() { return width || widthOf(el); },
+    redraw: () => draw(0),
+    destroy,
+    onRendered: null,   // set by bindMarks: re-applies the roving tabindex after every render
+  };
+  function draw(w) {
     if (destroyed) return;
     width = w || width || widthOf(el);
     try { render(width); } catch (err) { console.error('[biltix-hse] chart render failed:', err); }
-  };
-  const destroy = () => {
+    if (typeof shell.onRendered === 'function') { try { shell.onRendered(); } catch { /* never break a render */ } }
+  }
+  function destroy() {
     if (destroyed) return;
     destroyed = true;
     if (dispose) dispose();
     if (offTheme) offTheme();
     tooltip.hideIfOwner(el);
-  };
+  }
   dispose = observeWidth(el, draw, () => width);
   offTheme = bus.on('theme:change', () => {
     if (!el.isConnected) { destroy(); return; }
     requestAnimationFrame(() => draw(0));
   });
-
-  return {
-    el, svg, legendHost,
-    get width() { return width || widthOf(el); },
-    redraw: () => draw(0),
-    destroy,
-  };
+  return shell;
 }
 
 /** Size the svg: viewBox follows the measured width, height is fixed per call. */
@@ -437,6 +440,24 @@ function setViewBox(svg, w, h) {
 let tipEl = null;
 let tipOwner = null;
 let tipListeners = false;
+let tipAnchor = null;      // element the tooltip is anchored to (keyboard focus), else null
+let tipContent = null;     // last payload shown for the anchor (re-anchoring after scroll)
+let focusShownAt = 0;      // performance.now() of the last focus-triggered show
+const FOCUS_SCROLL_GRACE_MS = 250;
+
+/** Scrolling hides pointer tooltips; a focus-anchored tooltip survives the scroll that focus itself caused. */
+function onAnyScroll() {
+  if (!tipEl || tipEl.hidden) return;
+  if (tipAnchor) {
+    if (performance.now() - focusShownAt < FOCUS_SCROLL_GRACE_MS) { tooltip.showAt(tipAnchor, tipContent, { keepStamp: true }); return; }
+    if (!tipAnchor.isConnected) { tooltip.hide(); return; }
+  }
+  tooltip.hide();
+}
+function onScrollEnd() {
+  if (!tipEl || tipEl.hidden || !tipAnchor || !tipAnchor.isConnected) return;
+  tooltip.showAt(tipAnchor, tipContent, { keepStamp: true });
+}
 
 function ensureTooltip() {
   if (tipEl && tipEl.isConnected) return tipEl;
@@ -449,7 +470,8 @@ function ensureTooltip() {
   if (!tipEl.hasAttribute('role')) tipEl.setAttribute('role', 'tooltip');
   if (!tipListeners) {
     tipListeners = true;
-    window.addEventListener('scroll', () => tooltip.hide(), { capture: true, passive: true });
+    window.addEventListener('scroll', onAnyScroll, { capture: true, passive: true });
+    if ('onscrollend' in window) window.addEventListener('scrollend', onScrollEnd, { capture: true, passive: true });
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape') tooltip.hide(); });
     window.addEventListener('blur', () => tooltip.hide());
   }
@@ -481,6 +503,7 @@ export const tooltip = {
     }
     if (note) htmlEl('div', { class: 'tooltip-note', text: note }, tip);
     tipOwner = owner;
+    if (!tooltip._anchoring) { tipAnchor = null; tipContent = null; }   // pointer-driven show: no anchor
     tip.hidden = false;
     tip.style.visibility = 'hidden';
     const rect = tip.getBoundingClientRect();
@@ -504,6 +527,8 @@ export const tooltip = {
     if (!tipEl) return;
     tipEl.hidden = true;
     tipOwner = null;
+    tipAnchor = null;
+    tipContent = null;
   },
 
   /** Hide only when the given chart element owns the current tooltip. */
@@ -511,13 +536,21 @@ export const tooltip = {
     if (tipOwner && (tipOwner === owner || (owner && owner.contains && owner.contains(tipOwner)))) tooltip.hide();
   },
 
-  /** Hide the tooltip and position it next to a DOM/SVG element (keyboard focus). */
-  showAt(target, content) {
+  /**
+   * Show the tooltip anchored to a DOM/SVG element (keyboard focus). The tooltip then ignores
+   * the scroll that focusing an off-screen mark triggers (~250 ms) and re-anchors on scrollend.
+   */
+  showAt(target, content, { keepStamp = false } = {}) {
     let r;
     try { r = target.getBoundingClientRect(); } catch { r = null; }
     if (!r) return;
-    tooltip.show(r.left + r.width / 2, r.top, content);
+    tooltip._anchoring = true;
+    try { tooltip.show(r.left + r.width / 2, r.top, content); } finally { tooltip._anchoring = false; }
+    tipAnchor = target;
+    tipContent = content;
+    if (!keepStamp) focusShownAt = performance.now();
   },
+  _anchoring: false,
 };
 
 /* ------------------------------------------------------------------------- */
@@ -528,13 +561,58 @@ export const tooltip = {
  * Wire tooltips for every descendant carrying `data-i`. `content(i)` returns the
  * tooltip payload. Hover follows the pointer; focus anchors to the mark.
  */
-function bindMarks(shell, content, { onActivate = null } = {}) {
+function bindMarks(shell, content, { onActivate = null, grid = false } = {}) {
   const { el, svg } = shell;
   let active = null;
   const markFor = (target) => {
     const node = target && target.closest ? target.closest('[data-i]') : null;
     return node && svg.contains(node) ? node : null;
   };
+
+  /* Roving tabindex: exactly one mark per chart is in the tab order (RTL-9). Arrow keys,
+     Home and End move between marks; the chart remembers the last mark across re-renders. */
+  let rovingKey = null;
+  const marksOf = () => Array.from(svg.querySelectorAll('.mark[data-i]'));
+  const keyOf = (node) => `${node.getAttribute('data-i')}|${node.getAttribute('data-j') || ''}`;
+  const setRoving = (node, marks = marksOf()) => {
+    rovingKey = keyOf(node);
+    marks.forEach((m) => m.setAttribute('tabindex', m === node ? '0' : '-1'));
+  };
+  shell.onRendered = () => {
+    const marks = marksOf();
+    if (!marks.length) return;
+    const keep = marks.find((m) => keyOf(m) === rovingKey) || marks[0];
+    setRoving(keep, marks);
+  };
+  svg.addEventListener('keydown', (e) => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
+    const node = markFor(e.target);
+    if (!node || !node.classList.contains('mark')) return;
+    const marks = marksOf();
+    const idx = marks.indexOf(node);
+    if (idx < 0) return;
+    const rtl = isRTL(el);
+    const inlineNext = rtl ? 'ArrowLeft' : 'ArrowRight';   // categories flow with the inline direction
+    const inlinePrev = rtl ? 'ArrowRight' : 'ArrowLeft';
+    let target = null;
+    if (grid) {
+      // 2-D matrix: data-i = row, data-j = column
+      const ri = Number(node.getAttribute('data-i'));
+      const ci = Number(node.getAttribute('data-j'));
+      const at = (r, c) => marks.find((m) => Number(m.getAttribute('data-i')) === r && Number(m.getAttribute('data-j')) === c) || null;
+      const rowMarks = marks.filter((m) => Number(m.getAttribute('data-i')) === ri);
+      if (e.key === 'ArrowUp') target = at(ri - 1, ci);
+      else if (e.key === 'ArrowDown') target = at(ri + 1, ci);
+      else if (e.key === inlineNext) target = at(ri, ci + 1);
+      else if (e.key === inlinePrev) target = at(ri, ci - 1);
+      else if (e.key === 'Home') target = rowMarks[0] || null;
+      else target = rowMarks[rowMarks.length - 1] || null;
+    } else if (e.key === 'ArrowDown' || e.key === inlineNext) target = marks[Math.min(marks.length - 1, idx + 1)];
+    else if (e.key === 'ArrowUp' || e.key === inlinePrev) target = marks[Math.max(0, idx - 1)];
+    else target = e.key === 'Home' ? marks[0] : marks[marks.length - 1];
+    e.preventDefault();
+    if (target && target !== node) { setRoving(target, marks); target.focus(); }
+  });
   const setActive = (node) => {
     if (active && active !== node) active.classList.remove('is-active');
     active = node;
@@ -558,6 +636,7 @@ function bindMarks(shell, content, { onActivate = null } = {}) {
   svg.addEventListener('focusin', (e) => {
     const node = markFor(e.target);
     if (!node) return;
+    if (node.classList.contains('mark')) setRoving(node);
     setActive(node);
     const c = payload(node);
     if (c) tooltip.showAt(node, c);
@@ -673,6 +752,7 @@ export function lineChart(opts = {}) {
   };
   let geom = null; // { xs, ys[][], top, bottom, left, right, W, H }
   let hoverLayer = null;
+  let rovingIndex = 0; // the one x-column in the tab order (RTL-9)
 
   const shell = chartShell({ className: 'chart-line', ariaLabel: o.ariaLabel, render });
   const { svg, el } = shell;
@@ -808,7 +888,7 @@ export function lineChart(opts = {}) {
       const desc = series.map((s) => `${fmtTick(s.values[i])} ${s.label}`).join('، ');
       svgEl('rect', {
         x: x0, y: top, width: Math.max(1, x1 - x0), height: plotH, class: 'hit-area', 'data-i': i,
-        tabindex: 0, role: 'img', 'aria-label': `${labels[i] || ''}: ${desc}`,
+        tabindex: i === Math.min(rovingIndex, n - 1) ? 0 : -1, role: 'img', 'aria-label': `${labels[i] || ''}: ${desc}`,
       }, hits);
     }
     hoverLayer = svgEl('g', { class: 'hover-layer', 'aria-hidden': 'true' }, svg);
@@ -844,7 +924,10 @@ export function lineChart(opts = {}) {
   svg.addEventListener('pointerleave', hideHover);
   svg.addEventListener('focusin', (e) => {
     const node = e.target && e.target.closest ? e.target.closest('[data-i]') : null;
-    if (node) showIndex(Number(node.getAttribute('data-i')), 0, 0, node);
+    if (!node) return;
+    rovingIndex = Number(node.getAttribute('data-i')) || 0;
+    svg.querySelectorAll('.hit-area[data-i]').forEach((r) => r.setAttribute('tabindex', r === node ? '0' : '-1'));
+    showIndex(rovingIndex, 0, 0, node);
   });
   svg.addEventListener('focusout', hideHover);
   svg.addEventListener('keydown', (e) => {
@@ -989,10 +1072,10 @@ export function barChart(opts = {}) {
       svgEl('text', { x: rtl ? W - 2 : 2, y: yRow + rowH / 2 + 4, 'text-anchor': rtl ? A.right : A.left, class: 'bar-label', text: labelText }, g);
       const aria = `${f(d.value)} — ${d.label}${d.meta ? `، ${d.meta}` : ''}`;
       if (len >= 1) {
-        svgEl('path', { d: hBarPath(x0, yBar, len, thick, dir), class: 'bar mark', 'data-i': i, tabindex: 0, role: 'img', 'aria-label': aria, style: { fill: d.color } }, g);
+        svgEl('path', { d: hBarPath(x0, yBar, len, thick, dir), class: 'bar mark', 'data-i': i, tabindex: -1, role: 'img', 'aria-label': aria, style: { fill: d.color } }, g);
       } else {
         // zero: a 2px stub so the mark stays visible, honest and focusable
-        svgEl('rect', { x: rtl ? x0 - 2 : x0, y: yBar, width: 2, height: thick, class: 'bar mark is-muted', 'data-i': i, tabindex: 0, role: 'img', 'aria-label': aria, style: { fill: 'var(--line-2)' } }, g);
+        svgEl('rect', { x: rtl ? x0 - 2 : x0, y: yBar, width: 2, height: thick, class: 'bar mark is-muted', 'data-i': i, tabindex: -1, role: 'img', 'aria-label': aria, style: { fill: 'var(--line-2)' } }, g);
       }
       if (o.showValues) {
         const tx = x0 + dir * (len + 6);
@@ -1042,8 +1125,8 @@ export function barChart(opts = {}) {
       const g = svgEl('g', { class: 'bar-col' }, marks);
       svgEl('rect', { x: x - slot / 2, y: top, width: slot, height: plotH + bottom, class: 'hit-area', 'data-i': i }, g);
       const aria = `${f(d.value)} — ${d.label}`;
-      if (len >= 1) svgEl('path', { d: vBarPath(x - barW / 2, y0, barW, len), class: 'bar mark', 'data-i': i, tabindex: 0, role: 'img', 'aria-label': aria, style: { fill: d.color } }, g);
-      else svgEl('rect', { x: x - barW / 2, y: y0 - 2, width: barW, height: 2, class: 'bar mark is-muted', 'data-i': i, tabindex: 0, role: 'img', 'aria-label': aria, style: { fill: 'var(--line-2)' } }, g);
+      if (len >= 1) svgEl('path', { d: vBarPath(x - barW / 2, y0, barW, len), class: 'bar mark', 'data-i': i, tabindex: -1, role: 'img', 'aria-label': aria, style: { fill: d.color } }, g);
+      else svgEl('rect', { x: x - barW / 2, y: y0 - 2, width: barW, height: 2, class: 'bar mark is-muted', 'data-i': i, tabindex: -1, role: 'img', 'aria-label': aria, style: { fill: 'var(--line-2)' } }, g);
       if (o.showValues) svgEl('text', { x, y: y0 - len - 6, 'text-anchor': 'middle', class: 'bar-value', text: f(d.value) }, g);
       if (show.has(i)) svgEl('text', { x, y: H - 8, 'text-anchor': 'middle', class: 'axis-tick', text: fitText(d.label, slot * 1.6, 11) }, g);
     });
@@ -1154,8 +1237,8 @@ export function groupedBars(opts = {}) {
         const v = sr.values[gi];
         const len = (Math.max(0, v) / maxV) * plotH;
         const aria = `${f(v)} ${sr.label} — ${g}`;
-        if (len >= 1) svgEl('path', { d: vBarPath(x, y0, barW, len), class: 'bar mark', 'data-i': gi, 'data-j': si, tabindex: 0, role: 'img', 'aria-label': aria, style: { fill: sr.color } }, grp);
-        else svgEl('rect', { x, y: y0 - 2, width: barW, height: 2, class: 'bar mark is-muted', 'data-i': gi, 'data-j': si, tabindex: 0, role: 'img', 'aria-label': aria, style: { fill: 'var(--line-2)' } }, grp);
+        if (len >= 1) svgEl('path', { d: vBarPath(x, y0, barW, len), class: 'bar mark', 'data-i': gi, 'data-j': si, tabindex: -1, role: 'img', 'aria-label': aria, style: { fill: sr.color } }, grp);
+        else svgEl('rect', { x, y: y0 - 2, width: barW, height: 2, class: 'bar mark is-muted', 'data-i': gi, 'data-j': si, tabindex: -1, role: 'img', 'aria-label': aria, style: { fill: 'var(--line-2)' } }, grp);
         if (gi === best.gi && si === best.si && len >= 1) svgEl('text', { x: x + barW / 2, y: y0 - len - 6, 'text-anchor': 'middle', class: 'value-label is-strong', text: f(v) }, grp);
       });
       if (show.has(gi)) svgEl('text', { x: center, y: H - 8, 'text-anchor': 'middle', class: 'axis-tick', text: fitText(g, slot * 1.5, 11) }, grp);
@@ -1234,12 +1317,16 @@ export function heatmap(opts = {}) {
     const gap = 4;
     const rowHeadW = Math.ceil(Math.min(W * 0.3, Math.max(...rows.map((r) => measure(r, 12)), 0))) + 10;
     const rowTitleW = o.rowTitle ? 18 : 0;
-    const colHeadH = 20;
     const colTitleH = o.colTitle ? 18 : 0;
     const availW = Math.max(40, W - rowHeadW - rowTitleW - gap * (C - 1) - 2);
     let cell;
     if (isNum(o.cellSize)) cell = o.cellSize;
     else cell = clamp(Math.floor(availW / C), num(o.minCell, 26), num(o.maxCell, 72));
+    // Column headers: horizontal when every label fits its column; otherwise rotated 45° (never "التو…") — V7.
+    const headPx = 11;
+    const colLabelWs = cols.map((c) => measure(c, headPx));
+    const rotateHeads = o.rotateHeaders === true || (o.rotateHeaders !== false && colLabelWs.some((lw) => lw > cell + gap - 2));
+    const colHeadH = rotateHeads ? clamp(Math.ceil(Math.max(...colLabelWs, 0) * Math.SQRT1_2) + 16, 48, 96) : 20;
     const gridW = C * cell + gap * (C - 1);
     const gridH = R * cell + gap * (R - 1);
     const naturalW = rowHeadW + rowTitleW + gridW + 2;
@@ -1263,7 +1350,20 @@ export function heatmap(opts = {}) {
 
     const heads = svgEl('g', { class: 'axis matrix-heads', 'aria-hidden': 'true' }, svg);
     if (o.colTitle) svgEl('text', { x: gx0 + gridW / 2, y: 12, 'text-anchor': 'middle', class: 'axis-title', text: o.colTitle }, heads);
-    cols.forEach((c, ci) => svgEl('text', { x: cellX(ci) + cell / 2, y: gy0 - 7, 'text-anchor': 'middle', class: 'axis-tick', text: fitText(c, cell + gap - 2, 11) }, heads));
+    if (!rotateHeads) {
+      cols.forEach((c, ci) => svgEl('text', { x: cellX(ci) + cell / 2, y: gy0 - 7, 'text-anchor': 'middle', class: 'axis-tick', text: fitText(c, cell + gap - 2, headPx) }, heads));
+    } else {
+      // Anchor at the bottom-centre of each column; the label rises at 45° toward the row-header side
+      // (text-anchor end: the text body extends from the anchor, so rotate −45° in RTL, +45° in LTR).
+      const budget = (colHeadH - 12) / Math.SQRT1_2;
+      cols.forEach((c, ci) => {
+        const ax = cellX(ci) + cell / 2;
+        const ay = gy0 - 8;
+        const room = (rtl ? totalW - ax : ax) - 4;                 // keep the label inside the svg on the header side
+        const text = fitText(c, Math.max(24, Math.min(budget, room / Math.SQRT1_2)), headPx);
+        svgEl('text', { x: r2(ax), y: r2(ay), 'text-anchor': 'end', class: 'axis-tick is-rotated', transform: `rotate(${rtl ? -45 : 45} ${r2(ax)} ${r2(ay)})`, text }, heads);
+      });
+    }
     const headX = rtl ? totalW - rowTitleW - 4 : rowTitleW + 4;
     rows.forEach((r, ri) => svgEl('text', { x: headX, y: cellY(ri) + cell / 2 + 4, 'text-anchor': rtl ? A.right : A.left, class: 'label', text: fitText(r, rowHeadW - 10, 12) }, heads));
     if (o.rowTitle) {
@@ -1286,7 +1386,7 @@ export function heatmap(opts = {}) {
         const empty = !color || v === 0 || v === null;
         const rect = svgEl('rect', {
           x, y, width: cell, height: cell, rx: Math.min(6, cell / 4), class: ['cell', 'mark', empty ? 'is-empty' : null],
-          'data-i': ri, 'data-j': ci, tabindex: 0, role: clickable ? 'button' : 'img',
+          'data-i': ri, 'data-j': ci, tabindex: -1, role: clickable ? 'button' : 'img',
           'aria-label': `${label || fmt.num(v === null ? 0 : v)} — ${rowTitle}: ${rows[ri]}، ${colTitle}: ${cols[ci]}`,
           style: { fill: color || 'var(--bg-2)', stroke: color ? 'none' : 'var(--line)', strokeWidth: color ? '0' : '1' },
         }, cellsG);
@@ -1310,6 +1410,7 @@ export function heatmap(opts = {}) {
       rows: [{ value: labelOf(v, ri, ci) || fmt.num(v === null ? 0 : v), label: T.value, color: colorOf(v, ri, ci) || undefined }],
     };
   }, {
+    grid: true,
     onActivate: (node, event) => {
       if (typeof o.onCellClick !== 'function' || !model) return;
       const ri = Number(node.getAttribute('data-i'));
@@ -1390,7 +1491,7 @@ export function segmentedBar(opts = {}) {
       cursor = rtl ? x - gap : x + w + gap;
       const share = shareOf(p.value, total);
       const aria = `${f(p.value)} ${p.label}، ${share}`;
-      svgEl('rect', { x: r2(x), y: 0, width: r2(w), height: h, rx: o.tall ? 4 : 0, class: 'segbar-part mark', 'data-i': idx, tabindex: 0, role: 'img', 'aria-label': aria, style: { fill: p.color } }, g);
+      svgEl('rect', { x: r2(x), y: 0, width: r2(w), height: h, rx: o.tall ? 4 : 0, class: 'segbar-part mark', 'data-i': idx, tabindex: -1, role: 'img', 'aria-label': aria, style: { fill: p.color } }, g);
       if (o.tall) {
         const text = o.showShare ? share : f(p.value);
         const tw = measure(text, 12, { weight: 600, mono: true });

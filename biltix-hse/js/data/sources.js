@@ -1,10 +1,14 @@
 /**
- * Biltix HSE — external data adapters (js/data/sources.js)
+ * Biltix Risk AI — external data adapters (js/data/sources.js)
  *
  * Contract: docs/ARCHITECTURE.md §7.
  *
- *   sources.testConnection({type,url,apiKey,table}) → {ok, latencyMs, message}
- *   sources.importRisks({type,url,apiKey,table})    → {count, risks}   (+ skipped, warnings, ok, message)
+ *   sources.testConnection({type,url,apiKey,table}) → {ok, latencyMs, message}   (+ mapping: recognised columns)
+ *   sources.importRisks({type,url,apiKey,table})    → {count, risks}   (+ skipped, warnings, ok, message, mapping)
+ *
+ * A probe or import only succeeds when the response is tabular risk data: HTML pages and
+ * JavaScript bodies are rejected, and the header mapping must recognise the «الخطر» column
+ * plus at least two other known columns (the detected mapping is reported in the message).
  *   sources.exportCSV(rows, columns, filename)        → csv string (and triggers a download in a browser)
  *   sources.exportJSON(obj, filename)                 → json string (and triggers a download)
  *   sources.downloadTemplateCSV()                     → csv string (risk-register import template, 3 example rows)
@@ -31,6 +35,8 @@ export const ISO_TARGET = 85;
 
 const DAY_MS = 86_400_000;
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1', '0.0.0.0']);
+/** One product name everywhere (V19/RTL-25): the HSE module is a pillar of Biltix Risk AI. */
+export const BRAND = Object.freeze({ product: 'بلتكس Risk AI', hseProduct: 'بلتكس HSE', pillar: 'ركيزة السلامة والصحة المهنية' });
 const CONTROL_DEFAULT_TYPE = 'ضوابط إدارية';
 const RISK_CLOSED = 'مغلق';
 
@@ -44,7 +50,11 @@ export const MESSAGES = Object.freeze({
   notJson: 'الاستجابة ليست بصيغة JSON صالحة. تأكد أن الرابط يعيد مصفوفة سجلات.',
   notArray: 'الاستجابة لا تحتوي على مصفوفة سجلات. المتوقع مصفوفة JSON أو كائن يضم الحقل data أو items أو rows.',
   htmlNotCsv: 'استلمنا صفحة ويب بدل ملف CSV. في Google Sheets استخدم «ملف ← مشاركة ← النشر على الويب» بصيغة CSV ثم انسخ الرابط الناتج.',
+  scriptNotCsv: 'استلمنا شيفرة برمجية (JavaScript) بدل ملف CSV. تأكد أن الرابط يشير إلى ملف CSV منشور وليس إلى صفحة أو سكربت.',
+  jsonNotCsv: 'استلمنا استجابة JSON بدل ملف CSV. اختر نوع المصدر «JSON API» لهذا الرابط أو استخدم رابط التصدير بصيغة CSV.',
+  htmlNotJson: 'استلمنا صفحة ويب (HTML) بدل استجابة JSON. تحقق من أن الرابط يشير إلى نقطة نهاية API تعيد JSON.',
   emptyCsv: 'ملف CSV فارغ أو لا يحتوي على صف عناوين.',
+  unmappedColumns: 'تعذّر التعرف على أعمدة سجل المخاطر: يلزم عمود «الخطر» وعمودان معروفان آخران على الأقل (الموقع، الفئة، الاحتمالية، الشدة، المالك…).',
   supabaseTable: 'يلزم تحديد اسم الجدول في Supabase (مثال: risks).',
   supabaseKey: 'يلزم إدخال مفتاح API (anon key) للاتصال بـ Supabase.',
   unknownType: 'نوع المصدر غير مدعوم. الأنواع المتاحة: JSON API، Google Sheets CSV، Supabase، Webhook.',
@@ -405,6 +415,52 @@ function mapHeaders(headers) {
   return mapping;
 }
 
+/** Arabic labels for the canonical risk fields (used when reporting a detected mapping). */
+const FIELD_LABELS = Object.freeze({
+  code: 'الكود', siteId: 'الموقع', categoryId: 'الفئة', hazard: 'الخطر', activity: 'النشاط',
+  likelihood: 'الاحتمالية', severity: 'الشدة', owner: 'المالك', dueDate: 'تاريخ الاستحقاق', status: 'الحالة',
+  description: 'الوصف', controls: 'الضوابط', residualLikelihood: 'الاحتمالية المتبقية', residualSeverity: 'الشدة المتبقية',
+  legalRef: 'المرجع القانوني', source: 'المصدر', zoneId: 'المنطقة',
+});
+/** A source is accepted only when «الخطر» plus at least this many other known columns are recognised. */
+export const MIN_KNOWN_COLUMNS = 2;
+
+/**
+ * Inspect a header list (or the union of record keys) and decide whether it describes a
+ * risk register: the hazard column must be recognised together with ≥ MIN_KNOWN_COLUMNS
+ * other known columns. Returns { ok, headers, fields, labels, unknown, message }.
+ */
+export function describeMapping(headersOrRecords) {
+  const headers = Array.isArray(headersOrRecords) && headersOrRecords.every((h) => typeof h === 'string')
+    ? headersOrRecords.map((h) => text(h)).filter(Boolean)
+    : Array.from(new Set(arr(headersOrRecords).filter(isObj).flatMap((r) => Object.keys(r)))).map((h) => text(h)).filter(Boolean);
+  const mapping = mapHeaders(headers);
+  const fields = Array.from(new Set(mapping.values()));
+  const labels = fields.map((f) => FIELD_LABELS[f] || f);
+  const unknown = headers.filter((h) => !mapping.has(h));
+  const hasHazard = fields.includes('hazard');
+  const ok = hasHazard && fields.length - 1 >= MIN_KNOWN_COLUMNS;
+  const detected = labels.length ? `الأعمدة المتعرَّف عليها: ${labels.join('، ')}` : 'لم يُتعرَّف على أي عمود';
+  const received = headers.length ? ` · الأعمدة المستلمة: ${headers.slice(0, 8).join('، ')}${headers.length > 8 ? '…' : ''}` : '';
+  const message = ok ? detected : `${MESSAGES.unmappedColumns} ${detected}${received}.`;
+  return { ok, headers, fields, labels, unknown, hasHazard, message };
+}
+
+/** Body sniffing: a CSV/JSON endpoint that answers with a web page or a script is not a data source. */
+function looksLikeHtml(body) {
+  const head = String(body || '').slice(0, 2048);
+  return /^\s*(?:<!doctype\b|<html\b|<head\b|<body\b|<\?xml\b)/i.test(head) || (/^\s*</.test(head) && /<\/(?:html|head|body|div|script|title|p|table)>/i.test(String(body || '')));
+}
+function looksLikeScript(body) {
+  const head = String(body || '').slice(0, 2048).replace(/^﻿/, '');
+  if (/^\s*(?:\/\/|\/\*|['"]use strict['"];?)/.test(head)) return true;
+  if (/^\s*(?:import\s+[\w{*]|export\s+(?:default|const|function|class|\{)|(?:const|let|var)\s+[\w$]+\s*=|(?:async\s+)?function\s*[\w$]*\s*\(|\(\s*(?:async\s+)?function\b|window\.|document\.|class\s+[\w$]+\s*(?:extends|\{))/.test(head)) return true;
+  return /<script\b/i.test(head);
+}
+function looksLikeJson(body) {
+  return /^\s*[[{]/.test(String(body || '').replace(/^﻿/, ''));
+}
+
 const CATEGORY_RULES = [
   ['ergonomic', /مناول|ارجونوم|ergonom|manual handling|posture/],
   ['scaffold', /سقال|scaffold/],
@@ -613,17 +669,28 @@ async function fetchRecords({ type, url, apiKey, table }, limit) {
   if (!result.ok) return { ok: false, message: failureMessage(result), records: [], latencyMs: result.latencyMs, status: result.status };
 
   const body = await readText(result.response);
+  const fail = (message) => ({ ok: false, message, records: [], latencyMs: result.latencyMs, status: result.status });
   if (kind === 'sheets') {
-    if (/^\s*<(!doctype|html)/i.test(body)) return { ok: false, message: MESSAGES.htmlNotCsv, records: [], latencyMs: result.latencyMs, status: result.status };
+    if (looksLikeHtml(body)) return fail(MESSAGES.htmlNotCsv);
+    if (looksLikeScript(body)) return fail(MESSAGES.scriptNotCsv);
+    if (looksLikeJson(body)) return fail(MESSAGES.jsonNotCsv);
     const csv = parseCSV(body);
-    if (!csv.headers.length) return { ok: false, message: MESSAGES.emptyCsv, records: [], latencyMs: result.latencyMs, status: result.status };
-    return { ok: true, message: '', records: csv.records.slice(0, limit), latencyMs: result.latencyMs, status: result.status };
+    if (!csv.headers.length) return fail(MESSAGES.emptyCsv);
+    // C-14: a CSV is accepted only when its header row reads as a risk register.
+    const mapping = describeMapping(csv.headers);
+    if (!mapping.ok) return fail(mapping.message);
+    return { ok: true, message: '', records: csv.records.slice(0, limit), latencyMs: result.latencyMs, status: result.status, mapping };
   }
+  if (looksLikeHtml(body)) return fail(MESSAGES.htmlNotJson);
+  if (!looksLikeJson(body) && looksLikeScript(body)) return fail(MESSAGES.notJson);
   const json = parseJsonText(body);
-  if (json.error) return { ok: false, message: json.error, records: [], latencyMs: result.latencyMs, status: result.status };
+  if (json.error) return fail(json.error);
   const records = recordsFromJson(json.value);
-  if (!records) return { ok: false, message: MESSAGES.notArray, records: [], latencyMs: result.latencyMs, status: result.status };
-  return { ok: true, message: '', records: records.slice(0, limit), latencyMs: result.latencyMs, status: result.status };
+  if (!records) return fail(MESSAGES.notArray);
+  // Same mapping gate for JSON / Supabase rows (an empty result set is still a valid connection).
+  const mapping = records.length ? describeMapping(records) : null;
+  if (mapping && !mapping.ok) return fail(mapping.message);
+  return { ok: true, message: '', records: records.slice(0, limit), latencyMs: result.latencyMs, status: result.status, mapping };
 }
 
 async function pingWebhook(url) {
@@ -632,8 +699,8 @@ async function pingWebhook(url) {
   const started = nowMs();
   const res = await postWebhook(parsed.href, {
     type: 'ping',
-    source: 'Biltix HSE',
-    text: 'اختبار اتصال من مركز قيادة السلامة والصحة المهنية — بلتكس HSE',
+    source: 'Biltix Risk AI',
+    text: 'اختبار اتصال من بلتكس Risk AI — ركيزة السلامة والصحة المهنية',
     sentAt: new Date().toISOString(),
   });
   const latencyMs = Math.round(nowMs() - started);
@@ -653,7 +720,12 @@ async function testConnection(config = {}) {
     if (!res.ok) return { ok: false, latencyMs: res.latencyMs, message: res.message, status: res.status };
     const label = TYPE_LABELS[kind] || kind;
     const sample = res.records.length ? ` — تم استلام ${safeNum(res.records.length)} سجل تجريبي` : ' — الاستجابة صحيحة لكنها فارغة';
-    return { ok: true, latencyMs: res.latencyMs, status: res.status, count: res.records.length, message: `تم الاتصال بنجاح بـ ${label} خلال ${safeNum(res.latencyMs)} مللي ثانية${sample}.` };
+    const mapped = res.mapping && res.mapping.labels && res.mapping.labels.length ? ` · ${res.mapping.message}` : '';
+    return {
+      ok: true, latencyMs: res.latencyMs, status: res.status, count: res.records.length,
+      mapping: res.mapping ? { fields: res.mapping.fields, labels: res.mapping.labels, unknown: res.mapping.unknown } : null,
+      message: `تم الاتصال بنجاح بـ ${label} خلال ${safeNum(res.latencyMs)} مللي ثانية${sample}${mapped}.`,
+    };
   } catch (err) {
     return { ok: false, latencyMs: 0, message: MESSAGES.network, status: 0, error: err && err.message ? err.message : String(err) };
   }
@@ -670,10 +742,14 @@ async function importRisks(config = {}, options = {}) {
     if (!res.ok) return { count: 0, risks: [], skipped: 0, warnings: [], ok: false, message: res.message, latencyMs: res.latencyMs };
     const mapped = mapRiskRows(res.records, { ...options, sourceLabel: `استيراد — ${TYPE_LABELS[kind] || kind}` });
     const ok = mapped.risks.length > 0;
+    const columns = res.mapping && res.mapping.labels && res.mapping.labels.length ? ` · ${res.mapping.message}` : '';
     const message = ok
-      ? `تم استيراد ${safeNum(mapped.risks.length)} مخاطرة من ${TYPE_LABELS[kind] || kind}${mapped.skipped ? ` وتجاهل ${safeNum(mapped.skipped)} صفًا دون وصف للخطر` : ''}.`
+      ? `تم استيراد ${safeNum(mapped.risks.length)} مخاطرة من ${TYPE_LABELS[kind] || kind}${mapped.skipped ? ` وتجاهل ${safeNum(mapped.skipped)} صفًا دون وصف للخطر` : ''}${columns}.`
       : MESSAGES.noRows;
-    return { count: mapped.risks.length, risks: mapped.risks, skipped: mapped.skipped, warnings: mapped.warnings, ok, message, latencyMs: res.latencyMs };
+    return {
+      count: mapped.risks.length, risks: mapped.risks, skipped: mapped.skipped, warnings: mapped.warnings, ok, message, latencyMs: res.latencyMs,
+      mapping: res.mapping ? { fields: res.mapping.fields, labels: res.mapping.labels, unknown: res.mapping.unknown } : null,
+    };
   } catch (err) {
     return { count: 0, risks: [], skipped: 0, warnings: [], ok: false, message: MESSAGES.network, error: err && err.message ? err.message : String(err) };
   }
@@ -833,7 +909,7 @@ function buildReport(state, opts = {}) {
   if (!range && fromOpt) range = Math.max(1, Math.round((toOpt.getTime() - fromOpt.getTime()) / DAY_MS) + 1);
   if (!range) range = Number(s.filters && s.filters.range) > 0 ? Number(s.filters.range) : 30;
   const filters = { siteId: text(opts.siteId) || (s.filters && s.filters.siteId) || 'all', range, search: '' };
-  const company = isObj(s.company) ? s.company : { name: 'بلتكس', product: 'Biltix HSE' };
+  const company = isObj(s.company) ? s.company : { name: 'بلتكس', product: BRAND.product, hseProduct: BRAND.hseProduct, pillar: BRAND.pillar };
   const site = filters.siteId !== 'all' ? arr(s.sites).find((x) => x.id === filters.siteId) : null;
   const scopeLabel = site ? site.name : 'جميع المواقع';
 
@@ -970,7 +1046,7 @@ function buildReport(state, opts = {}) {
   if (k.inspectionsDue > 0) recommendations.push({ tone: 'warning', text: `تنفيذ ${count(k.inspectionsDue, F.inspection)} مستحقة أو متأخرة وتوثيق نتائجها خلال الأسبوع.` });
   if (isoBelow.length) recommendations.push({ tone: 'warning', text: `خطة تحسين لبنود ISO 45001 دون المستهدف (${isoBelow.map((c) => c.id).join('، ')}) مع مالك ومهلة لكل فجوة قبل التدقيق الداخلي القادم.` });
   if (legalCounts['فجوة'] > 0 || legalCounts['جزئي'] > 0) recommendations.push({ tone: 'warning', text: `معالجة ${num(legalCounts['فجوة'] + legalCounts['جزئي'])} متطلبًا نظاميًا غير مكتمل الامتثال في السجل القانوني وتحديث تواريخ المراجعة.` });
-  if (integ.degraded > 0 || integ.disconnected > 0) recommendations.push({ tone: 'warning', text: `استعادة ${num(integ.degraded + integ.disconnected)} تكاملًا متدهورًا أو منقطعًا لضمان اكتمال بيانات الحساسات والحضور في لوحة القيادة.` });
+  if (integ.degraded > 0 || integ.disconnected > 0) recommendations.push({ tone: 'warning', text: `استعادة ${num(integ.degraded + integ.disconnected)} تكاملًا متدهورًا أو منقطعًا لضمان اكتمال بيانات الحساسات والحضور في قمرة القيادة.` });
   if (k.capaClosure < 80) recommendations.push({ tone: 'warning', text: `رفع نسبة إغلاق الإجراءات التصحيحية من ${pct(k.capaClosure)} إلى 80% عبر مراجعة أسبوعية للإجراءات المتأخرة.` });
   if (!recommendations.length) recommendations.push({ tone: 'good', text: 'الأداء ضمن المستهدفات؛ يُوصى بالحفاظ على وتيرة الجولات الميدانية واجتماعات صندوق الأدوات وتحديث تقييمات المخاطر قبل كل مرحلة جديدة.' });
 
@@ -988,8 +1064,8 @@ function buildReport(state, opts = {}) {
   const cadence = kind === 'quarter' ? 'الربعي' : 'الشهري';
   return {
     title: `تقرير السلامة والصحة المهنية ${cadence} — ${company.name || 'بلتكس'} — ${kind === 'quarter' ? windowLabel : period.month}`,
-    subtitle: `${company.product || 'Biltix HSE'} · ${scopeLabel} · ${rangeLabel}`,
-    company: { name: company.name, product: company.product, tagline: company.tagline },
+    subtitle: `${company.product || BRAND.product} · ${company.pillar || BRAND.pillar} · ${scopeLabel} · ${rangeLabel}`,
+    company: { name: company.name, product: company.product || BRAND.product, hseProduct: company.hseProduct || BRAND.hseProduct, pillar: company.pillar || BRAND.pillar, tagline: company.tagline },
     generatedAt: new Date().toISOString(),
     period: period.label,
     periodInfo: period,
@@ -1012,10 +1088,12 @@ export const sources = {
   parseCSV,
   toCSV,
   mapRiskRows,
+  describeMapping,
   validateUrl,
   parseDate,
   TEMPLATE_COLUMNS,
   MESSAGES,
+  BRAND,
 };
 
 export default sources;
