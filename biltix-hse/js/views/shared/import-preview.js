@@ -41,13 +41,13 @@ const STYLE_TEXT = `
 .imp-status > svg { flex: none; }
 .imp-status.is-valid { color: var(--good-text); }
 .imp-status.is-invalid { color: var(--critical-text); }
-.imp-issues { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; min-inline-size: 12rem; }
+.imp-issues { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; min-inline-size: 14rem; max-inline-size: 24rem; }
 .imp-issue { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 6px; align-items: start; font-size: var(--fs-xs); line-height: 1.5; color: var(--ink-2); }
 .imp-issue > svg { margin-block-start: 2px; }
 .imp-issue.is-error > svg { color: var(--critical-text); }
 .imp-issue.is-warning > svg { color: var(--warning-text); }
 .imp-issue strong { color: var(--ink-1); font-weight: 600; }
-.imp-hazard { display: block; min-inline-size: 10rem; max-inline-size: 26rem; overflow-wrap: anywhere; }
+.imp-hazard { display: block; min-inline-size: 9rem; max-inline-size: 18rem; overflow-wrap: anywhere; }
 .imp-num { font-variant-numeric: tabular-nums; white-space: nowrap; unicode-bidi: isolate; }
 .imp-note { font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.55; }
 .imp .table-wrap { max-block-size: min(52vh, 520px); }
@@ -85,7 +85,7 @@ export function openImportPreview(ctx, { source = {}, onCommitted = null, return
   const { components, store, bus, fmt, router } = ctx || {};
   const sources = (ctx && ctx.sources) || {};
   if (!components || typeof components.modal !== 'function') return { close() {} };
-  const { h, modal, button, glyph, svgIcon, toast, dataTable, segmented, loadingState, errorState, emptyState } = components;
+  const { h, modal, button, glyph, svgIcon, toast, dataTable, segmented, loadingState, errorState, emptyState, offlineState } = components;
   const t = (k, p) => i18n.t(k, p);
   const tn = (k, n, p) => i18n.tn(k, n, p);
   const en = () => i18n.lang() === 'en';
@@ -121,12 +121,13 @@ export function openImportPreview(ctx, { source = {}, onCommitted = null, return
   /* ── helpers ── */
 
   const sites = () => arr(store && store.state && store.state.sites);
-  function siteText(id) {
+  /** Site code (RUH-01) with the localized site name as its tooltip — keeps the preview table compact. */
+  function siteCell(id) {
     if (!id) return '—';
     const s = sites().find((x) => x && x.id === id);
     if (!s) return String(id);
-    const name = i18n.L(s, 'name', 'sites') || s.name || id;
-    return s.code ? `${name} · ${s.code}` : name;
+    const name = String(i18n.L(s, 'name', 'sites') || s.name || id);
+    return h('span', { class: 'mono nowrap', dir: 'ltr', title: name }, s.code || name, h('span', { class: 'sr-only' }, ` — ${name}`));
   }
   const fieldLabel = (f) => (i18n.has(`import.fields.${f}`) ? t(`import.fields.${f}`) : String(f || ''));
 
@@ -235,29 +236,27 @@ export function openImportPreview(ctx, { source = {}, onCommitted = null, return
       columns: [
         { key: 'row', label: t('import.table.row'), align: 'end', priority: 'high', render: (r) => h('span', { class: 'imp-num mono' }, num(r.row)), sortValue: (r) => r.row },
         { key: 'valid', label: t('import.table.status'), priority: 'high', render: statusCell, sortValue: (r) => (r.valid ? 1 : 0) },
+        { key: 'issues', label: t('import.table.issues'), priority: 'high', sortable: false, render: issuesCell },
         { key: 'hazard', label: t('import.table.hazard'), priority: 'high', render: (r) => h('span', { class: 'imp-hazard', dir: 'auto' }, (r.data && r.data.hazard) || '—'), sortValue: (r) => (r.data && r.data.hazard) || '' },
-        { key: 'site', label: t('import.table.site'), priority: 'medium', render: (r) => siteText(r.data && r.data.siteId), sortValue: (r) => (r.data && r.data.siteId) || '' },
-        { key: 'category', label: t('import.table.category'), priority: 'low', render: (r) => (r.data && r.data.categoryId ? i18n.label('hseCategory', r.data.categoryId) : '—'), sortable: false },
+        { key: 'site', label: t('import.table.site'), priority: 'medium', render: (r) => siteCell(r.data && r.data.siteId), sortValue: (r) => (r.data && r.data.siteId) || '' },
         { key: 'score', label: t('import.table.score'), priority: 'medium', sortable: false, render: (r) => {
           const L = r.data && r.data.likelihood; const S = r.data && r.data.severity;
           return h('span', { class: 'imp-num', dir: 'ltr' }, `${L ? num(L) : '—'} × ${S ? num(S) : '—'}`);
         } },
-        { key: 'due', label: t('import.table.due'), priority: 'low', render: (r) => (r.data && r.data.dueDate && fmt ? h('span', { class: 'imp-num' }, fmt.date(r.data.dueDate)) : '—'), sortValue: (r) => (r.data && r.data.dueDate) || '' },
-        { key: 'owner', label: t('import.table.owner'), priority: 'low', render: (r) => (r.data && r.data.owner ? i18n.term(r.data.owner) : '—'), sortable: false },
-        { key: 'issues', label: t('import.table.issues'), priority: 'high', sortable: false, render: issuesCell },
+        { key: 'due', label: t('import.table.due'), priority: 'low', render: (r) => (r.data && r.data.dueDate && fmt ? h('span', { class: 'imp-num nowrap' }, fmt.date(r.data.dueDate, { style: 'numeric' })) : '—'), sortValue: (r) => (r.data && r.data.dueDate) || '' },
       ],
       rows: rowsFor(filter),
       initialSort: { key: 'row', dir: 'asc' },
     });
 
-    body.replaceChildren(
+    body.replaceChildren(...[
       counts,
       mapping,
       m && m.ok === false ? h('div', { class: 'note', role: 'note', style: { '--tone': 'var(--warning)' } }, msgOf(m)) : null,
       h('div', { class: 'imp-toolbar' }, seg.el),
       table.el,
       h('p', { class: 'imp-note' }, t('import.rule'), ' ', t('import.target')),
-    );
+    ].filter(Boolean));
     setCommit(validCount);
   }
 
@@ -272,6 +271,12 @@ export function openImportPreview(ctx, { source = {}, onCommitted = null, return
   function run() {
     const my = ++token;
     if (typeof sources.importPreview !== 'function') { showError({ message: t('import.unavailable'), messageEn: t('import.unavailable') }); return Promise.resolve(); }
+    // A remote preview needs the network: offline → an offline state that retries once the browser is back online.
+    if (remote && typeof navigator !== 'undefined' && navigator.onLine === false && typeof offlineState === 'function') {
+      setCommit(0);
+      body.replaceChildren(offlineState({ retry: () => { if (!closed) run(); } }));
+      return Promise.resolve();
+    }
     showLoading();
     let result;
     try { result = sources.importPreview(source); } catch (err) { result = { ok: false, total: 0, message: String(err && err.message || err), messageEn: String(err && err.message || err) }; }

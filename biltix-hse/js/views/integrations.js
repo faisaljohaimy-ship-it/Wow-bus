@@ -42,7 +42,6 @@ const STYLE_TEXT = `
 .view-integrations .intg-summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin: 0; }
 .view-integrations .intg-summary-item { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px 6px 8px; border-radius: var(--radius-md); background: var(--bg-1); border: 1px solid var(--line); }
 .view-integrations .intg-summary-item dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink-1); min-inline-size: 1.5ch; }
-.view-integrations .intg-summary-item.is-zero { opacity: .62; }
 .view-integrations .intg-summary-item.is-zero dd { color: var(--ink-3); }
 .view-integrations .intg-summary-label { font-size: var(--fs-sm); color: var(--ink-2); font-weight: 600; margin-inline-end: 4px; }
 .view-integrations .intg-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); flex-wrap: wrap; }
@@ -79,6 +78,8 @@ const STYLE_TEXT = `
 .view-integrations .intg-ds dd { margin: 0; color: var(--ink-1); font-size: var(--fs-sm); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .view-integrations #int-datasource { scroll-margin-block-start: var(--space-4); }
 @media (max-width: 959.98px) { .view-integrations #int-datasource { scroll-margin-block-start: calc(var(--appbar-h) + var(--space-4)); } }
+/* Status badges on the page plane sit on an opaque surface (the ambient background must not lower their contrast). */
+.view-integrations .view-actions .status-badge { background: linear-gradient(var(--tone-soft), var(--tone-soft)), var(--bg-1); }
 .view-integrations .num { font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
 @container main (max-width: 640px) {
   .view-integrations .filter-bar-group.is-segmented, .view-integrations .filter-bar-group.is-select { flex-basis: 100%; flex-wrap: wrap; }
@@ -244,7 +245,7 @@ export default {
           h('span', { class: 'code-tag' }, 'SEC-09'),
           h('h1', { tabindex: '-1' }, t('integrations.title')),
           h('p', { class: 'view-lead' }, t('integrations.lead'))),
-        h('div', { class: 'view-actions' }, statusBadge(safe(() => status.mode(store.state), 'demo') === 'demo' ? 'demo' : safe(() => status.source(store.state).status, 'not_connected'), { size: 'lg' })));
+        h('div', { class: 'view-actions' }, statusBadge(safe(() => status.mode(store.state), 'demo') === 'demo' ? 'demo' : safe(() => status.source(store.state).status, 'not_connected'))));
     }
     function buildBanner() {
       const demo = safe(() => status.mode(store.state), 'demo') === 'demo';
@@ -319,9 +320,10 @@ export default {
         cells.push(statCell(t('integrations.card.records'), h('span', { class: 'num' }, fmt.num(Number(rec.recordsPerDay) || 0))));
         cells.push(statCell(t('integrations.card.mode'), i18n.label('connectorMode', rec.mode)));
       }
-      refs.statsHost.replaceChildren(
+      refs.statsHost.replaceChildren(...[
         rec.simulated === false ? null : h('div', { class: 'intg-sim' }, h('span', { class: 'sim-tag' }, svgIcon('flask', 11), t('integrations.card.simulated'))),
-        h('div', { class: 'int-stats' }, ...cells));
+        h('div', { class: 'int-stats' }, ...cells),
+      ].filter(Boolean));
     }
 
     function paintTest(entry) {
@@ -330,11 +332,12 @@ export default {
       const kind = lt.ok ? 'ok' : (lt.opaque ? 'opaque' : 'fail');
       entry.refs.testHost.hidden = false;
       entry.refs.testHost.className = ['intg-test', `is-${kind}`].join(' ');
-      entry.refs.testHost.replaceChildren(
+      entry.refs.testHost.replaceChildren(...[
         glyph(kind === 'ok' ? 'good' : (kind === 'opaque' ? 'warning' : 'critical'), 12),
         h('span', {}, `${t('integrations.card.lastTest')}: ${t(`integrations.card.${kind === 'ok' ? 'testOk' : (kind === 'opaque' ? 'testOpaque' : 'testFail')}`)}`),
         h('span', { class: 'muted', title: riyadhDateTime(fmt, lt.at) }, `· ${relSafe(lt.at)}`),
-        Number.isFinite(Number(lt.latencyMs)) && Number(lt.latencyMs) > 0 ? h('span', { class: 'muted num' }, `· ${msText(Number(lt.latencyMs))}`) : null);
+        Number.isFinite(Number(lt.latencyMs)) && Number(lt.latencyMs) > 0 ? h('span', { class: 'muted num' }, `· ${msText(Number(lt.latencyMs))}`) : null,
+      ].filter(Boolean));
     }
 
     function paintCard(entry, { full = false } = {}) {
@@ -575,7 +578,7 @@ export default {
       if (bannerEl && bannerEl.isConnected) { const b = buildBanner(); bannerEl.replaceWith(b); bannerEl = b; }
       if (dsCard && dsCard.isConnected) { const d = buildDataSource(); dsCard.replaceWith(d); dsCard = d; }
       const headBadge = root.querySelector('.view-head .view-actions');
-      if (headBadge) headBadge.replaceChildren(statusBadge(safe(() => status.mode(store.state), 'demo') === 'demo' ? 'demo' : safe(() => status.source(store.state).status, 'not_connected'), { size: 'lg' }));
+      if (headBadge) headBadge.replaceChildren(statusBadge(safe(() => status.mode(store.state), 'demo') === 'demo' ? 'demo' : safe(() => status.source(store.state).status, 'not_connected')));
     }
 
     let raf = 0;

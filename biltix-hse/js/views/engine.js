@@ -53,6 +53,8 @@ const STYLE_TEXT = `
   .view-engine .explain-steps > li::before { content: counter(xs); display: grid; place-items: center; inline-size: 26px; block-size: 26px; border-radius: 50%; background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--brand-text); font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
   :root[data-numerals="arab"] .view-engine .explain-steps > li::before { content: counter(xs, arabic-indic); }
   .view-engine .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
+/* Status badges on the page plane sit on an opaque surface (the ambient background must not lower their contrast). */
+.view-engine .view-actions .status-badge { background: linear-gradient(var(--tone-soft), var(--tone-soft)), var(--bg-1); }
   .view-engine .num { font-variant-numeric: tabular-nums; }
   .view-engine .eng-trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
   .view-engine .eng-trio > li { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 10px; align-items: start; padding: 12px; border-radius: var(--radius-md); background: var(--bg-2); border: 1px solid var(--line); }
@@ -290,7 +292,7 @@ export default {
           h('h1', { tabindex: '-1' }, t('engine.title')),
           h('p', { class: 'view-lead' }, t('engine.lead', { min: fmt.num(0), max: fmt.num(100) }))),
         h('div', { class: 'view-actions' },
-          statusBadge(pipeStatus(), { size: 'lg' }),
+          statusBadge(pipeStatus()),
           illustrative(),
           h('span', { class: 'text-sm muted' }, tn('engine.pipelinesCount', data.pipelines.length))));
     }
@@ -322,10 +324,11 @@ export default {
         const body = h('div', { class: 'pipeline-layer-body' });
         if (layer.engine) {
           data.pipelines.forEach((p) => {
-            body.appendChild(h('button', { type: 'button', class: ['pipeline-node', 'is-model'], 'data-status': p.status || 'idle', 'aria-label': t('engine.map.nodeAria', { name: pipeName(p) }), onClick: () => selectPipeline(p.id) },
+            body.appendChild(h('button', { type: 'button', class: ['pipeline-node', 'is-model'], 'data-status': p.status || 'idle', onClick: () => selectPipeline(p.id) },
               svgIcon(PIPELINE_ICON[p.id] || 'sliders', 14),
               h('span', {}, pipeName(p)),
-              h('span', { class: 'mono', dir: 'ltr' }, p.version || '—')));
+              h('span', { class: 'mono', dir: 'ltr' }, p.version || '—'),
+              h('span', { class: 'sr-only' }, ` — ${t('engine.map.nodeAction')}`)));
           });
           if (!data.pipelines.length) body.appendChild(h('span', { class: 'pipeline-node' }, svgIcon('sliders', 14), h('span', {}, t('engine.map.none'))));
           body.appendChild(h('span', { class: 'pipeline-gate' }, svgIcon('sparkles', 12), h('span', {}, t('engine.map.gateEngine', { min: fmt.num(0), max: fmt.num(100) }))));
@@ -397,8 +400,9 @@ export default {
         h('div', { class: 'stack gap-2', style: { paddingBlockStart: '6px' } }, fiChart ? fiChart.el : (fi.length ? featureBars(fi, p) : emptyState({ title: t('engine.pipes.fiEmpty') }))));
 
       const acc = Math.max(0, Math.min(100, num(p.acceptanceRatePct)));
-      const segParts = [{ id: 'accept', label: t('engine.pipes.accept'), value: Number(acc.toFixed(1)), color: 'var(--s1)' }, { id: 'override', label: t('engine.pipes.override'), value: Number((100 - acc).toFixed(1)), color: 'var(--s2)' }];
-      const seg = makeChart('segmentedBar', { parts: segParts, tall: true, valueFormat: (v) => fmt.pct(v, 0), ariaLabel: t('engine.pipes.hitlAria', { name }) });
+      const segParts = [{ id: 'accept', label: `${t('engine.pipes.accept')} · ${fmt.pct(acc, 0)}`, value: Number(acc.toFixed(1)), color: 'var(--s1)' }, { id: 'override', label: `${t('engine.pipes.override')} · ${fmt.pct(100 - acc, 0)}`, value: Number((100 - acc).toFixed(1)), color: 'var(--s2)' }];
+      // Thin bar: values live in the legend (no text drawn on the coloured fill).
+      const seg = makeChart('segmentedBar', { parts: segParts, tall: false, valueFormat: (v) => fmt.pct(v, 0), ariaLabel: t('engine.pipes.hitlAria', { name }) });
 
       const krisLoc = arr(loc.kris);
       const kris = arr(p.kris).map((k, i) => ({ ...k, ...(krisLoc[i] || {}) }));

@@ -25,6 +25,8 @@ const STYLE_ID = 'view-dataquality-style';
 const STYLE_TEXT = `
 .view-dataquality .grid-12 { align-items: start; }
 .view-dataquality .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
+/* Status badges on the page plane sit on an opaque surface (the ambient background must not lower their contrast). */
+.view-dataquality .view-actions .status-badge { background: linear-gradient(var(--tone-soft), var(--tone-soft)), var(--bg-1); }
 .view-dataquality .num { font-variant-numeric: tabular-nums; }
 .view-dataquality .dq-anchor { scroll-margin-block-start: var(--space-4); }
 @media (max-width: 959.98px) { .view-dataquality .dq-anchor { scroll-margin-block-start: calc(var(--appbar-h) + var(--space-4)); } }
@@ -224,7 +226,7 @@ export default {
           h('h1', { tabindex: '-1' }, t('dataquality.title')),
           h('p', { class: 'view-lead' }, t('dataquality.lead'))),
         h('div', { class: 'view-actions' },
-          statusBadge(mode === 'demo' ? 'demo' : 'not_connected', { size: 'lg' }),
+          statusBadge(mode === 'demo' ? 'demo' : 'not_connected'),
           live.headBadge,
           h('span', { class: 'text-xs muted' }, t('dataquality.lastBatch', { time: '' }), live.lastBatch),
           button(t('dataquality.auditLog'), { variant: 'ghost', size: 'sm', icon: 'sliders', onClick: () => router.navigate('engine', { section: 'audit' }) })));

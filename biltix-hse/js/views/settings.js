@@ -220,6 +220,8 @@ const STYLE_TEXT = `
 .view-settings .set-danger { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; padding: 12px 14px; border-radius: var(--radius-md); border: 1px solid color-mix(in srgb, var(--critical) 35%, var(--line)); background: color-mix(in srgb, var(--critical) 5%, var(--bg-1)); }
 .view-settings .set-danger-text { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; flex: 1 1 260px; }
 .view-settings .set-ltr { direction: ltr; unicode-bidi: isolate; }
+/* Status badges on the page plane sit on an opaque surface (the ambient background must not lower their contrast). */
+.view-settings .view-actions .status-badge { background: linear-gradient(var(--tone-soft), var(--tone-soft)), var(--bg-1); }
 .view-settings .num { font-variant-numeric: tabular-nums; }
 .view-settings .set-flash { animation: none; }
 `;
@@ -593,7 +595,7 @@ function render(container, ctx) {
   const wTotal = h('div', { class: 'set-total' }, h('span', { class: 'set-total-label' }, t('settings.weights.total'), wTotalValue), wTotalCheck);
   const wPreviewHost = h('div', { class: 'set-preview' });
   const wSaveBtn = button(t('settings.common.save'), { variant: 'primary', icon: 'check', onClick: () => saveWeights() });
-  const wCancelBtn = button(t('settings.common.cancel'), { variant: 'ghost', onClick: () => { wDraft = Object.fromEntries(DOMAINS.map((k) => [k, toInput(savedWeights()[k])])); syncWeightInputs(true); paintWeights(); toast(t('settings.weights.cancelDone'), { tone: 'neutral', timeout: 2200 }); } });
+  const wCancelBtn = button(t('settings.common.cancel'), { variant: 'ghost', onClick: () => { wDraft = Object.fromEntries(DOMAINS.map((k) => [k, toInput(savedWeights()[k])])); syncWeightInputs(true); paintWeights(); wRows.get(DOMAINS[0]).input.focus(); toast(t('settings.weights.cancelDone'), { tone: 'neutral', timeout: 2200 }); } });
   const wResetBtn = button(t('settings.common.reset'), { variant: 'outline', icon: 'refresh', onClick: () => { wDraft = Object.fromEntries(DOMAINS.map((k) => [k, toInput(Math.round(Number(DEFAULTS.weights[k]) * 1000) / 10)])); syncWeightInputs(true); paintWeights(); toast(t('settings.weights.resetDraft'), { tone: 'neutral', timeout: 3000 }); } });
   const wDirty = h('span', { class: 'set-dirty', 'aria-live': 'polite' });
   const wError = h('div', { class: 'set-result' });
@@ -683,6 +685,7 @@ function render(container, ctx) {
     paintDomainScores();
     paintWeights();
     toast(t('settings.weights.saveDone'), { tone: 'good' });
+    try { weightsGroup.focus({ preventScroll: true }); } catch { /* the disabled Save button cannot keep focus */ }
     if (motion && typeof motion.flash === 'function') motion.flash(weightsGroup);
   }
 
@@ -711,7 +714,7 @@ function render(container, ctx) {
   const scaleHost = h('div', { class: 'set-scale', role: 'img', 'aria-label': t('settings.thresholds.scaleAria', { min: numStr(0), max: numStr(100) }) });
   const impactHost = h('dl', { class: 'set-impact' });
   const thSaveBtn = button(t('settings.common.save'), { variant: 'primary', icon: 'check', onClick: () => saveThresholds() });
-  const thCancelBtn = button(t('settings.common.cancel'), { variant: 'ghost', onClick: () => { thDraft = { alert: numStr(savedThresholds().alert), critical: numStr(savedThresholds().critical) }; syncThresholdInputs(true); paintThresholds(); toast(t('settings.thresholds.cancelDone'), { tone: 'neutral', timeout: 2200 }); } });
+  const thCancelBtn = button(t('settings.common.cancel'), { variant: 'ghost', onClick: () => { thDraft = { alert: numStr(savedThresholds().alert), critical: numStr(savedThresholds().critical) }; syncThresholdInputs(true); paintThresholds(); alertInput.focus(); toast(t('settings.thresholds.cancelDone'), { tone: 'neutral', timeout: 2200 }); } });
   const thResetBtn = button(t('settings.common.reset'), { variant: 'outline', icon: 'refresh', onClick: () => { thDraft = { alert: numStr(DEFAULTS.alertThreshold), critical: numStr(DEFAULTS.criticalThreshold) }; syncThresholdInputs(true); paintThresholds(); toast(t('settings.thresholds.resetDraft', { alert: numStr(DEFAULTS.alertThreshold), critical: numStr(DEFAULTS.criticalThreshold) }), { tone: 'neutral', timeout: 3000 }); } });
   const thDirty = h('span', { class: 'set-dirty', 'aria-live': 'polite' });
   const thError = h('div', { class: 'set-result' });
@@ -804,6 +807,7 @@ function render(container, ctx) {
     syncThresholdInputs(true);
     paintThresholds();
     toast(t('settings.thresholds.saveDone', { alert: numStr(savedThresholds().alert), critical: numStr(savedThresholds().critical) }), { tone: 'good' });
+    try { thresholdsGroup.focus({ preventScroll: true }); } catch { /* ignore */ }
     if (motion && typeof motion.flash === 'function') motion.flash(thresholdsGroup);
   }
 
@@ -921,6 +925,7 @@ function render(container, ctx) {
     if (!checkSource(cfg)) return;
     persistSource();
     if (typeof sources.testConnection !== 'function') { dsResult.replaceChildren(note('warning', t('import.unavailable'))); return; }
+    if (!safe(() => status.online(), true)) { dsResult.replaceChildren(note('warning', t('settings.data.offlineTest'))); return; }
     busy(testBtn, true, t('settings.data.testing'));
     dsResult.replaceChildren(note('accent', t('settings.data.testing')));
     let r;
@@ -983,7 +988,7 @@ function render(container, ctx) {
       ] }),
       group({ id: 'settings-import', title: t('settings.data.importTitle'), helper: t('settings.data.importText', { size: sizeText(MAX_FILE_BYTES) }), children: [
         h('div', { class: 'set-actions' }, chooseBtn, templateBtn, riskFileInput),
-        h('details', { class: 'set-fold' }, h('summary', {}, glyph('chevronDown', 14), t('settings.data.columnsTitle')), h('div', { class: 'table-wrap' }, colsTable)),
+        h('details', { class: 'set-fold' }, h('summary', {}, glyph('chevronDown', 14), t('settings.data.columnsTitle')), h('div', { class: 'table-wrap', tabindex: '0', role: 'region', 'aria-label': t('settings.data.columnsAria') }, colsTable)),
       ] })),
   });
   typeSeg.el.classList.add('is-block', 'set-wrapseg');
@@ -1216,16 +1221,18 @@ function render(container, ctx) {
       try { target.focus({ preventScroll: true }); } catch { /* ignore */ }
     }
     const section = SECTIONS.find((s) => s.anchor === anchor) || SECTIONS.find((s) => { const c = view.querySelector(`#${s.anchor}`); return c && c.contains(el); });
-    if (section) setCurrent(section.anchor);
+    if (section) { setCurrent(section.anchor); spyLockUntil = Date.now() + 1200; }
     if (flash && motion && typeof motion.flash === 'function') motion.flash(el);
   }
 
   // Scroll-spy: the nav marks the section nearest the top of the viewport.
   let io = null;
+  let spyLockUntil = 0;   // an explicit jump (nav / deep link) wins over the scroll-spy while the page scrolls there
   if (typeof IntersectionObserver === 'function') {
     const visible = new Map();
     io = new IntersectionObserver((entries) => {
       for (const e of entries) visible.set(e.target.id, e.isIntersecting ? e.boundingClientRect.top : null);
+      if (Date.now() < spyLockUntil) return;
       const firstVisible = SECTIONS.map((s) => s.anchor).find((a) => visible.get(a) !== null && visible.get(a) !== undefined);
       if (firstVisible) setCurrent(firstVisible);
     }, { rootMargin: '-10% 0px -60% 0px', threshold: 0 });
