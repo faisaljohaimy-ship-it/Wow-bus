@@ -396,8 +396,11 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
   font-variant-numeric: tabular-nums;
 }
 .clock-dates { display: flex; flex-direction: column; gap: 0; min-inline-size: 132px; font-size: 10.5px; line-height: 1.3; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-/* Reserve the date lines before the shell's first tick so the app bar does not shift (CLS). */
+/* Reserve the date lines before the shell's first tick so the app bar does not shift (CLS). Only the lines
+   settings.calendar will show keep a placeholder: html[data-calendar] comes from the pre-paint script in
+   index.html and js/app.js applySettings() keeps it in step with the setting. */
 .clock-date:empty::before, .clock-hijri:empty::before { content: "\00a0"; }
+html[data-calendar="gregorian"] .clock-hijri, html[data-calendar="hijri"] .clock-date { display: none; }
 .clock-sep { display: none; }
 
 /* Command palette trigger: a quiet search field */
@@ -567,6 +570,21 @@ kbd.cmdk-kbd, .cmdk-foot kbd, kbd.kbd {
 .data-popover dd { color: var(--ink-1); font-variant-numeric: tabular-nums; min-inline-size: 0; overflow-wrap: anywhere; }
 .data-popover ul { padding-inline-start: 1.1em; display: flex; flex-direction: column; gap: 4px; color: var(--ink-2); }
 .data-popover-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; }
+/* Below 960 px the chip sits too close to the viewport's start edge for a 360 px panel hung from its end edge
+   (at 390 px it ran off-screen in both directions). There the panel hangs from the app bar's end edge with a
+   12 px gutter (the app bar is fixed and full-width here, so this is the viewport edge), stays under the chip,
+   and scrolls inside itself when the viewport is short (phone landscape). Desktop placement is unchanged. */
+@media (max-width: 959.98px) {
+  .data-popover {
+    position: fixed;
+    inset-block-start: calc(var(--appbar-h) - 2px);
+    inset-inline-start: auto;
+    inset-inline-end: var(--space-3);
+    max-block-size: calc(100dvh - var(--appbar-h) - var(--space-3));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
 @keyframes pop-in {
   from { opacity: 0; transform: translateY(-4px) scale(.98); }
   to   { opacity: 1; transform: none; }

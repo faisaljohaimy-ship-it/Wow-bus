@@ -260,7 +260,7 @@ export default {
         },
       ],
       title: '33/380 kV transformer supply from a distressed supplier threatens the commercial operation date',
-      driverExplanation: 'Activity C3010 (transformer supply) is on the critical path with zero float and a forecast finish of d+72 against a baseline of d+30. The supplier, National Transformers Company, has financial health of 47/100, a credit rating of C, 69% delivery performance and a 180-day lead time. Delay probability 0.78 with a 45-day impact that drives the C3020 → C3030 chain (energisation and grid connection) and triggers damages of SAR 1.2 million per day.',
+      driverExplanation: 'Activity C3010 (transformer supply) is on the critical path with zero float and a forecast finish of d+72 against a baseline of d+30. The supplier, National Transformers Company, has financial health of 47/100, a credit rating of C, 69% delivery performance and a 180-day lead time. Delay probability 0.78 with a 45-day impact that drives the chain from C3020 to C3030 (energisation and grid connection) and triggers damages of SAR 1.2 million per day.',
       evidence: {
         excerpt: 'National Transformers Company · Financial health 47 · Credit C · On-time delivery 69% · Purchase order PO-2026-0388: factory acceptance test (FAT) postponed for the second time — latest date d+41',
       },
@@ -282,7 +282,7 @@ export default {
       },
       history: [
         { text: 'Automatically detected — score 100 (Red), confidence 90%' },
-        { text: 'Immediate escalation — score 100 ≥ 85 (email, Slack, Teams)' },
+        { text: 'Immediate escalation — score 100 is at or above 85 (email, Slack, Teams)' },
         { text: 'Recommendation edited: added a standby contract for a transformer from an alternative supplier' },
         { text: 'Resident inspection team at the factory for 10 days; FAT for the first transformer scheduled for d+41' },
       ],
@@ -325,7 +325,7 @@ export default {
     },
     AR12: {
       title: 'PV module concentration on a single supplier with the third shipment 19 days late',
-      driverExplanation: '19.6% of portfolio spend is with a single supplier (Shanghai Photovoltaic Panel Factory) with 74% delivery performance and financial health of 71. The third shipment (260 MW) is 19 days behind the PO-2026-0457 §5.1 schedule, and the supplier\'s damages cap (5% of the shipment ≈ SAR 2.7 million) does not cover even one day of the project\'s damages to NEOM.',
+      driverExplanation: '19.6% of portfolio spend is with a single supplier (Shanghai Photovoltaic Panel Factory) with 74% delivery performance and financial health of 71. The third shipment (260 MW) is 19 days behind the PO-2026-0457 §5.1 schedule, and the supplier\'s damages cap (5% of the shipment, about SAR 2.7 million) does not cover even one day of the project\'s damages to NEOM.',
       evidence: {
         ref: 'SUP3 — PO-2026-0457 shipment 3',
         excerpt: 'Shanghai Photovoltaic Panel Factory · Share of spend 19.6% · Single source · On-time delivery 74% · Shipment 3: planned ETD d−24 · Actual: not shipped (19 days late) · Stated reason: shortage of TOPCon cells',
@@ -363,7 +363,7 @@ export default {
         impact: 'Reduces the score to ~55',
         alternatives: ['Move insurance cover for the cable rework to a CAR claim'],
       },
-      responseParams: { PMO: { trend: 'Deteriorating — CPI 0.95 → 0.91', kpi: 'CPI 0.91 / VAC −SAR 237 million' } },
+      responseParams: { PMO: { trend: 'Deteriorating — CPI from 0.95 to 0.91', kpi: 'CPI 0.91 / VAC −SAR 237 million' } },
       history: [
         { text: 'Automatically detected — score 80 (Red), confidence 86%' },
         { text: 'Recommendation accepted; task MT-0209 — freeze changes and submit CO-052' },
@@ -401,7 +401,7 @@ export default {
     },
     AR15: {
       title: 'Performance ratio test methodology undefined — §9.4 (dispute likely at acceptance)',
-      driverExplanation: 'Clause 9.4 requires a performance ratio of ≥ 84% using the "generally accepted methodology" without naming IEC 61724-1 or defining the measurement period or temperature correction. The difference between the two methodologies at NEOM temperatures can reach 1.6 percentage points, and each point equals a performance penalty of ~SAR 9 million; the test procedure submitted for approval is 13 days late.',
+      driverExplanation: 'Clause 9.4 requires a performance ratio of 84% or more using the "generally accepted methodology" without naming IEC 61724-1 or defining the measurement period or temperature correction. The difference between the two methodologies at NEOM temperatures can reach 1.6 percentage points, and each point equals a performance penalty of ~SAR 9 million; the test procedure submitted for approval is 13 days late.',
       evidence: {
         excerpt: 'The Contractor guarantees a plant performance ratio of at least 84% at the performance test, calculated according to the "generally accepted methodology".',
       },
@@ -472,7 +472,7 @@ export default {
       responseParams: { Legal: { clauseRef: 'CT-2026-041 §4.12, §20.1 and §13.2' } },
       history: [
         { text: 'Automatically detected — score 100 (Red), confidence 92%' },
-        { text: 'Immediate escalation — score 100 ≥ 85 (email, Slack)' },
+        { text: 'Immediate escalation — score 100 is at or above 85 (email, Slack)' },
         { text: 'Recommendation accepted; task MT-0212 assigned to Legal Counsel' },
         { text: 'Draft notice ready; awaiting the attached geotechnical laboratory report' },
       ],
@@ -503,7 +503,7 @@ export default {
       },
       history: [
         { text: 'Automatically detected — score 100 (Red), confidence 91%' },
-        { text: 'Immediate escalation — score 100 ≥ 85' },
+        { text: 'Immediate escalation — score 100 is at or above 85' },
         { text: 'Recommendation accepted; task MT-0213 — tender the second excavation front' },
         { text: 'Two offers received for the second excavation front; award within 5 days' },
       ],
@@ -557,7 +557,7 @@ export default {
       },
       history: [
         { text: 'Automatically detected — score 100 (Red), confidence 90%' },
-        { text: 'Immediate escalation — score 100 ≥ 85 (email, Slack, WhatsApp)' },
+        { text: 'Immediate escalation — score 100 is at or above 85 (email, Slack, WhatsApp)' },
         { text: 'Area evacuated and blasting stopped; recommendation accepted with task MT-0214' },
         { text: 'Geotechnical engineer on site; stabilisation design within 48 hours' },
       ],
@@ -1114,7 +1114,7 @@ export default {
       title: 'Diesel consumption of 1.9 million litres per month with a forecast price adjustment to SAR 1.52',
       driverExplanation: 'Excavation and haulage equipment consumes 1.9 million litres a month; the model forecasts a local price adjustment from SAR 1.38 to SAR 1.52/L within 4–5 months (+10%), i.e. +SAR 266 thousand per month for the remaining 30 months of earthworks, and the contract has no fuel adjustment formula.',
       evidence: {
-        excerpt: 'Diesel fuel for excavation and haulage equipment · 1,900,000 L/month · Current price SAR 1.38/L · 6-month forecast: 1.38 → 1.52 · Volatility 9.6%',
+        excerpt: 'Diesel fuel for excavation and haulage equipment · 1,900,000 L/month · Current price SAR 1.38/L · 6-month forecast: from 1.38 to 1.52 · Volatility 9.6%',
       },
       recommendation: {
         action: 'Include a fuel price variation clause in the next change order claim and improve fleet efficiency (GPS tracking of idle time — target 8% reduction).',

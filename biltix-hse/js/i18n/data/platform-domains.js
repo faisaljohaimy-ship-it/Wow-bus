@@ -239,7 +239,7 @@ export default {
           title: 'Product and performance warranty',
           excerpt: '12-year product warranty and 30-year linear performance warranty with annual degradation not exceeding 0.4%.',
           explanation: 'Warranties in line with the industry standard for TOPCon technology.',
-          benchmark: 'Market benchmark: 12/30 years, degradation ≤ 0.4%; matches.',
+          benchmark: 'Market benchmark: 12/30 years, degradation of 0.4% or less; matches.',
         },
       ],
       obligations: [

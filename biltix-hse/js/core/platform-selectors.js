@@ -1354,8 +1354,9 @@ function riskTimeline(risk, state) {
   history.forEach((h, i) => {
     if (!h) return;
     // historyIndex lets views localise seed history through the aiRisks mirror (history[i].text); runtime entries carry textEn.
-    // Runtime entries may also carry structured fields (store.js riskHistory): historyKind ('status' | 'reassess' | 'assign'
-    // | 'note' …), statusFrom/statusTo (stored enum values), from/to, owner, due — so a view can word them from its dictionaries.
+    // Runtime entries may also carry structured fields (store.js riskHistory): historyKind ('status' | 'dismiss' | 'reopen'
+    // | 'reassess' | 'assign' | 'note'), statusFrom/statusTo (stored enum values), from/to, owner, due — so a view can word
+    // them from its dictionaries ('status' alone is a plain status change; dismiss / reopen sentences also name the reason).
     const entry = { at: h.at, kind: i === 0 && h.at === risk.detectedAt ? 'detected' : 'history', by: h.by || '—', text: h.text || '', textEn: h.textEn || '', historyIndex: i, tone: i === 0 ? ratingTone(rating(risk.score)) : 'neutral' };
     if (typeof h.kind === 'string' && h.kind) entry.historyKind = h.kind;
     for (const k of ['statusFrom', 'statusTo', 'from', 'to', 'owner', 'due']) if (typeof h[k] === 'string' && h[k]) entry[k] = h[k];

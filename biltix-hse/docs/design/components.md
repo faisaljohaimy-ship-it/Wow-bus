@@ -99,19 +99,22 @@ disabled (dashed, 55 %), readonly (bg-2, quiet border). `select.field-control` d
 chevron on the inline-end. `.input-icon` wraps a leading search icon. `.switch[role=switch][aria-checked]`,
 `.form-grid` (auto-fit 220 px), `.form-actions`, `.form-section-title`, `.form-error-summary`.
 
-**Note — native date / time inputs.** `input[type=date|time|datetime-local]` show their value in the
-browser's locale format (order, separators, digits, 12/24 h), whatever the app language or numerals
-setting. This is a platform limitation: the control's text cannot be restyled or localised from CSS/JS,
-and its `value` is always ISO (`2026-11-10`). Everywhere else the app formats every displayed date and
-time through `fmt` (`fmt.date`, `fmt.dateTime`, `fmt.time`; Asia/Riyadh), so do not copy an input's
-display format into other UI.
+**Note — native date / time inputs.** `input[type=date|time|datetime-local]` draw their text in a
+format the browser chooses: it does not follow the app language or the numerals setting (Chromium
+showed `11/10/2026` and `02:05 PM` on an Arabic page with Arabic-Indic numerals). Their `value` is
+always ISO (`2026-11-10`, `14:05`). Do not copy an input's display format into other UI: format
+displayed dates with `fmt` (`fmt.date`, `fmt.dateTime`, `fmt.time`, which show instants in Asia/Riyadh).
 
 ## Segmented, chips, tabs
 
 - `.seg` > `.seg-btn[aria-pressed|aria-checked|aria-selected]` (`.seg-sm`, `.is-block`). Dark:
   brand-tinted selection; light: raised white pill.
 - `.chips` / `.chip-group` > `.chip[aria-pressed]` (`.chip-count`, `.chip-remove`, `.is-sm`,
-  `.chips.is-scroll` = single swipe row on phones).
+  `.chips.is-scroll` = single swipe row below 600 px; a filter-bar chip group marked
+  `.chips.is-scroll` stays a swipe row at any width, other rows wrap from 600 px).
+- Counts and auto-numbers (`.chip-count`, `.tab-count`, `.drawer-tab-count`, `.kanban-count`,
+  `.priority-rank`, `.lifecycle-dot`, `.step-dot`) use `--font-mono-mixed`: IBM Plex Mono has no
+  Arabic-Indic digits, so with `data-numerals="arab"` they come from the Plex Arabic face, not a system font.
 - `.tabs` > `.tab[role=tab][aria-selected]` (+ `.tab-count`): underline tabs for page / card views.
 
 ## Filter bar — `.filter-bar` (components.filterBar)
@@ -152,6 +155,7 @@ width. Bottom sheet: `.is-sheet`.
 
 `.modal-backdrop` > `dialog.modal[.is-sm|.is-lg|.is-xl]` > `.modal-head` + `.modal-body` +
 `.modal-foot`. Elevation 3, radius 14, enters with a 10 px rise. Phones: bottom-aligned.
+Escape closes the topmost modal or drawer, also when focus has fallen to `<body>`.
 
 **Explainer video** — `dialog.modal.video-dialog` > `.modal-body` > `.video-frame` (16:9, near-black)
 holding `video[controls]` (captions styled via `::cue`) or `button.video-poster` (`img` +
@@ -167,8 +171,12 @@ holding `video[controls]` (captions styled via `::cue`) or `button.video-poster`
   `.toast-msg`; `.toast-action`, `.toast-close`). Tone stripe at inline-start. Toasts never claim a
   success that did not happen; simulated operations say "Simulated". While a modal or drawer is open,
   components.js docks `#toasts` inside the topmost dialog (`.toast-stack.is-docked`, in flow between the
-  body and the footer): a toast never covers the dialog's controls and stays outside the inert page, so
-  its `role=status|alert` is still announced. It returns to `<body>` when the dialog closes.
+  body and the footer): a toast never covers the dialog's controls and stays outside the inert page.
+  It returns to `<body>` when the dialog closes. Docked, the stack is capped at 25 % of the viewport
+  height (240 px at most) and scrolls on its own, newest first; toasts keep their full height.
+  Dismissing a focused toast moves focus to the next toast, else back to the control it came from,
+  else to the dialog, so Escape still closes the dialog. A toast older than 1 s loses its live role
+  before the stack moves, so moving does not re-insert a live region that was already shown.
 
 ## Kanban
 
@@ -196,9 +204,8 @@ optional `.priority-action`. Rows ≥ 60 px; re-flows in narrow cards.
 **Note — put `.priority-item` on the `<li>`.** The class (with `.tone-*`, `.is-clickable`,
 `.is-overdue`) goes on the list child itself, not on an `<a>` or `<button>` inside the `<li>`: the row
 separator is removed by `.priority-item:last-child`, and an `<a>` that is the only child of its `<li>`
-is always `:last-child`, so every separator disappears (the rank counter and the grid also expect the
-list child). For a clickable row use `li.priority-item.is-clickable` and put the link / button inside
-`.priority-main` or `.priority-action`.
+is always `:last-child`, so every separator disappears. For a clickable row use
+`li.priority-item.is-clickable` and put the link / button inside `.priority-main` or `.priority-action`.
 
 ## Lifecycle — `ol.lifecycle` > `li.lifecycle-step[data-state]`
 

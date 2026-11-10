@@ -250,7 +250,8 @@ export const inspectionsView = {
       ],
       rows: [],
     });
-    /* Narrow cards: each filter group takes a full row and the status segments may scroll (no overlap). */
+    /* Narrow cards: the type select takes a full row, so the reset button drops to its own row. The segmented status
+       group needs no patch here: css/components.css gives it its own row and wraps its buttons. */
     const tableCardHost = h('div', { style: { minInlineSize: '0' } }, filters.el);
     let filterRo = null;
     if (typeof ResizeObserver === 'function') {
@@ -266,9 +267,7 @@ export const inspectionsView = {
         if (roRaf) cancelAnimationFrame(roRaf);
         roRaf = requestAnimationFrame(() => {
           roRaf = 0;
-          filters.el.querySelectorAll('.filter-bar-group').forEach((g) => { g.style.flex = narrow ? '1 1 100%' : ''; });
-          const seg = filters.el.querySelector('.seg');
-          if (seg) { seg.style.overflowX = narrow ? 'auto' : ''; seg.style.maxInlineSize = narrow ? '100%' : ''; }
+          filters.el.querySelectorAll('.filter-bar-group.is-select').forEach((g) => { g.style.flex = narrow ? '1 1 100%' : ''; });
         });
       });
       filterRo.observe(tableCardHost);

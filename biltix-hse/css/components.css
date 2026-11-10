@@ -723,7 +723,7 @@ a.domain-card:hover, button.domain-card:hover, .domain-card.is-clickable:hover {
 .tab > svg, .drawer-tabs [role="tab"] > svg { inline-size: 15px; block-size: 15px; color: var(--ink-3); }
 .tab[aria-selected="true"] > svg, .drawer-tabs [role="tab"][aria-selected="true"] > svg { color: var(--brand-text); }
 .tab-count, .drawer-tab-count {
-  font-family: var(--font-mono);
+  font-family: var(--font-mono-mixed);
   font-size: 10.5px;
   min-inline-size: 18px;
   padding: 0 6px;
@@ -1361,7 +1361,7 @@ dialog.modal.video-dialog, .video-dialog { inline-size: min(1040px, 100%); }
 .video-poster:hover .video-play { transform: scale(1.05); }
 .video-poster:focus-visible { outline-offset: -4px; }
 .video-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-4); padding-block-start: var(--space-3); font-size: var(--fs-sm); color: var(--ink-2); }
-.video-meta .video-duration { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink-1); }
+.video-meta .video-duration { font-family: var(--font-mono-mixed); font-variant-numeric: tabular-nums; color: var(--ink-1); }
 .video-langs { display: inline-flex; gap: 6px; }
 .video-note { font-size: var(--fs-xs); color: var(--ink-3); }
 /* Inline teaser card that opens the dialog */
@@ -1479,6 +1479,9 @@ dialog.modal.video-dialog, .video-dialog { inline-size: min(1040px, 100%); }
   box-shadow: var(--elev-2);
   color: var(--ink-1);
   overflow: hidden;
+  /* Keep the content height: overflow:hidden drops the flex minimum to 0, so a capped (docked) stack would
+     otherwise squeeze each toast and cut its text off instead of scrolling. */
+  flex: none;
   opacity: 0;
   transform: translateY(10px);
   transition: opacity var(--dur-main) var(--ease-out), transform var(--dur-main) var(--ease-out);
@@ -1489,14 +1492,17 @@ dialog.modal.video-dialog, .video-dialog { inline-size: min(1040px, 100%); }
 .toast.is-leaving { opacity: 0; transform: translateY(6px) scale(.98); }
 /* Docked: while a modal / drawer is open, components.js moves #toasts into the topmost open dialog, in flow between
    its body and its footer. A toast then never covers the dialog's controls (a phone drawer is full width, so a
-   floating stack had no free edge) and stays outside the inert page, so role=status / alert are still announced. */
+   floating stack had no free edge) and stays outside the inert page, so role=status / alert are still announced.
+   It is capped at a quarter of the viewport (a dialog is at most viewport-tall) and scrolls on its own, newest
+   toast first, so the dialog body keeps more room than the stack (390 px tall landscape phone: stack ≤ 97.5 px). */
 dialog > .toast-stack.is-docked {
   position: static;
   inset: auto;
   z-index: auto;
   flex: none;
   inline-size: auto;
-  max-block-size: min(40vh, 300px);
+  max-block-size: min(25vh, 240px);
+  max-block-size: min(25dvh, 240px);
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--space-2) var(--space-5);
@@ -1590,7 +1596,7 @@ dialog > .toast-stack.is-docked .toast { box-shadow: none; }
   min-inline-size: 24px;
   padding: 0 7px;
   text-align: center;
-  font-family: var(--font-mono);
+  font-family: var(--font-mono-mixed);
   font-size: 11px;
   line-height: 20px;
   color: var(--tone-ink, var(--ink-2));
@@ -1862,6 +1868,25 @@ tr.is-flash > td:first-child { box-shadow: inset calc(var(--dir) * 2px) 0 0 var(
 .chip-group, .chips { display: flex; flex-wrap: wrap; gap: 8px; min-inline-size: 0; }
 .chips.is-scroll { --fade-end: to left; }
 :root[dir="ltr"] .chips.is-scroll { --fade-end: to right; }
+/* Swipe row: every .chips.is-scroll row below 600 px of viewport. A filter-bar chip group that a view marks
+   .chips.is-scroll (incidents does below 700 px of view width) is kept on one line, so it gets the swipe row
+   at any viewport width; other .chips.is-scroll rows still wrap from 600 px. */
+.filter-bar-group.is-chips > .chip-group.chips.is-scroll {
+  flex-wrap: nowrap;
+  max-inline-size: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: var(--space-3);
+  scrollbar-width: none;
+  padding-block: 5px 6px;
+  padding-inline-end: 28px;
+  -webkit-mask-image: linear-gradient(var(--fade-end), transparent, black 24px);
+  mask-image: linear-gradient(var(--fade-end), transparent, black 24px);
+}
+.filter-bar-group.is-chips > .chip-group.chips.is-scroll::-webkit-scrollbar { display: none; }
+.filter-bar-group.is-chips > .chip-group.chips.is-scroll > * { flex: none; scroll-snap-align: start; }
 @media (max-width: 599.98px) {
   .chips.is-scroll {
     flex-wrap: nowrap;
@@ -1909,7 +1934,7 @@ tr.is-flash > td:first-child { box-shadow: inset calc(var(--dir) * 2px) 0 0 var(
 .chip[class*="tone-"].is-active, .chip[class*="tone-"][aria-pressed="true"] { background: var(--tone-soft); border-color: var(--tone-line); color: var(--tone-ink); }
 .chip[class*="tone-"] > svg { color: var(--tone-ink); }
 .chip-count {
-  font-family: var(--font-mono);
+  font-family: var(--font-mono-mixed);
   font-size: 10.5px;
   padding: 0 6px;
   border-radius: var(--radius-pill);
@@ -1970,7 +1995,7 @@ tr.is-flash > td:first-child { box-shadow: inset calc(var(--dir) * 2px) 0 0 var(
   inline-size: 28px;
   block-size: 28px;
   border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
+  font-family: var(--font-mono-mixed);
   font-size: var(--fs-sm);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -2057,7 +2082,7 @@ tr.is-flash > td:first-child { box-shadow: inset calc(var(--dir) * 2px) 0 0 var(
   border: 2px solid var(--line-strong);
   background: var(--bg-1);
   color: var(--ink-2);
-  font-family: var(--font-mono);
+  font-family: var(--font-mono-mixed);
   font-size: 11px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;

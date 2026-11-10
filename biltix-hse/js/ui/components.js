@@ -1525,6 +1525,8 @@ function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', 
       overlayHost().appendChild(backdrop);
       // Dock the toast stack inside this dialog before the page goes inert (see dockToasts()).
       openDialogs.push(dialog);
+      dialogApis.set(dialog, api);
+      bindStrayEscape();
       dockToasts();
       Array.from(document.body.children).forEach((child) => {
         if (child === backdrop || child.contains(backdrop) || child.tagName === 'SCRIPT' || child.id === 'toasts') return;
@@ -1706,13 +1708,51 @@ export function menu(anchor, items = [], { ariaLabel = null } = {}) {
 
 /** Open modals / drawers, oldest first (overlay() pushes on open and removes on close). */
 const openDialogs = [];
+/** Open dialog element → its overlay api (for the Escape fallback). */
+const dialogApis = new WeakMap();
+let strayEscapeBound = false;
+
+/**
+ * Escape fallback. An overlay listens for Escape on its backdrop, so a key pressed after focus has fallen to
+ * <body> (the focused node was removed) never reaches it. Such a key closes the topmost open dialog.
+ */
+function bindStrayEscape() {
+  if (strayEscapeBound) return;
+  strayEscapeBound = true;
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    if (e.target !== document.body && e.target !== document.documentElement) return;
+    const top = openDialogs[openDialogs.length - 1];
+    const api = top ? dialogApis.get(top) : null;
+    if (!api || !api.isOpen()) return;
+    e.preventDefault();
+    api.close('escape');
+  });
+}
+
+/** A toast counts as already announced once it has been in the document this long (ms). */
+const TOAST_ANNOUNCED_MS = 1000;
+
+/**
+ * Moving #toasts re-inserts its toasts, and a re-inserted role=alert / role=status node may be announced again.
+ * So before a move, toasts that have been on screen for TOAST_ANNOUNCED_MS lose their live role (they stay
+ * visible and their buttons keep working; app.js already does the same for alerts it announces itself).
+ * A toast raised just before the move keeps its role and is announced at its new place: for example the
+ * "saved" toast of a dialog action that also closes the dialog.
+ */
+function settleToastRoles(stack) {
+  const now = Date.now();
+  for (const n of stack.children) {
+    if (n.__toastAt && now - n.__toastAt >= TOAST_ANNOUNCED_MS && n.hasAttribute('role')) n.removeAttribute('role');
+  }
+}
 
 /**
  * While a modal or drawer is open the page behind it is inert, which would also take the toasts out of the
  * accessibility tree, and a floating stack would sit over the dialog's own controls (on a phone the drawer is
  * full width, so there is no free edge). The stack is therefore docked inside the topmost open dialog, in flow
  * between its body and its footer (css: dialog > .toast-stack.is-docked), and returns to its place in <body>
- * when the last dialog closes. Toast roles (status / alert) are unchanged.
+ * when the last dialog closes. The container moves with its toasts; see settleToastRoles() for their roles.
  */
 function dockToasts() {
   const stack = document.getElementById('toasts');
@@ -1720,16 +1760,44 @@ function dockToasts() {
   const top = openDialogs[openDialogs.length - 1] || null;
   if (top && top.isConnected) {
     const foot = Array.from(top.children).find((n) => n.classList && (n.classList.contains('drawer-foot') || n.classList.contains('modal-foot'))) || null;
-    if (stack.parentElement !== top || stack.nextElementSibling !== foot) top.insertBefore(stack, foot);
+    if (stack.parentElement !== top || stack.nextElementSibling !== foot) { settleToastRoles(stack); top.insertBefore(stack, foot); }
     stack.classList.add('is-docked');
     stack.inert = false;
     return;
   }
   stack.classList.remove('is-docked');
   if (stack.parentElement === document.body) return;
+  settleToastRoles(stack);
   const modals = document.getElementById('modals');
   if (modals && modals.parentElement === document.body) document.body.insertBefore(stack, modals);
   else document.body.appendChild(stack);
+}
+
+/** Where focus was before it entered the toast stack (focus goes back there when a focused toast leaves). */
+let toastFocusOrigin = null;
+
+function canTakeFocus(n) {
+  return !!n && n.isConnected && typeof n.focus === 'function' && !n.disabled && !n.closest('[inert]') && n.getClientRects().length > 0;
+}
+
+/**
+ * A toast that holds focus is about to leave. Focus moves to the next toast (its action or close button), else
+ * back to where it came from (when that is inside the topmost dialog, or anywhere if no dialog is open), else to
+ * the topmost dialog itself. It never drops to <body>, so Tab and Escape keep working inside the dialog.
+ */
+function handOffToastFocus(el) {
+  const sibs = el.parentElement ? Array.from(el.parentElement.children) : [];
+  const alive = (n) => n !== el && n.classList.contains('toast') && !n.classList.contains('is-leaving');
+  const at = sibs.indexOf(el);
+  const next = sibs.slice(at + 1).find(alive) || sibs.slice(0, Math.max(0, at)).reverse().find(alive) || null;
+  const top = openDialogs[openDialogs.length - 1] || null;
+  const origin = toastFocusOrigin && !toastFocusOrigin.closest('.toast-stack') && (!top || top.contains(toastFocusOrigin)) ? toastFocusOrigin : null;
+  const candidates = [[next && next.querySelector('.toast-action, .toast-close'), false], [origin, true], [top, true]];
+  for (const [n, keepScroll] of candidates) {
+    if (!canTakeFocus(n)) continue;
+    try { n.focus({ preventScroll: keepScroll }); } catch { n.focus(); }
+    if (document.activeElement === n) return;
+  }
 }
 
 function toastStack() {
@@ -1755,9 +1823,14 @@ export function toast(message, { tone = 'neutral', timeout = 4500, action = null
   text.appendChild(h('span', { class: 'toast-msg' }, String(message ?? '')));
   el.appendChild(text);
   let timer = null;
+  let gone = false;
   const dismiss = () => {
+    if (gone) return;
+    gone = true;
     if (timer) { clearTimeout(timer); timer = null; }
+    if (el.contains(document.activeElement)) handOffToastFocus(el);
     el.classList.add('is-leaving');
+    el.inert = true; // a leaving toast takes no focus and drops out of the accessibility tree at once
     const done = () => el.remove();
     if (reducedMotion()) done(); else setTimeout(done, 220);
   };
@@ -1765,13 +1838,24 @@ export function toast(message, { tone = 'neutral', timeout = 4500, action = null
     el.appendChild(button(action.label, { variant: 'ghost', size: 'sm', onClick: () => { if (typeof action.onClick === 'function') action.onClick(); dismiss(); }, attrs: { class: 'toast-action' } }));
   }
   el.appendChild(button('', { variant: 'ghost', size: 'sm', icon: glyph('close', 16), onClick: dismiss, attrs: { 'aria-label': t('ui.closeToast'), class: 'toast-close' } }));
-  const arm = () => { if (timeout > 0) timer = setTimeout(dismiss, timeout); };
+  const arm = () => { if (gone || !(timeout > 0)) return; if (timer) clearTimeout(timer); timer = setTimeout(dismiss, timeout); };
   el.addEventListener('pointerenter', () => { if (timer) { clearTimeout(timer); timer = null; } });
   el.addEventListener('pointerleave', arm);
-  el.addEventListener('focusin', () => { if (timer) { clearTimeout(timer); timer = null; } });
+  el.addEventListener('focusin', (e) => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    const from = e.relatedTarget;
+    if (!(from instanceof Element && from.closest('.toast-stack'))) toastFocusOrigin = from instanceof Element ? from : null;
+  });
   el.addEventListener('focusout', arm);
+  el.__toastAt = Date.now();
   stack.insertBefore(el, stack.firstChild);
-  while (stack.children.length > 5) stack.lastChild.remove();
+  while (stack.children.length > 5) {
+    const old = stack.lastChild;
+    if (old.contains(document.activeElement)) handOffToastFocus(old);
+    old.remove();
+  }
+  // Docked, the stack scrolls on its own: bring the newest toast (first) into view.
+  if (stack.classList.contains('is-docked')) stack.scrollTop = 0;
   requestAnimationFrame(() => el.classList.add('is-in'));
   arm();
   return { el, dismiss };

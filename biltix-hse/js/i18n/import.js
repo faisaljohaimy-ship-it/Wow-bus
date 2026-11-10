@@ -7,8 +7,8 @@
 export default {
   ar: {
     title: 'معاينة الاستيراد',
-    subtitleFile: 'الملف «{name}» ← سجل مخاطر السلامة',
-    subtitleSource: 'المصدر: {type} ← سجل مخاطر السلامة',
+    subtitleFile: 'الملف «{name}» · الوجهة: سجل مخاطر السلامة',
+    subtitleSource: 'المصدر: {type} · الوجهة: سجل مخاطر السلامة',
     subtitleData: 'سجل مخاطر السلامة',
     loadingTitle: 'جارٍ قراءة البيانات والتحقق من كل صف…',
     loadingRemote: 'طلب حقيقي إلى المصدر المهيأ (المهلة {seconds} ثوانٍ). لا يُحفظ شيء قبل تأكيدك.',
@@ -82,8 +82,8 @@ export default {
   },
   en: {
     title: 'Import preview',
-    subtitleFile: 'File "{name}" → safety risk register',
-    subtitleSource: 'Source: {type} → safety risk register',
+    subtitleFile: 'File "{name}" · destination: safety risk register',
+    subtitleSource: 'Source: {type} · destination: safety risk register',
     subtitleData: 'Safety risk register',
     loadingTitle: 'Reading the data and validating every row…',
     loadingRemote: 'A real request to the configured source ({seconds}-second timeout). Nothing is saved until you confirm.',

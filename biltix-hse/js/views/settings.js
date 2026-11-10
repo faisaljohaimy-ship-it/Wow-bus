@@ -220,8 +220,6 @@ const STYLE_TEXT = `
 .view-settings .set-danger { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; padding: 12px 14px; border-radius: var(--radius-md); border: 1px solid color-mix(in srgb, var(--critical) 35%, var(--line)); background: color-mix(in srgb, var(--critical) 5%, var(--bg-1)); }
 .view-settings .set-danger-text { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; flex: 1 1 260px; }
 .view-settings .set-ltr { direction: ltr; unicode-bidi: isolate; }
-/* Status badges on the page plane sit on an opaque surface (the ambient background must not lower their contrast). */
-.view-settings .view-actions .status-badge { background: linear-gradient(var(--tone-soft), var(--tone-soft)), var(--bg-1); }
 .view-settings .num { font-variant-numeric: tabular-nums; }
 .view-settings .set-flash { animation: none; }
 `;

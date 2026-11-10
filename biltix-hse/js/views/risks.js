@@ -142,7 +142,16 @@ export default {
     /** A text field in the active language — unless the user edited it here (then their words show). */
     const text = (r, field) => (arr(r && r.localEdits).includes(field) ? (r[field] ?? '') : (L(r, field, 'risks') ?? ''));
     const ownerName = (v) => (v === USER ? t('risks.history.user') : term(v));
-    const sourceLabel = (v) => (v === MANUAL_SOURCE ? t('risks.form.sourceManual') : label('riskSource', v));
+    /**
+     * Source label in the active language. With `rec` (the risk whose source `v` is), an imported risk's English twin
+     * (`sourceEn`, written by sources.js and cleared by store.updateRisk when the source changes) is used in English:
+     * label('riskSource', …) only knows the enum values and would return the Arabic import label as is.
+     */
+    const sourceLabel = (v, rec = null) => {
+      if (v === MANUAL_SOURCE) return t('risks.form.sourceManual');
+      if (I.lang() !== 'ar' && rec && rec.source === v && typeof rec.sourceEn === 'string' && rec.sourceEn.trim()) return rec.sourceEn.trim();
+      return label('riskSource', v);
+    };
     const riyadh = (iso) => {
       const d = fmt.toDate ? fmt.toDate(iso) : new Date(iso);
       if (!d || Number.isNaN(d.getTime())) return '—';
@@ -632,7 +641,7 @@ export default {
           [t('risks.drawer.activity'), text(risk, 'activity') || '—'],
           [t('risks.drawer.zone'), zone ? (zone.name || risk.zoneId) : '—'],
           [t('risks.drawer.owner'), ownerName(risk.owner) || '—'],
-          [t('risks.drawer.source'), sourceLabel(risk.source) || '—'],
+          [t('risks.drawer.source'), sourceLabel(risk.source, risk) || '—'],
           [t('risks.drawer.due'), risk.dueDate ? fmt.date(risk.dueDate) : '—'],
           [t('risks.drawer.legal'), text(risk, 'legalRef') || '—'],
           [t('risks.drawer.created'), whenText(risk.createdAt)],
@@ -756,7 +765,7 @@ export default {
       const shownOwner = isEdit ? ownerName(existing.owner) : '';
       const scale = (axis) => [1, 2, 3, 4, 5].map((n) => ({ value: n, label: scaleText(axis, n) }));
       const sourceOptions = RISK_SOURCES.map((s) => ({ value: s, label: sourceLabel(s) }));
-      if (r.source && !RISK_SOURCES.includes(r.source)) sourceOptions.push({ value: r.source, label: sourceLabel(r.source) || r.source });
+      if (r.source && !RISK_SOURCES.includes(r.source)) sourceOptions.push({ value: r.source, label: sourceLabel(r.source, r) || r.source });
       const F = {
         hazard: C.formField({ label: t('risks.form.hazard'), name: 'hazard', value: shown.hazard, required: true, placeholder: t('risks.form.hazardPh') }),
         siteId: C.formField({ label: t('risks.form.site'), name: 'siteId', type: 'select', value: r.siteId, required: true, options: sites().map((s) => ({ value: s.id, label: `${s.code} — ${L(s, 'name', 'sites')}` })) }),

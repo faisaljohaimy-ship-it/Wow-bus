@@ -1070,7 +1070,7 @@ export default {
       controls: [
         'Metal spark screen around the cutting station',
         'Welding blankets over the diesel tank and no refuelling during work',
-        '9 kg dry powder and CO₂ extinguishers within reach',
+        '9 kg dry powder and CO2 extinguishers within reach',
         '60-minute fire watch after completion',
       ],
     },
@@ -1079,7 +1079,7 @@ export default {
       hazards: ['H2S gas from the municipal network', 'Oxygen deficiency', 'Sudden water inrush', 'Difficult rescue'],
       controls: [
         'Forced ventilation at 20 air changes/hour before and during entry',
-        'Continuous gas monitoring with evacuation at H2S 10 ppm or O₂ below 19.5%',
+        'Continuous gas monitoring with evacuation at H2S 10 ppm or O2 below 19.5%',
         'Permanent attendant outside and rescue tripod with harness',
         'Plug the municipal line with an inflatable stopper and notify the municipality',
       ],
@@ -1128,7 +1128,7 @@ export default {
       location: 'Basement — Main water tank (400 m³)',
       hazards: ['Oxygen deficiency', 'Epoxy solvent vapours', 'Single access opening', 'Poor lighting'],
       controls: [
-        'Forced extraction ventilation from the bottom with continuous O₂ and LEL monitoring',
+        'Forced extraction ventilation from the bottom with continuous O2 and LEL monitoring',
         'Air-fed respirators and 24 V explosion-proof lighting',
         'Attendant outside and a tripod rescue system',
         'Gas testing every 30 minutes',
@@ -1233,7 +1233,7 @@ export default {
     P20: {
       location: 'Basement — Main water tank — Cleaning and surface preparation',
       hazards: ['Oxygen deficiency', 'Grinding dust', 'Single access opening'],
-      controls: ['Forced ventilation and O₂ monitoring', 'P3 respirators', 'Attendant outside and rescue tripod'],
+      controls: ['Forced ventilation and O2 monitoring', 'P3 respirators', 'Attendant outside and rescue tripod'],
     },
     P21: {
       location: 'Steel fabrication workshop — Welding Warehouse 1 columns',
@@ -1834,7 +1834,7 @@ export default {
       title: 'Observation on permit {permit}: exclusion zone barrier incomplete',
       detail: '{permitLocation} — immediate correction before work resumes',
     },
-    '10': { title: 'Routine gas test: O₂ {o2}%, H2S {h2s} ppm, CO {co} ppm', detail: 'Within permitted limits — {zone}, {site}' },
+    '10': { title: 'Routine gas test: O2 {o2}%, H2S {h2s} ppm, CO {co} ppm', detail: 'Within permitted limits — {zone}, {site}' },
     '11': { title: 'New permit request awaiting approval — {site}', detail: 'Proposed approver: {approver} — {zone}' },
     '12': {
       title: 'Completed permit closed and area handed back — {zone}',
@@ -2241,7 +2241,7 @@ export default {
     'الضوضاء': 'Noise',
     'الغبار PM2.5': 'Dust (PM2.5)',
     'غاز H2S': 'H2S gas',
-    'الأكسجين O₂': 'Oxygen (O₂)',
+    'الأكسجين O₂': 'Oxygen (O2)',
     'الإجهاد الحراري WBGT': 'Heat stress (WBGT)',
     'أول أكسيد الكربون CO': 'Carbon monoxide (CO)',
     'الاهتزاز': 'Vibration',

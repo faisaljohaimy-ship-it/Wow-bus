@@ -25,8 +25,6 @@ const STYLE_ID = 'view-dataquality-style';
 const STYLE_TEXT = `
 .view-dataquality .grid-12 { align-items: start; }
 .view-dataquality .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
-/* Status badges on the page plane sit on an opaque surface (the ambient background must not lower their contrast). */
-.view-dataquality .view-actions .status-badge { background: linear-gradient(var(--tone-soft), var(--tone-soft)), var(--bg-1); }
 .view-dataquality .num { font-variant-numeric: tabular-nums; }
 .view-dataquality .dq-anchor { scroll-margin-block-start: var(--space-4); }
 @media (max-width: 959.98px) { .view-dataquality .dq-anchor { scroll-margin-block-start: calc(var(--appbar-h) + var(--space-4)); } }

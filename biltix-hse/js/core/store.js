@@ -1628,6 +1628,9 @@ function pipelineLabel(id) {
 /**
  * Append an AI-risk history entry. `fields` adds structured, language-neutral data (kind, statusFrom/statusTo,
  * from/to, owner, due) so a view can word the entry from its dictionaries in either language.
+ * kind: 'status' = a plain status change (its whole sentence can be rebuilt from statusFrom/statusTo);
+ * 'dismiss' / 'reopen' also carry statusFrom/statusTo but their sentence says more (the reason), so a view keeps
+ * their text; 'reassess', 'assign', 'note'.
  */
 function riskHistory(risk, by, textValue, textEn, fields = null) {
   if (!Array.isArray(risk.history)) risk.history = [];
@@ -2018,6 +2021,11 @@ export const store = {
         ? obj.history
         : [{ at: localISO(now), by: owner || 'النظام', text: 'إنشاء سجل المخاطرة' }],
     };
+    // `sourceEn` (English twin of an import source label) is kept only next to a caller-given source, and only when Latin.
+    if (risk.sourceEn !== undefined) {
+      const sourceEn = text(obj.source) ? latinOnly(risk.sourceEn) : '';
+      if (sourceEn) risk.sourceEn = sourceEn; else delete risk.sourceEn;
+    }
     if (!Array.isArray(state.risks)) state.risks = [];
     state.risks.unshift(risk);
     changed(`risks.${risk.id}`);
@@ -2028,7 +2036,7 @@ export const store = {
       tone: sel.tierTone(tier),
       siteId: risk.siteId,
       title: `تسجيل مخاطرة جديدة ${risk.code} — ${tier}`,
-      titleEn: `New risk registered ${risk.code} — ${enumEn('tier', tier)}`,
+      titleEn: `New risk registered ${risk.code}${enumEn('tier', tier) ? ` — ${enumEn('tier', tier)}` : ''}`,
       detail: risk.hazard || risk.activity,
       detailEn: risk.hazardEn || `${siteEnById(state.sites, risk.siteId)}`,
       sourceId: 'biltix-hse',
@@ -2047,6 +2055,10 @@ export const store = {
       if (rest[key] !== undefined) rest[key] = clampInt(rest[key], 1, 5, risk[key]);
     }
     if (rest.controls !== undefined) rest.controls = normalizeControls(rest.controls);
+    // `sourceEn` (the English label of an imported risk's source) belongs to the current `source` only: a new
+    // source takes the caller's Latin-only sourceEn or none, so the English display never shows a stale label.
+    if (rest.sourceEn !== undefined) rest.sourceEn = latinOnly(rest.sourceEn) || undefined;
+    if (rest.source !== undefined && text(rest.source) !== text(risk.source) && rest.sourceEn === undefined) delete risk.sourceEn;
     const at = localISO(store.now());
     if (!Array.isArray(risk.history)) risk.history = [];
     if (rest.status && rest.status !== prevStatus) {
@@ -2626,7 +2638,7 @@ export const store = {
     risk.updatedAt = localISO(store.now());
     if (!Array.isArray(risk.overrides)) risk.overrides = [];
     risk.overrides.push({ at: localISO(store.now()), by: actor, fromAction: (risk.recommendation && text(risk.recommendation.action)) || '', toAction: 'تجاهل المخاطرة', reason: why });
-    riskHistory(risk, actor, `تجاهل المخاطرة (كانت «${prev}») — السبب: ${why}`, `Risk dismissed${wasStatusEn(prev)} — reason recorded`, { kind: 'status', statusFrom: prev, statusTo: risk.status });
+    riskHistory(risk, actor, `تجاهل المخاطرة (كانت «${prev}») — السبب: ${why}`, `Risk dismissed${wasStatusEn(prev)} — reason recorded`, { kind: 'dismiss', statusFrom: prev, statusTo: risk.status });
     const pipe = findPlatform('pipelines', risk.pipeline);
     if (pipe && Number.isFinite(Number(pipe.overridesLast30d))) pipe.overridesLast30d = Number(pipe.overridesLast30d) + 1;
     changed(`platform.aiRisks.${risk.id}`);
@@ -2834,7 +2846,9 @@ export const store = {
     risk.updatedAt = localISO(store.now());
     const kindAr = { link: 'رابط', note: 'ملاحظة', file: 'اسم ملف' }[item.kind] || item.kind;
     const kindEn = { link: 'link', note: 'note', file: 'file name' }[item.kind] || item.kind;
-    riskHistory(risk, actor, `إضافة دليل معالجة (${kindAr}): ${item.title} — محفوظ على هذا الجهاز فقط`, `Treatment evidence added (${kindEn}): ${item.title} — stored on this device only`);
+    // The English sentence names the evidence only when its title has no Arabic (the title is listed with the evidence).
+    const titleEn = latinOnly(item.titleEn) || latinOnly(item.title);
+    riskHistory(risk, actor, `إضافة دليل معالجة (${kindAr}): ${item.title} — محفوظ على هذا الجهاز فقط`, `Treatment evidence added (${kindEn})${titleEn ? `: ${titleEn}` : ''} — stored on this device only`);
     changed(`platform.aiRisks.${risk.id}`);
     store.pushAudit({ actor, action: 'evidence', target: risk.code, detail: `إضافة دليل (${item.kind}): ${item.title}`, detailEn: `Evidence added (${item.kind}) to ${risk.code}` });
     return { ok: true, evidence: item, risk };
@@ -2925,7 +2939,7 @@ export const store = {
     risk.reopenedAt = now;
     delete risk.closedByTask;
     risk.updatedAt = now;
-    riskHistory(risk, actor, `إعادة فتح المخاطرة (كانت «${prev}») — السبب: ${why}`, `Risk reopened${wasStatusEn(prev)} — reason recorded`, { kind: 'status', statusFrom: prev, statusTo: risk.status });
+    riskHistory(risk, actor, `إعادة فتح المخاطرة (كانت «${prev}») — السبب: ${why}`, `Risk reopened${wasStatusEn(prev)} — reason recorded`, { kind: 'reopen', statusFrom: prev, statusTo: risk.status });
     changed(`platform.aiRisks.${risk.id}`);
     store.pushAudit({ actor, action: 'reopen', target: risk.code, detail: `إعادة فتح — السبب: ${why}`, detailEn: `Reopened${wasStatusEn(prev)}`, from: prev, to: risk.status });
     emitFeed({ type: 'ai', tone: 'warning', siteId: risk.projectId, title: `إعادة فتح المخاطرة ${risk.code}`, titleEn: `Risk ${risk.code} reopened`, detail: why, detailEn: 'Reason recorded in the risk history', sourceId: risk.pipeline, refId: risk.id, code: risk.code });

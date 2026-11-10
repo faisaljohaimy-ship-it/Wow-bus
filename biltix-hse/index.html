@@ -43,6 +43,8 @@
       var theme = s.theme === 'light' ? 'light' : 'dark';
       root.setAttribute('data-theme', theme);
       root.setAttribute('data-numerals', s.numerals === 'arab' ? 'arab' : 'latn');
+      // settings.calendar → html[data-calendar]: css/base.css hides the clock date line that boot will not fill.
+      root.setAttribute('data-calendar', s.calendar === 'gregorian' || s.calendar === 'hijri' ? s.calendar : 'both');
       var ap = s.appearance && typeof s.appearance === 'object' ? s.appearance : {};
       var bg = ap.background === 'static' || ap.background === 'cinematic' ? ap.background : 'subtle';
       root.setAttribute('data-bg', bg);

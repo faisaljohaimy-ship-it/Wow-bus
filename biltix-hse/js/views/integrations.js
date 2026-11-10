@@ -79,13 +79,11 @@ const STYLE_TEXT = `
 .view-integrations .intg-ds dd { margin: 0; color: var(--ink-1); font-size: var(--fs-sm); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .view-integrations #int-datasource { scroll-margin-block-start: var(--space-4); }
 @media (max-width: 959.98px) { .view-integrations #int-datasource { scroll-margin-block-start: calc(var(--appbar-h) + var(--space-4)); } }
-/* Status badges on the page plane sit on an opaque surface (the ambient background must not lower their contrast). */
-.view-integrations .view-actions .status-badge { background: linear-gradient(var(--tone-soft), var(--tone-soft)), var(--bg-1); }
 .view-integrations .num { font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
+/* Phones: the status select takes its own row and its label sits above it. Segmented groups and the view-head
+   status badge are handled by css/components.css. */
 @container main (max-width: 640px) {
-  .view-integrations .filter-bar-group.is-segmented, .view-integrations .filter-bar-group.is-select { flex-basis: 100%; flex-wrap: wrap; }
-  .view-integrations .filter-bar-group.is-segmented .seg { flex: 1 1 auto; flex-wrap: wrap; overflow: visible; }
-  .view-integrations .filter-bar-group.is-segmented .seg-btn { flex: 1 1 auto; white-space: normal; }
+  .view-integrations .filter-bar-group.is-select { flex-basis: 100%; flex-wrap: wrap; }
 }
 .intg-modal .intg-kv { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; font-size: var(--fs-sm); }
 .intg-modal .intg-kv div { display: inline-flex; gap: 6px; align-items: center; }

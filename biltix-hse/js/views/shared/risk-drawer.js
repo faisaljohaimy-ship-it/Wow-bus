@@ -34,8 +34,12 @@ import { psel as defaultPsel } from '../../core/platform-selectors.js';
 import { sources as defaultSources } from '../../data/sources.js';
 import { motion } from '../../ui/motion.js';
 import riskDict from '../../i18n/risk.js';
+// 'risks' (HSE register) carries the shared "Status changed from {from} to {to}" sentence the History tab uses for
+// structured status entries; registering it here makes it available on every route that opens this drawer.
+import risksDict from '../../i18n/risks.js';
 
 i18n.register('risk', riskDict);
+i18n.register('risks', risksDict);
 
 const { h, clear, glyph, svgIcon, badge, button, drawer, toast, formField, emptyState, kv, statusBadge } = components;
 
@@ -404,12 +408,11 @@ const STYLE_TEXT = `
 .reg-chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .reg-chip > svg { inline-size: 12px; block-size: 12px; color: var(--ink-3); }
 @media (pointer: coarse) { .reg-chip { min-block-size: 40px; } }
-/* phones: filter selects stack under their label and may shrink (components.css keeps a 150px floor on .is-select) */
+/* phones: filter selects stack under their label and may shrink (components.css keeps a 150px floor on .is-select;
+   segmented groups take their own row there too, so no per-view rule is needed for them) */
 @container main (max-width: 640px) {
   .reg-filter-bar .filter-bar-group.is-select, .tsk-filter-bar .filter-bar-group.is-select { flex-direction: column; align-items: stretch; gap: 4px; }
   .reg-filter-bar .filter-bar-group.is-select .field-control, .tsk-filter-bar .filter-bar-group.is-select .field-control { min-inline-size: 0; inline-size: 100%; }
-  .reg-filter-bar .filter-bar-group.is-segmented { flex-basis: 100%; flex-wrap: wrap; }
-  .reg-filter-bar .filter-bar-group.is-segmented .seg { flex: 1 1 auto; }
 }
 
 /* inline forms (drawer, tasks) */
@@ -1572,11 +1575,18 @@ function reopenForm(st, risk) {
 
 /* ── History ── */
 
-/** One timeline entry's text in the active language (seed history via the aiRisks mirror, runtime via textEn). */
+/**
+ * One timeline entry's text in the active language: structured entries from the dictionary (psel timeline kinds;
+ * a plain status change, historyKind 'status' with statusFrom/statusTo, in both languages), then seed history via
+ * the aiRisks mirror, runtime entries via textEn.
+ */
 const ASSIGN_NOTE_RE = /^إسناد المخاطرة إلى (.+) — الاستحقاق (\d{4}-\d{2}-\d{2})$/;
 function entryText(risk, e) {
   const structural = structuralText(risk, e);
   if (structural) return structural;
+  if (e.historyKind === 'status' && RISK_STATUSES.includes(e.statusFrom) && RISK_STATUSES.includes(e.statusTo)) {
+    return t('risks.history.statusChanged', { from: statusLabel(e.statusFrom), to: statusLabel(e.statusTo) });
+  }
   if (!isEn()) return text(e.text);
   const am = ASSIGN_NOTE_RE.exec(text(e.text));
   if (am) return t('risk.hist.assignedNote', { owner: person(am[1]), due: defaultFmt.date(am[2]) });

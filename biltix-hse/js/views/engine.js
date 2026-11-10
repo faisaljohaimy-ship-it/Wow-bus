@@ -53,8 +53,6 @@ const STYLE_TEXT = `
   .view-engine .explain-steps > li::before { content: counter(xs); display: grid; place-items: center; inline-size: 26px; block-size: 26px; border-radius: 50%; background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--brand-text); font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
   :root[data-numerals="arab"] .view-engine .explain-steps > li::before { content: counter(xs, arabic-indic); }
   .view-engine .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
-/* Status badges on the page plane sit on an opaque surface (the ambient background must not lower their contrast). */
-.view-engine .view-actions .status-badge { background: linear-gradient(var(--tone-soft), var(--tone-soft)), var(--bg-1); }
   .view-engine .num { font-variant-numeric: tabular-nums; }
   .view-engine .eng-trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
   .view-engine .eng-trio > li { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 10px; align-items: start; padding: 12px; border-radius: var(--radius-md); background: var(--bg-2); border: 1px solid var(--line); }
@@ -214,11 +212,51 @@ export default {
     }
     let metricSeq = 0;
     const simulatedTag = () => h('span', { class: 'sim-tag' }, svgIcon('flask', 11), t('engine.pipes.simulated'));
-    /* ── audit text in the active language (seed mirrors, *En fields, then known runtime patterns) ── */
+    /*
+     * ── audit text in the active language ──
+     * Order: (1) entries with structured fields (store.pushAudit: kind + ids / Latin keys) are worded here from the
+     * dictionaries, so an action taken in an Arabic session reads fully in English later (the store's detailEn can be
+     * thinner: English data loads lazily); (2) seed mirrors / detailEn / targetEn; (3) known Arabic runtime patterns.
+     */
+    const platNow = () => safe(() => psel.platform(store.state), {}) || {};
+    /** A localized string, or '' when it is empty or (in English) still Arabic — the caller then falls back. */
+    const usable = (s) => { const v = String(s ?? '').trim(); return v && !(en() && AR_RE.test(v)) ? v : ''; };
+    const PIPELINE_STATES = ['running', 'idle', 'training', 'degraded'];
+    function structuredTarget(e) {
+      const plat = platNow();
+      if (e.kind === 'rule-toggle' && e.ruleId) {
+        const rule = arr(plat.validation && plat.validation.rules).find((r) => r && r.id === e.ruleId);
+        return rule ? usable(i18n.L(rule, 'name', 'validationRules')) : '';
+      }
+      if (e.kind === 'pipeline-status' && e.pipelineId) {
+        const pipe = arr(plat.pipelines).find((p) => p && p.id === e.pipelineId);
+        return pipe ? usable(pipeName(pipe)) : '';
+      }
+      return '';
+    }
+    function structuredDetail(e) {
+      if (e.kind === 'rule-toggle' && typeof e.enabled === 'boolean') return t(e.enabled ? 'engine.audit.runtime.ruleEnabled' : 'engine.audit.runtime.ruleDisabled');
+      if (e.kind === 'quarantine' && e.quarantineId && ['corrected', 'rejected', 'reheld'].includes(e.decision)) {
+        const plat = platNow();
+        const item = arr(plat.validation && plat.validation.quarantine).find((x) => x && x.id === e.quarantineId);
+        const reason = item ? usable(i18n.L(item, 'reason', 'quarantine')) : '';
+        return reason ? t(`engine.audit.runtime.${e.decision}`, { reason }) : '';
+      }
+      if (e.kind === 'pipeline-status' && PIPELINE_STATES.includes(e.from) && PIPELINE_STATES.includes(e.to)) {
+        const from = usable(i18n.label('pipelineStatus', e.from));
+        const to = usable(i18n.label('pipelineStatus', e.to));
+        if (!from || !to) return '';
+        const sentence = t('engine.audit.runtime.engineState', { from, to });
+        return e.version ? `${sentence} · ${t('engine.pipes.version')}: ${e.version}` : sentence;
+      }
+      return '';
+    }
     function auditTarget(e) {
+      const structured = structuredTarget(e);
+      if (structured) return brand(structured);
       let s = i18n.L(e, 'target', 'auditLog') || e.target || '';
       if (en() && AR_RE.test(s)) {
-        const plat = safe(() => psel.platform(store.state), {}) || {};
+        const plat = platNow();
         const rule = arr(plat.validation && plat.validation.rules).find((r) => r && r.name === e.target);
         const pipe = arr(plat.pipelines).find((p) => p && (p.nameAr === e.target || p.name === e.target));
         const source = arr(plat.validation && plat.validation.sources).find((x) => x && x.name === e.target);
@@ -230,6 +268,8 @@ export default {
       return brand(s || '—');
     }
     function auditDetail(e) {
+      const structured = structuredDetail(e);
+      if (structured) return structured;
       let s = i18n.L(e, 'detail', 'auditLog') || e.detail || '';
       if (!en() || !AR_RE.test(s)) return s || '—';
       const raw = String(e.detail || '');
@@ -237,7 +277,7 @@ export default {
       if (raw === 'تعطيل قاعدة التحقق') return t('engine.audit.runtime.ruleDisabled');
       const q = /^(تصحيح|رفض|إعادة تعليق) سجل محجور — ?(.*)$/.exec(raw);
       if (q) {
-        const plat = safe(() => psel.platform(store.state), {}) || {};
+        const plat = platNow();
         const item = arr(plat.validation && plat.validation.quarantine).find((x) => x && (x.recordRef === e.target || x.id === e.target));
         const reason = item ? i18n.L(item, 'reason', 'quarantine') : q[2];
         const key = q[1] === 'تصحيح' ? 'corrected' : (q[1] === 'رفض' ? 'rejected' : 'reheld');
@@ -564,10 +604,10 @@ export default {
     }
     function refreshAudit() {
       if (raf) return;
-      if (!live.audit || !live.audit.isConnected) { schedule(); return; }
-      const next = buildAudit(collect());
-      live.audit.replaceWith(next);
-      live.audit = next;
+      // buildAudit() re-points live.audit at the card it builds, so keep the mounted card to replace.
+      const mounted = live.audit;
+      if (!mounted || !mounted.isConnected) { schedule(); return; }
+      mounted.replaceWith(buildAudit(collect()));
     }
 
     /* ───────────────────────── build ───────────────────────── */

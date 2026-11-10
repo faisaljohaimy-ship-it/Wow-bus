@@ -350,8 +350,10 @@ function applySettings(s = settings()) {
     try { fmt.setNumerals(numerals); } catch (err) { reportError(err, 'fmt.setNumerals'); }
     rebuildClockFormatters();
   }
-  // settings.calendar (Settings → Language & region): the app-bar date follows it at once.
+  // settings.calendar (Settings → Language & region): the app-bar date follows it at once. html[data-calendar]
+  // is first set by the pre-paint script in index.html; css/base.css hides the unused date line from it.
   const calendar = calendarMode(s);
+  setAttr(root, 'data-calendar', calendar);
   if (calendar !== appliedCalendar) {
     appliedCalendar = calendar;
     lastDateKey = '';
@@ -1472,8 +1474,12 @@ function alertTone(payload) {
   return 'warning';
 }
 
-/** Alerts raised by the live engines are simulated unless they carry real evidence. */
-const isSimulatedAlert = (a) => a.simulated !== false && status.mode(store.state) === 'demo';
+/**
+ * Every bus 'alert' in this version comes from js/data/live.js, which runs in every data mode (boot starts it
+ * whatever settings.dataSource says), so an alert is simulated unless it says otherwise (simulated: false).
+ * The data mode does not change this: a configured external source does not make the engine's alerts real.
+ */
+const isSimulatedAlert = (a) => Boolean(a) && a.simulated !== false;
 
 function alertTitle(a) { return eventText(a, 'title') || t('core.alerts.fallbackTitle'); }
 function alertDetail(a) { return eventText(a, 'detail'); }

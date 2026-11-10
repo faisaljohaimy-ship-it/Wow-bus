@@ -9,11 +9,16 @@
  *   status.mode(state)              'demo' when settings.dataSource.type === 'simulation', else 'live'
  *   status.source(state, now?)      { status, type, lastSuccessAt, lastErrorAt, lastError, staleAfterMs }
  *   status.connector(state, record, now?)
- *        demo mode: unconfigured → 'not_connected', every other (simulated) record → 'demo'
- *        live mode: records with real evidence (lastSuccessAt / lastErrorAt written by a real HTTP test):
- *                   offline → 'offline', last attempt failed → 'error',
- *                   success older than staleAfterMs (30 min) → 'stale', else 'live';
- *                   simulated records stay 'demo'; unconfigured → 'not_connected'
+ *        unconfigured → 'not_connected' (either mode)
+ *        demo mode: every other record → 'demo'
+ *        live mode: only a record flagged real (simulated === false or real === true) is classified, from the
+ *                   configured data source's evidence (status.source: settings.dataSource lastSuccessAt /
+ *                   lastErrorAt, written by a real HTTP test or import): offline → 'offline', last attempt
+ *                   failed → 'error', success older than the stale window → 'stale', else 'live', no source
+ *                   URL → 'not_connected'. Every other record stays 'demo'.
+ *        A record's own lastTest / lastSuccessAt / lastErrorAt are persisted diagnostics for display only:
+ *        they never make a record 'live' or 'error'. In the seed only unconfigured records ('configurable')
+ *        carry simulated: false, so they read 'not_connected'; every configured seed record is simulated.
  *   status.pipeline(state, record)  demo mode → 'demo' (runs are simulated; precision / recall / calibration /
  *                                   drift are NOT measured), otherwise 'not_connected' (no model service)
  *   status.meta(s)                  { status, tone, icon, labelKey: `status.${s}`, descKey: `status.${s}Desc` }
@@ -116,16 +121,22 @@ export const status = {
     return { status: classifyEvidence(base, now, STALE_AFTER_MS), ...base };
   },
 
-  /** Honest status for one connector / integration record. */
+  /**
+   * Honest status for one connector / integration record. Only explicit flags (simulated === false,
+   * real === true) mark a record as real; its lastTest / lastSuccessAt / lastErrorAt are display-only
+   * diagnostics (persisted by the store) and are never read here. A real record in live mode takes the
+   * configured data source's status (the only evidence this version records from a real test).
+   */
   connector(state, record, now) {
     if (!record || typeof record !== 'object') return 'not_connected';
     const raw = String(record.status || '').toLowerCase();
     const unconfigured = UNCONFIGURED.has(raw) || record.configured === false;
     if (unconfigured) return 'not_connected';
-    const real = record.simulated === false || record.real === true
-      || Boolean(record.lastSuccessAt) || Boolean(record.lastErrorAt);
+    const real = record.simulated === false || record.real === true;
     if (status.mode(state) === 'demo' || !real) return 'demo';
-    return classifyEvidence({ lastSuccessAt: record.lastSuccessAt, lastErrorAt: record.lastErrorAt }, now, Number(record.staleAfterMs) || STALE_AFTER_MS);
+    const src = status.source(state, now);
+    if (src.status === 'not_connected' || src.status === 'demo') return src.status;
+    return classifyEvidence(src, now, Number(record.staleAfterMs) || STALE_AFTER_MS);
   },
 
   /**

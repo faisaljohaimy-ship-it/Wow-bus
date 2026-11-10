@@ -55,7 +55,7 @@ export default {
     },
     cards: {
       title: 'بطاقات البنود والفجوات',
-      legendGood: 'يحقق المستهدف (≥ {target})',
+      legendGood: 'يحقق المستهدف ({target} أو أكثر)',
       legendWarning: 'دون المستهدف (من {low} إلى {high})',
       legendCritical: 'فجوة حرجة (< {low})',
       meta: '{subs} · {gaps} · المستهدف {target}',
@@ -185,7 +185,7 @@ export default {
     },
     cards: {
       title: 'Clause cards and gaps',
-      legendGood: 'Meets target (≥ {target})',
+      legendGood: 'Meets target ({target} or above)',
       legendWarning: 'Below target ({low} to {high})',
       legendCritical: 'Critical gap (< {low})',
       meta: '{subs} · {gaps} · target {target}',

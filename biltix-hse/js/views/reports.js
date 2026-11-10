@@ -179,6 +179,12 @@ function render(container, ctx) {
   let latest = null;
   let firstBuild = true;
   const lang = () => i18n.lang();
+  /** An HSE risk's source in the active language: an imported risk's English twin (`sourceEn`) in English, else the enum label. */
+  const riskSourceText = (r) => {
+    if (!r || !r.source) return '';
+    if (lang() !== 'ar' && typeof r.sourceEn === 'string' && r.sourceEn.trim()) return r.sourceEn.trim();
+    return i18n.label('riskSource', r.source);
+  };
 
   if (ctx.params && PERIOD_KEYS.includes(ctx.params.period)) currentPeriod = ctx.params.period;
 
@@ -325,7 +331,7 @@ function render(container, ctx) {
           likelihood: r.likelihood, severity: r.severity, score, tier: i18n.label('tier', sel.riskTier(score)),
           residualLikelihood: r.residualLikelihood, residualSeverity: r.residualSeverity, residualScore: safe(() => sel.residualScore(r), ''),
           controls: (Array.isArray(controls) ? controls : []).map((c) => (c && c.type ? `${i18n.label('controlType', c.type)}: ${c.text}` : (typeof c === 'string' ? c : (c && c.text) || ''))).filter(Boolean).join(' | '),
-          owner: r.owner ? i18n.term(r.owner) : '', dueDate: r.dueDate, status: i18n.label('riskStatus', r.status), source: r.source ? i18n.label('riskSource', r.source) : '',
+          owner: r.owner ? i18n.term(r.owner) : '', dueDate: r.dueDate, status: i18n.label('riskStatus', r.status), source: riskSourceText(r),
           legalRef: r.legalRef ? i18n.L(r, 'legalRef', 'risks') : '', createdAt: r.createdAt, updatedAt: r.updatedAt,
         };
       });

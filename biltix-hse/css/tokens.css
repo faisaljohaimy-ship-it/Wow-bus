@@ -98,7 +98,14 @@
    width ÷ fallback advance width over a mixed UI sample; ascent/descent = Plex
    hhea metrics ÷ size-adjust (Plex: UPM 1000, Arabic 1085/415, Latin & Mono 1025/275).
    Each fallback carries the unicode-range of the face it stands in for, so a
-   script the real face lacks still falls through to the right family. */
+   script the real face lacks still falls through to the right family.
+   Glyph coverage (cmap of the woff2 files, checked with fontTools): beyond Latin-1
+   the Latin subsets hold only – — ‘ ’ ‚ “ ” „ • … ‹ › ⁄ € ™ ↑ ↓ − ∕ (Sans and Mono
+   add ′ ″); there is no → ← ↔ ≥ ≤ ≈ ₂ σ ✓ ✕ in any file, so copy should not use
+   those characters (they render and print in a system font). Neither Latin subset has U+2010/U+2011 (hyphen, non-breaking hyphen):
+   the two Latin fallbacks leave U+2010-2011 out of their range so that these fall
+   through to the Plex Sans Arabic hyphen (HarfBuzz draws U+2011 with the U+2010 glyph)
+   instead of a local Arial/Liberation glyph. */
 @font-face { font-family: "Plex Arabic Fallback";
   src: local("Arial"), local("ArialMT"), local("Liberation Sans"), local("Helvetica Neue"), local("Helvetica");
   size-adjust: 100.87%; ascent-override: 107.56%; descent-override: 41.14%; line-gap-override: 0%; }
@@ -108,11 +115,11 @@
   size-adjust: 87.74%; ascent-override: 123.66%; descent-override: 47.30%; line-gap-override: 0%; }
 @font-face { font-family: "Plex Sans Fallback";
   src: local("Arial"), local("ArialMT"), local("Liberation Sans"), local("Helvetica Neue"), local("Helvetica");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2212;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-200F, U+2012-206F, U+20AC, U+2122, U+2212;
   size-adjust: 100.87%; ascent-override: 101.62%; descent-override: 27.26%; line-gap-override: 0%; }
 @font-face { font-family: "Plex Mono Fallback";
   src: local("Courier New"), local("CourierNewPSMT"), local("Liberation Mono"), local("Menlo");
-  unicode-range: U+0000-00FF, U+2000-206F, U+2212;
+  unicode-range: U+0000-00FF, U+2000-200F, U+2012-206F, U+2212;
   size-adjust: 100%; ascent-override: 102.50%; descent-override: 27.50%; line-gap-override: 0%; }
 
 /* --------------------------------------------------------------------------
@@ -124,7 +131,10 @@
   --font-ar: "IBM Plex Sans Arabic", "Plex Arabic Fallback", "Plex Arabic Fallback Naskh", system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif;
   --font-en: "IBM Plex Sans", "Plex Sans Fallback", "IBM Plex Sans Arabic", "Plex Arabic Fallback Naskh", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-sans: var(--font-ar);
-  --font-mono: "IBM Plex Mono", "Plex Mono Fallback", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Plex Mono has no Arabic script: Arabic-Indic digits (numerals = arab), ٪ ٫ ٬, the
+     U+061C mark Intl puts in Arabic numbers and stray Arabic letters fall to Plex Sans
+     Arabic before any system monospace (it was DejaVu Sans Mono on screen and in PDFs). */
+  --font-mono: "IBM Plex Mono", "Plex Mono Fallback", "IBM Plex Sans Arabic", "Plex Arabic Fallback Naskh", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   /* Mixed strings ("5س 12د", "قبل 3 دقائق", "AIR-1042 · المرحلة 2"): Latin/digits in Plex Mono,
      Arabic letters fall to the language's sans face instead of the system monospace. */
   --font-mono-mixed: "IBM Plex Mono", "Plex Mono Fallback", var(--font-sans);
