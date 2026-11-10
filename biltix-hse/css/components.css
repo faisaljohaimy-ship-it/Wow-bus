@@ -2830,17 +2830,18 @@ a.urgent-item:hover, button.urgent-item:hover, .urgent-item.is-clickable:hover {
    as a compositor transform animation; the card is never restyled or repainted per frame (measured in
    docs/design/tokens.md §3.1).
    Off: reduced motion (OS or setting), Static background, print and forced colours (system borders).
-   Nested and plain cards get a softer metal and no comet; kanban cards get metal only.
+   Nested and plain cards get a softer metal and no comet; kanban cards and summary strips (their cells
+   draw grid lines up to the padding edge) get metal only.
    Ornament only: the orange is never a status colour; status keeps its stripe, dot, icon and label,
    and a selected card's brand border still replaces the metal.
    -------------------------------------------------------------------------- */
 
-.card, .tile, .metric-tile, .domain-card, .int-card, .kanban-card {
+.card, .tile, .metric-tile, .domain-card, .int-card, .kanban-card, .summary-strip {
   --edge-fill: var(--bg-1);
   border: var(--edge-w) solid transparent;
   background: linear-gradient(var(--edge-fill), var(--edge-fill)) padding-box, var(--edge-metal) border-box;
 }
-.card:not(.is-flat), .tile, .metric-tile, .domain-card, .int-card { box-shadow: var(--elev-1), var(--edge-glow); }
+.card:not(.is-flat), .tile, .metric-tile, .domain-card, .int-card, .summary-strip { box-shadow: var(--elev-1), var(--edge-glow); }
 /* The base rules colour the border on hover; keep it transparent so the metal shows, and lift the glow. */
 .card.is-clickable:hover, a.card:hover, button.card:hover, .card.is-interactive:hover, .tile.is-clickable:hover,
 a.metric-tile:hover, button.metric-tile:hover, .metric-tile.is-clickable:hover, a.domain-card:hover,
@@ -2924,11 +2925,11 @@ button.domain-card:hover, .domain-card.is-clickable:hover, .int-card:hover, .kan
   :root:not([data-motion="full"]) :is(.card, .tile, .metric-tile, .domain-card, .int-card, .connector-card)::after { content: none; }
 }
 @media (forced-colors: active) {
-  .card, .tile, .metric-tile, .domain-card, .int-card, .connector-card, .kanban-card { border-color: CanvasText; }
+  .card, .tile, .metric-tile, .domain-card, .int-card, .connector-card, .kanban-card, .summary-strip { border-color: CanvasText; }
   :is(.card, .tile, .metric-tile, .domain-card, .int-card, .connector-card)::after { content: none; }
 }
 @media print {
-  .card, .tile, .metric-tile, .domain-card, .int-card, .connector-card, .kanban-card { border-color: #C5D2E1; box-shadow: none; }
+  .card, .tile, .metric-tile, .domain-card, .int-card, .connector-card, .kanban-card, .summary-strip { border-color: #C5D2E1; box-shadow: none; }
   :is(.card, .tile, .metric-tile, .domain-card, .int-card, .connector-card)::after { content: none; }
 }
 
