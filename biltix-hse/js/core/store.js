@@ -59,7 +59,7 @@
 import seed, { RISK_STATUS, CONTROL_TYPES, INCIDENT_TYPES, INCIDENT_STATUS, PERMIT_TYPES, PERMIT_STATUS, INSPECTION_STATUS, INSPECTION_TYPES, INTEGRATION_STATUS } from '../data/seed.js';
 import { bus } from './bus.js';
 import { sel } from './selectors.js';
-import { enumEn, siteEnById, personEn, latinOnly } from '../data/vocab-en.js';
+import { enumEn, dataEn, siteEnById, personEn, latinOnly } from '../data/vocab-en.js';
 
 /**
  * Part B — platform seed (ARCHITECTURE.md §B3/§B5). Loaded through an awaited dynamic
@@ -153,6 +153,11 @@ export const AUDIT_ACTIONS = [
   // v3 audited CRUD (risk lifecycle + tasks)
   'create', 'evidence', 'residual', 'reopen', 'assign', 'edit', 'attachment',
 ];
+/**
+ * Structured (language-neutral) fields an audit entry may carry next to detail/detailEn, so a view can word it
+ * from its own dictionaries in either language: ids and Latin keys, booleans, stored enum values (from / to).
+ */
+const AUDIT_STRUCTURED = ['kind', 'ruleId', 'enabled', 'quarantineId', 'recordRef', 'decision', 'from', 'to', 'pipelineId', 'version'];
 /** v3: optional task priority (Latin ids; displayed through dictionaries). */
 export const TASK_PRIORITIES = ['high', 'medium', 'low'];
 export const EVIDENCE_KINDS = ['link', 'note', 'file'];
@@ -216,13 +221,21 @@ const PERSIST_PLATFORM_COLLECTIONS = ['aiRisks', 'tasks', 'alerts', 'auditLog', 
 /** platform.validation sub-collections persisted as deltas. */
 const PERSIST_VALIDATION_KEYS = ['sources', 'rules', 'quarantine'];
 /**
+ * Real-test diagnostics on integration / connector records: `lastTest` { ok, opaque, at, latencyMs, reason,
+ * message, messageEn } written by the Integrations "Test connection" action, and `lastSuccessAt` / `lastErrorAt`.
+ * They are DIAGNOSTICS ONLY: persisting them never changes a record's `status`, `simulated` or `real` flag, and the
+ * store never derives a "connected"/Live state from them (status.js is the only place that classifies). They are
+ * real instants, so they are NOT re-anchored on load (only clamped so none lies in the future).
+ */
+const DIAGNOSTIC_FIELDS = ['lastTest', 'lastSuccessAt', 'lastErrorAt'];
+/**
  * Fields whose changes are persisted for seed items of a collection (undefined = every field).
- * Jittered telemetry (latency, counters, histories) stays session-only; configuration and
- * status survive reloads.
+ * Jittered telemetry (latency, counters, histories) stays session-only; configuration, status
+ * and real-test diagnostics survive reloads.
  */
 const PERSIST_FIELDS = {
-  integrations: ['config', 'status', 'lastSync', 'lastError', 'enabled'],
-  connectors: ['config', 'status', 'lastSync', 'enabled', 'mode'],
+  integrations: ['config', 'status', 'lastSync', 'lastError', 'enabled', ...DIAGNOSTIC_FIELDS],
+  connectors: ['config', 'status', 'lastSync', 'enabled', 'mode', ...DIAGNOSTIC_FIELDS],
   pipelines: ['status', 'version', 'lastRun', 'driftScore', 'calibrationError', 'enabled'],
   sources: ['enabled'],
   rules: ['enabled'],
@@ -723,6 +736,53 @@ function sanitizeLastError(value) {
   return null;
 }
 
+/** A well-formed ISO instant string (any offset), else null. Shape check only — clamping happens in finishLoad. */
+function instantOrNull(value) {
+  return typeof value === 'string' && INSTANT_RE.test(value) && Number.isFinite(Date.parse(value)) ? value : null;
+}
+
+/**
+ * Integration / connector `lastTest` (diagnostic of the last REAL connection test): a plain object with a valid
+ * `at` instant, else null. Unknown keys are dropped; strings are capped. Never carries or implies a status.
+ */
+function sanitizeLastTest(value) {
+  if (!isPlainObject(value)) return null;
+  const at = instantOrNull(value.at);
+  if (!at) return null;
+  const latency = Number(value.latencyMs);
+  const out = {
+    ok: value.ok === true,
+    opaque: value.opaque === true,
+    at,
+    latencyMs: value.latencyMs != null && Number.isFinite(latency) && latency > 0 ? latency : null,
+    reason: text(value.reason).slice(0, 60) || null,
+    message: text(value.message).slice(0, 500),
+    messageEn: text(value.messageEn).slice(0, 500),
+  };
+  const httpStatus = Number(value.status);
+  if (value.status != null && Number.isInteger(httpStatus) && httpStatus >= 0 && httpStatus < 1000) out.status = httpStatus;
+  if (typeof value.type === 'string' && /^[a-z]{2,20}$/.test(value.type)) out.type = value.type;
+  return out;
+}
+
+/** Shape-normalise the diagnostics of one integration / connector record in place (present fields only). */
+function normalizeDiagnostics(rec) {
+  if (rec.lastSuccessAt !== undefined) rec.lastSuccessAt = instantOrNull(rec.lastSuccessAt);
+  if (rec.lastErrorAt !== undefined) rec.lastErrorAt = instantOrNull(rec.lastErrorAt);
+  if (rec.lastTest !== undefined) rec.lastTest = sanitizeLastTest(rec.lastTest);
+}
+
+/** Load pass: no diagnostic instant may lie after `nowDate` (clock skew, imported file). */
+function clampDiagnostics(base, nowDate) {
+  const lists = [base && base.integrations, base && isPlainObject(base.platform) ? base.platform.connectors : null];
+  for (const list of lists) {
+    for (const rec of objectItems(list)) {
+      for (const key of ['lastSuccessAt', 'lastErrorAt']) if (typeof rec[key] === 'string') rec[key] = clampInstant(rec[key], nowDate);
+      if (isPlainObject(rec.lastTest) && typeof rec.lastTest.at === 'string') rec.lastTest.at = clampInstant(rec.lastTest.at, nowDate);
+    }
+  }
+}
+
 export function sanitizeSettings(input, current = DEFAULT_SETTINGS) {
   const cur = isPlainObject(current) ? current : DEFAULT_SETTINGS;
   const merged = deepMerge(clone(DEFAULT_SETTINGS), isPlainObject(input) ? input : {});
@@ -931,6 +991,7 @@ const ITEM_NORMALIZERS = {
     if (g.latencyMs !== undefined) g.latencyMs = clampNum(g.latencyMs, 0, 1e7, 0);
     if (g.eventsPerHour !== undefined) g.eventsPerHour = clampNum(g.eventsPerHour, 0, 1e9, 0);
     if (g.uptimePct !== undefined) g.uptimePct = clampNum(g.uptimePct, 0, 100, 0);
+    normalizeDiagnostics(g);
   },
   aiRisks(r) {
     r.category = pickEnum(r.category, AI_CATEGORIES, 'site');
@@ -995,6 +1056,7 @@ const ITEM_NORMALIZERS = {
     c.status = pickEnum(c.status, CONNECTOR_STATUS, 'configurable');
     if (c.config != null && !isPlainObject(c.config)) c.config = {};
     if (c.latencyMs !== undefined) c.latencyMs = clampNum(c.latencyMs, 0, 1e7, 0);
+    normalizeDiagnostics(c);
   },
   sources(s) {
     for (const k of ['completenessPct', 'consistencyPct']) if (s[k] !== undefined) s[k] = clampNum(s[k], 0, 100, 0);
@@ -1248,6 +1310,7 @@ function finishLoad(base, nowDate) {
   if (typeof base.meta.savedAt === 'string') base.meta.savedAt = clampInstant(base.meta.savedAt, nowDate);
   base.meta.anchorDate = todayISO(nowDate);
   reanchor(base, nowDate, { instants: false }); // day delta is 0 here → pure clamp pass
+  clampDiagnostics(base, nowDate); // real-test diagnostics are never re-anchored, only kept in the past
   return base;
 }
 
@@ -1562,11 +1625,48 @@ function pipelineLabel(id) {
   return (p && (p.nameAr || p.name)) || PIPELINE_LABEL[id] || 'محرك المخاطر';
 }
 
-function riskHistory(risk, by, textValue, textEn) {
+/**
+ * Append an AI-risk history entry. `fields` adds structured, language-neutral data (kind, statusFrom/statusTo,
+ * from/to, owner, due) so a view can word the entry from its dictionaries in either language.
+ */
+function riskHistory(risk, by, textValue, textEn, fields = null) {
   if (!Array.isArray(risk.history)) risk.history = [];
   const entry = { at: localISO(store.now()), by: text(by) || SYSTEM_ACTOR, text: textValue };
   if (textEn) entry.textEn = textEn;
+  if (isPlainObject(fields)) {
+    for (const [k, v] of Object.entries(fields)) {
+      if (isUnsafeKey(k) || k in entry || v === undefined || v === null || v === '') continue;
+      entry[k] = v;
+    }
+  }
   risk.history.push(entry);
+}
+
+/** The risk drawer's assignment note (risk.hist.assignedNote, Arabic wording) → owner + due date. */
+const ASSIGN_NOTE_RE = /^إسناد المخاطرة إلى (.+) — الاستحقاق (\d{4}-\d{2}-\d{2})$/;
+
+/**
+ * English side of an `updateAiRisk` note: the caller's `noteEn` when it has no Arabic; the drawer's assignment
+ * note rebuilt from its parts (owner via the people dictionary when loaded, else a neutral phrase — never the
+ * Arabic name); otherwise a user-typed note is copied as typed (no machine translation).
+ */
+function noteHistoryEn(note, noteEn) {
+  const given = latinOnly(noteEn);
+  const m = ASSIGN_NOTE_RE.exec(note);
+  if (m) {
+    const owner = m[1].trim();
+    return {
+      textEn: given || `Risk assigned to ${personEn(owner, 'a new owner')} — due ${m[2]}`,
+      fields: { kind: 'assign', owner, due: m[2] },
+    };
+  }
+  return { textEn: given || note, fields: { kind: 'note' } };
+}
+
+/** " (was Open)" for an AI-risk status when its English label is loaded; '' otherwise (never an empty "(was )"). */
+function wasStatusEn(prev) {
+  const en = enumEn('aiRiskStatus', prev);
+  return en ? ` (was ${en})` : '';
 }
 
 /** Thresholds (§B2): > alertThreshold → standard alert; ≥ criticalThreshold → immediate escalation. */
@@ -2344,11 +2444,14 @@ export const store = {
     return risk;
   },
 
-  /** Patch an AI risk; `note`/`by` become a history entry; status validated against §B3. */
+  /**
+   * Patch an AI risk; `note`/`by` become a history entry (optional `noteEn`: the caller's English wording, kept only
+   * when it has no Arabic); status validated against §B3. Every history entry written here carries `textEn`.
+   */
   updateAiRisk(id, patch = {}) {
     const risk = findPlatform('aiRisks', id);
     if (!risk || !isPlainObject(patch)) return null;
-    const { by, note, ...rest } = patch;
+    const { by, note, noteEn, ...rest } = patch;
     const prevStatus = risk.status;
     if (rest.status !== undefined) rest.status = pickEnum(rest.status, AI_RISK_STATUS, risk.status);
     // Terminal states are final: a closed / dismissed risk never changes status again (use reopenAiRisk).
@@ -2362,7 +2465,11 @@ export const store = {
       const l = rest.likelihood !== undefined ? scale5(rest.likelihood) : risk.likelihood;
       const im = rest.impact !== undefined ? scale5(rest.impact) : risk.impact;
       if (!l || !im) return null;
-      if (l !== risk.likelihood || im !== risk.impact) riskHistory(risk, by, `إعادة تقدير الشدة: ${risk.likelihood}×${risk.impact} ← ${l}×${im} (الدرجة ${l * im * 4})`);
+      if (l !== risk.likelihood || im !== risk.impact) {
+        riskHistory(risk, by, `إعادة تقدير الشدة: ${risk.likelihood}×${risk.impact} ← ${l}×${im} (الدرجة ${l * im * 4})`,
+          `Severity re-estimated: ${risk.likelihood}×${risk.impact} → ${l}×${im} (score ${l * im * 4})`,
+          { kind: 'reassess', from: `${risk.likelihood}×${risk.impact}`, to: `${l}×${im}` });
+      }
       rest.likelihood = l;
       rest.impact = im;
       rest.score = l * im * 4;
@@ -2379,8 +2486,19 @@ export const store = {
     if (rest.confidence !== undefined) rest.confidence = clampNum(rest.confidence, 0, 1, risk.confidence);
     if (rest.category !== undefined) rest.category = pickEnum(rest.category, AI_CATEGORIES, risk.category);
     if (rest.type !== undefined) rest.type = pickEnum(rest.type, AI_TYPES, risk.type);
-    if (rest.status && rest.status !== prevStatus) riskHistory(risk, by, `تغيير الحالة من «${prevStatus}» إلى «${rest.status}»`);
-    if (typeof note === 'string' && note.trim()) riskHistory(risk, by, note.trim());
+    if (rest.status && rest.status !== prevStatus) {
+      // English status names load lazily: the sentence names them only when both are available; statusFrom/statusTo
+      // (stored enum values) let a view label the change in the active language either way.
+      const fromEn = enumEn('aiRiskStatus', prevStatus);
+      const toEn = enumEn('aiRiskStatus', rest.status);
+      riskHistory(risk, by, `تغيير الحالة من «${prevStatus}» إلى «${rest.status}»`,
+        fromEn && toEn ? `Status changed from ${fromEn} to ${toEn}` : 'Status changed',
+        { kind: 'status', statusFrom: prevStatus, statusTo: rest.status });
+    }
+    if (typeof note === 'string' && note.trim()) {
+      const n = noteHistoryEn(note.trim(), noteEn);
+      riskHistory(risk, by, note.trim(), n.textEn, n.fields);
+    }
     // treatment is replaced whole (already merged above) so deepMerge never concatenates arrays oddly.
     if (rest.treatment) { risk.treatment = rest.treatment; delete rest.treatment; }
     return patchPlatformItem('aiRisks', id, rest, { stamp: true });
@@ -2508,7 +2626,7 @@ export const store = {
     risk.updatedAt = localISO(store.now());
     if (!Array.isArray(risk.overrides)) risk.overrides = [];
     risk.overrides.push({ at: localISO(store.now()), by: actor, fromAction: (risk.recommendation && text(risk.recommendation.action)) || '', toAction: 'تجاهل المخاطرة', reason: why });
-    riskHistory(risk, actor, `تجاهل المخاطرة (كانت «${prev}») — السبب: ${why}`, `Risk dismissed (was ${enumEn('aiRiskStatus', prev)}) — reason recorded`);
+    riskHistory(risk, actor, `تجاهل المخاطرة (كانت «${prev}») — السبب: ${why}`, `Risk dismissed${wasStatusEn(prev)} — reason recorded`, { kind: 'status', statusFrom: prev, statusTo: risk.status });
     const pipe = findPlatform('pipelines', risk.pipeline);
     if (pipe && Number.isFinite(Number(pipe.overridesLast30d))) pipe.overridesLast30d = Number(pipe.overridesLast30d) + 1;
     changed(`platform.aiRisks.${risk.id}`);
@@ -2586,7 +2704,7 @@ export const store = {
         risk.updatedAt = now;
         changed(`platform.aiRisks.${risk.id}`);
       }
-      emitFeed({ type: 'task', tone: rest.status === 'متأخرة' ? 'serious' : 'accent', siteId: updated.projectId, title: `المهمة ${updated.code}: ${prevStatus} ← ${rest.status}`, titleEn: `Task ${updated.code}: ${enumEn('taskStatus', prevStatus)} → ${enumEn('taskStatus', rest.status)}`, detail: updated.title, detailEn: text(updated.titleEn), sourceId: 'biltix-pm', refId: updated.id, code: updated.code });
+      emitFeed({ type: 'task', tone: rest.status === 'متأخرة' ? 'serious' : 'accent', siteId: updated.projectId, title: `المهمة ${updated.code}: ${prevStatus} ← ${rest.status}`, titleEn: enumEn('taskStatus', prevStatus) && enumEn('taskStatus', rest.status) ? `Task ${updated.code}: ${enumEn('taskStatus', prevStatus)} → ${enumEn('taskStatus', rest.status)}` : `Task ${updated.code}: status changed`, statusFrom: prevStatus, statusTo: rest.status, detail: updated.title, detailEn: text(updated.titleEn), sourceId: 'biltix-pm', refId: updated.id, code: updated.code });
     }
     return updated;
   },
@@ -2807,9 +2925,9 @@ export const store = {
     risk.reopenedAt = now;
     delete risk.closedByTask;
     risk.updatedAt = now;
-    riskHistory(risk, actor, `إعادة فتح المخاطرة (كانت «${prev}») — السبب: ${why}`, `Risk reopened (was ${enumEn('aiRiskStatus', prev)}) — reason recorded`);
+    riskHistory(risk, actor, `إعادة فتح المخاطرة (كانت «${prev}») — السبب: ${why}`, `Risk reopened${wasStatusEn(prev)} — reason recorded`, { kind: 'status', statusFrom: prev, statusTo: risk.status });
     changed(`platform.aiRisks.${risk.id}`);
-    store.pushAudit({ actor, action: 'reopen', target: risk.code, detail: `إعادة فتح — السبب: ${why}`, detailEn: `Reopened (was ${enumEn('aiRiskStatus', prev)})` });
+    store.pushAudit({ actor, action: 'reopen', target: risk.code, detail: `إعادة فتح — السبب: ${why}`, detailEn: `Reopened${wasStatusEn(prev)}`, from: prev, to: risk.status });
     emitFeed({ type: 'ai', tone: 'warning', siteId: risk.projectId, title: `إعادة فتح المخاطرة ${risk.code}`, titleEn: `Risk ${risk.code} reopened`, detail: why, detailEn: 'Reason recorded in the risk history', sourceId: risk.pipeline, refId: risk.id, code: risk.code });
     return { ok: true, risk };
   },
@@ -2934,7 +3052,15 @@ export const store = {
     safeAssign(item, patch);
     changed('platform.validation.rules');
     if (patch.enabled !== undefined) {
-      store.pushAudit({ actor: 'مدير المشروع', action: 'config', target: item.name || item.id, detail: patch.enabled ? 'تفعيل قاعدة التحقق' : 'تعطيل قاعدة التحقق' });
+      const enabled = Boolean(patch.enabled);
+      store.pushAudit({
+        actor: 'مدير المشروع', action: 'config', target: item.name || item.id,
+        // English rule name only when it is available now (dictionaries load lazily); `ruleId` lets a view resolve it later.
+        targetEn: latinOnly(item.nameEn) || dataEn('validationRules', item.id, 'name') || latinOnly(item.name) || undefined,
+        detail: enabled ? 'تفعيل قاعدة التحقق' : 'تعطيل قاعدة التحقق',
+        detailEn: enabled ? 'Validation rule enabled' : 'Validation rule disabled',
+        kind: 'rule-toggle', ruleId: text(item.id), enabled,
+      });
     }
     return item;
   },
@@ -2945,11 +3071,22 @@ export const store = {
     const item = isPlainObject(v) && Array.isArray(v.quarantine) ? v.quarantine.find((q) => q && q.id === id) : null;
     if (!item) return null;
     const next = pickEnum(status, QUARANTINE_STATUS, 'مُصحح');
+    const prev = item.status;
     item.status = next;
     item.resolvedAt = next === 'معلّق' ? null : localISO(store.now());
     item.resolvedBy = next === 'معلّق' ? null : (text(by) || 'مسؤول جودة البيانات');
     changed('platform.validation.quarantine');
-    store.pushAudit({ actor: item.resolvedBy || 'مسؤول جودة البيانات', action: 'validation', target: item.recordRef || item.id, detail: `${next === 'مُصحح' ? 'تصحيح' : next === 'مرفوض' ? 'رفض' : 'إعادة تعليق'} سجل محجور — ${item.reason || ''}`.trim() });
+    const decision = next === 'مُصحح' ? 'corrected' : (next === 'مرفوض' ? 'rejected' : 'reheld');
+    const verbEn = { corrected: 'Quarantined record corrected', rejected: 'Quarantined record rejected', reheld: 'Quarantined record put back on hold' }[decision];
+    // The English reason exists only when the record carries one or the dictionaries are loaded (English session);
+    // otherwise the sentence stays without it and `quarantineId` lets a view add the reason from its dictionary.
+    const reasonEn = latinOnly(item.reasonEn) || dataEn('quarantine', item.id, 'reason') || latinOnly(item.reason);
+    store.pushAudit({
+      actor: item.resolvedBy || 'مسؤول جودة البيانات', action: 'validation', target: item.recordRef || item.id,
+      detail: `${next === 'مُصحح' ? 'تصحيح' : next === 'مرفوض' ? 'رفض' : 'إعادة تعليق'} سجل محجور — ${item.reason || ''}`.trim(),
+      detailEn: reasonEn ? `${verbEn} — ${reasonEn}` : verbEn,
+      kind: 'quarantine', quarantineId: text(item.id), recordRef: text(item.recordRef), decision, from: text(prev), to: next,
+    });
     return item;
   },
 
@@ -2961,7 +3098,15 @@ export const store = {
     const prevStatus = pipe.status;
     const updated = patchPlatformItem('pipelines', id, rest);
     if (rest.status && rest.status !== prevStatus) {
-      store.pushAudit({ actor: text(patch.by) || 'مهندس النماذج', action: 'model-update', target: pipe.nameAr || pipe.name || id, detail: `تغيير حالة المحرك: ${prevStatus} ← ${rest.status}${rest.version ? ` (الإصدار ${rest.version})` : ''}` });
+      // Pipeline statuses are Latin ids: enumEn falls back to the id itself when the dictionaries are not loaded.
+      const version = latinOnly(text(rest.version));
+      store.pushAudit({
+        actor: text(patch.by) || 'مهندس النماذج', action: 'model-update', target: pipe.nameAr || pipe.name || id,
+        targetEn: latinOnly(pipe.name) || dataEn('pipelines', id, 'name') || undefined,
+        detail: `تغيير حالة المحرك: ${prevStatus} ← ${rest.status}${rest.version ? ` (الإصدار ${rest.version})` : ''}`,
+        detailEn: `Engine state changed: ${enumEn('pipelineStatus', prevStatus, text(prevStatus))} → ${enumEn('pipelineStatus', rest.status, text(rest.status))}${version ? ` (version ${version})` : ''}`,
+        kind: 'pipeline-status', pipelineId: text(id), from: text(prevStatus), to: text(rest.status), version: version || undefined,
+      });
     }
     return updated;
   },
@@ -2974,7 +3119,13 @@ export const store = {
     return patchPlatformItem('connectors', id, rest);
   },
 
-  /** Prepend an audit entry {id, at, actor, action, target, detail}; capped at 500. */
+  /**
+   * Prepend an audit entry {id, at, actor, action, target, detail}; capped at 500.
+   * Bilingual: `detailEn` (callers build it from Latin-only data; user-typed text may be copied as typed) and
+   * `targetEn` (kept only when it has no Arabic). Structured fields (AUDIT_STRUCTURED: kind, ruleId, enabled, quarantineId,
+   * recordRef, decision, from, to, pipelineId, version) let a view word the entry from its dictionaries in either
+   * language — English enum labels load lazily, so a sentence pre-rendered during an Arabic session can be thinner.
+   */
   pushAudit(entry = {}) {
     if (!isPlainObject(entry)) return null;
     const list = platformList('auditLog');
@@ -2987,6 +3138,13 @@ export const store = {
       detail: text(entry.detail),
     };
     if (typeof entry.detailEn === 'string' && entry.detailEn.trim()) item.detailEn = entry.detailEn.trim();
+    const targetEn = latinOnly(entry.targetEn);
+    if (targetEn) item.targetEn = targetEn;
+    for (const key of AUDIT_STRUCTURED) {
+      const v = entry[key];
+      if (typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v))) item[key] = v;
+      else if (typeof v === 'string' && v.trim()) item[key] = v.trim().slice(0, 200);
+    }
     if (entry.simulated === true) item.simulated = true;
     list.unshift(item);
     if (list.length > AUDIT_CAP) list.length = AUDIT_CAP;

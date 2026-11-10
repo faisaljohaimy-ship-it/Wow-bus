@@ -638,8 +638,37 @@ function splitControls(value) {
 }
 
 /**
+ * English twin of an import source label, stored as `risk.sourceEn` (i18n.L(risk, 'source', …) reads `<field>En`).
+ * The stored `source` stays Arabic ("استيراد — Google Sheets CSV"); English sessions get "Import — Google Sheets CSV".
+ *   • a label with no Arabic (from the file's source column or the caller) is already English → as is;
+ *   • this module's "استيراد[ — <type or file name>]" → "Import[ — <same suffix>]" (a non-Latin file name → "File import");
+ *   • any other Arabic value (a riskSource enum value such as «تفتيش», or free text from the file) → '' (no sourceEn:
+ *     enum values are labelled through i18n.label('riskSource', …); Arabic is never written into an *En field).
+ */
+const IMPORT_LABEL_RE = /^استيراد(?:\s*—\s*(.+))?$/;
+export function importSourceEn(label) {
+  const v = text(label);
+  if (!v) return 'Import';
+  const plain = latinOnly(v);
+  if (plain) return plain;
+  const m = IMPORT_LABEL_RE.exec(v);
+  if (!m) return '';
+  if (!m[1]) return 'Import';
+  const suffix = latinOnly(m[1]);
+  return suffix ? `Import — ${suffix}` : 'File import';
+}
+
+/** Set / clear `sourceEn` on a risk-shaped object from its `source` label (see importSourceEn). */
+function withSourceEn(risk, explicitEn = '') {
+  const en = latinOnly(explicitEn) || importSourceEn(risk.source);
+  if (en) risk.sourceEn = en; else delete risk.sourceEn;
+  return risk;
+}
+
+/**
  * Map raw records (objects keyed by source headers) → Risk-schema objects ready for
- * store.addRisk. Returns { risks, skipped, warnings }.
+ * store.addRisk. Returns { risks, skipped, warnings }. Each risk carries `source` (Arabic) and,
+ * when an English label exists, `sourceEn`.
  */
 export function mapRiskRows(records, { sites = arr(seed && seed.sites), categories = CATEGORIES, sourceLabel = 'استيراد' } = {}) {
   const list = arr(records).filter(isObj);
@@ -693,6 +722,7 @@ export function mapRiskRows(records, { sites = arr(seed && seed.sites), categori
       source: text(row.source) || sourceLabel,
       legalRef: text(row.legalRef),
     };
+    withSourceEn(risk);
     if (text(row.zoneId)) risk.zoneId = text(row.zoneId);
     risks.push(risk);
   });
@@ -801,6 +831,7 @@ function previewRecords(records, { sites = arr(seed && seed.sites), categories =
       source: text(raw.source) || sourceLabel,
       legalRef: text(raw.legalRef),
     };
+    withSourceEn(data);
     if (text(raw.zoneId)) data.zoneId = text(raw.zoneId);
     const valid = rowErrors.length === 0;
     rows.push({ row: rowNo, valid, data, errors: rowErrors, warnings: rowWarnings, raw: record });
@@ -872,7 +903,10 @@ async function commitImport(rowsOrPreview, opts = {}) {
     if (isRow && !item.valid) { skipped += 1; continue; }
     const data = isRow ? item.data : item;
     if (!isObj(data) || !text(data.hazard) || !data.siteId || !data.categoryId || !data.likelihood || !data.severity || !data.dueDate) { skipped += 1; continue; }
-    const risk = target.addRisk({ ...data, source: text(opts.source) || data.source || 'استيراد' }, { silent: true });
+    // `source` stays the Arabic label; `sourceEn` is its English twin (opts.sourceEn, the preview's, or derived).
+    const record = { ...data, source: text(opts.source) || data.source || 'استيراد' };
+    withSourceEn(record, text(opts.source) ? text(opts.sourceEn) : (text(opts.sourceEn) || text(data.sourceEn)));
+    const risk = target.addRisk(record, { silent: true });
     if (risk && risk.id) ids.push(risk.id); else skipped += 1;
   }
   if (ids.length && typeof target.pushFeed === 'function') {
@@ -1465,6 +1499,7 @@ export const sources = {
   parseCSV,
   toCSV,
   mapRiskRows,
+  importSourceEn,
   describeMapping,
   validateUrl,
   parseDate,

@@ -315,6 +315,10 @@ function ratingTone(r) {
   return row ? row.tone : 'neutral';
 }
 
+/**
+ * Rating name ('أحمر' / 'أصفر' / 'أخضر').
+ * Arabic display text — views must use i18n.label/t instead (e.g. i18n.label('rating', id)).
+ */
 function ratingLabel(r) {
   const row = RATINGS.find((x) => x.id === r);
   return row ? row.name : '—';
@@ -325,11 +329,19 @@ function ratingHint(r) {
   return row ? row.hint : '';
 }
 
+/**
+ * Risk type name (Financial / Safety / Delay / Conflict → Arabic).
+ * Arabic display text — views must use i18n.label/t instead (i18n.label('aiType', type)).
+ */
 function typeLabel(type) {
   const row = RISK_TYPES.find((x) => x.id === type);
   return row ? row.name : String(type || '—');
 }
 
+/**
+ * Risk category (domain) name.
+ * Arabic display text — views must use i18n.label/t instead (i18n.label('aiCategory', cat)).
+ */
 function categoryLabel(cat) {
   const row = PLATFORM_CATEGORIES.find((x) => x.id === cat);
   return row ? row.name : String(cat || '—');
@@ -345,6 +357,10 @@ function categoryOfPipeline(pipelineId) {
   return row ? row.id : null;
 }
 
+/**
+ * Pipeline (engine) name — the Arabic `nameAr`.
+ * Arabic display text — views must use i18n.label/t instead (i18n.label('pipeline', id)).
+ */
 function pipelineLabel(id) {
   const meta = PIPELINE_META[id];
   return meta ? meta.nameAr : String(id || '—');
@@ -680,6 +696,10 @@ function taskKpis(state, filters, now) {
 
 /* ────────────────────────────── EVM & cost ────────────────────────────── */
 
+/**
+ * EVM status from CPI ('ضمن الميزانية' / 'تحذير' / 'تجاوز'); the value is also the key evmTone() reads.
+ * Arabic display text — views must use i18n.label/t instead (t('cost.evm.status.*')).
+ */
 function evmStatus(CPI) {
   if (CPI >= 0.98) return 'ضمن الميزانية';
   if (CPI >= 0.93) return 'تحذير';
@@ -736,6 +756,8 @@ function monthStart(date, offset) {
  * 12 months (8 past incl. current, 4 ahead). `budget` = cumulative planned value (S-curve on BAC),
  * `actual` = cumulative actual cost up to the current month (null afterwards), `forecast` = actual
  * path then the EAC trajectory. All arrays have 12 entries; `nowIndex` marks the current month.
+ * `months` holds Arabic month labels ("نوفمبر 26"): Arabic display text — views must use i18n.label/t instead
+ * (format the month through fmt in the active language).
  */
 function costForecast(state, projectId, now) {
   const at = resolveNow(null, now);
@@ -825,6 +847,10 @@ function changeOrderSummary(state, filters) {
   };
 }
 
+/**
+ * Hedging advice { label, tone } for a currency exposure. `tone` is language-neutral;
+ * `label` is Arabic display text — views must use i18n.label/t instead (t('cost.currency.hedge.*')).
+ */
 function hedgingAdvice(c) {
   if (c.pegged) return { label: 'مربوط — لا تحوط', tone: 'good' };
   const move = Math.abs(num(c.change30dPct));
@@ -852,6 +878,10 @@ function labourIndexSummary(state) {
 
 /* ────────────────────────────── contracts ────────────────────────────── */
 
+/**
+ * Contract clause flag name (ambiguous, payment, liquidated-damages, … → Arabic).
+ * Arabic display text — views must use i18n.label/t instead (i18n.label('clauseFlag', flag)).
+ */
 function flagLabel(flag) {
   const map = {
     ambiguous: 'بند غامض / غير قياسي', payment: 'شروط دفع غير مواتية', 'liquidated-damages': 'غرامات تأخير', 'insurance-missing': 'بند تأمين مفقود',
@@ -1324,7 +1354,12 @@ function riskTimeline(risk, state) {
   history.forEach((h, i) => {
     if (!h) return;
     // historyIndex lets views localise seed history through the aiRisks mirror (history[i].text); runtime entries carry textEn.
-    out.push({ at: h.at, kind: i === 0 && h.at === risk.detectedAt ? 'detected' : 'history', by: h.by || '—', text: h.text || '', textEn: h.textEn || '', historyIndex: i, tone: i === 0 ? ratingTone(rating(risk.score)) : 'neutral' });
+    // Runtime entries may also carry structured fields (store.js riskHistory): historyKind ('status' | 'reassess' | 'assign'
+    // | 'note' …), statusFrom/statusTo (stored enum values), from/to, owner, due — so a view can word them from its dictionaries.
+    const entry = { at: h.at, kind: i === 0 && h.at === risk.detectedAt ? 'detected' : 'history', by: h.by || '—', text: h.text || '', textEn: h.textEn || '', historyIndex: i, tone: i === 0 ? ratingTone(rating(risk.score)) : 'neutral' };
+    if (typeof h.kind === 'string' && h.kind) entry.historyKind = h.kind;
+    for (const k of ['statusFrom', 'statusTo', 'from', 'to', 'owner', 'due']) if (typeof h[k] === 'string' && h[k]) entry[k] = h[k];
+    out.push(entry);
   });
   for (const o of arr(risk.overrides)) {
     if (!o) continue;

@@ -14,11 +14,14 @@
  *                   offline → 'offline', last attempt failed → 'error',
  *                   success older than staleAfterMs (30 min) → 'stale', else 'live';
  *                   simulated records stay 'demo'; unconfigured → 'not_connected'
- *   status.pipeline(state, record)  demo mode → 'demo' (metrics are illustrative), otherwise 'not_connected'
+ *   status.pipeline(state, record)  demo mode → 'demo' (runs are simulated; precision / recall / calibration /
+ *                                   drift are NOT measured), otherwise 'not_connected' (no model service)
  *   status.meta(s)                  { status, tone, icon, labelKey: `status.${s}`, descKey: `status.${s}Desc` }
  *   status.online()                 navigator.onLine (true when unknown)
  *   status.summary(state, records)  { total, counts: { demo, live, … } } for a connector list
- *   status.label(s) / status.desc(s) translated strings (via i18n, dictionary js/i18n/core.js → ns 'status')
+ *   status.label(s) / status.desc(s) translated strings (via i18n, dictionary js/i18n/core.js → ns 'status').
+ *                                   desc() fills {minutes} (the stale window, "30 minutes" / "٣٠ دقيقة")
+ *                                   with fmt.num, so the numerals setting applies; no digit is hard-coded.
  *
  * Rules (§5): never show "connected", "متصل", "live", "training", accuracy as fact, or a success toast
  * for an operation that did not happen. Simulated operations say "محاكاة / Simulated".
@@ -26,9 +29,16 @@
  */
 
 import { i18n } from './i18n.js';
+import { fmt } from './fmt.js';
 
 export const STATUSES = Object.freeze(['demo', 'live', 'offline', 'stale', 'error', 'not_connected']);
 export const STALE_AFTER_MS = 30 * 60 * 1000;
+
+/** The stale window as words in the UI language and numerals ("30 minutes" · "٣٠ دقيقة"). */
+function staleWindowText(ms = STALE_AFTER_MS) {
+  const minutes = Math.max(1, Math.round(ms / 60000));
+  return i18n.tn('status.minutes', minutes, { count: fmt.num(minutes) });
+}
 
 const META = Object.freeze({
   demo: { tone: 'accent', icon: 'flask' },
@@ -118,7 +128,10 @@ export const status = {
     return classifyEvidence({ lastSuccessAt: record.lastSuccessAt, lastErrorAt: record.lastErrorAt }, now, Number(record.staleAfterMs) || STALE_AFTER_MS);
   },
 
-  /** AI pipelines: illustrative in demo mode; there is no connected model service in live mode. */
+  /**
+   * AI pipelines: 'demo' in demo mode (simulated runs; model accuracy is not measured), 'not_connected'
+   * in live mode (this version has no connected model service).
+   */
   pipeline(state) {
     return status.mode(state) === 'demo' ? 'demo' : 'not_connected';
   },
@@ -135,9 +148,12 @@ export const status = {
     return i18n.t(status.meta(s).labelKey);
   },
 
-  /** Translated one-sentence description. */
-  desc(s) {
-    return i18n.t(status.meta(s).descKey);
+  /**
+   * Translated one-sentence description. {minutes} is the stale window formatted with fmt.num
+   * (numerals setting); `params` may override it, e.g. { minutes: … } for a connector's own window.
+   */
+  desc(s, params) {
+    return i18n.t(status.meta(s).descKey, { minutes: staleWindowText(), ...(params || {}) });
   },
 
   /** navigator.onLine (true when the platform cannot tell). */

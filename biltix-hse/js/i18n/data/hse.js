@@ -2088,6 +2088,10 @@ export default {
     'تنبيهات واتساب للأعمال': 'WhatsApp Business alerts',
     'البريد الإلكتروني (SMTP)': 'Email (SMTP)',
     'الرسائل النصية (Twilio)': 'SMS (Twilio)',
+    // Integration vendor value for open-standard connectors (seed.js integrations 'webhooks': vendor 'مفتوح').
+    // Terms reach only names/free text (i18n.term, i18n.L's last fallback); the risk / incident / clause STATUS
+    // 'مفتوح' is always displayed through i18n.label('riskStatus' | 'incidentStatus' | …) → 'Open' (js/i18n/enums.js).
+    'مفتوح': 'Open standard',
     'أمانة الرياض': 'Riyadh Municipality',
     'الشركة الوطنية للمياه': 'National Water Company',
     'الهيئة العامة للإحصاء': 'General Authority for Statistics (GASTAT)',

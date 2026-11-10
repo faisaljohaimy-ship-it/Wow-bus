@@ -328,7 +328,7 @@ export default {
       else if (last.opaque) wbStatus = badge(t('alerts.ch.opaqueLabel'), 'warning', { icon: 'alert-circle' });
       else wbStatus = statusBadge('error', { size: 'sm' });
       const testBtn = isHttp(url) ? button(testing ? t('alerts.ch.testing') : t('alerts.ch.test'), { variant: 'outline', size: 'sm', icon: 'send', attrs: { disabled: testing, 'aria-busy': testing ? 'true' : undefined, 'data-focus-key': 'test' }, onClick: () => sendTest(url) })
-        : button(t('alerts.ch.configure'), { variant: 'outline', size: 'sm', icon: 'sliders', onClick: () => navigate('settings', { section: 'webhook' }) });
+        : button(t('alerts.ch.configure'), { variant: 'outline', size: 'sm', icon: 'sliders', onClick: () => navigate('settings', { section: 'notifications' }) });
       const webhookDesc = !isHttp(url) ? t('alerts.ch.webhookNone')
         : (!last ? t('alerts.ch.webhookConfigured')
           : `${last.ok && !last.opaque ? t('alerts.ch.testOk', { status: fmt.num(last.status || 200) }) : (last.opaque ? t('alerts.ch.testOpaque') : t('alerts.ch.testFail', { message: last.message }))} · ${t('alerts.ch.lastTest', { when: fmt.relative(last.at) })}`);

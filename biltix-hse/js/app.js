@@ -325,6 +325,14 @@ i18n.attach({ store, lang: initialLang });
 
 const DEFAULT_BRAND = { primary: '', accent: '', companyName: DEFAULT_COMPANY, logoUrl: '' }; // empty = use css/tokens.css values
 let appliedNumerals = null;
+/** settings.calendar values (same list as store.js CALENDAR_MODES; store.normalizeSettings defaults to 'both'). */
+const CALENDAR_MODES = Object.freeze(['gregorian', 'hijri', 'both']);
+let appliedCalendar = null;
+
+function calendarMode(s = settings()) {
+  const c = s && typeof s === 'object' ? s.calendar : undefined;
+  return CALENDAR_MODES.includes(c) ? c : 'both';
+}
 
 function applySettings(s = settings()) {
   const root = document.documentElement;
@@ -341,6 +349,13 @@ function applySettings(s = settings()) {
     appliedNumerals = numerals;
     try { fmt.setNumerals(numerals); } catch (err) { reportError(err, 'fmt.setNumerals'); }
     rebuildClockFormatters();
+  }
+  // settings.calendar (Settings → Language & region): the app-bar date follows it at once.
+  const calendar = calendarMode(s);
+  if (calendar !== appliedCalendar) {
+    appliedCalendar = calendar;
+    lastDateKey = '';
+    renderClockDates();
   }
 
   // settings.motion: 'auto' (follow the OS) | 'reduce' | 'full' — legacy boolean settings.reducedMotion maps to 'reduce'.
@@ -1199,15 +1214,41 @@ function tickClock() {
     setText(timeEl, text);
     timeEl.setAttribute('datetime', now.toISOString());
   }
-  // Day-granular parts refresh only when the Riyadh calendar day (or the language) changes.
+  // Day-granular parts refresh only when the Riyadh calendar day (or the language, numerals or calendar) changes.
   let dayKey = '';
   try { dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: RIYADH_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now); } catch { dayKey = now.toDateString(); }
   if (dayKey !== lastDateKey) {
     lastDateKey = dayKey;
-    const sep = isEn() ? ',' : '،';
-    try { setText($('clockDate'), `${fmt.dayName(now)}${sep} ${fmt.date(now)}`); } catch { setText($('clockDate'), ''); }
-    try { setText($('clockHijri'), fmt.hijri(now)); } catch { setText($('clockHijri'), ''); }
+    renderClockDates(now);
   }
+}
+
+/**
+ * App-bar date lines per settings.calendar (dates of the Riyadh day, fmt numerals):
+ *   'gregorian' → "<weekday>, <Gregorian date>"      (Hijri line hidden)
+ *   'hijri'     → "<weekday>، <Umm al-Qura date>"     (Gregorian line hidden)
+ *   'both'      → "<weekday>, <Gregorian date>" + "<Umm al-Qura date>"
+ */
+function renderClockDates(now = new Date()) {
+  const dateEl = $('clockDate');
+  const hijriEl = $('clockHijri');
+  const mode = appliedCalendar || calendarMode();
+  const sep = isEn() ? ',' : '،';
+  let day = '';
+  try { day = fmt.dayName(now); } catch { day = ''; }
+  const withDay = (text) => (day && text ? `${day}${sep} ${text}` : text);
+  let greg = '';
+  let hijri = '';
+  if (mode !== 'hijri') { try { greg = fmt.date(now); } catch { greg = ''; } }
+  if (mode !== 'gregorian') { try { hijri = fmt.hijri(now); } catch { hijri = ''; } }
+  // fmt.hijri falls back to the Gregorian date on hosts without Umm al-Qura: never show the same date twice.
+  if (mode === 'both' && hijri && hijri === greg) hijri = '';
+  const showDate = mode !== 'hijri';
+  const showHijri = mode === 'hijri' || Boolean(hijri);
+  if (dateEl) { setText(dateEl, showDate ? withDay(greg) : ''); dateEl.hidden = !showDate; }
+  if (hijriEl) { setText(hijriEl, mode === 'hijri' ? withDay(hijri) : hijri); hijriEl.hidden = !showHijri; }
+  const clock = $('clock');
+  if (clock) setAttr(clock, 'data-calendar', mode);
 }
 
 function startClock() {
