@@ -801,7 +801,7 @@ function render(container, ctx) {
       ? h('div', { class: 'stack gap-2' },
         h('p', { class: 'text-xs muted' }, 'التصاريح النشطة التي تنتهي خلال الساعة القادمة'),
         h('ul', { class: 'stack gap-2 text-sm', style: { listStyle: 'none', padding: 0, margin: 0 } }, soon.map((p) => h('li', { class: 'row between gap-2 wrap' },
-          h('span', { class: 'row gap-2' }, h('span', { class: 'mono' }, p.code), h('span', {}, p.type)),
+          h('span', { class: 'row gap-2' }, h('span', { class: 'mono code nowrap', dir: 'ltr' }, p.code), h('span', {}, p.type)),
           h('span', { class: 'muted mono' }, fmt.time(p.expiresAt))))))
       : h('p', { class: 'muted text-sm' }, 'لا توجد تصاريح نشطة تنتهي خلال الساعة القادمة.');
     const total = d.permits.reduce((s, p) => s + p.value, 0);

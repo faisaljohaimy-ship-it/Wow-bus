@@ -453,7 +453,7 @@ export const incidentsView = {
       const body = h('div', { class: 'card-body stack gap-3' });
 
       body.appendChild(h('div', { class: 'row wrap gap-2' },
-        h('span', { class: 'mono text-xs muted' }, inc.code),
+        h('span', { class: 'mono code nowrap text-xs muted', dir: 'ltr' }, inc.code),
         h('span', { class: 'grow' }),
         badge(`الشدة ${fmt.num(inc.severity)} — ${SEVERITY_LABEL[inc.severity] || ''}`.trim(), severityTone(inc.severity)),
         badge(inc.status, statusTone(inc.status))));

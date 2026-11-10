@@ -234,7 +234,7 @@ export const inspectionsView = {
       stickyFirst: true,
       /* `priority` drives container-width column hiding (low → medium → never high); the code column stays sticky. */
       columns: [
-        { key: 'code', label: 'الرمز', priority: 'high', mono: true, width: 92, render: (r) => h('span', { class: 'mono' }, r.code) },
+        { key: 'code', label: 'الرمز', priority: 'high', mono: true, width: 92, render: (r) => h('span', { class: 'mono code nowrap', dir: 'ltr' }, r.code) },
         { key: 'type', label: 'النوع', priority: 'high', render: (r) => h('span', { class: 'row gap-1' }, svgIcon(typeIcon(r.type), 14), r.type) },
         {
           key: 'siteId', label: 'الموقع', priority: 'high', sortValue: (r) => siteName(state(), r.siteId),
@@ -243,7 +243,7 @@ export const inspectionsView = {
             // Site names wrap on two lines (no ellipsis) with the mono code beneath.
             return h('span', { class: 'stack gap-1', style: { minInlineSize: '11ch', maxInlineSize: '18ch' } },
               h('span', { style: { whiteSpace: 'normal', lineHeight: '1.35' } }, site ? site.name : '—'),
-              site ? h('span', { class: 'mono text-xs muted' }, site.code) : null);
+              site ? h('span', { class: 'mono code nowrap text-xs muted', dir: 'ltr' }, site.code) : null);
           },
         },
         { key: 'inspector', label: 'المفتش', priority: 'low', render: (r) => h('span', { class: 'truncate', style: { maxInlineSize: '14ch', display: 'inline-block', verticalAlign: 'middle' }, title: r.inspector || '' }, r.inspector || '—') },
@@ -414,7 +414,7 @@ export const inspectionsView = {
         // Nested list cards are plain (no CAD frame) so only top-level cards carry the frame.
         upcomingHost.appendChild(h('article', { class: 'card is-plain', role: 'listitem', 'aria-labelledby': titleId },
           h('div', { class: 'card-body stack gap-3' },
-            h('div', { class: 'row between gap-2' }, badge(ins.type, 'neutral', { icon: typeIcon(ins.type) }), h('span', { class: 'mono text-xs muted' }, ins.code)),
+            h('div', { class: 'row between gap-2' }, badge(ins.type, 'neutral', { icon: typeIcon(ins.type) }), h('span', { class: 'mono code nowrap text-xs muted', dir: 'ltr' }, ins.code)),
             h('h3', { class: 'card-title', id: titleId }, siteName(st, ins.siteId)),
             h('div', { class: 'stack gap-1 text-sm ink-2' },
               h('span', {}, ins.inspector || '—'),

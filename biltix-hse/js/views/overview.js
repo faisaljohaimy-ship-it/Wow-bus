@@ -535,7 +535,7 @@ export default {
        container query); the first (name) column stays sticky. Site names wrap instead of truncating. */
     function siteColumns() {
       return [
-        { key: 'name', label: 'الموقع', priority: 'high', sortValue: (r) => r.site.name, render: (r) => h('div', { class: 'stack gap-1', style: { minInlineSize: '120px' } }, h('strong', { style: { whiteSpace: 'normal' } }, r.site.name), h('span', { class: 'muted text-xs mono' }, String(r.site.code || ''))) },
+        { key: 'name', label: 'الموقع', priority: 'high', sortValue: (r) => r.site.name, render: (r) => h('div', { class: 'stack gap-1', style: { minInlineSize: '120px' } }, h('strong', { style: { whiteSpace: 'normal' } }, r.site.name), h('span', { class: 'muted text-xs mono code nowrap', dir: 'ltr' }, String(r.site.code || ''))) },
         { key: 'city', label: 'المدينة', priority: 'low', sortValue: (r) => r.site.city, render: (r) => String(r.site.city || '') },
         { key: 'phase', label: 'المرحلة', priority: 'low', sortValue: (r) => r.site.phase, render: (r) => h('span', { style: { display: 'inline-block', maxInlineSize: '170px', verticalAlign: 'middle', whiteSpace: 'normal' }, title: String(r.site.phase || '') }, String(r.site.phase || '')) },
         { key: 'workers', label: 'العمال', priority: 'medium', align: 'end', sortValue: (r) => Number(r.site.workers) || 0, render: (r) => fmt.num(Number(r.site.workers) || 0) },

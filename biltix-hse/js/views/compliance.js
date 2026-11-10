@@ -428,7 +428,7 @@ export default {
       const tableFn = () => {
         const t = h('table', { class: 'table is-dense' }, h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'الرمز'), h('th', { scope: 'col' }, 'الوثيقة'), h('th', { scope: 'col' }, 'البند الحاكم'), h('th', { scope: 'col' }, 'الحالة'))));
         const tb = h('tbody');
-        data.docs.forEach((d) => tb.appendChild(h('tr', {}, h('td', { class: 'mono' }, d.code), h('td', {}, d.title), h('td', { class: 'mono' }, d.clause ? digits(d.clause) : '—'), h('td', {}, DOC_STATUS[d.status].short))));
+        data.docs.forEach((d) => tb.appendChild(h('tr', {}, h('td', { class: 'mono nowrap', dir: 'ltr' }, d.code), h('td', {}, d.title), h('td', { class: 'mono' }, d.clause ? digits(d.clause) : '—'), h('td', {}, DOC_STATUS[d.status].short))));
         t.appendChild(tb);
         return t;
       };

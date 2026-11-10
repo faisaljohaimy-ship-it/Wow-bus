@@ -14,7 +14,7 @@ import '@fontsource/ibm-plex-sans/700.css';
 import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/500.css';
 import '@fontsource/ibm-plex-mono/600.css';
-import { continueRender, delayRender } from 'remotion';
+import { cancelRender, continueRender, delayRender } from 'remotion';
 
 const FACES: Array<[string, number, string]> = [];
 for (const w of [400, 500, 600, 700]) {
@@ -34,8 +34,6 @@ export function waitForFonts(): void {
       if (missing.length) throw new Error(`Font faces not loaded: ${missing.join(', ')}`);
       continueRender(handle);
     })
-    .catch((err) => {
-      // Fail loudly instead of rendering with a fallback font.
-      throw err;
-    });
+    // Fail loudly instead of rendering with a fallback font.
+    .catch((err) => cancelRender(err));
 }

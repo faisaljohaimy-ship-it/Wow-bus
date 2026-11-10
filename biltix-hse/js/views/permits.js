@@ -278,7 +278,7 @@ export const permitsView = {
         const item = h('button', { type: 'button', class: ['urgent-item', expired ? 'tone-critical' : 'tone-warning', expired ? 'is-overdue' : null], onClick: () => openDrawer(p.id) },
           h('span', { class: 'urgent-icon', 'aria-hidden': 'true' }, svgIcon(typeIcon(p.type), 15)),
           h('span', { class: 'urgent-text' },
-            h('span', { class: 'row wrap gap-2' }, h('span', { class: 'mono' }, p.code), h('span', {}, p.type), badge(expired ? 'منتهٍ وما زال نشطاً' : 'يقترب من الانتهاء', expired ? 'critical' : 'warning')),
+            h('span', { class: 'row wrap gap-2' }, h('span', { class: 'mono code nowrap', dir: 'ltr' }, p.code), h('span', {}, p.type), badge(expired ? 'منتهٍ وما زال نشطاً' : 'يقترب من الانتهاء', expired ? 'critical' : 'warning')),
             h('span', { class: 'urgent-sub' }, `${siteName(st, p.siteId)} · ${p.location || '—'}`)),
           h('span', { class: 'urgent-due' }, cd.el, h('span', {}, fmt.time(p.expiresAt))));
         ul.appendChild(h('li', {}, item));
