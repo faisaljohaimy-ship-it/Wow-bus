@@ -140,7 +140,8 @@ export const tests = [
       const pipeFrom = pipe.status;
       store.updatePipeline(pipe.id, { status: 'degraded', version: 'v9.9.9' });
       a = st.platform.auditLog[0];
-      assert.match(a.detailEn, /^Engine state changed: .+ → .+ \(version v9\.9\.9\)$/);
+      assert.match(a.detailEn, /^Engine state changed: from .+ to .+ \(version v9\.9\.9\)$/);
+      assert.match(a.detail, /^تغيير حالة المحرك: من \w+ إلى degraded \(الإصدار v9\.9\.9\)$/, 'Arabic worded without an arrow');
       assert.deepEqual([a.kind, a.pipelineId, a.from, a.to, a.version], ['pipeline-status', pipe.id, pipeFrom, 'degraded', 'v9.9.9']);
       assert.ok(a.targetEn && !ARABIC.test(a.targetEn));
 
@@ -148,7 +149,8 @@ export const tests = [
       const l = risk.likelihood === 5 ? 4 : risk.likelihood + 1;
       store.updateAiRisk(risk.id, { likelihood: l, by: 'مدير المشروع' });
       let h = risk.history[risk.history.length - 1];
-      assert.match(h.textEn, /^Severity re-estimated: \d×\d → \d×\d \(score \d+\)$/);
+      assert.match(h.textEn, /^Severity re-estimated: from \d×\d to \d×\d \(score \d+\)$/);
+      assert.match(h.text, /^إعادة تقدير الشدة: من \d×\d إلى \d×\d \(الدرجة \d+\)$/);
       assert.equal(h.kind, 'reassess');
       store.updateAiRisk(risk.id, { owner: 'م. خالد العتيبي', dueDate: '2026-11-20', by: 'مدير المشروع', note: 'إسناد المخاطرة إلى م. خالد العتيبي — الاستحقاق 2026-11-20' });
       h = risk.history[risk.history.length - 1];
@@ -197,14 +199,14 @@ export const tests = [
       const byKind = (k) => r.audit.find((e) => e.kind === k);
       assert.equal(byKind('rule-toggle').detailEn, 'Validation rule disabled');
       assert.equal(byKind('quarantine').detailEn, 'Quarantined record rejected', 'reason left out when its English is not loaded');
-      assert.match(byKind('pipeline-status').detailEn, /^Engine state changed: [a-z]+ → degraded$/);
+      assert.match(byKind('pipeline-status').detailEn, /^Engine state changed: from [a-z]+ to degraded$/);
       const assign = r.history.find((h) => h.kind === 'assign');
       assert.equal(assign.textEn, 'Risk assigned to a new owner — due 2026-11-20');
       const status = r.history.find((h) => h.kind === 'status');
       assert.equal(status.textEn, 'Status changed');
       assert.ok(status.statusFrom && status.statusTo, 'structured from/to kept for the view');
       for (const e of [...r.audit, ...r.history]) {
-        for (const k of ['detailEn', 'textEn']) if (k in e) assert.ok(String(e[k]).trim() && !/\(was \)|: {2}|→ $/.test(e[k]), `${k}: ${e[k]}`);
+        for (const k of ['detailEn', 'textEn']) if (k in e) assert.ok(String(e[k]).trim() && !/\(was \)|: {2}|from {2}| to $|[→←]/.test(e[k]), `${k}: ${e[k]}`);
       }
     },
   },

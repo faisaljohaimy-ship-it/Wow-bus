@@ -313,14 +313,14 @@ function connectorTitle(c) {
   const nameEn = integrationEn(c);
   const n = int(24, 960);
   const t = (title, titleEn, extra = {}) => ({ title: `محاكاة: ${title}`, titleEn: `Simulated: ${titleEn}`, count: n, ...extra });
-  if (id.startsWith('primavera')) return t(`${name}: مزامنة ${num(n)} نشاطاً · المسار الحرج محدّث`, `${nameEn}: ${enN(n)} activities synced · critical path refreshed`);
+  if (id.startsWith('primavera')) return t(`تحديث ${num(n)} نشاطاً من سيناريو ${name} · إعادة حساب المسار الحرج`, `${enN(n)} activities refreshed from the ${nameEn} scenario · critical path recalculated`);
   if (id.startsWith('autodesk')) return t(`${name}: استخراج كميات من النموذج — ${num(n)} عنصراً`, `${nameEn}: model quantities extracted — ${enN(n)} elements`);
   if (id.startsWith('oracle-erp') || id.startsWith('sap')) return t(`${name}: ${num(n)} قيداً مالياً جديداً`, `${nameEn}: ${enN(n)} new financial entries`);
   if (id.includes('crm') || id.startsWith('hubspot') || id.startsWith('zoho')) { const k = int(3, 40); return t(`${name}: تحديث ${num(k)} سجلاً للعملاء والعقود`, `${nameEn}: ${enN(k)} customer and contract records updated`, { count: k }); }
-  if (id === 'biltix-contracts') { const k = int(1, 9); return t(`${name}: ${num(k)} مستندات جديدة إلى محرك NLP`, `${nameEn}: ${enN(k)} new documents sent to the NLP engine`, { count: k }); }
+  if (id === 'biltix-contracts') { const k = int(1, 9); return t(`${num(k)} مستندات جديدة من سيناريو ${name} بانتظار محرك NLP`, `${enN(k)} new documents from the ${nameEn} scenario queued for the NLP engine`, { count: k }); }
   if (id === 'biltix-boq') return t(`${name}: تحديث ${num(n)} بنداً`, `${nameEn}: ${enN(n)} items updated`);
-  if (id === 'biltix-schedule') return t(`${name}: ${num(n)} نشاطاً متزامناً مع P6`, `${nameEn}: ${enN(n)} activities aligned with P6`);
-  if (id === 'biltix-site-reports') { const k = int(4, 28); return t(`${name}: ${num(k)} تقريراً يومياً إلى ذكاء الموقع`, `${nameEn}: ${enN(k)} daily reports sent to site intelligence`, { count: k }); }
+  if (id === 'biltix-schedule') return t(`مطابقة ${num(n)} نشاطاً من سيناريو ${name} مع سيناريو P6`, `${enN(n)} activities from the ${nameEn} scenario matched against the P6 scenario`);
+  if (id === 'biltix-site-reports') { const k = int(4, 28); return t(`${num(k)} تقريراً يومياً من سيناريو ${name} بانتظار ذكاء الموقع`, `${enN(k)} daily reports from the ${nameEn} scenario queued for site intelligence`, { count: k }); }
   if (id === 'biltix-images') { const k = int(40, 420); return t(`${name}: ${num(k)} صورة موقع جديدة`, `${nameEn}: ${enN(k)} new site photos`, { count: k }); }
   if (id === 'biltix-cost') { const k = int(6, 60); return t(`${name}: تحديث ${num(k)} سطر ميزانية`, `${nameEn}: ${enN(k)} budget lines updated`, { count: k }); }
   if (id === 'feed-commodities') {
@@ -340,7 +340,7 @@ function connectorTitle(c) {
     return { title: `محاكاة: المركز الوطني للأرصاد — توقعات 7 أيام · رياح ${num(wind)} كم/س في ${siteName(pid) || 'المواقع'}`, titleEn: `Simulated: National Center for Meteorology — 7-day forecast · wind ${enN(wind)} km/h at ${projectEn(pid) || 'the sites'}`, value: wind, unit: 'كم/س', days: 7 };
   }
   if (id === 'feed-gis') { const k = int(2, 9); return t(`طبقات GIS: تحديث ${num(k)} طبقات`, `GIS layers: ${enN(k)} layers updated`, { count: k }); }
-  return t(`${name}: مزامنة ${num(n)} سجلاً`, `${nameEn}: ${enN(n)} records synced`);
+  return t(`تحديث ${num(n)} سجلاً من سيناريو ${name}`, `${enN(n)} records refreshed from the ${nameEn} scenario`);
 }
 
 function connectorEvent() {

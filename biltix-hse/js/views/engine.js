@@ -50,7 +50,7 @@ const STYLE_TEXT = `
   .view-engine .pipeline-node.is-model:hover, .view-engine .pipeline-node.is-model:focus-visible { background: var(--bg-3); }
   .view-engine .explain-steps { margin: 0; padding-inline-start: 0; list-style: none; counter-reset: xs; display: grid; gap: 14px 20px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
   .view-engine .explain-steps > li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; counter-increment: xs; }
-  .view-engine .explain-steps > li::before { content: counter(xs); display: grid; place-items: center; inline-size: 26px; block-size: 26px; border-radius: 50%; background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--brand-text); font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+  .view-engine .explain-steps > li::before { content: counter(xs); display: grid; place-items: center; inline-size: 26px; block-size: 26px; border-radius: 50%; background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--brand-text); font-family: var(--font-mono-mixed); font-size: 12px; font-weight: 600; }
   :root[data-numerals="arab"] .view-engine .explain-steps > li::before { content: counter(xs, arabic-indic); }
   .view-engine .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
   .view-engine .num { font-variant-numeric: tabular-nums; }
@@ -270,9 +270,16 @@ export default {
     function auditDetail(e) {
       const structured = structuredDetail(e);
       if (structured) return structured;
+      const raw = String(e.detail || '');
+      // An engine state change saved without its structured fields, in either language: the current wording
+      // ("من X إلى Y") or the arrow wording ("X ← Y") that earlier versions persisted.
+      const st = /^تغيير حالة المحرك: (?:من (\w+) إلى (\w+)|(\w+) ← (\w+))(?: \(الإصدار ([^)]+)\))?/.exec(raw);
+      if (st) {
+        const sentence = t('engine.audit.runtime.engineState', { from: i18n.label('pipelineStatus', st[1] || st[3]), to: i18n.label('pipelineStatus', st[2] || st[4]) });
+        return st[5] ? `${sentence} · ${t('engine.pipes.version')}: ${st[5]}` : sentence;
+      }
       let s = i18n.L(e, 'detail', 'auditLog') || e.detail || '';
       if (!en() || !AR_RE.test(s)) return s || '—';
-      const raw = String(e.detail || '');
       if (raw === 'تفعيل قاعدة التحقق') return t('engine.audit.runtime.ruleEnabled');
       if (raw === 'تعطيل قاعدة التحقق') return t('engine.audit.runtime.ruleDisabled');
       const q = /^(تصحيح|رفض|إعادة تعليق) سجل محجور — ?(.*)$/.exec(raw);
@@ -283,8 +290,6 @@ export default {
         const key = q[1] === 'تصحيح' ? 'corrected' : (q[1] === 'رفض' ? 'rejected' : 'reheld');
         return t(`engine.audit.runtime.${key}`, { reason });
       }
-      const st = /^تغيير حالة المحرك: (\w+) ← (\w+)/.exec(raw);
-      if (st) return t('engine.audit.runtime.engineState', { from: i18n.label('pipelineStatus', st[1]), to: i18n.label('pipelineStatus', st[2]) });
       return s;
     }
 

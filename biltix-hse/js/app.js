@@ -1475,11 +1475,14 @@ function alertTone(payload) {
 }
 
 /**
- * Every bus 'alert' in this version comes from js/data/live.js, which runs in every data mode (boot starts it
- * whatever settings.dataSource says), so an alert is simulated unless it says otherwise (simulated: false).
- * The data mode does not change this: a configured external source does not make the engine's alerts real.
+ * Each bus 'alert' says at its source whether it is simulated: js/data/live.js (sensor scenario, runs in every
+ * data mode) and store.addAlert for an engine-scenario risk (js/data/platform-live.js) send simulated: true;
+ * store.addAlert for a risk a person registers or escalates, and store's localStorage-quota warning (a real
+ * browser condition), send simulated: false. Only an explicit simulated: true gets the Simulated badge, toast
+ * note and announcer suffix. The data mode does not change this: a configured external source does not make
+ * the engine's alerts real.
  */
-const isSimulatedAlert = (a) => Boolean(a) && a.simulated !== false;
+const isSimulatedAlert = (a) => Boolean(a) && a.simulated === true;
 
 function alertTitle(a) { return eventText(a, 'title') || t('core.alerts.fallbackTitle'); }
 function alertDetail(a) { return eventText(a, 'detail'); }

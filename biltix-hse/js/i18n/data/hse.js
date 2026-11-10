@@ -1624,7 +1624,7 @@ export default {
         'Recording lost days and treatment',
         'Registering all workers with the Occupational Hazards Branch',
       ],
-      evidence: 'Reports for the two injuries INC-2026-018 and INC-2026-009 were submitted within the statutory period via the GOSI integration.',
+      evidence: 'Reports for the two injuries INC-2026-018 and INC-2026-009 were submitted to GOSI within the statutory period (recorded on the incident actions; the GOSI integration is not connected in this version).',
     },
     L5: {
       title: 'Civil Defense safety and fire protection requirements for construction sites and hot work',
@@ -1699,7 +1699,7 @@ export default {
     'cctv-ai': {
       name: 'Smart cameras — PPE detection',
       vendor: 'BILTIX Vision',
-      description: 'Analyses feeds from 48 cameras to detect work without a hard hat, vest or harness, and approaches to exclusion zones. Degraded performance: frame processing delayed at NEOM-03 due to a weak connection.',
+      description: 'Analyses feeds from 48 cameras to detect work without a hard hat, vest or harness, and approaches to exclusion zones. Demo scenario: degraded performance, with frame processing delayed at NEOM-03 by a weak connection.',
       configFields: [{ label: 'Analysis server URL' }, { label: 'API key' }, { label: 'Detection confidence threshold (0–1)' }],
     },
     wearables: {
@@ -1718,7 +1718,7 @@ export default {
     },
     'weather-ncm': {
       name: 'National Center for Meteorology (NCM)',
-      description: 'Wind, rain, dust and temperature warnings for the six sites; feeds the lifting stop rules and heat stress schedules. Degraded: requests timing out for the last 48 minutes.',
+      description: 'Wind, rain, dust and temperature warnings for the six sites; feeds the lifting stop rules and heat stress schedules. Demo scenario: degraded, with requests timing out for the last 48 minutes.',
       configFields: [{ label: 'API URL' }, { label: 'API key' }, { label: 'Weather stations (comma-separated)' }],
     },
     gosi: {
@@ -1780,7 +1780,7 @@ export default {
       configFields: [{ label: 'Project URL' }, { label: 'anon key' }, { label: 'Table' }],
     },
     powerbi: {
-      description: 'Pushes hourly indicators to a Power BI dataset for executive reporting. Disconnected: the Azure AD app secret expired 53 minutes ago.',
+      description: 'Pushes hourly indicators to a Power BI dataset for executive reporting. Demo scenario: disconnected because the Azure AD app secret expired 53 minutes ago.',
       configFields: [
         { label: 'Workspace ID' },
         { label: 'Dataset ID' },
@@ -1876,20 +1876,20 @@ export default {
       detail: 'Inspector {inspector}; prepare equipment records and inspection tags',
     },
     '24': { title: '{inspectionType} started in {zone}', detail: 'Inspector {inspector}; {checklist}-item checklist — {site}' },
-    '25': { title: '"{course}" course completed by {n2} workers — {site}', detail: 'Training matrix updated via the HR system' },
+    '25': { title: '"{course}" course completed by {n2} workers — {site}', detail: 'Simulated training-matrix update from the HR system scenario' },
     '26': {
       title: 'Certificates expiring within {days} days — {site}',
       detail: 'Supervisors notified to schedule renewals; worker {worker} is on the list',
     },
-    '27': { title: 'Training records synced from the HR system', detail: '{n2} certificates updated — {site}' },
+    '27': { title: 'Simulated: training records refreshed from the HR system scenario', detail: '{n2} certificates updated — {site}' },
     '28': { title: 'Worker with an expired mandatory certificate denied entry — {zone}', detail: '{site}; referred to training' },
-    '29': { title: 'Integration health check for {integration}: passed', detail: 'Response time {latency} ms' },
+    '29': { title: 'Simulated: health check for the {integration} integration', detail: 'Illustrative response time {latency} ms' },
     '30': {
-      title: 'Temporary slowdown on the {integration} integration',
-      detail: 'Response time {latencyHigh} ms — retrying automatically',
+      title: 'Simulated: temporary slowdown on the {integration} integration',
+      detail: 'Illustrative response time {latencyHigh} ms',
     },
-    '31': { title: 'Sync completed with {integration}', detail: '{n2} records updated' },
-    '32': { title: 'Access token renewed for the {integration} integration', detail: 'Authentication valid for 24 hours' },
+    '31': { title: 'Simulated: sync with {integration}', detail: '{n2} illustrative records — demo event' },
+    '32': { title: 'Simulated: access-token refresh for the {integration} integration', detail: 'Demo event — illustrative 24-hour validity; there is no real connection' },
     '33': { title: 'Smart camera: worker without a hard hat detected — {zone}', detail: '{site}; direct supervisor notified' },
     '34': { title: 'Smart camera: worker without a reflective vest detected near the internal road — {zone}' },
     '35': { title: 'Smart camera: worker at height without a clipped-on harness — {zone}', detail: '{site}; work stopped immediately' },

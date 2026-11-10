@@ -34,12 +34,8 @@ import { psel as defaultPsel } from '../../core/platform-selectors.js';
 import { sources as defaultSources } from '../../data/sources.js';
 import { motion } from '../../ui/motion.js';
 import riskDict from '../../i18n/risk.js';
-// 'risks' (HSE register) carries the shared "Status changed from {from} to {to}" sentence the History tab uses for
-// structured status entries; registering it here makes it available on every route that opens this drawer.
-import risksDict from '../../i18n/risks.js';
 
 i18n.register('risk', riskDict);
-i18n.register('risks', risksDict);
 
 const { h, clear, glyph, svgIcon, badge, button, drawer, toast, formField, emptyState, kv, statusBadge } = components;
 
@@ -1585,7 +1581,7 @@ function entryText(risk, e) {
   const structural = structuralText(risk, e);
   if (structural) return structural;
   if (e.historyKind === 'status' && RISK_STATUSES.includes(e.statusFrom) && RISK_STATUSES.includes(e.statusTo)) {
-    return t('risks.history.statusChanged', { from: statusLabel(e.statusFrom), to: statusLabel(e.statusTo) });
+    return t('risk.hist.statusChanged', { from: statusLabel(e.statusFrom), to: statusLabel(e.statusTo) });
   }
   if (!isEn()) return text(e.text);
   const am = ASSIGN_NOTE_RE.exec(text(e.text));

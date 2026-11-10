@@ -950,6 +950,15 @@ function normalizeTreatment(t, riskId) {
   return { ...src, plan: typeof src.plan === 'string' && src.plan.trim() ? src.plan.trim() : null, taskId: src.taskId == null ? null : text(src.taskId), evidence };
 }
 
+/** History sentence of an edit made in the HSE risk register (history entries of kind 'edit'). */
+const RISK_EDIT_NOTE = Object.freeze({ ar: 'تحديث بيانات المخاطرة من سجل المخاطر', en: 'Risk details updated from the register' });
+
+/** Entries saved before edits were structured carry the Arabic sentence (also as textEn): give them kind + English. */
+function upgradeRiskHistoryEntry(e) {
+  if (e.kind === undefined && e.text === RISK_EDIT_NOTE.ar) e.kind = 'edit';
+  if (e.kind === 'edit' && !latinOnly(e.textEn)) e.textEn = RISK_EDIT_NOTE.en;
+}
+
 /** Per-collection item normalisers (enums, clamped numbers, well-typed sub-structures). */
 const ITEM_NORMALIZERS = {
   risks(r) {
@@ -960,6 +969,7 @@ const ITEM_NORMALIZERS = {
     r.residualSeverity = clampInt(r.residualSeverity, 1, 5, r.severity);
     r.controls = normalizeControls(r.controls);
     r.history = objectList(r.history);
+    r.history.forEach(upgradeRiskHistoryEntry);
   },
   incidents(i) {
     i.type = pickEnum(i.type, INCIDENT_TYPES, 'حادث وشيك');
@@ -1422,10 +1432,14 @@ function persistNow() {
   } catch (error) {
     if (isQuotaError(error) && !quotaReported) {
       quotaReported = true;
+      // A real browser condition (not part of any simulation): simulated is false.
       bus.emit('alert', {
-        severity: 'warning', tone: 'warning', source: 'storage',
+        severity: 'warning', tone: 'warning', source: 'storage', simulated: false,
         title: 'تعذر حفظ البيانات محلياً',
         detail: 'امتلأت مساحة التخزين المحلية في المتصفح؛ ستبقى التغييرات في هذه الجلسة فقط حتى يتوفر مكان.',
+        titleEn: 'Data could not be saved in this browser',
+        detailEn: "This browser's local storage is full; changes stay in this session only until space is available.",
+        ts: localISO(store.now()),
       });
     }
     return false;
@@ -2048,7 +2062,7 @@ export const store = {
   updateRisk(id, patch = {}) {
     const risk = findIn('risks', id);
     if (!risk || !isPlainObject(patch)) return null;
-    const { by, note, ...rest } = patch;
+    const { by, note, noteEn, historyKind, ...rest } = patch;
     const prevStatus = risk.status;
     if (rest.status !== undefined) rest.status = pickEnum(rest.status, RISK_STATUS, risk.status);
     for (const key of ['likelihood', 'severity', 'residualLikelihood', 'residualSeverity']) {
@@ -2066,9 +2080,18 @@ export const store = {
       // so a pre-rendered English sentence written during an Arabic session could carry Arabic status names).
       risk.history.push({ at, by: text(by) || risk.owner || 'النظام', kind: 'status', statusFrom: prevStatus, statusTo: rest.status, text: `تغيير الحالة من «${prevStatus}» إلى «${rest.status}»` });
     }
-    if (typeof note === 'string' && note.trim()) {
-      // A user-typed note is shown as written in both languages (no machine translation).
-      risk.history.push({ at, by: text(by) || risk.owner || 'النظام', text: note.trim(), textEn: note.trim() });
+    const noteText = typeof note === 'string' ? note.trim() : '';
+    if (historyKind === 'edit' || noteText === RISK_EDIT_NOTE.ar) {
+      // The register's edit form (historyKind 'edit'; older callers passed the Arabic sentence as `note`): a
+      // structured entry the view words in the active language, with fixed Arabic + English text for other readers.
+      risk.history.push({ at, by: text(by) || risk.owner || 'النظام', kind: 'edit', text: RISK_EDIT_NOTE.ar, textEn: RISK_EDIT_NOTE.en });
+    } else if (noteText) {
+      // Any other note is kept as written. Its English copy is the caller's `noteEn`, or the note itself, only when
+      // it has no Arabic (no machine translation, and never Arabic in textEn); without one the view shows the note.
+      const entry = { at, by: text(by) || risk.owner || 'النظام', text: noteText };
+      const en = latinOnly(noteEn) || latinOnly(noteText);
+      if (en) entry.textEn = en;
+      risk.history.push(entry);
     }
     return patchItem('risks', id, rest);
   },
@@ -2449,7 +2472,9 @@ export const store = {
           queue: level,
           title: `${level === 'immediate' ? 'تصعيد فوري' : 'تنبيه'}: ${risk.code} — ${risk.title}`,
           titleEn: `${level === 'immediate' ? 'Immediate escalation' : 'Alert'}: ${risk.code}${titleEn ? ` — ${titleEn}` : ''}`,
-          simulated: isEngine || undefined,
+          // Decided here, at the source: an engine-scenario detection (js/data/platform-live.js) is simulated; a risk
+          // a user registers by hand is that user's own action, so its alert is not.
+          simulated: isEngine,
         });
       }
     }
@@ -2478,8 +2503,8 @@ export const store = {
       const im = rest.impact !== undefined ? scale5(rest.impact) : risk.impact;
       if (!l || !im) return null;
       if (l !== risk.likelihood || im !== risk.impact) {
-        riskHistory(risk, by, `إعادة تقدير الشدة: ${risk.likelihood}×${risk.impact} ← ${l}×${im} (الدرجة ${l * im * 4})`,
-          `Severity re-estimated: ${risk.likelihood}×${risk.impact} → ${l}×${im} (score ${l * im * 4})`,
+        riskHistory(risk, by, `إعادة تقدير الشدة: من ${risk.likelihood}×${risk.impact} إلى ${l}×${im} (الدرجة ${l * im * 4})`,
+          `Severity re-estimated: from ${risk.likelihood}×${risk.impact} to ${l}×${im} (score ${l * im * 4})`,
           { kind: 'reassess', from: `${risk.likelihood}×${risk.impact}`, to: `${l}×${im}` });
       }
       rest.likelihood = l;
@@ -2554,11 +2579,11 @@ export const store = {
     const pipe = findPlatform('pipelines', risk.pipeline);
     if (pipe && Number.isFinite(Number(pipe.acceptedLast30d))) pipe.acceptedLast30d = Number(pipe.acceptedLast30d) + 1;
     changed(`platform.aiRisks.${risk.id}`);
-    store.pushAudit({ actor, action: 'accept', target: risk.code, detail: `قبول التوصية «${task.title}» → ${task.code} (${task.owner}، يستحق ${task.dueDate})`, detailEn: `Recommendation accepted → ${task.code} (${personEn(task.owner, 'assigned')}, due ${task.dueDate})` });
+    store.pushAudit({ actor, action: 'accept', target: risk.code, detail: `قبول التوصية «${task.title}»؛ المهمة ${task.code} (${task.owner}، يستحق ${task.dueDate})`, detailEn: `Recommendation accepted; task ${task.code} (${personEn(task.owner, 'assigned')}, due ${task.dueDate})` });
     emitFeed({
       type: 'task', tone: 'good', siteId: risk.projectId,
-      title: `قبول توصية المحرك — ${risk.code} ← مهمة ${task.code}`,
-      titleEn: `Engine recommendation accepted — ${risk.code} → task ${task.code}`,
+      title: `قبول توصية المحرك — ${risk.code}؛ المهمة ${task.code}`,
+      titleEn: `Engine recommendation accepted — ${risk.code}; task ${task.code}`,
       detail: `${task.title} · المسؤول: ${task.owner}`,
       detailEn: `Owner: ${personEn(task.owner, 'assigned')} · due ${task.dueDate}`,
       sourceId: 'biltix-pm', refId: task.id, code: task.code,
@@ -2594,11 +2619,11 @@ export const store = {
     const pipe = findPlatform('pipelines', risk.pipeline);
     if (pipe && Number.isFinite(Number(pipe.overridesLast30d))) pipe.overridesLast30d = Number(pipe.overridesLast30d) + 1;
     changed(`platform.aiRisks.${risk.id}`);
-    store.pushAudit({ actor, action: 'override', target: risk.code, detail: `تجاوز التوصية: من «${fromAction || '—'}» إلى «${toAction}» — السبب: ${why} → ${task.code}`, detailEn: `Recommendation overridden → ${task.code}; the reason is recorded for model recalibration` });
+    store.pushAudit({ actor, action: 'override', target: risk.code, detail: `تجاوز التوصية: من «${fromAction || '—'}» إلى «${toAction}» — السبب: ${why}؛ المهمة ${task.code}`, detailEn: `Recommendation overridden; task ${task.code}. The reason is recorded for model recalibration` });
     emitFeed({
       type: 'task', tone: 'warning', siteId: risk.projectId,
-      title: `تعديل توصية المحرك — ${risk.code} ← مهمة ${task.code}`,
-      titleEn: `Engine recommendation overridden — ${risk.code} → task ${task.code}`,
+      title: `تعديل توصية المحرك — ${risk.code}؛ المهمة ${task.code}`,
+      titleEn: `Engine recommendation overridden — ${risk.code}; task ${task.code}`,
       detail: `${toAction} · السبب: ${why}`,
       detailEn: `Owner: ${personEn(task.owner, 'assigned')} · reason recorded`,
       sourceId: 'biltix-pm', refId: task.id, code: task.code,
@@ -2622,6 +2647,8 @@ export const store = {
       riskId: risk.id, projectId: risk.projectId, severity: 'critical', queue: 'immediate', channels: list,
       title: `تصعيد فوري: ${risk.code} — ${risk.title}`,
       titleEn: `Immediate escalation: ${risk.code}${text(risk.titleEn) ? ` — ${text(risk.titleEn)}` : ''}`,
+      // A person's escalation (risk drawer, or accept/override with "escalate"): not simulated.
+      simulated: false,
     });
     store.pushAudit({ actor, action: 'escalate', target: risk.code, detail: `تصعيد فوري (الدرجة ${risk.score}) عبر ${list.join('، ') || '—'}`, detailEn: `Immediate escalation (score ${risk.score}) via ${list.map((c) => enumEn('channel', c)).join(', ') || '—'}` });
     return alert;
@@ -2716,7 +2743,7 @@ export const store = {
         risk.updatedAt = now;
         changed(`platform.aiRisks.${risk.id}`);
       }
-      emitFeed({ type: 'task', tone: rest.status === 'متأخرة' ? 'serious' : 'accent', siteId: updated.projectId, title: `المهمة ${updated.code}: ${prevStatus} ← ${rest.status}`, titleEn: enumEn('taskStatus', prevStatus) && enumEn('taskStatus', rest.status) ? `Task ${updated.code}: ${enumEn('taskStatus', prevStatus)} → ${enumEn('taskStatus', rest.status)}` : `Task ${updated.code}: status changed`, statusFrom: prevStatus, statusTo: rest.status, detail: updated.title, detailEn: text(updated.titleEn), sourceId: 'biltix-pm', refId: updated.id, code: updated.code });
+      emitFeed({ type: 'task', tone: rest.status === 'متأخرة' ? 'serious' : 'accent', siteId: updated.projectId, title: `المهمة ${updated.code}: تغيير الحالة من ${prevStatus} إلى ${rest.status}`, titleEn: enumEn('taskStatus', prevStatus) && enumEn('taskStatus', rest.status) ? `Task ${updated.code}: status changed from ${enumEn('taskStatus', prevStatus)} to ${enumEn('taskStatus', rest.status)}` : `Task ${updated.code}: status changed`, statusFrom: prevStatus, statusTo: rest.status, detail: updated.title, detailEn: text(updated.titleEn), sourceId: 'biltix-pm', refId: updated.id, code: updated.code });
     }
     return updated;
   },
@@ -2737,6 +2764,8 @@ export const store = {
   /**
    * Add an alert (AL-#### code); critical ones emit bus 'alert' so the shell banner/toast show. Channels are
    * the configured routing; in the demo nothing is delivered to email/Slack/Teams/WhatsApp, and the feed says so.
+   * `simulated` is decided by the caller: only an explicit `simulated: true` (an engine-scenario risk) marks the
+   * alert, its feed event and its bus 'alert' as simulated; anything else is stored and emitted as simulated: false.
    */
   addAlert(obj = {}) {
     const list = platformList('alerts');
@@ -2756,6 +2785,7 @@ export const store = {
       ackBy: text(obj.ackBy) || null,
       ackAt: typeof obj.ackAt === 'string' ? obj.ackAt : null,
       title: text(obj.title) || (risk ? `تنبيه: ${risk.code} — ${risk.title}` : 'تنبيه من منصة المخاطر'),
+      simulated: obj.simulated === true,
     };
     if (!text(alert.titleEn)) alert.titleEn = risk ? `Alert: ${risk.code}${text(risk.titleEn) ? ` — ${text(risk.titleEn)}` : ''}` : 'Risk platform alert';
     list.unshift(alert);
@@ -2766,6 +2796,7 @@ export const store = {
     const chEn = alert.channels.length ? `Routing: ${alert.channels.map((c) => enumEn('channel', c)).join(', ')} (simulated — nothing delivered)` : '';
     emitFeed({
       type: 'alert', tone: severity === 'critical' ? 'critical' : 'warning', siteId: alert.projectId,
+      simulated: alert.simulated || undefined,
       title: alert.title, titleEn: alert.titleEn,
       detail: [detail, chAr].filter(Boolean).join(' · '),
       detailEn: [detailEn, chEn].filter(Boolean).join(' · '),
@@ -2775,6 +2806,7 @@ export const store = {
       bus.emit('alert', {
         severity: 'critical', tone: 'critical', title: alert.title, titleEn: alert.titleEn, detail: detail || alert.title, detailEn: detailEn || alert.titleEn,
         siteId: alert.projectId, riskId: alert.riskId, alertId: alert.id, source: 'platform', ts: alert.sentAt,
+        simulated: alert.simulated,
       });
     }
     return alert;
@@ -2802,7 +2834,7 @@ export const store = {
     const prev = { ...state.settings.platform.weights };
     store.setSettings({ platform: { weights: v.weights } });
     const fmtW = (w) => WEIGHT_KEYS.map((k) => `${k} ${Math.round(w[k] * 1000) / 10}%`).join(', ');
-    store.pushAudit({ actor: text(by) || 'مدير المشروع', action: 'config', target: 'settings.platform.weights', detail: `تعديل أوزان المجالات: ${fmtW(prev)} ← ${fmtW(v.weights)}`, detailEn: `Domain weights changed: ${fmtW(prev)} → ${fmtW(v.weights)}` });
+    store.pushAudit({ actor: text(by) || 'مدير المشروع', action: 'config', target: 'settings.platform.weights', detail: `تعديل أوزان المجالات: من ${fmtW(prev)} إلى ${fmtW(v.weights)}`, detailEn: `Domain weights changed: from ${fmtW(prev)} to ${fmtW(v.weights)}` });
     return { ok: true, weights: { ...state.settings.platform.weights } };
   },
 
@@ -2813,7 +2845,7 @@ export const store = {
     const p = state.settings.platform;
     const prev = `${p.alertThreshold}/${p.criticalThreshold}`;
     store.setSettings({ platform: { alertThreshold: v.alertThreshold, criticalThreshold: v.criticalThreshold } });
-    store.pushAudit({ actor: text(by) || 'مدير المشروع', action: 'config', target: 'settings.platform.thresholds', detail: `تعديل العتبات (تنبيه/تصعيد): ${prev} ← ${v.alertThreshold}/${v.criticalThreshold}`, detailEn: `Thresholds changed (alert/critical): ${prev} → ${v.alertThreshold}/${v.criticalThreshold}` });
+    store.pushAudit({ actor: text(by) || 'مدير المشروع', action: 'config', target: 'settings.platform.thresholds', detail: `تعديل العتبات (تنبيه/تصعيد): من ${prev} إلى ${v.alertThreshold}/${v.criticalThreshold}`, detailEn: `Thresholds changed (alert/critical): from ${prev} to ${v.alertThreshold}/${v.criticalThreshold}` });
     return { ok: true, alertThreshold: v.alertThreshold, criticalThreshold: v.criticalThreshold };
   },
 
@@ -3117,8 +3149,8 @@ export const store = {
       store.pushAudit({
         actor: text(patch.by) || 'مهندس النماذج', action: 'model-update', target: pipe.nameAr || pipe.name || id,
         targetEn: latinOnly(pipe.name) || dataEn('pipelines', id, 'name') || undefined,
-        detail: `تغيير حالة المحرك: ${prevStatus} ← ${rest.status}${rest.version ? ` (الإصدار ${rest.version})` : ''}`,
-        detailEn: `Engine state changed: ${enumEn('pipelineStatus', prevStatus, text(prevStatus))} → ${enumEn('pipelineStatus', rest.status, text(rest.status))}${version ? ` (version ${version})` : ''}`,
+        detail: `تغيير حالة المحرك: من ${prevStatus} إلى ${rest.status}${rest.version ? ` (الإصدار ${rest.version})` : ''}`,
+        detailEn: `Engine state changed: from ${enumEn('pipelineStatus', prevStatus, text(prevStatus))} to ${enumEn('pipelineStatus', rest.status, text(rest.status))}${version ? ` (version ${version})` : ''}`,
         kind: 'pipeline-status', pipelineId: text(id), from: text(prevStatus), to: text(rest.status), version: version || undefined,
       });
     }

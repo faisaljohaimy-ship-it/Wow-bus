@@ -453,18 +453,20 @@ export default {
     function refreshRules() {
       if (raf) return;
       if (!live.rulesCard || !live.rulesCard.isConnected) { schedule(); return; }
+      // buildRulesCard() re-points live.rulesCard at the card it builds, so keep the mounted card to replace.
+      const mounted = live.rulesCard;
       const data = collect();
-      const next = buildRulesCard(data);
-      live.rulesCard.replaceWith(next); live.rulesCard = next;
+      mounted.replaceWith(buildRulesCard(data));
       patchTiles(data);
       restoreFocus();
     }
     function refreshQuarantine() {
       if (raf) return;
       if (!live.quarantineCard || !live.quarantineCard.isConnected) { schedule(); return; }
+      // buildQuarantineCard() re-points live.quarantineCard at the card it builds, so keep the mounted card to replace.
+      const mounted = live.quarantineCard;
       const data = collect();
-      const next = buildQuarantineCard(data);
-      live.quarantineCard.replaceWith(next); live.quarantineCard = next;
+      mounted.replaceWith(buildQuarantineCard(data));
       patchTiles(data);
       restoreFocus();
     }

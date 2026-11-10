@@ -27,7 +27,7 @@ export default {
       responseParams: { Legal: { clauseRef: 'CT-2026-014 §8.7 and §8.4' } },
       history: [
         { text: 'Automatically detected — score 100 (Red), confidence 91%' },
-        { text: 'Immediate escalation alert sent (email, Slack) — score above the critical threshold of 85' },
+        { text: 'Immediate escalation alert recorded — score above the critical threshold of 85; channels: email, Slack (routing only, not sent in this version)' },
         { text: 'Recommendation accepted and task MT-0201 assigned to Legal Counsel' },
         { text: 'First negotiation meeting held with the Employer; agreement in principle to discuss the cap in the 20 November round' },
       ],
@@ -113,7 +113,7 @@ export default {
       },
       history: [
         { text: 'Automatically detected — score 80 (Red), confidence 88%' },
-        { text: 'Recommendation accepted; task MT-0203 created and written back to BILTIX PM' },
+        { text: 'Recommendation accepted; task MT-0203 created (write-back to BILTIX PM simulated)' },
       ],
       treatment: { plan: 'Stop pouring on Floor 23 until edge protection is installed on all three sides and the inspection is documented' },
       dataQuality: {
@@ -192,7 +192,7 @@ export default {
       responseParams: { Legal: { clauseRef: 'CT-2025-087 §4.19 and §20.1' }, PMO: { trend: 'Steady at red for 5 weeks' } },
       history: [
         { text: 'Automatically detected — score 80 (Red), confidence 87%' },
-        { text: 'Standard alert sent by email and Slack to the project manager' },
+        { text: 'Standard alert for the project manager recorded; channels: email, Slack (routing only, not sent in this version)' },
         { text: 'Recommendation accepted; task MT-0205 — follow up with the electricity company and send the extension notice' },
         { text: 'Immediate escalation: inspection still not scheduled after 25 days of follow-up' },
       ],
@@ -282,7 +282,7 @@ export default {
       },
       history: [
         { text: 'Automatically detected — score 100 (Red), confidence 90%' },
-        { text: 'Immediate escalation — score 100 is at or above 85 (email, Slack, Teams)' },
+        { text: 'Immediate escalation recorded — score 100 is at or above 85; channels: email, Slack, Teams (routing only, not sent in this version)' },
         { text: 'Recommendation edited: added a standby contract for a transformer from an alternative supplier' },
         { text: 'Resident inspection team at the factory for 10 days; FAT for the first transformer scheduled for d+41' },
       ],
@@ -444,7 +444,7 @@ export default {
       },
       history: [
         { text: 'Automatically detected — score 80 (Red), confidence 86%' },
-        { text: 'Recommendation accepted; task MT-0211 created and written back to BILTIX PM' },
+        { text: 'Recommendation accepted; task MT-0211 created (simulated write-back to BILTIX PM pending)' },
       ],
       treatment: { plan: 'Close gate G2, divert port trucks and post a gate marshal during lifting' },
       dataQuality: {
@@ -472,7 +472,7 @@ export default {
       responseParams: { Legal: { clauseRef: 'CT-2026-041 §4.12, §20.1 and §13.2' } },
       history: [
         { text: 'Automatically detected — score 100 (Red), confidence 92%' },
-        { text: 'Immediate escalation — score 100 is at or above 85 (email, Slack)' },
+        { text: 'Immediate escalation recorded — score 100 is at or above 85; channels: email, Slack (routing only, not sent in this version)' },
         { text: 'Recommendation accepted; task MT-0212 assigned to Legal Counsel' },
         { text: 'Draft notice ready; awaiting the attached geotechnical laboratory report' },
       ],
@@ -557,7 +557,7 @@ export default {
       },
       history: [
         { text: 'Automatically detected — score 100 (Red), confidence 90%' },
-        { text: 'Immediate escalation — score 100 is at or above 85 (email, Slack, WhatsApp)' },
+        { text: 'Immediate escalation recorded — score 100 is at or above 85; channels: email, Slack, WhatsApp (routing only, not sent in this version)' },
         { text: 'Area evacuated and blasting stopped; recommendation accepted with task MT-0214' },
         { text: 'Geotechnical engineer on site; stabilisation design within 48 hours' },
       ],
@@ -868,7 +868,7 @@ export default {
       history: [
         { text: 'Automatically detected — score 64 (Amber), confidence 86%' },
         {
-          text: 'Risk dismissed: the exposure is already hedged by a forward contract dated 2026-10-21 (treasury ref FX-2026-118) — it did not reach the engine because of a delayed Oracle ERP sync',
+          text: 'Risk dismissed: the exposure is already hedged by a forward contract dated 2026-10-21 (treasury ref FX-2026-118) — it did not reach the engine because the Oracle ERP data in the scenario was out of date',
         },
       ],
       dataQuality: { sourceName: 'Exchange rates (SAMA)' },
@@ -1183,7 +1183,7 @@ export default {
       },
       history: [
         { text: 'Automatically detected — score 64 (Amber), confidence 86%' },
-        { text: 'Recommendation accepted; task MT-0224 — write-back failed (BILTIX PM timeout) and will be resent' },
+        { text: 'Recommendation accepted; task MT-0224 — simulated write-back to BILTIX PM failed (timeout scenario)' },
       ],
       treatment: { plan: 'Repair the gaps in the south fence, raise it to 2.4 m and patrol before every blast' },
       dataQuality: {

@@ -2300,7 +2300,7 @@ const legalRegister = [
     authority: 'المؤسسة العامة للتأمينات الاجتماعية (GOSI)',
     status: 'ممتثل', lastReview: d(-33), nextReview: d(147), owner: 'م. سارة القحطاني',
     requirements: ['الإبلاغ عن إصابة العمل خلال 3 أيام من وقوعها', 'توثيق أيام الغياب والعلاج', 'تسجيل جميع العمال في الفرع المهني'],
-    evidence: 'بلاغا الإصابتين INC-2026-018 و INC-2026-009 مرسلان خلال المدة النظامية عبر تكامل GOSI.',
+    evidence: 'بلاغا الإصابتين INC-2026-018 و INC-2026-009 قُدِّما إلى GOSI خلال المدة النظامية (مسجّلان في إجراءات الحادثين؛ تكامل GOSI غير متصل في هذا الإصدار).',
     gap: null,
   },
   {
@@ -2391,7 +2391,7 @@ const integrations = [
     id: 'cctv-ai', name: 'الكاميرات الذكية — كشف معدات الوقاية', vendor: 'Biltix Vision', category: 'sensors', icon: 'camera',
     status: 'degraded', connectionType: null, lastSync: t(0, '12:31'), latencyMs: 2400, eventsPerHour: 95, uptimePct: 96.2,
     eventsHistory: [140, 138, 145, 132, 128, 121, 110, 104, 98, 102, 97, 95],
-    description: 'تحليل بث 48 كاميرا لرصد العمل بدون خوذة أو سترة أو حزام أمان والاقتراب من المناطق المحظورة. تدهور الأداء: تأخر معالجة الإطارات في NEOM-03 بسبب ضعف الاتصال.',
+    description: 'تحليل بث 48 كاميرا لرصد العمل بدون خوذة أو سترة أو حزام أمان والاقتراب من المناطق المحظورة. في السيناريو التجريبي: أداء متدهور وتأخر معالجة الإطارات في NEOM-03 بسبب ضعف الاتصال.',
     configFields: [
       { key: 'streamUrl', label: 'عنوان خادم التحليل', type: 'url', placeholder: 'https://vision.biltix.sa' },
       { key: 'apiKey', label: 'مفتاح API', type: 'password', placeholder: '' },
@@ -2424,7 +2424,7 @@ const integrations = [
     id: 'weather-ncm', name: 'المركز الوطني للأرصاد', vendor: 'NCM', category: 'external', icon: 'weather',
     status: 'degraded', connectionType: 'json', lastSync: t(0, '11:52'), latencyMs: 1850, eventsPerHour: 12, uptimePct: 97.4,
     eventsHistory: [12, 12, 12, 12, 11, 12, 12, 9, 7, 12, 12, 12],
-    description: 'إنذارات الرياح والأمطار والغبار ودرجات الحرارة للمواقع الستة؛ تغذي قواعد إيقاف الرفع وجداول الإجهاد الحراري. تدهور: انتهاء مهلة الطلبات منذ 48 دقيقة.',
+    description: 'إنذارات الرياح والأمطار والغبار ودرجات الحرارة للمواقع الستة؛ تغذي قواعد إيقاف الرفع وجداول الإجهاد الحراري. في السيناريو التجريبي: أداء متدهور وانتهاء مهلة الطلبات منذ 48 دقيقة.',
     configFields: [
       { key: 'apiUrl', label: 'عنوان API', type: 'url', placeholder: 'https://api.ncm.gov.sa/v1' },
       { key: 'apiKey', label: 'مفتاح API', type: 'password', placeholder: '' },
@@ -2558,7 +2558,7 @@ const integrations = [
     id: 'powerbi', name: 'Power BI', vendor: 'Microsoft', category: 'data', icon: 'chart',
     status: 'disconnected', connectionType: null, lastSync: t(0, '11:47'), latencyMs: null, eventsPerHour: 0, uptimePct: 91.0,
     eventsHistory: [6, 6, 6, 6, 6, 6, 6, 6, 0, 0, 0, 0],
-    description: 'دفع المؤشرات الساعية إلى مجموعة بيانات Power BI للتقارير التنفيذية. غير متصل: انتهت صلاحية سر التطبيق في Azure AD منذ 53 دقيقة.',
+    description: 'دفع المؤشرات الساعية إلى مجموعة بيانات Power BI للتقارير التنفيذية. في السيناريو التجريبي: غير متصل لانتهاء صلاحية سر التطبيق في Azure AD منذ 53 دقيقة.',
     configFields: [
       { key: 'workspaceId', label: 'معرّف مساحة العمل', type: 'text', placeholder: '' },
       { key: 'datasetId', label: 'معرّف مجموعة البيانات', type: 'text', placeholder: '' },
@@ -2638,15 +2638,15 @@ const feedTemplates = [
   { type: 'inspection', tone: 'warning', sourceId: 'biltix-pm',  title: 'تذكير: {inspectionType} مستحق خلال {days} يوماً — {site}', detail: 'المفتش {inspector}؛ تجهيز سجلات المعدات وبطاقات الفحص' },
   { type: 'inspection', tone: 'accent',  sourceId: 'biltix-pm',  title: 'بدء {inspectionType} في {zone}', detail: 'المفتش {inspector}؛ قائمة تحقق من {checklist} بنداً — {site}' },
   // --- training ---
-  { type: 'training', tone: 'accent',  sourceId: 'hrms', title: 'اكتمال دورة «{course}» لـ {n2} عاملاً — {site}', detail: 'تحديث مصفوفة التدريب عبر نظام الموارد البشرية' },
+  { type: 'training', tone: 'accent',  sourceId: 'hrms', title: 'اكتمال دورة «{course}» لـ {n2} عاملاً — {site}', detail: 'تحديث محاكى لمصفوفة التدريب من سيناريو نظام الموارد البشرية' },
   { type: 'training', tone: 'warning', sourceId: 'hrms', title: 'شهادات تنتهي خلال {days} يوماً — {site}', detail: 'إشعار المشرفين بجدولة التجديد؛ العامل {worker} ضمن القائمة' },
-  { type: 'training', tone: 'good',    sourceId: 'hrms', title: 'مزامنة سجل التدريب من نظام الموارد البشرية', detail: '{n2} شهادة محدثة — {site}' },
+  { type: 'training', tone: 'good',    sourceId: 'hrms', title: 'محاكاة: تحديث سجل التدريب من سيناريو نظام الموارد البشرية', detail: '{n2} شهادة محدثة — {site}' },
   { type: 'training', tone: 'warning', sourceId: 'access-control', title: 'منع دخول عامل بشهادة إلزامية منتهية — {zone}', detail: '{site}؛ إحالة إلى التدريب' },
   // --- integration ---
-  { type: 'integration', tone: 'good',    sourceId: 'biltix-pm', title: 'فحص صحة التكامل {integration}: ناجح', detail: 'زمن الاستجابة {latency} مللي ثانية' },
-  { type: 'integration', tone: 'warning', sourceId: 'biltix-pm', title: 'تباطؤ مؤقت في التكامل {integration}', detail: 'زمن الاستجابة {latencyHigh} مللي ثانية — إعادة المحاولة تلقائياً' },
-  { type: 'integration', tone: 'accent',  sourceId: 'biltix-pm', title: 'مزامنة مكتملة مع {integration}', detail: '{n2} سجلاً محدثاً' },
-  { type: 'integration', tone: 'accent',  sourceId: 'biltix-pm', title: 'تجديد رمز الوصول للتكامل {integration}', detail: 'المصادقة سارية لمدة 24 ساعة' },
+  { type: 'integration', tone: 'good',    sourceId: 'biltix-pm', title: 'محاكاة: فحص صحة التكامل {integration}', detail: 'زمن استجابة افتراضي {latency} مللي ثانية — قيمة توضيحية' },
+  { type: 'integration', tone: 'warning', sourceId: 'biltix-pm', title: 'محاكاة: تباطؤ مؤقت في التكامل {integration}', detail: 'زمن استجابة افتراضي {latencyHigh} مللي ثانية — قيمة توضيحية' },
+  { type: 'integration', tone: 'accent',  sourceId: 'biltix-pm', title: 'محاكاة: مزامنة مع {integration}', detail: '{n2} سجلاً افتراضياً — حدث تجريبي' },
+  { type: 'integration', tone: 'accent',  sourceId: 'biltix-pm', title: 'محاكاة: تجديد رمز الوصول للتكامل {integration}', detail: 'حدث تجريبي — صلاحية افتراضية 24 ساعة؛ لا يوجد اتصال فعلي' },
   // --- ppe ---
   { type: 'ppe', tone: 'warning', sourceId: 'cctv-ai', weight: 2, title: 'كاميرا ذكية: رصد عامل بدون خوذة — {zone}', detail: '{site}؛ إشعار المشرف المباشر' },
   { type: 'ppe', tone: 'warning', sourceId: 'cctv-ai', title: 'كاميرا ذكية: رصد عامل بدون سترة عاكسة قرب الطريق الداخلي — {zone}', detail: '{site}' },

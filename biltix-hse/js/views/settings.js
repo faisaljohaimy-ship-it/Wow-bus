@@ -185,8 +185,8 @@ const STYLE_TEXT = `
 .view-settings .set-scale-ticks span:last-child { inset-inline-end: 0; }
 .view-settings .set-impact { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); margin: 0; }
 @container card (max-width: 520px) { .view-settings .set-impact { grid-template-columns: minmax(0, 1fr); } }
-.view-settings .set-impact .set-fact dd { display: flex; align-items: baseline; gap: 8px; direction: ltr; justify-content: flex-start; }
-:root[dir="rtl"] .view-settings .set-impact .set-fact dd { justify-content: flex-end; }
+/* "current › next" follows the reading direction: in RTL the row runs right to left and the Bidi-mirrored › draws as ‹. */
+.view-settings .set-impact .set-fact dd { display: flex; align-items: baseline; gap: 8px; justify-content: flex-start; }
 .view-settings .set-impact .set-fact dt { display: inline-flex; align-items: center; gap: 6px; }
 .view-settings .set-arrow { color: var(--ink-3); font-size: var(--fs-sm); }
 .view-settings .set-bands { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
@@ -779,7 +779,7 @@ function render(container, ctx) {
     const nxt = s.valid ? countBy(risks, s.a, s.c) : null;
     const fact = (key, tone, label) => h('div', { class: 'set-fact' },
       h('dt', {}, glyph(tone, 14), h('span', {}, label)),
-      h('dd', {}, h('span', { class: 't-metric is-sm' }, numStr(cur[key])), nxt && nxt[key] !== cur[key] ? h('span', { class: 'set-arrow' }, '→') : null, nxt && nxt[key] !== cur[key] ? h('span', { class: 't-metric is-sm' }, numStr(nxt[key])) : null));
+      h('dd', {}, h('span', { class: 't-metric is-sm' }, numStr(cur[key])), nxt && nxt[key] !== cur[key] ? h('span', { class: 'set-arrow' }, '›') : null, nxt && nxt[key] !== cur[key] ? h('span', { class: 't-metric is-sm' }, numStr(nxt[key])) : null));
     impactHost.replaceChildren(
       fact('immediate', 'critical', t('settings.thresholds.immediate')),
       fact('standard', 'warning', t('settings.thresholds.standard')),

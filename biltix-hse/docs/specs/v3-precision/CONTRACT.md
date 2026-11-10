@@ -109,10 +109,15 @@ export const STATUSES = ['demo', 'live', 'offline', 'stale', 'error', 'not_conne
 export const status = {
   mode(state),                 // 'demo' when settings.dataSource.type === 'simulation', else 'live'
   source(state),               // { status, lastSuccessAt, lastErrorAt, lastError, staleAfterMs } for the configured data source
-  connector(state, record),    // demo mode: simulated records → 'demo', unconfigured → 'not_connected';
-                               // live mode: offline → 'offline', last attempt failed → 'error',
-                               // success older than staleAfterMs (30 min) → 'stale', else 'live'
-  pipeline(state, record),     // demo mode → 'demo' (metrics are illustrative), otherwise 'not_connected'
+  connector(state, record),    // unconfigured record → 'not_connected' (either mode); demo mode: every other record → 'demo';
+                               // live mode: only simulated === false or real === true marks a record as real, and a real
+                               // record follows the configured data source's evidence (status.source): offline → 'offline',
+                               // last attempt failed → 'error', success older than staleAfterMs (30 min unless the record
+                               // sets its own) → 'stale', else 'live'; no source URL or no success yet → 'not_connected'.
+                               // Every other record stays 'demo'. A record's own lastTest / lastSuccessAt / lastErrorAt are
+                               // display-only diagnostics: they never make it 'live' or 'error'.
+  pipeline(state, record),     // demo mode → 'demo' (runs are simulated; accuracy — precision / recall / calibration /
+                               // drift — is not measured), otherwise 'not_connected' (no model service)
   meta(s),                     // { tone, icon, labelKey: `status.${s}`, descKey: `status.${s}Desc` }
   online(),                    // navigator.onLine
 };

@@ -1318,7 +1318,7 @@ const aiRisks = [
       Finance: { budgetImpactSAR: 133_000_000, cashflowMonth: '2028-07' },
     },
     history: [
-      { at: t(-61, '14:30'), by: 'النظام', text: 'إرسال تنبيه تصعيد فوري (البريد، Slack) — الدرجة فوق عتبة الحرج 85' },
+      { at: t(-61, '14:30'), by: 'النظام', text: 'تسجيل تنبيه تصعيد فوري — الدرجة فوق عتبة الحرج 85؛ القنوات: البريد، Slack (توجيه فقط، لم يُرسل في هذا الإصدار)' },
       { at: t(-58, '10:02'), by: 'م. هيا الدوسري', text: 'قبول التوصية وإسناد المهمة MT-0201 إلى المستشار القانوني' },
       { at: t(-2, '11:05'), by: 'أ. فيصل الحربي', text: 'عُقد اجتماع تفاوضي أول مع صاحب العمل؛ قبول مبدئي بمناقشة السقف في جولة 20 نوفمبر' },
     ],
@@ -1371,7 +1371,7 @@ const aiRisks = [
       Site: { location: 'المنطقة أ — الطابق 23، الحافتان الشمالية والشرقية', hazard: 'سقوط من ارتفاع', controls: ['حواجز حافة معتمدة (EN 13374 Class A)', 'خطوط حياة أفقية', 'تصريح عمل على ارتفاع'] },
       PM: { scheduleImpactDays: 1, costImpactSAR: 180_000, criticalPath: true },
     },
-    history: [{ at: t(-1, '13:10'), by: 'م. سارة القحطاني', text: 'قبول التوصية؛ أُنشئت المهمة MT-0203 وكُتبت إلى BILTIX PM' }],
+    history: [{ at: t(-1, '13:10'), by: 'م. سارة القحطاني', text: 'قبول التوصية؛ أُنشئت المهمة MT-0203 (الكتابة العكسية إلى BILTIX PM محاكاة)' }],
   }),
   air(5, {
     projectId: 'S1', category: 'bom', type: 'Delay', score: 73,
@@ -1419,7 +1419,7 @@ const aiRisks = [
       PMO: { trend: 'ثابت عند الأحمر منذ 5 أسابيع', kpi: 'SPI 0.96', portfolioRank: 5 },
     },
     history: [
-      { at: t(-33, '09:00'), by: 'النظام', text: 'تنبيه قياسي عبر البريد وSlack إلى مدير المشروع' },
+      { at: t(-33, '09:00'), by: 'النظام', text: 'تسجيل تنبيه قياسي لمدير المشروع؛ القنوات: البريد، Slack (توجيه فقط، لم يُرسل في هذا الإصدار)' },
       { at: t(-29, '11:15'), by: 'م. نورة الزهراني', text: 'قبول التوصية؛ المهمة MT-0205 — متابعة الكهرباء وإرسال إشعار التمديد' },
       { at: t(-4, '15:20'), by: 'م. نورة الزهراني', text: 'تصعيد فوري: الفحص لم يُجدول بعد 25 يوماً من المتابعة' },
     ],
@@ -1471,7 +1471,7 @@ const aiRisks = [
       PMO: { trend: 'متدهور بحدة', kpi: 'SPI 0.93 · P80 +82 يوماً', portfolioRank: 1 },
     },
     history: [
-      { at: t(-45, '07:35'), by: 'النظام', text: `تصعيد فوري — الدرجة ${S(10)} لا تقل عن 85 (البريد، Slack، Teams)` },
+      { at: t(-45, '07:35'), by: 'النظام', text: `تسجيل تصعيد فوري — الدرجة ${S(10)} لا تقل عن 85؛ القنوات: البريد، Slack، Teams (توجيه فقط، لم يُرسل في هذا الإصدار)` },
       { at: t(-40, '12:00'), by: 'م. فهد الشمري', text: 'تعديل التوصية: إضافة التعاقد الاحتياطي على محول من مورد بديل' },
       { at: t(-3, '17:45'), by: 'م. بدر القرني', text: 'فريق الفحص المقيم في المصنع منذ 10 أيام؛ FAT للمحول الأول مجدول d+41' },
     ],
@@ -1569,7 +1569,7 @@ const aiRisks = [
       Site: { location: 'المستودع 3 — منطقة الرفع، البوابة G2', hazard: 'أحمال معلقة / دهس — دخول غير مصرح', controls: ['حاجز مادي على G2', 'مراقب بوابة أثناء الرفع', 'تحويل مسار شاحنات الميناء'] },
       PM: { scheduleImpactDays: 0, costImpactSAR: 45_000, criticalPath: false },
     },
-    history: [{ at: t(0, '09:30'), by: 'م. مها الغامدي', text: 'قبول التوصية؛ المهمة MT-0211 أُنشئت وكُتبت إلى BILTIX PM' }],
+    history: [{ at: t(0, '09:30'), by: 'م. مها الغامدي', text: 'قبول التوصية؛ المهمة MT-0211 أُنشئت (الكتابة العكسية المحاكاة إلى BILTIX PM بانتظار المزامنة)' }],
   }),
   air(17, {
     projectId: 'S5', category: 'contract', type: 'Conflict', score: 86,
@@ -1586,7 +1586,7 @@ const aiRisks = [
       Finance: { budgetImpactSAR: 62_800_000, cashflowMonth: '2027-01' },
     },
     history: [
-      { at: t(-9, '09:20'), by: 'النظام', text: `تصعيد فوري — الدرجة ${S(17)} لا تقل عن 85 (البريد، Slack)` },
+      { at: t(-9, '09:20'), by: 'النظام', text: `تسجيل تصعيد فوري — الدرجة ${S(17)} لا تقل عن 85؛ القنوات: البريد، Slack (توجيه فقط، لم يُرسل في هذا الإصدار)` },
       { at: t(-8, '08:30'), by: 'م. ريم السبيعي', text: 'قبول التوصية؛ المهمة MT-0212 للمستشار القانوني' },
       { at: t(-1, '09:00'), by: 'أ. فيصل الحربي', text: 'مسودة الإشعار جاهزة؛ بانتظار تقرير المختبر الجيوتقني المرفق' },
     ],
@@ -1642,7 +1642,7 @@ const aiRisks = [
       PMO: { trend: 'جديد — حرج', kpi: 'معدل الإزاحة 14 مم/أسبوع', portfolioRank: 1 },
     },
     history: [
-      { at: t(-1, '05:35'), by: 'النظام', text: `تصعيد فوري — الدرجة ${S(20)} لا تقل عن 85 (البريد، Slack، WhatsApp)` },
+      { at: t(-1, '05:35'), by: 'النظام', text: `تسجيل تصعيد فوري — الدرجة ${S(20)} لا تقل عن 85؛ القنوات: البريد، Slack، WhatsApp (توجيه فقط، لم يُرسل في هذا الإصدار)` },
       { at: t(-1, '06:10'), by: 'م. تركي المطيري', text: 'إخلاء المنطقة وإيقاف التفجير؛ قبول التوصية والمهمة MT-0214' },
       { at: t(0, '08:15'), by: 'م. ريم السبيعي', text: 'المهندس الجيوتقني في الموقع؛ تصميم التثبيت خلال 48 ساعة' },
     ],
@@ -1842,7 +1842,7 @@ const aiRisks = [
       Finance: { budgetImpactSAR: 730_000, cashflowMonth: '2026-12' },
       Legal: { clauseRef: 'PO-2026-0512 §2.3', exposureSAR: 730_000, disputeLikelihood: 0.05 },
     },
-    history: [{ at: t(-13, '09:40'), by: 'أ. نوف السديري', text: 'تجاهل المخاطرة: التعرض محوط بالفعل بعقد آجل بتاريخ 2026-10-21 (مرجع الخزينة FX-2026-118) — لم يصل للمحرك بسبب تأخر مزامنة Oracle ERP' }],
+    history: [{ at: t(-13, '09:40'), by: 'أ. نوف السديري', text: 'تجاهل المخاطرة: التعرض محوط بالفعل بعقد آجل بتاريخ 2026-10-21 (مرجع الخزينة FX-2026-118) — لم يصل للمحرك لأن بيانات Oracle ERP في السيناريو لم تكن محدّثة' }],
   }),
   air(34, {
     projectId: 'S3', category: 'bom', type: 'Financial', score: 62,
@@ -2034,7 +2034,7 @@ const aiRisks = [
       Site: { location: 'المحيط الجنوبي — قرب منطقة استبعاد التفجير', hazard: 'دخول غير مصرح به إلى منطقة تفجير', controls: ['إصلاح السياج ورفعه', 'دورية قبل التفجير', 'تنبيه صوتي', 'توعية مجتمعية'] },
       PM: { scheduleImpactDays: 1, costImpactSAR: 220_000, criticalPath: false },
     },
-    history: [{ at: t(0, '10:00'), by: 'م. تركي المطيري', text: 'قبول التوصية؛ المهمة MT-0224 — الكتابة العكسية فشلت (انتهاء مهلة BILTIX PM) وسيعاد الإرسال' }],
+    history: [{ at: t(0, '10:00'), by: 'م. تركي المطيري', text: 'قبول التوصية؛ المهمة MT-0224 — فشلت الكتابة العكسية المحاكاة إلى BILTIX PM (سيناريو انتهاء المهلة)' }],
   }),
   air(47, {
     projectId: 'S6', category: 'contract', type: 'Conflict', score: 67,
@@ -2322,7 +2322,8 @@ function mt(n, x) {
     id: `MT${n}`, code: `MT-${String(200 + n).padStart(4, '0')}`,
     closedAt: null, outcome: null,
     ...x,
-    writeback: { target: 'BILTIX PM', status: 'synced', at: x.createdAt, ...(x.writeback || {}) },
+    // Seeded write-back states are part of the demo scenario: nothing was ever sent to BILTIX PM.
+    writeback: { target: 'BILTIX PM', status: 'synced', at: x.createdAt, simulated: true, ...(x.writeback || {}) },
   };
 }
 
@@ -2588,11 +2589,11 @@ const connectors = [
   { id: 'biltix-schedule', name: 'بلتكس — الجدول الزمني', vendor: 'Biltix', layer: 'biltix', api: 'Biltix REST v1', mode: 'read+writeback', entities: ['المهام', 'المعالم', 'التبعيات'], status: 'connected', lastSync: t(0, '07:20'), recordsPerDay: 6_410, latencyMs: 160, writeback: ['علامات انزلاق المسار الحرج', 'مهام المعالجة'], description: 'جدول المشروع داخل بلتكس (مزامن مع P6) مع كتابة علامات الانزلاق.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.biltix.sa/v1'), CF.secret('apiKey', 'مفتاح API')] },
   { id: 'biltix-site-reports', name: 'بلتكس — تقارير الموقع', vendor: 'Biltix', layer: 'biltix', api: 'Biltix REST v1 + Webhooks', mode: 'read+writeback', entities: ['التقارير اليومية', 'الملاحظات', 'التفتيشات', 'الحضور'], status: 'connected', lastSync: t(0, '06:35'), recordsPerDay: 2_980, latencyMs: 190, writeback: ['علامات السلامة على التقارير', 'مهام المعالجة للموقع'], description: 'التقارير اليومية والتفتيشات؛ تُكتب علامات السلامة ومهام الموقع.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.biltix.sa/v1'), CF.secret('apiKey', 'مفتاح API')] },
   { id: 'biltix-cost', name: 'بلتكس — التكلفة والميزانية', vendor: 'Biltix', layer: 'biltix', api: 'Biltix REST v1', mode: 'read+writeback', entities: ['بنود التكلفة', 'أوامر التغيير', 'المستخلصات'], status: 'connected', lastSync: t(0, '04:50'), recordsPerDay: 9_870, latencyMs: 230, writeback: ['علامات تجاوز الميزانية', 'تنبيهات أوامر التغيير'], description: 'بيانات التكلفة داخل بلتكس (مزامنة مع ERP) مع كتابة علامات التجاوز.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.biltix.sa/v1'), CF.secret('apiKey', 'مفتاح API')] },
-  { id: 'biltix-images', name: 'بلتكس — الصور والوسائط', vendor: 'Biltix', layer: 'biltix', api: 'Biltix Media API (S3-compatible)', mode: 'read', entities: ['صور الموقع', 'الفيديو', 'المسوحات'], status: 'degraded', lastSync: t(0, '06:40'), recordsPerDay: 4_120, latencyMs: 2_800, writeback: [], description: 'مخزن الصور والوسائط؛ تدهور الأداء بسبب حجم الصور غير المضغوطة.', configFields: [CF.url('endpoint', 'عنوان المخزن', 'https://media.biltix.sa'), CF.text('bucket', 'Bucket', 'site-images'), CF.secret('accessKey', 'Access Key'), CF.secret('secretKey', 'Secret Key')] },
+  { id: 'biltix-images', name: 'بلتكس — الصور والوسائط', vendor: 'Biltix', layer: 'biltix', api: 'Biltix Media API (S3-compatible)', mode: 'read', entities: ['صور الموقع', 'الفيديو', 'المسوحات'], status: 'degraded', lastSync: t(0, '06:40'), recordsPerDay: 4_120, latencyMs: 2_800, writeback: [], description: 'مخزن الصور والوسائط؛ في السيناريو التجريبي يتدهور الأداء بسبب حجم الصور غير المضغوطة.', configFields: [CF.url('endpoint', 'عنوان المخزن', 'https://media.biltix.sa'), CF.text('bucket', 'Bucket', 'site-images'), CF.secret('accessKey', 'Access Key'), CF.secret('secretKey', 'Secret Key')] },
   { id: 'feed-commodities', name: 'مؤشرات أسعار السلع', vendor: 'مزود بيانات السلع', layer: 'external', api: 'REST (JSON) — يومي', mode: 'read', entities: ['حديد التسليح', 'الأسمنت', 'النحاس', 'الألمنيوم', 'الديزل', 'الخشب'], status: 'connected', lastSync: t(0, '08:00'), recordsPerDay: 6, latencyMs: 420, writeback: [], description: 'أسعار السلع المحلية والعالمية (LME، الهيئة العامة للإحصاء).', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.commodities.example/v1'), CF.secret('apiKey', 'مفتاح API')] },
   { id: 'feed-fx-sama', name: 'أسعار الصرف — البنك المركزي السعودي (ساما)', vendor: 'ساما', layer: 'external', api: 'REST (JSON) — يومي', mode: 'read', entities: ['USD', 'EUR', 'CNY', 'INR', 'TRY', 'GBP'], status: 'connected', lastSync: t(0, '11:00'), recordsPerDay: 6, latencyMs: 310, writeback: [], description: 'أسعار الصرف الرسمية اليومية.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.sama.gov.sa/rates')] },
   { id: 'feed-weather-ncm', name: 'المركز الوطني للأرصاد', vendor: 'المركز الوطني للأرصاد', layer: 'external', api: 'REST (JSON) — كل 6 ساعات', mode: 'read', entities: ['توقعات 7 أيام', 'إنذارات الغبار', 'الرياح'], status: 'connected', lastSync: t(0, '06:00'), recordsPerDay: 168, latencyMs: 560, writeback: [], description: 'توقعات وإنذارات لمواقع المشاريع الستة.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.ncm.gov.sa/v1'), CF.secret('apiKey', 'مفتاح API')] },
-  { id: 'feed-gis', name: 'طبقات GIS (الهيئة العامة للمساحة والمعلومات الجيومكانية)', vendor: 'الهيئة العامة للمساحة', layer: 'external', api: 'OGC WMS/WFS', mode: 'read', entities: ['حدود المواقع', 'الطبقات الجيولوجية', 'المواقع الأثرية', 'المرافق'], status: 'disconnected', lastSync: t(-3, '14:00'), recordsPerDay: 0, latencyMs: 0, writeback: [], description: 'طبقات جغرافية للمخاطر الجيوتقنية والتراثية؛ انقطاع بسبب انتهاء شهادة TLS.', configFields: [CF.url('wmsUrl', 'عنوان WMS', 'https://gis.example.gov.sa/wms'), CF.text('layers', 'الطبقات', 'geology,heritage,utilities')] },
+  { id: 'feed-gis', name: 'طبقات GIS (الهيئة العامة للمساحة والمعلومات الجيومكانية)', vendor: 'الهيئة العامة للمساحة', layer: 'external', api: 'OGC WMS/WFS', mode: 'read', entities: ['حدود المواقع', 'الطبقات الجيولوجية', 'المواقع الأثرية', 'المرافق'], status: 'disconnected', lastSync: t(-3, '14:00'), recordsPerDay: 0, latencyMs: 0, writeback: [], description: 'طبقات جغرافية للمخاطر الجيوتقنية والتراثية؛ في السيناريو التجريبي: انقطاع بسبب انتهاء شهادة TLS.', configFields: [CF.url('wmsUrl', 'عنوان WMS', 'https://gis.example.gov.sa/wms'), CF.text('layers', 'الطبقات', 'geology,heritage,utilities')] },
 ];
 
 // ------------------------------------------------------------------
@@ -2606,9 +2607,9 @@ function audit(x) {
 }
 
 const auditLog = [
-  audit({ at: t(0, '10:01'), actor: 'النظام', action: 'writeback', target: 'MT-0224 إلى BILTIX PM', detail: 'فشل الكتابة العكسية: انتهاء مهلة الاستجابة (30 ث) — سيعاد الإرسال تلقائياً' }),
+  audit({ at: t(0, '10:01'), actor: 'النظام', action: 'writeback', target: 'MT-0224 إلى BILTIX PM', detail: 'محاكاة: فشل الكتابة العكسية (سيناريو انتهاء مهلة 30 ث) — لم يُرسل شيء إلى BILTIX PM', simulated: true }),
   audit({ at: t(0, '10:00'), actor: OWNERS.hse.S5, action: 'accept', target: 'AIR-1046', detail: 'قبول التوصية وإنشاء المهمة MT-0224 (إصلاح السياج الجنوبي)' }),
-  audit({ at: t(0, '09:31'), actor: 'النظام', action: 'writeback', target: 'MT-0211 إلى BILTIX PM', detail: 'إرسال المهمة إلى BILTIX PM — بانتظار التأكيد' }),
+  audit({ at: t(0, '09:31'), actor: 'النظام', action: 'writeback', target: 'MT-0211 إلى BILTIX PM', detail: 'محاكاة: الكتابة العكسية للمهمة إلى BILTIX PM بانتظار المزامنة — لم يُرسل شيء', simulated: true }),
   audit({ at: t(0, '09:30'), actor: OWNERS.hse.S4, action: 'accept', target: 'AIR-1016', detail: 'قبول التوصية وإنشاء المهمة MT-0211 (إغلاق البوابة G2)' }),
   audit({ at: t(0, '08:15'), actor: OWNERS.pm.S5, action: 'escalate', target: 'AIR-1020', detail: 'تأكيد التصعيد الفوري؛ المهندس الجيوتقني في الموقع' }),
   audit({ at: t(0, '07:30'), actor: 'النظام', action: 'model-update', target: 'schedule-model v3.1.2', detail: 'تشغيل مجدول: 32 نشاطاً حرجاً مُقيَّماً، مونت كارلو 6 مشاريع × 5,000 تكرار' }),
@@ -2617,16 +2618,16 @@ const auditLog = [
   audit({ at: t(0, '05:00'), actor: 'النظام', action: 'config', target: 'cost-forecast v1.6.3', detail: 'مراقبة الانحراف غير مفعّلة: تتطلب خدمة نماذج متصلة ومجموعة اختبار موسومة (غير متاحة في العرض التجريبي)' }),
   audit({ at: t(0, '05:02'), actor: 'النظام', action: 'validation', target: 'Oracle ERP', detail: 'حجر السجل ERP-PO-2026-0512-L3: عدم اتساق العملة (القاعدة VR8)' }),
   audit({ at: t(-1, '13:10'), actor: OWNERS.hse.S1, action: 'accept', target: 'AIR-1004', detail: 'قبول التوصية وإنشاء المهمة MT-0203 (حواجز الحافة — الطابق 23)' }),
-  audit({ at: t(-1, '13:11'), actor: 'النظام', action: 'writeback', target: 'MT-0203 إلى BILTIX PM', detail: 'كتابة عكسية مُحاكاة إلى BILTIX PM (المعرّف الخارجي التجريبي PM-TSK-88412)' }),
+  audit({ at: t(-1, '13:11'), actor: 'النظام', action: 'writeback', target: 'MT-0203 إلى BILTIX PM', detail: 'كتابة عكسية مُحاكاة إلى BILTIX PM (المعرّف الخارجي التجريبي PM-TSK-88412)', simulated: true }),
   audit({ at: t(-1, '08:40'), actor: OWNERS.legal, action: 'login', target: 'قمرة القيادة', detail: 'تسجيل دخول — الدور: القانونية' }),
   audit({ at: t(-1, '06:10'), actor: OWNERS.hse.S5, action: 'accept', target: 'AIR-1020', detail: 'قبول التوصية وإنشاء المهمة MT-0214 (إخلاء المنحدر الشمالي) مع تصعيد' }),
-  audit({ at: t(-1, '05:35'), actor: 'النظام', action: 'escalate', target: 'AIR-1020', detail: `تصعيد فوري تلقائي — الدرجة ${S(20)} لا تقل عن عتبة الحرج (البريد، Slack، WhatsApp)` }),
+  audit({ at: t(-1, '05:35'), actor: 'النظام', action: 'escalate', target: 'AIR-1020', detail: `تصعيد فوري تلقائي — الدرجة ${S(20)} لا تقل عن عتبة الحرج؛ القنوات: البريد، Slack، WhatsApp (توجيه فقط، لم يُرسل في هذا الإصدار)` }),
   audit({ at: t(-3, '14:00'), actor: OWNERS.hse.S4, action: 'accept', target: 'MT-0223', detail: 'إغلاق المهمة مع النتيجة؛ إغلاق المخاطرة AIR-1041 — النتيجة مسجّلة (تُستخدم في المعايرة عند ربط خدمة النماذج)' }),
-  audit({ at: t(-4, '15:20'), actor: OWNERS.pm.S2, action: 'escalate', target: 'AIR-1007', detail: 'تصعيد يدوي عبر البريد وSlack وTeams — الفحص لم يُجدول بعد 25 يوماً' }),
+  audit({ at: t(-4, '15:20'), actor: OWNERS.pm.S2, action: 'escalate', target: 'AIR-1007', detail: 'تصعيد يدوي — الفحص لم يُجدول بعد 25 يوماً؛ القنوات: البريد، Slack، Teams (توجيه فقط، لم يُرسل في هذا الإصدار)' }),
   audit({ at: t(-7, '11:30'), actor: OWNERS.finance, action: 'override', target: 'AIR-1060', detail: 'تجاهل المخاطرة: سقف التحوط 70% وفق سياسة الخزينة' }),
   audit({ at: t(-8, '12:00'), actor: OWNERS.finance, action: 'accept', target: 'AIR-1006', detail: 'قبول التوصية وإنشاء المهمة MT-0204' }),
-  audit({ at: t(-9, '10:30'), actor: 'النظام', action: 'config', target: 'الإعدادات — القنوات', detail: 'تفعيل قناة WhatsApp للتنبيهات الحرجة لمشروعي القدية ونيوم' }),
-  audit({ at: t(-13, '09:40'), actor: OWNERS.finance, action: 'override', target: 'AIR-1033', detail: 'تجاهل المخاطرة: التعرض محوط مسبقاً (FX-2026-118) — تأخر مزامنة ERP' }),
+  audit({ at: t(-9, '10:30'), actor: 'النظام', action: 'config', target: 'الإعدادات — القنوات', detail: 'إضافة WhatsApp إلى توجيه التنبيهات الحرجة لمشروعي القدية ونيوم (توجيه فقط، لم يُرسل شيء في هذا الإصدار)' }),
+  audit({ at: t(-13, '09:40'), actor: OWNERS.finance, action: 'override', target: 'AIR-1033', detail: 'تجاهل المخاطرة: التعرض محوط مسبقاً (FX-2026-118) — بيانات ERP في السيناريو لم تكن محدّثة' }),
   audit({ at: t(-31, '10:00'), actor: OWNERS.pm.S2, action: 'override', target: 'AIR-1029', detail: 'تجاهل المخاطرة: صاحب العمل غير مشمول بتعميم التعويض؛ الفرق ممتص من الاحتياطي' }),
   audit({ at: t(-40, '12:00'), actor: OWNERS.pm.S3, action: 'override', target: 'AIR-1010', detail: 'تعديل التوصية: إضافة تعاقد احتياطي على محول بديل — السبب: خطة B لغرامة 1.2 مليون ريال/يوم' }),
   audit({ at: t(-44, '09:00'), actor: 'النظام', action: 'config', target: 'contract-nlp v2.3.1', detail: 'تسجيل إعدادات خط تحليل العقود (سيناريو توضيحي) — لا توجد خدمة نماذج متصلة، ولا تُقاس دقة النموذج في هذا الإصدار' }),

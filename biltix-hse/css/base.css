@@ -504,7 +504,8 @@ kbd.cmdk-kbd, .cmdk-foot kbd, kbd.kbd {
 
 /* Data status chip + popover (A-SHELL: "Demo · local data" / Live / Stale / Error / Offline).
    .data-chip[data-status] > .data-chip-dot|.live-dot + .data-chip-label (+ .data-chip-sub)
-   .data-popover is absolutely positioned under its positioned wrapper (.data-chip-wrap / .appbar-end). */
+   From 960 px up .data-popover is absolutely positioned under its positioned wrapper (.data-chip-wrap /
+   .appbar-end); below 960 px it is fixed under the app bar and stops above the bottom tab bar (media query below). */
 .data-chip-wrap, .appbar .data-status { position: relative; display: inline-flex; flex: none; }
 .data-chip {
   --tone: var(--brand-text);
@@ -573,14 +574,18 @@ kbd.cmdk-kbd, .cmdk-foot kbd, kbd.kbd {
 /* Below 960 px the chip sits too close to the viewport's start edge for a 360 px panel hung from its end edge
    (at 390 px it ran off-screen in both directions). There the panel hangs from the app bar's end edge with a
    12 px gutter (the app bar is fixed and full-width here, so this is the viewport edge), stays under the chip,
-   and scrolls inside itself when the viewport is short (phone landscape). Desktop placement is unchanged. */
+   and scrolls inside itself when the viewport is short (phone landscape). The fixed tab bar (--z-tabbar 40)
+   paints over anything inside the app bar's stacking context (--z-appbar 30), so the panel's height also leaves
+   out the tab bar and the bottom safe area: scrolled to its end, every action stays visible and tappable above
+   the tab bar. Desktop placement is unchanged. */
 @media (max-width: 959.98px) {
   .data-popover {
     position: fixed;
     inset-block-start: calc(var(--appbar-h) - 2px);
     inset-inline-start: auto;
     inset-inline-end: var(--space-3);
-    max-block-size: calc(100dvh - var(--appbar-h) - var(--space-3));
+    max-block-size: calc(100vh - var(--appbar-h) - var(--tabbar-h) - env(safe-area-inset-bottom, 0px) - var(--space-3));
+    max-block-size: calc(100dvh - var(--appbar-h) - var(--tabbar-h) - env(safe-area-inset-bottom, 0px) - var(--space-3));
     overflow-y: auto;
     overscroll-behavior: contain;
   }

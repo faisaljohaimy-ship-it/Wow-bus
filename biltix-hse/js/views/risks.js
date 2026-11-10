@@ -27,6 +27,7 @@ const DAY_MS = 86_400_000;
 const CLOSED = 'مغلق';
 /** Audit-trail actor for edits made in this demo (stored Arabic, displayed through the dictionary). */
 const USER = 'مدير السلامة والصحة المهنية';
+/** Edits are saved as history kind 'edit' (store.updateRisk); entries saved before that carry only this sentence. */
 const NOTE_EDIT = 'تحديث بيانات المخاطرة من سجل المخاطر';
 const HISTORY_CREATED = 'إنشاء سجل المخاطرة';
 const STATUS_CHANGE_RE = /^تغيير الحالة من «(.+)» إلى «(.+)»$/;
@@ -591,12 +592,14 @@ export default {
       const en = I.lang() !== 'ar';
       return list.filter(Boolean).map((ev, i) => {
         let body = String(ev.text || '');
-        if (en) {
-          const raw = arr(risk.history)[i] ? String(arr(risk.history)[i].text || '') : body;
+        const own = arr(risk.history)[i] || ev;
+        // A register edit is worded from its structure in both languages (older saves: the Arabic sentence only).
+        if (own.kind === 'edit' || String(own.text || '') === NOTE_EDIT) body = t('risks.history.edited');
+        else if (en) {
+          const raw = String(own.text || '');
           const m = STATUS_CHANGE_RE.exec(raw);
           if (m && body === raw) body = t('risks.history.statusChanged', { from: label('riskStatus', m[1]), to: label('riskStatus', m[2]) });
           else if (raw === HISTORY_CREATED && body === raw) body = t('risks.history.created');
-          else if (raw === NOTE_EDIT && body === raw) body = t('risks.history.edited');
           else if (body === raw && ev.textEn) body = ev.textEn;
         }
         return { at: ev.at, by: ev.by, body, order: i };
@@ -888,7 +891,7 @@ export default {
         if (!isEdit || !sameControls) { payload.controls = controls; if (controls.length) edits.add('controls'); }
         payload.localEdits = Array.from(edits);
         if (isEdit) {
-          const updated = store.updateRisk(existing.id, { ...payload, by: USER, note: NOTE_EDIT });
+          const updated = store.updateRisk(existing.id, { ...payload, by: USER, historyKind: 'edit' });
           C.toast(updated ? t('risks.toast.saved', { code: existing.code }) : t('risks.toast.saveFailed'), { tone: updated ? 'good' : 'warning' });
         } else {
           const created = store.addRisk(payload);
