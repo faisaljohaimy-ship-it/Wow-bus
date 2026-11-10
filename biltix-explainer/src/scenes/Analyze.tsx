@@ -14,11 +14,19 @@ const HEAT = DATA.heatmap;
 const THRESH = { yellow: 40, red: 70 }; // platform-selectors RATING_THRESHOLDS (B2)
 const STORY_L = DATA.story.likelihood;
 const STORY_I = DATA.story.impact;
-const LEGEND: Array<{ tone: Tone; range: string; label: (lang: 'ar' | 'en') => string }> = [
-  { tone: 'critical', range: `≥ ${THRESH.red}`, label: (lang) => COPY[lang].rating.red },
-  { tone: 'warning', range: `${THRESH.yellow}–${THRESH.red - 1}`, label: (lang) => COPY[lang].rating.yellow },
-  { tone: 'good', range: `< ${THRESH.yellow}`, label: (lang) => COPY[lang].rating.green },
-];
+type LegendItem = { tone: Tone; range: string; label: (lang: 'ar' | 'en') => string };
+// ai-risks (v3 data): cells coloured by the platform rating of L × I × 4.
+// hse-register (fallback for older data): the app's TIERS bands of L × S.
+const HEAT_TIERS = (HEAT as { tiers?: Array<{ tone: string; min: number; max: number }> }).tiers;
+const LEGEND: LegendItem[] =
+  HEAT.source === 'ai-risks' || !HEAT_TIERS
+    ? [
+        { tone: 'critical', range: `≥ ${THRESH.red}`, label: (lang) => COPY[lang].rating.red },
+        { tone: 'warning', range: `${THRESH.yellow}–${THRESH.red - 1}`, label: (lang) => COPY[lang].rating.yellow },
+        { tone: 'good', range: `< ${THRESH.yellow}`, label: (lang) => COPY[lang].rating.green },
+      ]
+    : [...HEAT_TIERS].reverse().map((tr) => ({ tone: tr.tone as Tone, range: `${tr.min}–${tr.max}`, label: (lang) => COPY[lang].analyze.tiers[tr.tone] }));
+const IS_AI = HEAT.source === 'ai-risks';
 
 /** Solid mix of a tone over the card surface (avoids muddy alpha blends). */
 export function shade(hex: string, k: number): string {
@@ -152,9 +160,9 @@ export const Analyze: React.FC<SceneProps> = ({ lang, frames }) => {
       {/* ── AI risk matrix: open AI risks by likelihood × impact ── */}
       <Card style={{ top: 236, insetInlineStart: 988, width: 836, height: 664, ...enter(f, 6, 24, 16) }}>
         <div style={{ position: 'absolute', top: 30, insetInlineStart: 36 }}>
-          <Eyebrow>{t.heatTitle}</Eyebrow>
-          <div style={{ fontSize: 34, fontWeight: 600, marginTop: 4 }}>{t.heatSub(HEAT.total).split(' · ')[0]}</div>
-          <div style={{ fontSize: 20, color: C.ink3, marginTop: 4 }}>{t.heatSub(HEAT.total).split(' · ')[1]}</div>
+          <Eyebrow>{IS_AI ? t.heatTitle : t.heatTitleHse}</Eyebrow>
+          <div style={{ fontSize: 34, fontWeight: 600, marginTop: 4 }}>{(IS_AI ? t.heatSub : t.heatSubHse)(HEAT.total).split(' · ')[0]}</div>
+          <div style={{ fontSize: 20, color: C.ink3, marginTop: 4 }}>{(IS_AI ? t.heatSub : t.heatSubHse)(HEAT.total).split(' · ')[1]}</div>
         </div>
         {/* impact axis (vertical) */}
         <div
@@ -169,7 +177,7 @@ export const Analyze: React.FC<SceneProps> = ({ lang, frames }) => {
             transform: `rotate(${rtl ? 90 : -90}deg)`,
           }}
         >
-          {t.severity} {rtl ? '←' : '→'}
+          {IS_AI ? t.severity : t.severityHse} {rtl ? '←' : '→'}
         </div>
         {[5, 4, 3, 2, 1].map((i) => (
           <div
@@ -280,7 +288,7 @@ export const Analyze: React.FC<SceneProps> = ({ lang, frames }) => {
               </div>
             );
           })}
-          <div style={{ fontSize: 15, color: C.ink3, lineHeight: 1.4, marginTop: 6, ...enter(f, 34, 18, 8) }}>{t.formula}</div>
+          {IS_AI && <div style={{ fontSize: 15, color: C.ink3, lineHeight: 1.45, marginTop: 6, whiteSpace: 'pre', ...enter(f, 34, 18, 8) }}>{t.formula}</div>}
         </div>
       </Card>
     </SceneFrame>

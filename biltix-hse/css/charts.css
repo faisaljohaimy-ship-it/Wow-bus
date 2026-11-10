@@ -78,14 +78,23 @@
 .chart .line, .chart path.series { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .chart .area { opacity: .14; }
 .chart .marker, .chart circle.point { stroke: var(--bg-1); stroke-width: 2; }
-/* Dumbbell (inherent → residual, one axis): link hairline, hollow "from", solid "to" */
-.chart .dumbbell-link, .dumbbell-link { stroke: var(--line-strong); stroke-width: 2; stroke-linecap: round; }
-.chart .dumbbell-dot, .dumbbell-dot { stroke: var(--bg-1); stroke-width: 2; }
-.chart .dumbbell-dot.is-from, .dumbbell-dot.is-from { fill: var(--bg-1); stroke: var(--key-from, var(--ink-3)); stroke-width: 2; }
-.chart .dumbbell-dot.is-to, .dumbbell-dot.is-to { fill: var(--key-to, var(--s1)); }
-.chart .dumbbell-row:hover .dumbbell-link, .chart .dumbbell-row:focus-visible .dumbbell-link { stroke: var(--ink-2); }
+/* Dumbbell (inherent → residual, one axis). charts.dumbbell() sets the series colours inline:
+   g.dumbbell-row[.is-unassessed] > line.dumbbell-link + circle.dumbbell-from (hollow) + circle.marker.dumbbell-to */
+.chart .dumbbell-row { outline: none; }
+.chart .dumbbell-row[role="button"] { cursor: pointer; }
+.chart .dumbbell-link { stroke-linecap: round; transition: stroke-width var(--dur-micro) var(--ease-out); }
+.chart .dumbbell-row:hover .dumbbell-link, .chart .dumbbell-row:focus-visible .dumbbell-link, .chart .dumbbell-row.is-active .dumbbell-link { stroke-width: 5; }
+.chart .dumbbell-from { stroke-width: 2; }
+.chart .dumbbell-to.marker { stroke: var(--bg-1); stroke-width: 2; }
+.chart .dumbbell-row:focus-visible .dumbbell-to, .chart .dumbbell-row:focus-visible .dumbbell-from { stroke: var(--focus); stroke-width: 2.5; }
+/* Not yet assessed: no residual mark; the link and the inherent ring read as provisional */
+.chart .dumbbell-row.is-unassessed .dumbbell-link { stroke-dasharray: 3 4; }
+.chart .dumbbell-row.is-unassessed .dumbbell-from { stroke-dasharray: 3 2; }
+.chart .dumbbell-row.is-unassessed text, .chart .dumbbell-row.is-unassessed .value-label { fill: var(--ink-3); }
 .chart .dumbbell-label { fill: var(--ink-2); font-size: 12px; }
 .chart .dumbbell-value { fill: var(--ink-1); font-family: var(--font-mono-mixed); font-size: 11px; font-variant-numeric: tabular-nums; }
+/* Legend key for the hollow "from" marker */
+.legend-key.is-ring { inline-size: 10px; block-size: 10px; border-radius: 50%; background: transparent; border: 2px solid var(--key, currentColor); }
 .chart .bar, .chart rect.bar { shape-rendering: geometricPrecision; }
 .chart .surface-ring { fill: none; stroke: var(--bg-1); stroke-width: 2; }
 
@@ -363,8 +372,7 @@ button.legend-item:hover { color: var(--ink-1); }
   color: var(--ink-2);
   pointer-events: none;
   z-index: 1;
-  direction: ltr;
-  unicode-bidi: isolate;
+  unicode-bidi: plaintext;   /* Latin captions read LTR, but the chip keeps its logical (inline-end) position */
 }
 .radar-frame.is-paused .radar-canvas { filter: saturate(.6) brightness(.9); }
 
@@ -532,7 +540,13 @@ button.legend-item:hover { color: var(--ink-1); }
 .chart text.cell-label { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; pointer-events: none; }
 .chart text.cell-label.is-on-light { fill: var(--ink-on-light); }
 .chart text.cell-label.is-on-dark { fill: var(--ink-on-dark); }
+/* Labels inside mid-tone segments (e.g. --s1) cannot reach 4.5:1 with either ink at 12 px: a soft
+   halo in the opposite ink lifts legibility (paint-order keeps the glyph shape). */
+.chart text.cell-label.is-on-dark { paint-order: stroke fill; stroke: rgba(4, 8, 15, .55); stroke-width: 3px; stroke-linejoin: round; }
+.chart text.cell-label.is-on-light { paint-order: stroke fill; stroke: rgba(255, 255, 255, .55); stroke-width: 3px; stroke-linejoin: round; }
 .chart text.cell-label.is-empty { fill: var(--ink-3); font-weight: 500; }
+.chart rect.cell-plate { fill: var(--bg-1); stroke: none; pointer-events: none; }
+.chart text.cell-label.is-on-plate { fill: var(--ink-1); stroke: none; }
 
 /* Axis labels around the matrix */
 .matrix-labels { display: grid; gap: 4px; }

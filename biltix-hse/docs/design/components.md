@@ -21,8 +21,8 @@ Styles: `css/base.css` (shell), `css/components.css`, `css/charts.css`, `css/pla
 
 | Part | Markup / classes | Notes |
 |---|---|---|
-| App bar | `header.appbar` > `.appbar-start` (rail toggle, `.brand`) · `.appbar-center` (`.clock`, `.cmdk-btn`) · `.appbar-end` | 64 px, glass (blur) with a solid fallback. Tagline shows only ≥ 1680 px; on phones (< 480) the score pill, theme toggle and brand text step back (theme + language are also in the "More" sheet). |
-| Rail | `nav.rail` > `.rail-group` > `.rail-group-label` + `.rail-item` (`.rail-icon`, `.rail-label`) | 232 px; `body.rail-collapsed` → 72 px icons. Labels are never truncated (wrap to two lines). 960–1279 px: 72 px; `body.rail-open` expands it as an overlay. Collapsed tooltips: `.rail-tip` (positioned by the shell). Module codes are hidden in the rail. |
+| App bar | `header.appbar` > `.appbar-start` (rail toggle, `.brand`) · `.appbar-center` (`.clock`, `.cmdk-btn`) · `.appbar-end` | 64 px, glass (blur) with a solid fallback. The centre is a container (`appbar-center`): when the end group grows it gives way first — dates < 340 px, clock < 270 px, search collapses to its icon < 200 px — so nothing collides with the brand. Tagline shows only ≥ 1680 px; on phones (< 480) the score pill, theme toggle and brand text step back (theme + language are also in the "More" sheet). |
+| Rail | `nav.rail` > `.rail-group` > `.rail-group-label` + `.rail-item` (`.rail-icon`, `.rail-label`) | 232 px; `body.rail-collapsed` → 72 px icons. Labels are never truncated (wrap to two lines). 960–1279 px: 72 px; `body.rail-open` expands it as an overlay. Collapsed tooltips: the shell sets native `title`s while the rail is icon-only; `.rail-tip` is styled for a custom (fixed-position) tooltip if one is wanted later. Module codes are hidden in the rail. |
 | Language switch | `.lang-switch` > `button.lang-opt[lang][aria-pressed]` | Fixed visual order "ع \| EN" in both directions. Active = raised pill. |
 | Data chip | `.data-status` (positioned wrapper) > `button.data-chip[data-status]` (`.data-chip-icon`, `.data-chip-label`, `.data-chip-offline`) + `.data-popover` | Dashed = simulated. Popover: title, text, `dl`, list, `.data-popover-actions`; anchored under the chip (inline-end aligned). |
 | Activity panel | `aside.activity-panel` > `.activity-head` (title, `.activity-mode`, `.feed-count`, `.activity-actions`: pause / `.activity-pin` / `.activity-close`) + `.activity-new-chip` + `ul.activity-list` + `.activity-foot` | Closed by default; `body.panel-open` slides it in over content (elev-3). ≥ 1680 px `body.panel-pinned` makes it a grid column (no shadow). `.activity-pin` hidden below 1680. `.activity-new-chip` sticks under the head while the reader is scrolled. Toggle: `.activity-toggle` + `.activity-count`. |
@@ -111,7 +111,9 @@ chevron on the inline-end. `.input-icon` wraps a leading search icon. `.switch[r
 
 `.filter-bar` > `.filter-bar-group` (`.filter-bar-label` + select / `.seg` / `.chip-group`)* +
 `.filter-bar-search` + `.filter-bar-spacer` + `.filter-bar-count` (brand pill, hidden when empty) +
-`.filter-bar-reset` (ghost, disabled when nothing is filtered). `.is-plain` drops the surface.
+`.filter-bar-reset` (ghost, disabled when nothing is filtered). Groups carry their type:
+`.filter-bar-group.is-chips|is-select|is-segmented`; the search input gets a per-theme magnifier
+(`--search-glyph`) at the inline-start. `.is-plain` drops the surface.
 Below 640 px of content, groups pair up and search takes the full row.
 **Do** place it directly above what it filters. **Don't** hide the active count.
 
@@ -121,7 +123,9 @@ Rows `--row-h` (46 px comfortable / 40 compact), sticky header (`--bg-1` dark, `
 hairline rows, no zebra. Sorting: `th[aria-sort]` / `th.is-sorted` > `.sort-btn` (whole cell) +
 `.sort-ic`. Cells: `.cell-title`, `.cell-sub` (secondary line, ink-3, 12 px), `.mono` codes,
 `.align-end` numbers. Rows: `.is-clickable` (with `.row-open` button for keyboard), `.is-selected`,
-`.is-critical` (inline-start stripe). Wrappers: `.is-paged`, `.is-scroll`, `.is-overflowing`
+`.is-critical` (inline-start stripe), `.is-flash` (set by `motion.flash()` for ~600 ms after a live
+update: accent wash + inline-start accent bar; any other node gets an accent hairline + wash over its
+own opaque background). Wrappers: `.is-paged`, `.is-scroll`, `.is-overflowing`
 (scroll-edge shadows), `.table.has-sticky-first`, `[data-priority=low|medium]` columns, `.pager`.
 `.table.is-dense` for embedded tables.
 
@@ -201,8 +205,12 @@ Text in ink tokens only (never series colours); hairline grid; tooltips on hover
 chart has a table twin (`.chart-table`). Heatmap: `.matrix` / SVG `rect.cell` with
 `.is-selected` / `[aria-pressed]` focus ring; legend `.matrix-legend` or `.heatmap-legend`
 (`.heatmap-legend-item` > `.heatmap-legend-swatch[--key]` + label, or `.heatmap-legend-ramp`).
-Dumbbell (inherent → residual): `.dumbbell-link`, `.dumbbell-dot.is-from` (hollow) /
-`.is-to` (filled, `--key-to`), `.dumbbell-label`, `.dumbbell-value`. Sparklines: `.spark`
+Dumbbell (inherent → residual, one axis): `g.dumbbell-row` > `line.dumbbell-link` +
+`circle.dumbbell-from` (hollow) + `circle.marker.dumbbell-to` (colours set inline by charts.js);
+hover / focus thickens the link; `.is-unassessed` rows (no residual yet) draw a dashed link and
+ring. Legend key for the hollow marker: `.legend-key.is-ring`. Radar frames: `.radar-status`
+(top inline-start) and `.radar-caption` (bottom inline-end, `unicode-bidi: plaintext` so Latin
+captions read LTR without moving the chip). Sparklines: `.spark`
 (`.is-up`, `.is-down` use the status text tokens).
 
 ## Print (css/print.css)

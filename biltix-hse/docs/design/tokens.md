@@ -39,6 +39,7 @@ Every pre-v3 variable name still works (aliases listed at the end).
 | `--brand-soft` / `--brand-line` | 16 % / 50 % mix | 10 % / 45 % mix | Selected / pressed backgrounds and their borders. |
 | `--accent` | `#19C6E6` | `#0E93AC` | Live indicators, done marks in pipelines, kanban drop target. |
 | `--accent-text` | `#19C6E6` | `#0A7489` | Accent as text: module codes (`.code-tag`), datum captions. |
+| `--accent-text-strong` | `#19C6E6` | `#086A7D` | Accent text on accent tints (`.tone-accent` badges, `live` status): 5.09:1 on the light tint over bg-2 (plain `--accent-text` is 4.42 there). |
 | `--focus` | `#19C6E6` | `#0A7489` | Focus ring (2 px + 2 px offset), ≥ 4.6:1 on every surface. |
 | `--gold` | `#D4A017` | `#B8860B` | **Ornament only**: logo, app-bar hairline, hero edge, rail-group diamond. Never status. |
 | `--hover` / `--selected` | ink 5 % / brand 14 % | ink 4 % / brand 8 % | Row / item hover and selection washes. |
@@ -136,7 +137,7 @@ Status text on its own 14 % tint (badges): good 7.08 · warning 7.65 · serious 
 | --critical (mark) | #D03B3B | 4.47 | 4.80 | 4.43 | 4.12 | 4.12 | icon + label |
 
 Status text on its own 11 % tint: good 5.40 · warning 5.55 · serious 5.42 · critical 5.60 (on bg-1);
-5.02 · 5.16 · 5.03 · 5.19 (on bg-2). Text on fills: white on `--brand` 4.55 · white on
+5.02 · 5.16 · 5.03 · 5.19 (on bg-2); `--accent-text-strong` on the accent tint 5.48 / 5.09. Text on fills: white on `--brand` 4.55 · white on
 `--accent-text` 5.42 (light accent button and solid accent badge) · `--brand-text` on brand-soft 5.07.
 
 ---

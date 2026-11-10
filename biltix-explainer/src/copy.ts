@@ -16,10 +16,10 @@ export type Copy = {
   brandSub: string;
   demo: string;
   source: { eyebrow: string; title: (n: number) => string; sub: string; records: string; hub: string; lastBatch: string; more: (n: number) => string; recordsUnit: string };
-  validate: { eyebrow: string; title: string; sub: (rules: number, hits: string) => string; recordsIn: string; passed: string; dedup: string; rejected: string; passRate: string; completeness: string; consistency: string; quarantine: string; quarantineOf: (n: number) => string; scan: string };
-  analyze: { eyebrow: string; gaugeTitle: string; gaugeSub: (open: number) => string; categories: string; weight: string; distribution: (open: number) => string; heatTitle: string; heatSub: (n: number) => string; likelihood: string; severity: string; formula: string; likelihoodLabels: string[]; severityLabels: string[]; tiers: Record<string, string> };
+  validate: { eyebrow: string; title: string; sub: (rules: number, hits: string) => string; recordsIn: string; passed: string; dedup: string; rejected: string; passRate: string; completeness: string; consistency: string; quarantine: string; quarantineOf: (n: number) => string; };
+  analyze: { eyebrow: string; gaugeTitle: string; gaugeSub: (open: number) => string; categories: string; distribution: (open: number) => string; heatTitle: string; heatSub: (n: number) => string; heatTitleHse: string; heatSubHse: (n: number) => string; severityHse: string; likelihood: string; severity: string; formula: string; likelihoodLabels: string[]; severityLabels: string[]; tiers: Record<string, string> };
   rating: Record<string, string>;
-  explain: { detected: string; precision: string; recall: string; formula: (l: number, i: number, sc: number) => string; eyebrow: string; why: string; modelWeight: string; evidence: string; weeklyRate: string; limit: string; cumulative: string; schematic: string; crack: string; crest: string; pit: string; below: string; movement: string; confidence: string; mmWeek: string; mm: string; m: string };
+  explain: { detected: string; precision: string; recall: string; eyebrow: string; why: string; modelWeight: string; evidence: string; weeklyRate: string; limit: string; cumulative: string; schematic: string; crack: string; crest: string; pit: string; movement: string; confidence: string; mmWeek: string; mm: string; m: string };
   approve: { rationale: string; stakeholders: string; eyebrow: string; recTitle: string; impact: string; effort: string; accept: string; edit: string; dismiss: string; accepted: string; reviewer: string; human: string; detected: string; escalated: string; acknowledged: string; decided: string; min: (n: number) => string };
   mitigate: { zone: string; eyebrow: string; status: string; source: string; owner: string; due: string; risk: string; criticalPath: string; yes: string; schedule: string; cost: string; controls: string; done: string; inProgress: string; writeback: string; synced: string; days: (n: number) => string; sar: (n: number) => string };
   close: { eyebrow: string; title: string; verified: string; closure: string; illustrative: string; residual: string; target: string };
@@ -52,20 +52,21 @@ export const COPY: Record<Lang, Copy> = {
       consistency: 'الاتساق',
       quarantine: 'في الحجر',
       quarantineOf: (n) => `من ${n} سجلاً`,
-      scan: 'فحص المخطط والتكرار والاتساق',
     },
     analyze: {
       eyebrow: 'تحليل المخاطر',
       gaugeTitle: 'المؤشر الموحد للمحفظة',
       gaugeSub: (open) => `مرجّح عبر 5 فئات · ${open} مخاطرة مفتوحة`,
       categories: 'درجات الفئات',
-      weight: 'الوزن',
       distribution: (open) => `${open} مخاطرة مفتوحة حسب التصنيف`,
       heatTitle: 'مصفوفة المخاطر الذكية',
+      heatTitleHse: 'مصفوفة سجل السلامة',
+      heatSubHse: (n) => `الاحتمالية × الشدة · ${n} مخاطرة مفتوحة`,
+      severityHse: 'الشدة',
       heatSub: (n) => `الاحتمالية × الأثر · ${n} مخاطرة مفتوحة`,
       likelihood: 'الاحتمالية',
       severity: 'الأثر',
-      formula: 'الدرجة = الاحتمالية × الأثر × 4',
+      formula: 'الدرجة =\nالاحتمالية × الأثر × 4',
       likelihoodLabels: ['نادر', 'غير محتمل', 'محتمل', 'مرجّح', 'شبه مؤكد'],
       severityLabels: ['طفيف', 'بسيط', 'متوسط', 'جسيم', 'كارثي'],
       tiers: { good: 'منخفض', warning: 'متوسط', serious: 'عالٍ', critical: 'حرج' },
@@ -83,13 +84,11 @@ export const COPY: Record<Lang, Copy> = {
       crack: 'شقوق شد',
       crest: 'التاج',
       pit: 'الحفرة',
-      below: 'أسفل المنحدر',
       movement: 'اتجاه الحركة',
       confidence: 'الثقة',
       detected: 'الاكتشاف',
       precision: 'دقة النموذج',
       recall: 'الاستدعاء',
-      formula: (l: number, i: number, sc: number) => `الاحتمالية ${l} × الأثر ${i} × 4 = ${sc}`,
       mmWeek: 'مم/أسبوع',
       mm: 'مم',
       m: 'م',
@@ -169,20 +168,21 @@ export const COPY: Record<Lang, Copy> = {
       consistency: 'Consistency',
       quarantine: 'In quarantine',
       quarantineOf: (n) => `of ${n} records`,
-      scan: 'Schema · duplicates · consistency',
     },
     analyze: {
       eyebrow: 'Risk analysis',
       gaugeTitle: 'Consolidated portfolio score',
       gaugeSub: (open) => `Weighted across 5 categories · ${open} open risks`,
       categories: 'Category scores',
-      weight: 'Weight',
       distribution: (open) => `${open} open AI risks by rating`,
       heatTitle: 'AI risk matrix',
+      heatTitleHse: 'Safety register matrix',
+      heatSubHse: (n) => `Likelihood × severity · ${n} open risks`,
+      severityHse: 'Severity',
       heatSub: (n) => `Likelihood × impact · ${n} open risks`,
       likelihood: 'Likelihood',
       severity: 'Impact',
-      formula: 'Score = likelihood × impact × 4',
+      formula: 'Score =\nlikelihood × impact × 4',
       likelihoodLabels: ['Rare', 'Unlikely', 'Possible', 'Likely', 'Almost certain'],
       severityLabels: ['Minor', 'Low', 'Moderate', 'Major', 'Severe'],
       tiers: { good: 'Low', warning: 'Medium', serious: 'High', critical: 'Critical' },
@@ -200,13 +200,11 @@ export const COPY: Record<Lang, Copy> = {
       crack: 'Tension cracks',
       crest: 'Crest',
       pit: 'Pit',
-      below: 'Below the slope',
       movement: 'Movement',
       confidence: 'Confidence',
       detected: 'Detected',
       precision: 'Model precision',
       recall: 'Recall',
-      formula: (l: number, i: number, sc: number) => `Likelihood ${l} × impact ${i} × 4 = ${sc}`,
       mmWeek: 'mm/week',
       mm: 'mm',
       m: 'm',

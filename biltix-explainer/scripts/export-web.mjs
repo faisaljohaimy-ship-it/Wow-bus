@@ -62,9 +62,20 @@ for (const lang of langs) {
   serveUrl = serveUrl || (await bundle({ entryPoint: resolve(ROOT, 'src/index.ts') }));
   const composition = await selectComposition({ serveUrl, id: lang === 'ar' ? 'ExplainerAR' : 'ExplainerEN', browserExecutable, chromeMode });
   const poster = resolve(WEB, `explainer-${lang}-poster.webp`);
-  for (let q = 82; q >= 40; q -= 6) {
-    await renderStill({ serveUrl, composition, frame: POSTER_FRAME, output: poster, imageFormat: 'webp', jpegQuality: q, scale: 2 / 3, browserExecutable, chromeMode, overwrite: true });
-    if (statSync(poster).size < POSTER_BUDGET) break;
+  // Remotion's WebP stills have no quality knob: take Chrome's default encode, and only if it
+  // is over budget re-encode a PNG still with Pillow at a decreasing quality.
+  await renderStill({ serveUrl, composition, frame: POSTER_FRAME, output: poster, imageFormat: 'webp', scale: 2 / 3, browserExecutable, chromeMode, overwrite: true });
+  if (statSync(poster).size >= POSTER_BUDGET) {
+    const png = resolve(ROOT, `out/poster-${lang}.tmp.png`);
+    await renderStill({ serveUrl, composition, frame: POSTER_FRAME, output: png, imageFormat: 'png', scale: 2 / 3, browserExecutable, chromeMode, overwrite: true });
+    execFileSync('python3', ['-I', '-c', [
+      'import sys, os; from PIL import Image',
+      'src, dst, budget = sys.argv[1], sys.argv[2], int(sys.argv[3])',
+      'im = Image.open(src).convert("RGB")',
+      'for q in range(84, 30, -4):',
+      '    im.save(dst, "WEBP", quality=q, method=6)',
+      '    if os.path.getsize(dst) < budget: break',
+    ].join('\n'), png, poster, String(POSTER_BUDGET)]);
   }
   console.log(`poster ${lang}: ${poster} (${kb(poster)})`);
 }

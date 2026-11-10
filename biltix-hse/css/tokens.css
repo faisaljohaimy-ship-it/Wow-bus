@@ -35,6 +35,7 @@
      critical-text #B42318 6.12 ·  6.57 ·  6.07 ·  5.63   (tint 5.60)
      line-strong #7888A0   3.35 ·  3.60 ·  3.32 ·  3.09   (control boundaries ≥ 3:1)
      focus #0A7489         5.05 ·  5.42 ·  5.00 ·  4.65
+     accent-text-strong #086A7D on the accent tint 5.48 (bg-1) / 5.09 (bg-2)
    Status MARK colours (--good/--warning/--serious/--critical) are identical in
    both themes and are for marks only (dots, bars, cells, stripes); text uses
    the --*-text variants and status always ships with an icon + label.
@@ -209,7 +210,7 @@
   --line-strong: #62789A;   /* input & control boundaries (≥ 3:1 on every surface) */
   --ink-1: #F4F7FB;  --ink-2: #B8C6D8;  --ink-3: #93A3BA;
   --brand: #2F6FED;  --brand-ink: #FFFFFF;  --brand-text: #7FA6FF;
-  --accent: #19C6E6; --accent-text: #19C6E6;
+  --accent: #19C6E6; --accent-text: #19C6E6; --accent-text-strong: #19C6E6;
   --gold: #D4A017;   /* ornament only — never status */
   --focus: #19C6E6;
   --good: #0CA30C; --warning: #FAB219; --serious: #EC835A; --critical: #D03B3B;   /* marks */
@@ -260,6 +261,7 @@
   --accent: #0E93AC; --accent-text: #0A7489;
   --gold: #B8860B;
   --focus: #0A7489;
+  --accent-text-strong: #086A7D;   /* accent text on accent tints (5.09:1 on the tint over bg-2) */
   --good: #0CA30C; --warning: #FAB219; --serious: #EC835A; --critical: #D03B3B;
   --good-text: #087208; --warning-text: #8A5A00; --serious-text: #A4471F; --critical-text: #B42318;
   --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;

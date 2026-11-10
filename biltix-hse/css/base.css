@@ -308,7 +308,15 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
   gap: var(--space-3);
   min-inline-size: 0;
 }
-.appbar-center { justify-content: center; gap: var(--space-4); }
+.appbar-center { justify-content: center; gap: var(--space-4); container: appbar-center / inline-size; }
+/* The centre track gives way first when the end group grows (long English labels, more chips):
+   dates go, then the clock, then the search collapses to its icon — never over the brand. */
+@container appbar-center (max-width: 340px) { .appbar-center .clock-dates { display: none; } }
+@container appbar-center (max-width: 270px) { .appbar-center .clock { display: none; } }
+@container appbar-center (max-width: 200px) {
+  .appbar-center .cmdk-btn { flex: none; inline-size: 40px; min-inline-size: 40px; padding-inline: 0; justify-content: center; }
+  .appbar-center .cmdk-btn-label, .appbar-center .cmdk-btn kbd.cmdk-kbd { display: none; }
+}
 .appbar-end { justify-content: flex-end; gap: var(--space-2); }
 .appbar-end > .btn-icon, .appbar-end > .pill, .appbar-end > .user-chip, .appbar-start > .btn-icon,
 .appbar-end > .lang-switch, .appbar-end > .data-chip, .appbar-end > .activity-toggle { flex: none; }
@@ -524,7 +532,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd, kbd.kbd {
 .data-chip-sub { color: var(--ink-2); font-weight: 400; }
 .data-chip-sub::before { content: "·"; margin-inline-end: 6px; color: var(--ink-3); }
 .data-chip[data-status="demo"]          { --tone: var(--brand-text); }
-.data-chip[data-status="live"]          { --tone: var(--accent-text); border-style: solid; }
+.data-chip[data-status="live"]          { --tone: var(--accent-text-strong); border-style: solid; }
 .data-chip[data-status="stale"]         { --tone: var(--warning-text); border-style: solid; }
 .data-chip[data-status="error"]         { --tone: var(--critical-text); border-style: solid; }
 .data-chip[data-status="offline"]       { --tone: var(--ink-3); border-style: solid; }
@@ -838,7 +846,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd, kbd.kbd {
 /* Collapsed rail: icons only */
 .rail-collapsed .rail,
 .is-rail-collapsed .rail,
-.rail.is-collapsed { padding-inline: 10px; }
+.rail.is-collapsed { padding-inline: 10px; scrollbar-gutter: auto; }
 .rail-collapsed .rail-item,
 .rail-collapsed .rail-list > li > button,
 .rail-collapsed .rail-list > li > a,
@@ -1517,7 +1525,7 @@ body.is-feed-paused .feed-status::before,
 
 @media (max-width: 1279.98px) {
   body.app { --rail-current: var(--rail-w-collapsed); }
-  .rail { padding-inline: 10px; }
+  .rail { padding-inline: 10px; scrollbar-gutter: auto; }
   .rail-item, .rail-list > li > button, .rail-list > li > a { grid-template-columns: 1fr; justify-items: center; padding-inline: 0; min-block-size: 40px; }
   .rail-label, .rail-site { display: none; }
   .rail-foot { justify-content: center; padding-inline: 0; }

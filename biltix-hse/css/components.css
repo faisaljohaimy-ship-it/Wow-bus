@@ -40,7 +40,7 @@
 .tone-serious  { --tone: var(--serious);  --tone-ink: var(--serious-text); }
 .tone-critical { --tone: var(--critical); --tone-ink: var(--critical-text); }
 .tone-brand    { --tone: var(--brand);    --tone-ink: var(--brand-text); }
-.tone-accent   { --tone: var(--accent);   --tone-ink: var(--accent-text); }
+.tone-accent   { --tone: var(--accent);   --tone-ink: var(--accent-text-strong); }
 :root[data-theme="light"] .tone-neutral { --tone-soft: var(--bg-2); --tone-line: var(--line-2); }
 
 /* --------------------------------------------------------------------------
@@ -445,7 +445,7 @@ a.domain-card:hover, button.domain-card:hover, .domain-card.is-clickable:hover {
   background: var(--tone);
 }
 .status-badge[data-status="demo"], .status-badge.is-demo { --tone: var(--brand); --tone-ink: var(--brand-text); border-style: dashed; }
-.status-badge[data-status="live"], .status-badge.is-live { --tone: var(--accent); --tone-ink: var(--accent-text); }
+.status-badge[data-status="live"], .status-badge.is-live { --tone: var(--accent); --tone-ink: var(--accent-text-strong); }
 .status-badge[data-status="offline"], .status-badge.is-offline { --tone: var(--ink-3); --tone-ink: var(--ink-2); }
 .status-badge[data-status="stale"], .status-badge.is-stale { --tone: var(--warning); --tone-ink: var(--warning-text); }
 .status-badge[data-status="error"], .status-badge.is-error { --tone: var(--critical); --tone-ink: var(--critical-text); }
@@ -916,8 +916,14 @@ th.is-sorted, th[aria-sort="ascending"], th[aria-sort="descending"] { box-shadow
    Forms — inputs / selects / textarea with --line-strong boundaries (≥ 3:1)
    -------------------------------------------------------------------------- */
 
-:root { --input-bg: var(--bg-2); }
-:root[data-theme="light"] { --input-bg: var(--bg-1); }
+:root {
+  --input-bg: var(--bg-2);
+  --search-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2393A3BA' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-3.5-3.5'/%3E%3C/svg%3E");
+}
+:root[data-theme="light"] {
+  --input-bg: var(--bg-1);
+  --search-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2355647C' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-3.5-3.5'/%3E%3C/svg%3E");
+}
 
 .field { display: flex; flex-direction: column; gap: 6px; min-inline-size: 0; }
 .field-label { font-size: var(--fs-sm); font-weight: 500; color: var(--ink-2); line-height: 1.4; }
@@ -1089,6 +1095,18 @@ input[type="search"].field-control { padding-inline-start: 12px; }
 .filter-bar .field-control { block-size: var(--ctl-h-sm); font-size: var(--fs-sm); inline-size: auto; min-inline-size: 140px; max-inline-size: 240px; }
 .filter-bar-search { flex: 1 1 220px; min-inline-size: 180px; max-inline-size: 360px; }
 .filter-bar-search .field-control, .filter-bar input[type="search"].field-control { inline-size: 100%; max-inline-size: none; }
+/* Magnifier at inline-start of the filter search (per-theme data-URI, like the select chevron) */
+.filter-bar-search input[type="search"].field-control {
+  padding-inline-start: 34px;
+  background-image: var(--search-glyph);
+  background-repeat: no-repeat;
+  background-size: 15px 15px;
+  background-position: calc(100% - 12px) 50%;   /* RTL: inline-start = right */
+}
+:root[dir="ltr"] .filter-bar-search input[type="search"].field-control { background-position: 12px 50%; }
+.filter-bar-group.is-chips .chip-group { flex-wrap: wrap; gap: 6px; }
+.filter-bar-group.is-segmented .seg { flex: none; }
+.filter-bar-group.is-select .field-control { min-inline-size: 150px; }
 .filter-bar .seg { padding: 2px; }
 .filter-bar .seg-btn { min-block-size: calc(var(--ctl-h-sm) - 6px); font-size: var(--fs-sm); }
 .filter-bar .chip { block-size: var(--ctl-h-sm); }
@@ -1765,6 +1783,17 @@ dialog.modal.video-dialog, .video-dialog { inline-size: min(1040px, 100%); }
 }
 .live-dot.is-lg { inline-size: 10px; block-size: 10px; }
 .live-dot.is-static::after { animation: none; opacity: .35; transform: scale(1.6); }
+
+/* motion.flash(): .is-flash for ~600 ms on a node that just changed (row, tile, chip).
+   An accent hairline + 9 % wash layered over the node's own (opaque) background; Motion adds the
+   opacity pulse. Under reduced motion only the static highlight shows, briefly. */
+.is-flash {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
+  background-image: linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), color-mix(in srgb, var(--accent) 9%, transparent));
+}
+tr.is-flash { box-shadow: none; background-image: none; }
+tr.is-flash > td { background-image: linear-gradient(color-mix(in srgb, var(--accent) 10%, transparent), color-mix(in srgb, var(--accent) 10%, transparent)); }
+tr.is-flash > td:first-child { box-shadow: inset calc(var(--dir) * 2px) 0 0 var(--accent); }
 
 /* --------------------------------------------------------------------------
    Key-value lists

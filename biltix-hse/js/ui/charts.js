@@ -274,6 +274,19 @@ function luminance(rgb) {
  * light fills (yellow / warning / light sequential steps). Threshold chosen so the
  * eight categorical steps and status tones match the dataviz palette rule.
  */
+/** Ink for a label inside a fill: the better of the two inks, or a plate when neither reaches 4.5:1. */
+function insideInk(cssColor) {
+  const bg = resolveColor(cssColor);
+  if (!bg) return { cls: 'is-on-dark', plate: true };
+  const lb = luminance(bg);
+  const ratio = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  const darkInk = resolveColor('var(--ink-on-light)');
+  const lightInk = resolveColor('var(--ink-on-dark)');
+  const cDark = darkInk ? ratio(luminance(darkInk), lb) : 0;
+  const cLight = lightInk ? ratio(luminance(lightInk), lb) : 0;
+  return { cls: cDark >= cLight ? 'is-on-light' : 'is-on-dark', plate: Math.max(cDark, cLight) < 4.5 };
+}
+
 function inkOn(cssColor) {
   const rgb = resolveColor(cssColor);
   if (!rgb) return 'is-on-dark';
@@ -1518,7 +1531,16 @@ export function segmentedBar(opts = {}) {
         const text = o.showShare ? share : f(p.value);
         const tw = measure(text, 12, { weight: 600, mono: true });
         if (tw + 14 <= w) {
-          svgEl('text', { x: rtl ? x + w - 7 : x + 7, y: h / 2 + 4, 'text-anchor': rtl ? A.right : A.left, class: ['cell-label', 'num', inkOn(p.color)], text }, g);
+          const ink = insideInk(p.color);
+          if (ink.plate) {
+            // Mid-tone fills give < 4.5:1 with either ink: label sits on an opaque surface plate.
+            const pw = tw + 10;
+            const px = rtl ? x + w - 4 - pw : x + 4;
+            svgEl('rect', { x: r2(px), y: r2(h / 2 - 9), width: r2(pw), height: 18, rx: 4, class: 'cell-plate' }, g);
+            svgEl('text', { x: rtl ? px + pw - 5 : px + 5, y: h / 2 + 4, 'text-anchor': rtl ? A.right : A.left, class: ['cell-label', 'num', 'is-on-plate'], text }, g);
+          } else {
+            svgEl('text', { x: rtl ? x + w - 7 : x + 7, y: h / 2 + 4, 'text-anchor': rtl ? A.right : A.left, class: ['cell-label', 'num', ink.cls], text }, g);
+          }
         }
       }
     });
