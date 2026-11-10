@@ -1,0 +1,32 @@
+{
+  "name": "biltix-explainer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BILTIX Risk AI — 41 s product explainer (Arabic RTL + English) rendered with Remotion. Isolated from the biltix-hse static app.",
+  "type": "module",
+  "scripts": {
+    "extract": "node scripts/extract-data.mjs",
+    "captions": "node scripts/write-captions.mjs",
+    "studio": "remotion studio src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "render:ar": "remotion render src/index.ts ExplainerAR out/biltix-explainer-ar-1080p.mp4",
+    "render:en": "remotion render src/index.ts ExplainerEN out/biltix-explainer-en-1080p.mp4",
+    "render": "npm run render:ar && npm run render:en",
+    "export:web": "node scripts/export-web.mjs",
+    "stills": "node scripts/contact-sheet.mjs",
+    "build": "npm run extract && npm run captions && npm run render && npm run export:web"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/ibm-plex-sans": "5.3.0",
+    "@fontsource/ibm-plex-sans-arabic": "5.3.0",
+    "@remotion/cli": "4.0.542",
+    "react": "19.2.9",
+    "react-dom": "19.2.9",
+    "remotion": "4.0.542"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "typescript": "5.9.3"
+  }
+}
