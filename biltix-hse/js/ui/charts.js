@@ -2678,7 +2678,37 @@ export function spider(opts = {}) {
 
 export const charts = {
   lineChart, barChart, groupedBars, heatmap, segmentedBar, dumbbell, sparkline, meter, gauge, ring, ringGauge, spider,
-  tooltip, paletteFor, prefersReducedMotion, gaugeRatio, gaugeBars, trendSummary, trendSentence,
+  tooltip, paletteFor, prefersReducedMotion, gaugeRatio, gaugeBars, trendSummary, trendSentence, radialTrend,
 };
 
 export default charts;
+
+/**
+ * Circular replacement for a line sparkline on stat tiles and cards (v3.1.1): the weekly values as
+ * radial bars round a ring that shows the latest week as a share of the highest week in the series
+ * (named in the tooltip). A series of zeros shows an empty solid track (honest "none"), no values at
+ * all the dashed empty state. Returns { el, update(values), destroy }: el = span.radial-trend holding
+ * the aria-hidden gauge and an sr-only trend sentence (prefixed with `label` when given).
+ */
+export function radialTrend({ values = [], tone = 'brand', size = 'sm', label = '' } = {}) {
+  const norm = (list) => (Array.isArray(list) ? list : []).map((v) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? null : Number(v)));
+  const ratioOf = (vals) => {
+    const known = vals.filter((v) => v !== null);
+    if (!known.length) return null;
+    const max = Math.max(...known);
+    const last = known[known.length - 1];
+    return max > 0 ? Math.max(0, Math.min(1, last / max)) : 0;
+  };
+  let vals = norm(values);
+  const wrap = htmlEl('span', { class: 'radial-trend' });
+  const gauge = ringGauge({ value: ratioOf(vals), tone, bars: vals, size, center: false, title: t('charts.gauge.peakTitle', { weeks: vals.length || 12 }) });
+  wrap.appendChild(gauge.el);
+  const sr = htmlEl('span', { class: 'sr-only' }, wrap);
+  const say = () => { sr.textContent = `${label ? `${label}: ` : ''}${trendSentence(vals)}`; };
+  say();
+  return {
+    el: wrap,
+    update(next) { vals = norm(next); gauge.update({ value: ratioOf(vals), bars: vals }); say(); },
+    destroy() { if (gauge.destroy) gauge.destroy(); },
+  };
+}

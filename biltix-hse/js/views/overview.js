@@ -417,7 +417,7 @@ export default {
       points.push(current);
       return points;
     }
-    const sparkOf = (hist, key) => tryEl(() => charts.sparkline({ values: hist.map((p) => (p && Number.isFinite(p[key]) ? p[key] : 0)), width: 84, height: 26 }), 'sparkline');
+    const sparkOf = (hist, key) => tryEl(() => { const values = hist.map((p) => (p && Number.isFinite(p[key]) ? p[key] : 0)); return typeof charts.radialTrend === 'function' ? charts.radialTrend({ values, tone: 'brand', size: 'sm' }) : charts.sparkline({ values, width: 84, height: 26 }); }, 'radialTrend');
     const tierOfCell = (ri, ci) => safe(() => sel.riskTier((ri + 1) * (ci + 1)), 'منخفض', 'riskTier');
     const toneOfCell = (ri, ci) => safe(() => sel.tierTone(tierOfCell(ri, ci)), 'good', 'tierTone');
     const scaleLabel = (axis, n) => t('overview.matrix.axisItem', { n: fmt.num(n), label: t(`risks.scale.${axis}.${n}`) });

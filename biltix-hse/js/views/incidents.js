@@ -390,7 +390,7 @@ export const incidentsView = {
       const daysLost = inPeriod.reduce((s, i) => s + (Number(i.daysLost) || 0), 0);
       const daysLostPrev = previous.reduce((s, i) => s + (Number(i.daysLost) || 0), 0);
       const siteItems = (st.incidents || []).filter((i) => i && (gf.siteId === 'all' || !gf.siteId || i.siteId === gf.siteId));
-      const spark = (values) => tryEl(() => charts.sparkline({ values, width: 96, height: 28 }), 'sparkline');
+      const spark = (values) => tryEl(() => (typeof charts.radialTrend === 'function' ? charts.radialTrend({ values, tone: 'serious', size: 'sm' }) : charts.sparkline({ values, width: 96, height: 28 })), 'radialTrend');
       const period = tn('incidents.period.days', range);
       const open = k ? k.openIncidents : 0;
       metrics.open.set({ title: t('incidents.metrics.open'), value: open, tone: open ? 'serious' : 'good', delta: k ? k.deltas.openIncidents : null, goodWhen: 'down',

@@ -2824,18 +2824,20 @@ a.urgent-item:hover, button.urgent-item:hover, .urgent-item.is-clickable:hover {
    --edge-w border as a polished nickel-orange band (--edge-metal, banded metallic gradient tuned per
    theme): the border is transparent and the element paints two background layers, its surface on the
    padding box and the metal on the border box. Painted once; nothing repaints while it is on screen.
-   Laser: top-level cards and tiles carry a short glowing comet (::after) that travels round the edge
-   along the border's rounded centre line at constant speed, clockwise in English and counter-clockwise
-   in Arabic, neighbours out of phase. js/ui/edges.js builds the path from the measured size and runs it
-   as a compositor transform animation; the card is never restyled or repainted per frame (measured in
-   docs/design/tokens.md §3.1).
+   Laser: every top-level card and tile carries evenly spaced glowing comets (one about every 210 px of
+   edge, 3 to 12) that travel round the whole frame along the border's rounded centre line at one steady
+   speed, clockwise in English and counter-clockwise in Arabic, neighbours out of phase. js/ui/edges.js
+   builds the path from the measured size and runs it as compositor transform animations; the card is
+   never restyled or repainted per frame (measured in docs/design/tokens.md §3.1).
    Off: reduced motion (OS or setting), Static background, print and forced colours (system borders).
-   Nested and plain cards get a softer metal and no comet; kanban cards and summary strips (their cells
-   draw grid lines up to the padding edge) get metal only.
+   Nested and plain cards get a softer metal and no comets; kanban cards carry at most 3, dimmed; hosts
+   that clip at their padding box (summary strips) run their comets just inside the metal.
    Ornament only: the orange is never a status colour; status keeps its stripe, dot, icon and label,
    and a selected card's brand border still replaces the metal.
    -------------------------------------------------------------------------- */
 
+/* .summary-strip was not positioned: its comet row needs it as the containing block. */
+.summary-strip { position: relative; }
 .card, .tile, .metric-tile, .domain-card, .int-card, .kanban-card, .summary-strip {
   --edge-fill: var(--bg-1);
   border: var(--edge-w) solid transparent;
@@ -2890,47 +2892,52 @@ button.domain-card:hover, .domain-card.is-clickable:hover, .int-card:hover, .kan
 /* These two clip their content; clip at the border box so the comet can run on the metal. */
 .int-card { overflow: clip; overflow-clip-margin: var(--edge-w); }
 
-/* The laser comet: shape and glow here; js/ui/edges.js measures each host and moves the comet round its
-   edge with a compositor transform animation, then sets data-edge="lit". Without that module there is no comet. */
-.card:not(.is-plain)::after, .tile::after, .metric-tile::after, .domain-card::after, .int-card::after, .connector-card::after {
-  content: "";
+/* The laser: js/ui/edges.js gives every top-level card and tile one decorative row, span.edge-run
+   (aria-hidden, no text, over the padding box), with K evenly spaced comets (<i>) that travel round the
+   whole frame at one steady speed; it sets data-edge="lit" once they run. Without that module there are
+   no comets. Nested cards stay quiet (no row). */
+.edge-run {
+  /* !important: card variants position their children (.card.is-hero > * is relative); the row must stay
+     an out-of-flow overlay or it would take part in the card's layout. */
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 3 !important;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-main) var(--ease-out);
+}
+[data-edge="lit"] > .edge-run { opacity: 1; }
+.edge-run > i {
   position: absolute;
   inset-block-start: 0;
   inset-inline-start: 0;
-  z-index: 3;
   inline-size: var(--comet-len);
   block-size: 2.5px;
   margin-block-start: -1.25px;
   border-radius: 2px;
-  pointer-events: none;
   background: linear-gradient(90deg, transparent, var(--beam-tail) 34%, var(--beam-core) 80%, var(--beam-head));
   box-shadow: 0 0 7px 1px var(--beam-glow);
   transform-origin: 100% 50%;
-  opacity: 0;
-  will-change: transform;
+  will-change: transform; /* its own small layer: moving it never repaints the card */
 }
-[data-edge="lit"]::after { opacity: 1; }
-:is(.card:not(.is-plain), .tile, .metric-tile, .domain-card, .int-card, .connector-card)[data-edge="lit"]:hover::after { box-shadow: 0 0 10px 2px var(--beam-glow); }
-.card .card::after { content: none; }
+.kanban-card > .edge-run > i { opacity: .75; }
+[data-edge="lit"]:hover > .edge-run > i { box-shadow: 0 0 10px 2px var(--beam-glow); }
+.card .card > .edge-run { display: none; }
 
 /* Status stripes stay above the metal. */
 .tile[class*="tone-"]::before, .metric-tile::before, .domain-card::before, .int-card::before,
 .connector-card::before, .kanban-card[class*="tone-"]::before { z-index: 2; }
 
 /* Laser off: Static background, motion reduced by the setting or (unless forced on) by the OS. */
-:root[data-bg="static"] :is(.card, .tile, .metric-tile, .domain-card, .int-card, .connector-card)::after,
-:root[data-motion="reduce"] :is(.card, .tile, .metric-tile, .domain-card, .int-card, .connector-card)::after,
-:root[data-motion="reduced"] :is(.card, .tile, .metric-tile, .domain-card, .int-card, .connector-card)::after { content: none; }
-@media (prefers-reduced-motion: reduce) {
-  :root:not([data-motion="full"]) :is(.card, .tile, .metric-tile, .domain-card, .int-card, .connector-card)::after { content: none; }
-}
+:root[data-bg="static"] .edge-run, :root[data-motion="reduce"] .edge-run, :root[data-motion="reduced"] .edge-run { display: none; }
+@media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .edge-run { display: none; } }
 @media (forced-colors: active) {
   .card, .tile, .metric-tile, .domain-card, .int-card, .connector-card, .kanban-card, .summary-strip { border-color: CanvasText; }
-  :is(.card, .tile, .metric-tile, .domain-card, .int-card, .connector-card)::after { content: none; }
+  .edge-run { display: none; }
 }
 @media print {
   .card, .tile, .metric-tile, .domain-card, .int-card, .connector-card, .kanban-card, .summary-strip { border-color: #C5D2E1; box-shadow: none; }
-  :is(.card, .tile, .metric-tile, .domain-card, .int-card, .connector-card)::after { content: none; }
+  .edge-run { display: none; }
 }
 
 /* Forced colours */

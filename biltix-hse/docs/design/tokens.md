@@ -240,14 +240,19 @@ tabular figures.
   plain cards wash the metal 45 % toward their surface; a selected card's brand border replaces it.
   Ornament only: orange is not a status colour; status keeps its stripe (drawn above the metal),
   dot, icon and label.
-- **Laser.** A short comet (`--comet-len` 34 px, `--beam-tail` → `--beam-core` → `--beam-head`,
-  `--beam-glow`) travels round the edge of every top-level card and tile at 150 px/s (lap 5–16 s),
-  clockwise in English, counter-clockwise in Arabic, out of phase between neighbours. It shortens
-  through each rounded corner so it never leaves the curve. `js/ui/edges.js` measures each host and
-  runs a Web Animations *transform* animation on its `::after`, which the browser plays on the
-  compositor. Only hosts on screen play (IntersectionObserver); a resize rebuilds the path.
-- **Cost (measured, headless Chromium 1440×900, 5 s idle, main-thread ms per second):** cockpit
-  7.5 without edges → 9.6 with them; integrations (37 cards) 10.1 → 11.3; risk register 13.2 → 7.6
+- **Laser (v3.1.1, whole frame).** Every top-level card and tile carries evenly spaced comets (one
+  about every 210 px of edge, 3–12; kanban cards at most 3, dimmed) that travel round the whole frame
+  at one steady speed (140 px/s, lap 5–22 s), clockwise in English and counter-clockwise in Arabic, out
+  of phase between neighbouring cards. Each comet (`--comet-len` 30 px, `--beam-tail` → `--beam-core`
+  → `--beam-head`, `--beam-glow`) shortens through each rounded corner so it never leaves the curve.
+  `js/ui/edges.js` adds one decorative `span.edge-run` (aria-hidden, no text, an out-of-flow overlay)
+  per host and runs a Web Animations *transform* animation per comet, which the browser plays on the
+  compositor. Only hosts on screen play (IntersectionObserver); a resize or a view re-rendering the
+  host's children rebuilds the row. Hosts that clip at their padding box (summary strips) run the
+  comets just inside the metal; unpositioned hosts get no row.
+- **Cost (measured, headless Chromium 1440×900, 5 s idle, main-thread ms per second):** whole-frame
+  version (41 comets on the cockpit): cockpit 15.2, integrations 15.3, risk register 10.6. Single-comet
+  version: cockpit 7.5 without edges → 9.6 with them; integrations (37 cards) 10.1 → 11.3; risk register 13.2 → 7.6
   (noise). Rejected along the way: an animated conic-gradient angle (`@property`) cost 360–920 ms/s,
   and a CSS `offset-path` comet 85–260 ms/s, because both re-run style and paint on every frame.
 - **Off:** reduced motion (OS, unless Settings forces motion on, or Settings itself), the Static

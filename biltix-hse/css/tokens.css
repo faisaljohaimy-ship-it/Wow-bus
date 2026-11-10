@@ -182,7 +182,7 @@
   /* Legacy aliases (pre-v3 names stay valid) */
   --radius-card: var(--radius-lg);
   --edge-w: 1.5px;      /* nickel-orange edge (border width of cards and tiles) */
-  --comet-len: 34px;    /* length of the laser comet, head to end of tail */
+  --comet-len: 30px;    /* length of each laser comet, head to end of tail */
   --radius-ctl: var(--radius-md);
   --feed-w: var(--panel-w);
   --ease: var(--ease-out);

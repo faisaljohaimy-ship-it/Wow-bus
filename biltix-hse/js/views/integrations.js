@@ -293,6 +293,10 @@ export default {
       const values = seedHistory(rec);
       if (!values.length || !charts || typeof charts.sparkline !== 'function') return h('span', { class: 'muted' }, '—');
       try {
+        if (typeof charts.radialTrend === 'function') {
+          const rt = charts.radialTrend({ values, tone: 'accent', size: 'sm', label: t('integrations.card.historyAria', { count: fmt.num(values.length) }) });
+          if (rt && rt.el instanceof Node) return rt.el;
+        }
         const sp = charts.sparkline({ values, width: 110, height: 26, color: 'var(--ink-3)', accentLast: true });
         if (sp && sp.el instanceof Node) { sp.el.setAttribute('aria-label', t('integrations.card.historyAria', { count: fmt.num(values.length) })); sp.el.setAttribute('role', 'img'); sp.el.removeAttribute('aria-hidden'); return sp.el; }
       } catch { /* fall through */ }

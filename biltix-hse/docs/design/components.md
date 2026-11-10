@@ -46,9 +46,10 @@ See tokens §2. `.view-head` holds `.code-tag` (mono module code, gold diamond) 
 light), `.is-framed` (quiet CAD corner brackets), `.is-plain` (nested, no shadow), `.is-compact`,
 `.is-flat`, `.is-fill`, `.is-clickable` (hover border; otherwise cards do not react to hover),
 `.card-body.is-flush` (tables edge to edge).
-Edges (tokens §3.1): every top-level card and tile has the nickel-orange metal border and the laser
-comet (`js/ui/edges.js`, lit hosts carry `data-edge="lit"`); nested and plain cards get a softer
-metal and no comet. Don't put `overflow: hidden` on a card: use `overflow: clip` with
+Edges (tokens §3.1): every top-level card and tile has the nickel-orange metal border and evenly
+spaced laser comets round the whole frame (`js/ui/edges.js` appends one aria-hidden `span.edge-run`
+overlay; lit hosts carry `data-edge="lit"`); nested and plain cards get a softer metal and no comets.
+A host must be positioned (relative) for its comet row; do not style `.edge-run` from views. Don't put `overflow: hidden` on a card: use `overflow: clip` with
 `overflow-clip-margin: var(--edge-w)` so the comet can run on the border.
 Every card is a container (`@container card`): actions wrap below 380 px, low/medium priority table
 columns hide below 720 / 520 px, lifecycle and priority list re-flow.

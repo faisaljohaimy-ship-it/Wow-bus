@@ -47,6 +47,7 @@ export default {
       trend: 'آخر {weeks} أسبوعاً: من {first} إلى {last}، {direction}.',
       noTrend: 'اتجاه آخر {weeks} أسبوعاً غير متاح بعد.',
       dir: { up: 'في ارتفاع', down: 'في انخفاض', flat: 'دون تغيير' },
+      peakTitle: 'الحلقة: قيمة الأسبوع الأخير نسبةً إلى أعلى أسبوع خلال آخر {weeks} أسبوعاً. الأشرطة: أسبوع لكل شريط، الأقدم أولاً، باتجاه عقارب الساعة من الأعلى.',
     },
   },
   en: {
@@ -92,6 +93,7 @@ export default {
       trend: 'Last {weeks} weeks: from {first} to {last}, {direction}.',
       noTrend: 'Trend for the last {weeks} weeks not available yet.',
       dir: { up: 'rising', down: 'falling', flat: 'unchanged' },
+      peakTitle: 'Ring: the latest week as a share of the highest week in the last {weeks}. Bars: one per week, oldest first, clockwise from the top.',
     },
   },
 };
