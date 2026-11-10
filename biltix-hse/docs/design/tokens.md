@@ -78,6 +78,17 @@ Data/connection states are not risk states, so they use the brand / accent / neu
 | `error` | critical (`--critical-text`) | solid |
 | `not_connected` | neutral, hollow dot | dashed |
 
+The badge tint (`--tone-soft`, 12 %) is translucent. Light `demo` uses ink `#174AB5`. On the page plane
+(`.view-head`, over the ambient background) components.css lays the tint over an opaque `--bg-1`, so
+the label's contrast does not depend on the art behind it. Measured from rendered pixels behind the
+glyphs, light theme, 1440 / 390, AR + EN: page-plane badges 6.67:1; every status badge on cockpit,
+airisks, settings, contracts, dataquality, integrations, engine ≥ 5.42:1.
+
+**Inside chart labels** (segmented bar values, heatmap cells) use whichever of `--ink-on-light` /
+`--ink-on-dark` contrasts more with the fill, or an opaque `.cell-plate` (`--bg-1` + `--ink-1`) when
+neither reaches 4.5:1. Hover, focus and active states ring the mark and never brighten or dim a fill,
+so the ratio holds in every state (measured ≥ 4.51:1 at rest, hovered and with a sibling active).
+
 ### Series
 
 `--s1 … --s8` (categorical, fixed order) and `--seq-*`, `--div-*` are unchanged from v2.

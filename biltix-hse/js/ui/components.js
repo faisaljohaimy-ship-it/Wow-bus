@@ -1542,7 +1542,7 @@ function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', 
         backdrop.classList.add('is-open');
         // Tabbed drawers land on the selected tab (announces "Overview, tab 1 of 4"); others on the first control.
         const selectedTab = currentTab !== null && tabMap.get(currentTab) ? tabMap.get(currentTab).tab : null;
-        const list = focusables(dialog).filter((n) => !n.classList.contains(`${kind}-close`) && !n.classList.contains('drawer-panel'));
+        const list = focusables(dialog).filter((n) => !n.classList.contains(`${kind}-close`) && !n.classList.contains('drawer-panel') && !n.closest('.toast-stack'));
         const target = selectedTab || list[0] || closeBtn;
         try { target.focus({ preventScroll: true }); } catch { target.focus(); }
       });
