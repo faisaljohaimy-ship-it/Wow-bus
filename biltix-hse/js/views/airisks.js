@@ -95,8 +95,9 @@ const CHANNELS = [['email', 'البريد الإلكتروني'], ['slack', 'Sla
 const PM_NAME = 'Biltix PM';
 const CODE_RE = /\b[A-Z]{1,5}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
 const STYLE_ID = 'view-airisks-style';
-const STYLE_TEXT = `@layer views {
-  .view-airisks .airisks-main, .view-airisks .airisks-side-row { align-items: start; }
+const STYLE_TEXT = `/* grid rows align to the top: unlayered so it wins over the stretch default in css/base.css */
+.view-airisks .airisks-main, .view-airisks .airisks-side-row { align-items: start; }
+@layer views {
   .view-airisks .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
   .view-airisks .chips.is-scroll { min-inline-size: 0; max-inline-size: 100%; }
   @media (max-width: 599.98px) {
@@ -116,6 +117,17 @@ const DEFAULT_LOCAL = Object.freeze({ category: 'all', type: 'all', rating: 'all
 /* ------------------------------------------------------------------ */
 /* Guards & helpers                                                     */
 /* ------------------------------------------------------------------ */
+
+/** Free text (seed titles, descriptions, rule names) → the active numeral system; Latin alphanumeric tokens (2B, P6, PN10) keep their ASCII digits (RTL-4). */
+const LATIN_NUM_TOKEN = /[A-Za-z][A-Za-z0-9._-]*\d[A-Za-z0-9._-]*|\d+[A-Za-z][A-Za-z0-9._-]*/g;
+function digitsIn(fmt, value) {
+  const s = String(value ?? '');
+  if (!fmt || typeof fmt.digits !== 'function' || !/\d/.test(s)) return s;
+  let out = ''; let last = 0; let m;
+  LATIN_NUM_TOKEN.lastIndex = 0;
+  while ((m = LATIN_NUM_TOKEN.exec(s))) { out += fmt.digits(s.slice(last, m.index)) + m[0]; last = m.index + m[0].length; }
+  return out + fmt.digits(s.slice(last));
+}
 
 const warned = new Set();
 function warnOnce(key, err) {
@@ -191,9 +203,9 @@ const codeSpan = (code, extra = null) => h('span', { class: ['code', 'mono', 'no
 function withCodes(str) {
   const s = String(str ?? ''); const out = []; let last = 0; let m;
   CODE_RE.lastIndex = 0;
-  while ((m = CODE_RE.exec(s))) { if (m.index > last) out.push(s.slice(last, m.index)); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
-  if (last < s.length) out.push(s.slice(last));
-  return out.length ? out : [s];
+  while ((m = CODE_RE.exec(s))) { if (m.index > last) out.push(digitsIn(defaultFmt, s.slice(last, m.index))); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
+  if (last < s.length) out.push(digitsIn(defaultFmt, s.slice(last)));
+  return out.length ? out : [digitsIn(defaultFmt, s)];
 }
 /** Static chip — write-back changes are announced once through a toast, so no live region here (RTL-18). */
 function writebackChip(wb) {
@@ -256,7 +268,7 @@ export default {
     const stateOf = () => store.state || store.get();
     const settings = () => (stateOf().settings || {});
     const platformOf = () => (stateOf().platform || {});
-    const projectName = (id) => { const s = (stateOf().sites || []).find((x) => x.id === id); return s ? s.name : String(id || '—'); };
+    const projectName = (id) => { const s = (stateOf().sites || []).find((x) => x.id === id); return digitsIn(fmt, s ? s.name : String(id || '—')); };
     const findRisk = (id) => (platformOf().aiRisks || []).find((r) => r && r.id === id) || null;
     const taskOf = (risk) => {
       const tasks = platformOf().tasks || [];
@@ -309,9 +321,22 @@ export default {
     }
     function dropParam() {
       try {
-        if (/^#\/airisks\?/.test(location.hash || '') && /[?&]risk=/.test(location.hash)) history.replaceState(null, '', '#/airisks');
+        if (/^#\/airisks\?/.test(location.hash || '')) history.replaceState(null, '', '#/airisks');
       } catch { /* ignore */ }
     }
+    /** Deep-link filters (?category= / ?type= / ?rating= / ?status= / ?pipeline=) from the domain views, the engine and the palette. */
+    function applyFilterParams() {
+      const raw = { ...(ctx.params || {}) };
+      try {
+        const hash = location.hash || ''; const q = hash.indexOf('?');
+        if (q !== -1) for (const [k, v] of new URLSearchParams(hash.slice(q + 1))) if (!(k in raw)) raw[k] = v;
+      } catch { /* ignore */ }
+      const allowed = { category: CATEGORY_ORDER, type: TYPE_ORDER, rating: RATING_ORDER, status: RISK_STATUSES, pipeline: PIPELINE_ORDER };
+      let applied = false;
+      Object.entries(allowed).forEach(([key, values]) => { const v = raw[key]; if (typeof v === 'string' && values.includes(v)) { local[key] = v; applied = true; } });
+      if (applied) dropParam();
+    }
+    applyFilterParams();
 
     /* ---------------- scaffold ---------------- */
 
@@ -431,14 +456,11 @@ export default {
         rows, rowKey: 'id', pageSize: 10, dense: true, stickyFirst: true, emptyText: 'لا توجد مخاطر مطابقة لعوامل التصفية الحالية',
         onRowClick: (row) => openRisk(row.id),
         columns: [
-          { key: 'title', label: 'المخاطرة', width: 260, priority: 'high', render: (r) => h('span', { class: 'stack gap-1', title: text(r.driverExplanation) || undefined, style: { minInlineSize: '220px' } }, h('span', { class: 'semibold' }, ...withCodes(r.title)), codeSpan(r.code, 'text-xs muted')), sortValue: (r) => r.title },
-          { key: 'projectId', label: 'المشروع', priority: 'medium', render: (r) => h('span', { class: 'site-name', style: { display: 'inline-block', minInlineSize: '7em', overflowWrap: 'break-word' } }, projectName(r.projectId)), sortValue: (r) => projectName(r.projectId) },
+          { key: 'title', label: 'المخاطرة', width: 260, priority: 'high', render: (r) => h('span', { class: 'stack gap-1', title: text(r.driverExplanation) || undefined, style: { minInlineSize: '220px' } }, h('span', { class: 'semibold' }, ...withCodes(r.title)), h('span', { class: 'text-xs muted row gap-1 wrap', style: { alignItems: 'center' } }, codeSpan(r.code), h('span', { class: 'site-name' }, projectName(r.projectId)), r.owner ? h('span', {}, `· ${r.owner}`) : null)), sortValue: (r) => r.title },
           { key: 'category', label: 'المجال / النوع', priority: 'medium', render: (r) => h('span', { class: 'stack gap-1', style: { alignItems: 'flex-start' } }, categoryChip(psel, r.category), typeChip(psel, r.type)), sortValue: (r) => `${categoryLabel(psel, r.category)} ${typeLabel(psel, r.type)}` },
           { key: 'score', label: 'الدرجة والتصنيف', priority: 'high', render: (r) => h('span', { class: 'row gap-2 score-cell' }, scoreNum(r.score, r.rating), ratingBadge(psel, r.rating)), sortValue: (r) => num(r.score) },
-          { key: 'pipeline', label: 'خط المعالجة / الثقة', priority: 'low', render: (r) => h('span', { class: 'stack gap-1' }, h('span', { class: 'text-xs' }, pipelineLabel(psel, r.pipeline)), h('span', { class: 'text-xs muted' }, 'ثقة ', h('span', { class: 'mono num' }, fmt.pct(num(r.confidence) * 100)))), sortValue: (r) => num(r.confidence) },
-          { key: 'detectedAt', label: 'اكتُشف', priority: 'low', render: (r) => h('span', { title: fmt.dateTime(r.detectedAt), style: { whiteSpace: 'nowrap' } }, fmt.relative(r.detectedAt)), sortValue: (r) => Date.parse(r.detectedAt) || 0 },
-          { key: 'owner', label: 'المالك', priority: 'low', render: (r) => r.owner || '—' },
           { key: 'status', label: 'الحالة', priority: 'medium', render: (r) => statusBadge(r.status), sortValue: (r) => RISK_STATUSES.indexOf(r.status) },
+          { key: 'pipeline', label: 'خط المعالجة / الثقة', priority: 'low', render: (r) => h('span', { class: 'stack gap-1' }, h('span', { class: 'text-xs' }, pipelineLabel(psel, r.pipeline)), h('span', { class: 'text-xs muted' }, 'ثقة ', h('span', { class: 'mono num' }, fmt.pct(num(r.confidence) * 100)), ' · ', h('span', { title: fmt.dateTime(r.detectedAt) }, fmt.relative(r.detectedAt)))), sortValue: (r) => num(r.confidence) },
         ],
       });
     }
@@ -515,7 +537,7 @@ export default {
         h('div', { class: 'evidence-head' },
           h('span', { class: 'evidence-ref mono', dir: 'ltr' }, ev.ref || '—'),
           h('span', { class: 'source-chip' }, svgIcon(sourceIcon, 12), ev.sourceSystem || 'النظام المصدر')),
-        ev.excerpt ? h('blockquote', { class: 'evidence-excerpt' }, ev.excerpt) : h('p', { class: 'muted text-sm' }, 'لا يتوفر مقتطف نصي لهذا الدليل.'),
+        ev.excerpt ? h('blockquote', { class: 'evidence-excerpt' }, digitsIn(fmt, ev.excerpt)) : h('p', { class: 'muted text-sm' }, 'لا يتوفر مقتطف نصي لهذا الدليل.'),
         h('div', { class: 'evidence-meta' },
           ev.kind ? h('span', { class: 'evidence-kind' }, `نوع الدليل: ${EVIDENCE_KIND[ev.kind] || ev.kind}`) : null,
           h('span', {}, 'قراءة فقط — لا تُعدَّل بيانات العميل الأصلية'),
@@ -536,7 +558,7 @@ export default {
           h('span', { class: 'feature-bar-value' }, fmt.pct(pctOf(f.weight))))))
         : null;
       return section('02', 'تفسير المحرك', h('div', { class: 'explain' },
-        h('p', { class: 'explain-text' }, risk.driverExplanation || 'لا يتوفر تفسير نصي من المحرك.'),
+        h('p', { class: 'explain-text' }, risk.driverExplanation ? digitsIn(fmt, risk.driverExplanation) : 'لا يتوفر تفسير نصي من المحرك.'),
         meter,
         h('div', { class: 'explain-meta' },
           h('span', {}, 'خط المعالجة: ', h('span', { class: 'mono' }, (pipeline && pipeline.nameAr) || pipelineLabel(psel, risk.pipeline))),
@@ -567,10 +589,10 @@ export default {
           h('div', { class: 'recommendation-chips' },
             rec.effort ? h('span', { class: ['recommendation-chip', `tone-${EFFORT_TONE[rec.effort] || 'neutral'}`] }, glyph(EFFORT_TONE[rec.effort] || 'neutral', 11), `الجهد: ${rec.effort}`) : null,
             rec.impact ? h('span', { class: 'recommendation-chip' }, svgIcon('trend-down', 11), `الأثر المتوقع: ${rec.impact}`) : null)),
-        h('p', { class: 'recommendation-action' }, rec.action || 'لا توجد توصية مولّدة لهذه المخاطرة.'),
-        rec.rationale ? h('p', { class: 'recommendation-rationale' }, rec.rationale) : null,
+        h('p', { class: 'recommendation-action' }, rec.action ? digitsIn(fmt, rec.action) : 'لا توجد توصية مولّدة لهذه المخاطرة.'),
+        rec.rationale ? h('p', { class: 'recommendation-rationale' }, digitsIn(fmt, rec.rationale)) : null,
         alts.length ? h('span', { class: 'recommendation-alts-title' }, 'بدائل مقترحة') : null,
-        alts.length ? h('ul', { class: 'recommendation-alts' }, alts.map((a) => h('li', {}, text(a)))) : null,
+        alts.length ? h('ul', { class: 'recommendation-alts' }, alts.map((a) => h('li', {}, digitsIn(fmt, text(a))))) : null,
         lastOverride ? h('p', { class: 'note tone-warning text-xs' }, `آخر تجاوز بشري: «${text(lastOverride.toAction)}» — السبب: ${text(lastOverride.reason)} (${text(lastOverride.by) || USER}، ${fmt.relative(lastOverride.at)})`) : null,
         decision,
         actions));
@@ -642,7 +664,7 @@ export default {
         const when = it.at || it.ts || it.date;
         return h('li', { class: ['timeline-item', `is-${kind}`], style: { '--tone': `var(--${tone === 'neutral' ? 'ink-3' : tone})` } },
           h('time', { class: 'timeline-time', datetime: text(when) }, fmt.dateTime(when)),
-          h('p', { class: 'timeline-text' }, text(it.text || it.title || it.detail) || '—'),
+          h('p', { class: 'timeline-text' }, digitsIn(fmt, text(it.text || it.title || it.detail)) || '—'),
           h('span', { class: 'timeline-by' }, [text(it.by || it.actor), TIMELINE_KIND_LABEL[kind] || text(it.label)].filter(Boolean).join(' · ')));
       })));
     }
@@ -700,7 +722,7 @@ export default {
         return;
       }
       const api = drawer({
-        title: risk.title, subtitle: subtitleOf(risk), size: 'lg',
+        title: digitsIn(fmt, risk.title), subtitle: subtitleOf(risk), size: 'lg',
         body: () => buildDrawerBody(risk),
         onClose: () => { if (drawerState && drawerState.api === api) { drawerState = null; dropParam(); highlightRow(); } },
       });
@@ -728,7 +750,7 @@ export default {
       const scroll = api.body.scrollTop;
       clear(api.body);
       api.body.appendChild(buildDrawerBody(risk));
-      api.setTitle(risk.title);
+      api.setTitle(digitsIn(fmt, risk.title));
       const sub = api.el.querySelector('.drawer-sub');
       if (sub) sub.textContent = subtitleOf(risk);
       api.body.scrollTop = scroll;

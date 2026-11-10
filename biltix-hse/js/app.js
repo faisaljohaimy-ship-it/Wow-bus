@@ -40,8 +40,10 @@ let platformLive = null;
 /** Ordered view entries (static nav metadata; `render` attached once a module is imported). */
 let views = [];
 const missingModules = [];
-/** Latin code tokens inside Arabic copy (AIR-1042, CT-2026-014, PTW-5521, R-1001 …). */
-const CODE_TOKEN_RE = /\b[A-Z]{1,5}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
+/** Latin code tokens inside Arabic copy (AIR-1042, CT-2026-014, PTW-5521, R-1001 …); U+2011 hyphens from the live engines match too. */
+const CODE_TOKEN_RE = /\b[A-Z]{1,5}[-\u2011][A-Z0-9\u2011-]*\d[A-Z0-9\u2011-]*\b/g;
+/** Digit runs that stand alone (not glued to Latin letters such as H2S, PM2.5, O2) follow the numerals setting. */
+const STANDALONE_DIGITS_RE = /(?<![A-Za-z0-9.])\d+(?:[.,]\d+)?(?![A-Za-z])/g;
 
 const STORAGE_KEY = 'biltix-hse:v1';
 const APP_VERSION = '2.0.0';
@@ -166,7 +168,7 @@ function trackInputModality() {
 
 /** Digits inside free text follow the numerals setting (identity for Western digits). */
 function localizeText(s) {
-  try { return fmt.digits(s); } catch { return s; }
+  try { return fmt.digits('0') === '0' ? s : String(s).replace(STANDALONE_DIGITS_RE, (m) => fmt.digits(m)); } catch { return s; }
 }
 
 /**
@@ -182,11 +184,17 @@ function richText(value) {
   let m;
   while ((m = CODE_TOKEN_RE.exec(str))) {
     if (m.index > last) frag.appendChild(document.createTextNode(localizeText(str.slice(last, m.index))));
-    frag.appendChild(h('span', { class: 'code mono nowrap', dir: 'ltr', lang: 'en' }, m[0]));
+    // Plain ASCII hyphens inside the code (copy / search friendly); the span itself is nowrap + LTR.
+    frag.appendChild(h('span', { class: 'code mono nowrap', dir: 'ltr', lang: 'en' }, m[0].replace(/\u2011/g, '-')));
     last = m.index + m[0].length;
   }
   if (last < str.length) frag.appendChild(document.createTextNode(localizeText(str.slice(last))));
   return frag;
+}
+
+/** Plain-text twin of richText (for aria-labels / live regions): U+2011 hyphens in codes become '-'. */
+function plainCodes(value) {
+  return String(value == null ? '' : value).replace(CODE_TOKEN_RE, (m) => m.replace(/\u2011/g, '-'));
 }
 
 /** Subscribe helper that tolerates a bus without `on` and always returns an unsubscribe fn. */
@@ -646,14 +654,19 @@ function feedItem(ev, { fresh = false } = {}) {
   if (site) meta.appendChild(h('span', { class: 'feed-site' }, site.name));
   const sourceName = feedSourceName(ev.sourceId);
   if (sourceName) meta.appendChild(h('span', { class: 'feed-source' }, sourceName));
-  // Events that carry a numeric reading render it through fmt (never raw digits).
-  if (Number.isFinite(Number(ev.value)) && ev.value !== null && ev.value !== '') {
+  // Events that carry a numeric reading render it through fmt (never raw digits) — unless the
+  // sentence already spells that reading out (the live engines format their own copy).
+  if (ev.value !== null && ev.value !== undefined && ev.value !== '' && Number.isFinite(Number(ev.value))) {
     const digits = Math.abs(Number(ev.value)) < 10 ? 1 : 0;
-    meta.appendChild(h('span', { class: 'feed-value mono num' }, `${fmt.num(Number(ev.value), { maximumFractionDigits: digits })}${ev.unit ? ` ${ev.unit}` : ''}`));
+    const reading = fmt.num(Number(ev.value), { maximumFractionDigits: digits });
+    const sentence = localizeText(`${ev.title || ''} ${ev.detail || ''}`);
+    if (!sentence.includes(reading)) {
+      meta.appendChild(h('span', { class: 'feed-value mono num' }, `${reading}${ev.unit ? ` ${ev.unit}` : ''}`));
+    }
   }
   body.appendChild(meta);
   li.appendChild(body);
-  li.setAttribute('aria-label', `${FEED_TYPE_LABELS[type]}: ${ev.title || ''}`);
+  if (route) li.setAttribute('aria-label', `${FEED_TYPE_LABELS[type]}: ${plainCodes(ev.title || '')}`);
   if (fresh) {
     const settle = () => li.classList.remove('is-new');
     if (reducedMotion()) settle();
@@ -913,8 +926,8 @@ function alertRow(a) {
   const li = h('li', { class: ['alert-item', `tone-${a.tone}`] });
   li.appendChild(badge(a.tone === 'critical' ? 'حرج' : a.tone === 'serious' ? 'عالٍ' : a.tone === 'warning' ? 'تحذير' : 'معلومة', a.tone));
   const body = h('div', { class: 'alert-item-body' });
-  body.appendChild(h('strong', { class: 'alert-item-title' }, String(a.title || 'تنبيه')));
-  if (a.detail) body.appendChild(h('p', { class: 'alert-item-detail' }, String(a.detail)));
+  body.appendChild(h('strong', { class: 'alert-item-title' }, richText(a.title || 'تنبيه')));
+  if (a.detail) body.appendChild(h('p', { class: 'alert-item-detail' }, richText(a.detail)));
   const meta = h('div', { class: 'alert-item-meta' });
   const site = siteById(a.siteId);
   if (site) meta.appendChild(h('span', {}, site.name));
@@ -949,12 +962,12 @@ function showBanner(a) {
   banner.classList.add(`tone-${a.tone}`);
   banner.appendChild(h('span', { class: 'alert-banner-icon', 'aria-hidden': 'true' }, glyph(a.tone, 20)));
   const text = h('div', { class: 'alert-banner-text' });
-  text.appendChild(h('strong', { class: 'alert-banner-title' }, String(a.title || 'تنبيه حرج')));
+  text.appendChild(h('strong', { class: 'alert-banner-title' }, richText(a.title || 'تنبيه حرج')));
   const detailParts = [];
   if (a.detail) detailParts.push(String(a.detail));
   const site = siteById(a.siteId);
   if (site) detailParts.push(site.name);
-  if (detailParts.length) text.appendChild(h('span', { class: 'alert-banner-detail' }, detailParts.join(' — ')));
+  if (detailParts.length) text.appendChild(h('span', { class: 'alert-banner-detail' }, richText(detailParts.join(' — '))));
   banner.appendChild(text);
   const actions = h('div', { class: 'alert-banner-actions' });
   if (a.riskId && viewById('airisks')) {
@@ -990,7 +1003,7 @@ function announceAlert(a) {
   announcedAlerts.add(key);
   if (announcedAlerts.size > 500) announcedAlerts.clear();
   const site = siteById(a.siteId);
-  const text = [a.tone === 'critical' ? 'تنبيه حرج' : 'تنبيه عالٍ', a.title, a.detail, site && site.name].filter(Boolean).join('، ');
+  const text = [a.tone === 'critical' ? 'تنبيه حرج' : 'تنبيه عالٍ', plainCodes(a.title), plainCodes(a.detail), site && site.name].filter(Boolean).join('، ');
   el.textContent = '';
   requestAnimationFrame(() => { el.textContent = text; });
   if (announceTimer) clearTimeout(announceTimer);
@@ -1009,7 +1022,10 @@ function buildNotifications() {
     updateBell();
     const site = siteById(a.siteId);
     const msg = [a.detail, site && site.name].filter(Boolean).join(' — ');
-    toast(msg || a.title || 'تنبيه جديد', { tone: a.tone, title: msg ? a.title : '', timeout: a.tone === 'critical' ? 9000 : 5500, action: { label: 'عرض', onClick: openBellDrawer } });
+    const shown = toast(msg || plainCodes(a.title) || 'تنبيه جديد', { tone: a.tone, title: msg ? plainCodes(a.title) : '', timeout: a.tone === 'critical' ? 9000 : 5500, action: { label: 'عرض', onClick: openBellDrawer } });
+    // Critical / serious alerts are spoken once, by #liveAnnouncer: their toast (role=alert) stays
+    // visible but is taken out of the live-region machinery so screen readers do not repeat it.
+    if (shown && shown.el && (a.tone === 'critical' || a.tone === 'serious')) shown.el.removeAttribute('role');
     if (a.tone === 'critical') showBanner(a);
     announceAlert(a);
   });
@@ -1305,7 +1321,11 @@ function closeCmdk() {
   if (cmdk.btn) cmdk.btn.setAttribute('aria-expanded', 'false');
   const done = () => { cmdk.el.hidden = true; };
   if (reducedMotion()) done(); else setTimeout(done, 180);
-  if (cmdk.previous && typeof cmdk.previous.focus === 'function' && document.contains(cmdk.previous)) cmdk.previous.focus();
+  // Hand focus back to the opener; when there was none (focus was on <body>) fall back to the search button.
+  const prev = cmdk.previous;
+  const usable = prev && prev !== document.body && prev !== document.documentElement && typeof prev.focus === 'function' && document.contains(prev);
+  const target = usable ? prev : cmdk.btn;
+  if (target && typeof target.focus === 'function') target.focus({ preventScroll: true });
 }
 
 function buildCommandPalette() {

@@ -340,9 +340,11 @@ function resolveBody(body, ...args) {
   return body;
 }
 
-export function card({ code = '', title = '', subtitle = '', actions = [], body = null, footer = null, framed = true, hero = false, tableView = null, id = null, className = '' } = {}) {
+export function card({ code = '', title = '', subtitle = '', actions = [], body = null, footer = null, framed = true, hero = false, plain = false, tableView = null, id = null, className = '' } = {}) {
   const classes = ['card'];
-  if (framed) classes.push('is-framed');
+  // plain → a card nested inside another card: `card is-plain` drops the frame and brackets.
+  if (plain) classes.push('is-plain');
+  else if (framed) classes.push('is-framed');
   if (hero) classes.push('is-hero');
   if (className) classes.push(className);
   const titleId = uid('card-title');
@@ -483,6 +485,9 @@ export function statTile({ label, value, unit = '', delta = null, deltaGoodWhen 
       text = String(delta).trim();
     }
     const known = Number.isFinite(n);
+    // A recognised number is shown without Intl's bidi marks (an ALM/RLM would flip the sign to the
+    // wrong side) inside an LTR isolate, so "+0.35" / "−٢٫٥" always read sign-first.
+    if (known) text = text.replace(BIDI_MARKS_RE, '').trim() || text;
     const isZero = known && n === 0;
     const isUp = known && n > 0;
     const isDown = known && n < 0;
@@ -496,7 +501,7 @@ export function statTile({ label, value, unit = '', delta = null, deltaGoodWhen 
     arrow.append(isZero || !known ? path('M5 12h14') : (isUp ? path('M12 19V5M5 12l7-7 7 7') : path('M12 5v14M5 12l7 7 7-7')));
     d.appendChild(arrow);
     d.appendChild(h('span', { class: 'sr-only' }, 'التغير مقارنة بالفترة السابقة: '));
-    d.appendChild(h('bdi', { class: 'tile-delta-text' }, text));
+    d.appendChild(h('bdi', { class: 'tile-delta-text', dir: known ? 'ltr' : undefined }, text));
     if (isZero) d.appendChild(h('span', { class: 'sr-only' }, ' (دون تغيير)'));
     else if (good !== null) d.appendChild(h('span', { class: 'sr-only' }, good ? ' (تحسّن)' : ' (تراجع)'));
     bottom.appendChild(d);
@@ -661,6 +666,8 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     table.hidden = total === 0;
     emptyEl.hidden = total !== 0;
     wrap.classList.toggle('is-paged', size > 0);
+    // Long lists without a pager keep a height cap (CSS .is-scroll); paged tables never do.
+    wrap.classList.toggle('is-scroll', size === 0 && maxH === null && total > 14);
     wrap.classList.toggle('is-empty', total === 0);
     renderPager(total, pages);
     scheduleMeasure();
@@ -1078,6 +1085,8 @@ function toastStack() {
   stack.classList.add('toast-stack');
   // Each toast carries its own role=status / role=alert; the container itself is not a
   // live region, so a toast is announced exactly once (RTL-18).
+  if (stack.hasAttribute('aria-live')) stack.removeAttribute('aria-live');
+  if (stack.getAttribute('role') === 'status' || stack.getAttribute('role') === 'alert' || stack.getAttribute('role') === 'log') stack.removeAttribute('role');
   return stack;
 }
 
@@ -1118,7 +1127,7 @@ export function toast(message, { tone = 'neutral', timeout = 4500, action = null
 /* Kanban                                                              */
 /* ------------------------------------------------------------------ */
 
-const KANBAN_HINT = 'استخدم السهم الأيسر/الأيمن للنقل بين الأعمدة';
+const KANBAN_HINT = 'استخدم السهم الأيسر أو الأيمن للنقل بين الأعمدة';
 const cssEscape = (v) => (typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(String(v)) : String(v).replace(/["\\]/g, '\\$&'));
 
 /** Accessible name for a card: explicit code/title fields, else code + title read from the rendered content. */
@@ -1156,6 +1165,9 @@ export function kanban({ columns = [], items = [], onMove = null, headingLevel =
   const hintId = uid('kanban-hint');
   const el = h('div', { class: 'kanban', role: 'group', 'aria-label': ariaLabel, 'aria-describedby': hintId, dataset: { columns: columns.length } });
   const hint = h('p', { class: 'sr-only', id: hintId }, KANBAN_HINT);
+  // The board is the scroll container: it must also contain the absolutely positioned sr-only texts
+  // (hint, count labels), or their static position can widen the page in RTL.
+  el.style.position = 'relative';
   const cols = new Map();
   let current = Array.isArray(items) ? items.slice() : [];
   let dragId = null;
@@ -1356,11 +1368,13 @@ export function countdown(targetIso, { onExpire = null, warnMinutes = 60, expire
   let fired = false;
   let registered = false;
   let wasConnected = false;
+  let detachedTicks = 0;
   const stop = () => { if (registered) { registered = false; removeTicker(tick); } };
   const tick = () => {
-    // Auto-unregister once the element has been removed from the document (view navigated away without stop()).
-    if (el.isConnected) wasConnected = true;
-    else if (wasConnected) { stop(); return; }
+    // Auto-unregister once the element has been removed from the document (view navigated away without
+    // stop()), or when it was never attached at all (built and discarded) after a short grace period.
+    if (el.isConnected) { wasConnected = true; detachedTicks = 0; }
+    else if (wasConnected || ++detachedTicks > 30) { stop(); return; }
     const remaining = target - Date.now();
     if (!Number.isFinite(target)) { text.textContent = '—'; stop(); return; }
     if (remaining <= 0) {

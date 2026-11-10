@@ -267,11 +267,9 @@ export default {
       const rows = data.shownWorkers.map((w) => w.name);
       const cols = data.courses.map((c) => c.name);
       const cells = data.shownCells.map((row) => row.map((s) => (STATUS[s] || STATUS.missing).code));
-      // Short course codes for the column headers (the heatmap uses them when it supports `colCodes`;
-      // full names stay in `cols` for tooltips / the table twin).
-      const colCodes = data.courses.map((c) => String(c.code || c.id || ''));
+      // Full course names stay as the column headers: the heatmap rotates them −45° when they do not fit (V7).
       const heat = rows.length && cols.length ? makeChart('heatmap', {
-        rows, cols, cells, colCodes,
+        rows, cols, cells,
         colorFor: (v) => STATUS[STATUS_BY_CODE[v] || 'missing'].color,
         labelFor: (v) => STATUS[STATUS_BY_CODE[v] || 'missing'].glyph,
         // charts.js may call onCellClick(value, ri, ci) per the contract or onCellClick({value, ri, ci, row, col}); accept both.

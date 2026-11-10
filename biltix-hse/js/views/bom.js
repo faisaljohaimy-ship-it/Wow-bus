@@ -39,13 +39,30 @@ const CLOSED_RISK = new Set(['مغلق', 'مُتجاوز']);
 const OPEN_TASK = new Set(['جديدة', 'قيد التنفيذ', 'متأخرة']);
 
 const STYLE_ID = 'view-bom-style';
-const STYLE_TEXT = `@layer views {
-  .view-bom .grid-12 { align-items: start; }
+const STYLE_TEXT = `/* grid rows align to the top: unlayered so it wins over the stretch default in css/base.css */
+.view-bom .grid-12 { align-items: start; }
+/* compact list rows (BOM-02 / BOM-03 / BOM-04): no icon tile, badge and date trail the title, details below it */
+.view-bom .urgent-item.is-compact { grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding-block: 8px; }
+.view-bom .urgent-item.is-compact > .urgent-icon { display: none; }
+.view-bom .urgent-item.is-compact .urgent-due { flex-direction: row; align-items: center; gap: 6px; }
+.view-bom .urgent-item.is-compact .urgent-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+@layer views {
   .view-bom .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
   .view-bom .boq-desc { overflow-wrap: break-word; }
 }`;
 const CODE_RE = /\b[A-Z]{1,5}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
 const LONG_LEAD_DEFAULT = 5;
+
+/** Free text (seed titles, descriptions, rule names) → the active numeral system; Latin alphanumeric tokens (2B, P6, PN10) keep their ASCII digits (RTL-4). */
+const LATIN_NUM_TOKEN = /[A-Za-z][A-Za-z0-9._-]*\d[A-Za-z0-9._-]*|\d+[A-Za-z][A-Za-z0-9._-]*/g;
+function digitsIn(fmt, value) {
+  const s = String(value ?? '');
+  if (!fmt || typeof fmt.digits !== 'function' || !/\d/.test(s)) return s;
+  let out = ''; let last = 0; let m;
+  LATIN_NUM_TOKEN.lastIndex = 0;
+  while ((m = LATIN_NUM_TOKEN.exec(s))) { out += fmt.digits(s.slice(last, m.index)) + m[0]; last = m.index + m[0].length; }
+  return out + fmt.digits(s.slice(last));
+}
 
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
 const lower = (v) => String(v ?? '').toLowerCase();
@@ -91,12 +108,14 @@ export default {
     const mono = (text, extra = null) => h('span', { class: ['mono', ...String(extra || '').split(/\s+/).filter(Boolean)], style: { fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' } }, String(text ?? '—'));
     /** A code such as BQ-0042 as an isolated LTR mono run that never breaks (RTL-5). */
     const codeSpan = (code, extra = null) => h('span', { class: ['code', 'mono', 'nowrap', ...String(extra || '').split(/\s+/).filter(Boolean)], dir: 'ltr' }, String(code ?? '—'));
+    /** A number (or percent / amount) as an isolated run so it never flips inside Arabic prose (RTL-21). */
+    const numSpan = (text, extra = null) => h('span', { class: ['num', extra] }, String(text ?? ''));
     function withCodes(str) {
       const t = String(str ?? ''); const out = []; let last = 0; let m;
       CODE_RE.lastIndex = 0;
-      while ((m = CODE_RE.exec(t))) { if (m.index > last) out.push(t.slice(last, m.index)); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
-      if (last < t.length) out.push(t.slice(last));
-      return out.length ? out : [t];
+      while ((m = CODE_RE.exec(t))) { if (m.index > last) out.push(digitsIn(fmt, t.slice(last, m.index))); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
+      if (last < t.length) out.push(digitsIn(fmt, t.slice(last)));
+      return out.length ? out : [digitsIn(fmt, t)];
     }
     /** Signed percentage through fmt.signedPct when the core provides it (RTL-4 / RTL-23). */
     const signedPct = (n, d = 0) => (typeof fmt.signedPct === 'function' ? fmt.signedPct(n, d) : `${fmt.signed(n, d)}${typeof fmt.getNumerals === 'function' && fmt.getNumerals() === 'arab' ? '٪' : '%'}`);
@@ -181,15 +200,17 @@ export default {
       t.appendChild(tb);
       return t;
     }
-    function siteName(state, id) { const s = (state.sites || []).find((x) => x.id === id); return s ? s.name : (id || '—'); }
+    function siteName(state, id) { const s = (state.sites || []).find((x) => x.id === id); return digitsIn(fmt, s ? s.name : (id || '—')); }
 
+    /** Two-digit year in the active numeral system (chart axis labels, RTL-4). */
+    const yy = (year) => (typeof fmt.digits === 'function' ? fmt.digits(String(year).slice(2)) : String(year).slice(2));
     /** Month labels: 24 history months ending this month, then 6 forecast months. */
     function monthLabels(history, forecast) {
       const now = store.now ? store.now() : new Date();
       const out = [];
       for (let i = -(history - 1); i <= forecast; i += 1) {
         const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-        out.push(`${MONTHS_SHORT[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`);
+        out.push(`${MONTHS_SHORT[d.getMonth()]} ${yy(d.getFullYear())}`);
       }
       return out;
     }
@@ -321,7 +342,7 @@ export default {
             ['الوحدة', item.unit || '—'],
             ['كمية جدول الكميات (BoQ)', mono(fmt.num(num(item.boqQty), { maximumFractionDigits: 1 }))],
             ['كمية نموذج BIM', mono(fmt.num(num(item.bimQty), { maximumFractionDigits: 1 }))],
-            ['الفرق', h('span', { class: ['row', 'gap-2', `tone-${vTone}`], style: { alignItems: 'center' } }, mono(`${fmt.signed(qtyDiff, 1)} ${item.unit || ''}`), varianceBadge(item.variancePct))],
+            ['الفرق', h('span', { class: ['row', 'gap-2', `tone-${vTone}`], style: { alignItems: 'center' } }, h('span', { class: 'mono num', dir: 'ltr' }, fmt.signed(qtyDiff, 1)), h('span', {}, item.unit || ''), varianceBadge(item.variancePct))],
             ['سعر الوحدة', `${fmt.num(num(item.unitPrice), { maximumFractionDigits: 2 })} ر.س`],
             ['الأثر المالي التقديري للفرق', h('span', { class: `tone-${vTone}` }, `${fmt.num(Math.round(costImpact))} ر.س`)],
             ['مدة التوريد', `${fmt.num(num(item.leadTimeDays))} يوماً${num(item.leadTimeDays) >= LONG_LEAD_DAYS ? ' — بند طويل التوريد' : ''}`],
@@ -355,7 +376,7 @@ export default {
         ),
       );
       openDrawer = drawer({
-        title: item.description,
+        title: digitsIn(fmt, item.description),
         subtitle: `${codeText(item.code)} · ${siteName(data.state, item.projectId)}`,
         body, size: 'lg',
         actions: [
@@ -373,7 +394,7 @@ export default {
 
     function buildHead(data) {
       const cs = data.categoryScore;
-      const pill = cs ? h('div', { class: 'row gap-2', style: { alignItems: 'center' }, title: 'درجة مجال المواد = 0.5 × أعلى درجة مفتوحة + 0.5 × متوسط الدرجات المفتوحة' },
+      const pill = cs ? h('div', { class: 'row gap-2', style: { alignItems: 'center' }, title: `درجة مجال المواد = ${fmt.num(0.5, { maximumFractionDigits: 1 })} × أعلى درجة مفتوحة + ${fmt.num(0.5, { maximumFractionDigits: 1 })} × متوسط الدرجات المفتوحة` },
         h('span', { class: 'text-xs muted' }, 'درجة المجال'), mono(fmt.num(num(cs.score)), 'text-lg semibold'), ratingBadge(cs.score)) : null;
       return h('div', { class: 'view-head' },
         h('div', { class: 'view-head-text' },
@@ -412,7 +433,7 @@ export default {
       const series = Array.isArray(c.series) ? c.series.map(num) : [];
       const forecast = Array.isArray(c.forecast) ? c.forecast.map(num) : [];
       const fromSeed = Array.isArray(c.months) && c.months.length === series.length && Array.isArray(c.forecastMonths) && c.forecastMonths.length === forecast.length
-        ? c.months.concat(c.forecastMonths).map((ym) => { const m = /^(\d{4})-(\d{2})$/.exec(String(ym)); return m ? `${MONTHS_SHORT[Number(m[2]) - 1] || m[2]} ${m[1].slice(2)}` : String(ym); })
+        ? c.months.concat(c.forecastMonths).map((ym) => { const m = /^(\d{4})-(\d{2})$/.exec(String(ym)); return m ? `${MONTHS_SHORT[Number(m[2]) - 1] || m[2]} ${yy(m[1])}` : String(ym); })
         : null;
       const labels = fromSeed || monthLabels(series.length, forecast.length);
       const actualValues = series.concat(new Array(forecast.length).fill(null));
@@ -469,14 +490,13 @@ export default {
           onClick: () => { selectedCommodityId = c.id; schedule(); const t = root.querySelector('[data-section="commodity"]'); if (t && window.innerWidth < 960) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
         }, c.name);
         return h('li', {
-          class: ['urgent-item', `tone-${(TREND_META[c.trend] || TREND_META['مستقر']).tone}`, active ? 'is-selected' : null],
+          class: ['urgent-item', 'is-compact', `tone-${(TREND_META[c.trend] || TREND_META['مستقر']).tone}`, active ? 'is-selected' : null],
           'aria-current': active ? 'true' : undefined,
           style: active ? { background: 'color-mix(in srgb, var(--brand) 10%, transparent)', borderColor: 'color-mix(in srgb, var(--brand) 45%, var(--line))' } : undefined,
         },
-        h('span', { class: 'urgent-icon' }, glyph((TREND_META[c.trend] || TREND_META['مستقر']).glyph, 15)),
         h('div', { class: 'urgent-text' },
           h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, pick, trendBadge(c.trend)),
-          h('span', { class: 'urgent-sub' }, `تقلب ${fmt.pct(vol, 1)} · التعرض ${sar(c.exposureSAR)}`),
+          h('span', { class: 'urgent-sub' }, h('span', {}, 'تقلب ', numSpan(fmt.pct(vol, 1))), h('span', {}, 'التعرض ', numSpan(sar(c.exposureSAR)))),
         ),
         h('div', { class: 'urgent-due' }, spark ? spark.el : mono(fmt.num((c.series || []).slice(-1)[0], { maximumFractionDigits: 1 }))),
         );
@@ -490,25 +510,27 @@ export default {
     }
 
     function buildSuppliersCard(data) {
-      const items = data.concentration.slice(0, 12).map((s) => ({ id: s.id, label: s.name, value: num(s.shareOfSpendPct) }));
+      const items = data.concentration.slice(0, 8).map((s) => ({ id: s.id, label: s.name, value: num(s.shareOfSpendPct) }));
       const chart = items.length ? makeChart('barChart', {
-        items, horizontal: true, height: Math.max(220, items.length * 30 + 24), valueFormat: (v) => fmt.pct(v, 1), color: 'var(--s1)', showValues: true, maxBars: 12,
-        ariaLabel: 'حصة كل مورد من الإنفاق، مرتبة تنازلياً',
+        items, horizontal: true, height: Math.max(220, items.length * 30 + 24), valueFormat: (v) => fmt.pct(v, 1), color: 'var(--s1)', showValues: true, maxBars: 8,
+        ariaLabel: 'حصة أكبر الموردين من الإنفاق، مرتبة تنازلياً',
       }) : null;
       const fallback = () => simpleTable('تركّز الموردين', ['المورد', 'حصة الإنفاق', 'المصدر', 'التصنيف الائتماني', 'مدة التوريد'], data.concentration.map((s) => [s.name, fmt.pct(num(s.shareOfSpendPct), 1), s.singleSource ? 'مصدر وحيد' : 'متعدد', s.creditRating || '—', `${fmt.num(num(s.leadTimeDays))} يوماً`]));
-      const flagged = data.concentration.filter((s) => s.singleSource || s.creditRating === 'C' || num(s.financialHealth) < 50).slice(0, 6);
+      const flaggedAll = data.concentration.filter((s) => s.singleSource || s.creditRating === 'C' || num(s.financialHealth) < 50);
+      const flagged = flaggedAll.slice(0, 4);
       const body = h('div', { class: 'stack gap-3' },
         chart ? chart.el : fallback(),
         flagged.length ? h('div', { class: 'stack gap-2' },
           h('h3', { class: 'drawer-section-title', style: { marginBlockEnd: 0 } }, 'موردون يتطلبون المتابعة'),
-          h('ul', { class: 'urgent-list' }, ...flagged.map((s) => h('li', { class: ['urgent-item', s.singleSource ? 'tone-critical' : 'tone-warning'] },
+          h('ul', { class: 'urgent-list' }, ...flagged.map((s) => h('li', { class: ['urgent-item', 'is-compact', s.singleSource ? 'tone-critical' : 'tone-warning'] },
             h('span', { class: 'urgent-icon' }, glyph(s.singleSource ? 'critical' : 'warning', 15)),
             h('div', { class: 'urgent-text' },
               h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, h('span', { class: 'semibold' }, s.name), s.singleSource ? badge('مصدر وحيد', 'critical') : null, badge(`ائتمان ${s.creditRating || '—'}`, CREDIT_TONE[s.creditRating] || 'neutral')),
-              h('span', { class: 'urgent-sub' }, `${s.category || '—'} · ${s.country || '—'} · صحة مالية ${fmt.num(num(s.financialHealth))} · تسليم في الموعد ${fmt.pct(num(s.deliveryPerformancePct))}`),
+              h('span', { class: 'urgent-sub' }, h('span', {}, `${s.category || '—'} · ${s.country || '—'}`), h('span', {}, 'صحة مالية ', numSpan(fmt.num(num(s.financialHealth)))), h('span', {}, 'تسليم في الموعد ', numSpan(fmt.pct(num(s.deliveryPerformancePct))))),
             ),
-            h('div', { class: 'urgent-due' }, mono(fmt.pct(num(s.shareOfSpendPct), 1)), h('span', {}, `${fmt.num(num(s.leadTimeDays))} يوم توريد`)),
+            h('div', { class: 'urgent-due' }, numSpan(fmt.pct(num(s.shareOfSpendPct), 1), 'semibold'), h('span', {}, 'توريد ', numSpan(fmt.num(num(s.leadTimeDays))), ' يوماً')),
           ))),
+          flaggedAll.length > flagged.length ? h('p', { class: 'text-xs muted' }, `يُعرض ${fmt.num(flagged.length)} من أصل ${fmt.num(flaggedAll.length)} موردين يتطلبون المتابعة.`) : null,
         ) : h('p', { class: 'text-sm muted' }, 'لا يوجد موردون بمصدر وحيد أو تصنيف ائتماني منخفض ضمن النطاق.'),
       );
       const el = card({
@@ -525,13 +547,13 @@ export default {
       const list = rows.length ? h('ul', { class: 'urgent-list', 'aria-label': 'البنود طويلة التوريد' }, ...rows.map((b) => {
         const overdue = b.days !== null && b.days < 0;
         const soon = b.days !== null && b.days >= 0 && b.days <= 14;
-        return h('li', { class: ['urgent-item', overdue ? 'is-overdue' : null, overdue ? 'tone-critical' : soon ? 'tone-warning' : 'tone-neutral'] },
+        return h('li', { class: ['urgent-item', 'is-compact', overdue ? 'is-overdue' : null, overdue ? 'tone-critical' : soon ? 'tone-warning' : 'tone-neutral'] },
           h('span', { class: 'urgent-icon' }, glyph(overdue ? 'critical' : soon ? 'warning' : 'clock', 15)),
           h('div', { class: 'urgent-text' },
-            h('button', { type: 'button', class: 'btn btn-ghost btn-sm', style: { blockSize: 'auto', padding: 0, justifyContent: 'flex-start', textAlign: 'start', whiteSpace: 'normal', fontSize: 'var(--fs-sm)' }, onClick: () => openItem(data, b) }, h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, codeSpan(b.code), h('span', {}, b.description))),
-            h('span', { class: 'urgent-sub row gap-2 wrap' }, h('span', {}, b.supplier ? b.supplier.name : 'بدون مورد'), b.supplier && b.supplier.singleSource ? badge('مصدر وحيد', 'critical') : null, h('span', {}, `مدة التوريد ${fmt.num(num(b.leadTimeDays))} يوماً`), h('span', {}, siteName(data.state, b.projectId))),
+            h('button', { type: 'button', class: 'btn btn-ghost btn-sm', title: siteName(data.state, b.projectId), style: { blockSize: 'auto', padding: 0, justifyContent: 'flex-start', textAlign: 'start', whiteSpace: 'normal', fontSize: 'var(--fs-sm)' }, onClick: () => openItem(data, b) }, h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, codeSpan(b.code), h('span', {}, digitsIn(fmt, b.description)))),
+            h('span', { class: 'urgent-sub' }, h('span', {}, b.supplier ? b.supplier.name : 'بدون مورد'), b.supplier && b.supplier.singleSource ? badge('مصدر وحيد', 'critical') : null, h('span', {}, 'التوريد ', numSpan(fmt.num(num(b.leadTimeDays))), ' يوماً'), h('span', {}, 'آخر موعد للطلب ', numSpan(fmt.date(b.orderBy, { style: 'short' })))),
           ),
-          h('div', { class: 'urgent-due' }, h('span', {}, `آخر موعد للطلب ${fmt.date(b.orderBy, { style: 'short' })}`), badge(overdue ? `متأخر ${fmt.num(Math.abs(b.days))} يوم` : b.days === 0 ? 'اليوم' : `خلال ${fmt.num(b.days)} يوماً`, overdue ? 'critical' : soon ? 'warning' : 'neutral')),
+          h('div', { class: 'urgent-due' }, badge(overdue ? `متأخر ${fmt.num(Math.abs(b.days))} يوم` : b.days === 0 ? 'اليوم' : `خلال ${fmt.num(b.days)} يوماً`, overdue ? 'critical' : soon ? 'warning' : 'neutral')),
         );
       })) : emptyState({ title: 'لا توجد بنود طويلة التوريد ضمن النطاق', text: `البند طويل التوريد عندما تبلغ مدة توريده ${fmt.num(LONG_LEAD_DAYS)} يوماً أو أكثر.` });
       return card({
@@ -553,14 +575,12 @@ export default {
         initialSort: { key: '_absVar', dir: 'desc' },
         columns: [
           { key: 'code', label: 'الرمز / الموقع', width: 120, priority: 'high', render: (r) => h('div', { class: 'stack gap-1' }, codeSpan(r.code), h('span', { class: 'text-xs muted', style: { whiteSpace: 'normal' } }, siteName(data.state, r.projectId))) },
-          { key: 'description', label: 'الوصف', width: '32%', priority: 'high', render: (r) => h('div', { class: 'stack gap-1 boq-desc' }, h('span', { class: 'semibold' }, r.description), h('span', { class: 'text-xs muted' }, `الوحدة: ${r.unit || '—'}`)) },
-          { key: 'boqQty', label: 'كمية BoQ', align: 'end', priority: 'medium', render: (r) => mono(fmt.num(num(r.boqQty), { maximumFractionDigits: 1 }), 'num'), sortValue: (r) => num(r.boqQty) },
-          { key: 'bimQty', label: 'كمية BIM', align: 'end', priority: 'medium', render: (r) => mono(fmt.num(num(r.bimQty), { maximumFractionDigits: 1 }), 'num'), sortValue: (r) => num(r.bimQty) },
-          { key: '_absVar', label: 'الفرق', priority: 'high', render: (r) => varianceBadge(r.variancePct), sortValue: (r) => r._absVar },
-          { key: '_supplierName', label: 'المورد', priority: 'medium', render: (r) => (r.supplier ? h('div', { class: 'row gap-1 wrap', style: { alignItems: 'center' } }, h('span', {}, r.supplier.name), r.supplier.singleSource ? badge('مصدر وحيد', 'critical') : null) : h('span', { class: 'muted' }, '—')) },
-          { key: 'leadTimeDays', label: 'مدة التوريد', align: 'end', priority: 'low', render: (r) => h('span', { class: ['nowrap', num(r.leadTimeDays) >= LONG_LEAD_DAYS ? 'semibold' : null] }, h('span', { class: 'num' }, fmt.num(num(r.leadTimeDays))), ' يوماً'), sortValue: (r) => num(r.leadTimeDays) },
-          { key: 'orderBy', label: 'آخر موعد للطلب', priority: 'low', render: (r) => orderByCell(r.orderBy), sortValue: (r) => (fmt.toDate(r.orderBy) || new Date(0)).getTime() },
-          { key: 'specCompliance', label: 'المطابقة', priority: 'medium', render: (r) => statusBadge(r.specCompliance, SPEC_TONE) },
+          { key: 'description', label: 'الوصف / المورد', width: '36%', priority: 'high', render: (r) => h('div', { class: 'stack gap-1 boq-desc' },
+            h('span', { class: 'semibold' }, digitsIn(fmt, r.description)),
+            h('span', { class: 'text-xs muted row gap-1 wrap', style: { alignItems: 'center' } }, h('span', {}, `الوحدة: ${r.unit || '—'}`), r.supplier ? h('span', {}, `· ${r.supplier.name}`) : null, r.supplier && r.supplier.singleSource ? badge('مصدر وحيد', 'critical') : null)), sortValue: (r) => r.description },
+          { key: 'boqQty', label: 'الكمية BoQ / BIM', align: 'end', priority: 'medium', render: (r) => h('div', { class: 'stack gap-1', style: { alignItems: 'flex-end' } }, h('span', { class: 'nowrap' }, h('span', { class: 'text-xs muted' }, 'BoQ '), mono(fmt.num(num(r.boqQty), { maximumFractionDigits: 1 }), 'num')), h('span', { class: 'nowrap' }, h('span', { class: 'text-xs muted' }, 'BIM '), mono(fmt.num(num(r.bimQty), { maximumFractionDigits: 1 }), 'num'))), sortValue: (r) => num(r.boqQty) },
+          { key: '_absVar', label: 'الفرق / المطابقة', priority: 'high', render: (r) => h('div', { class: 'stack gap-1' }, varianceBadge(r.variancePct), statusBadge(r.specCompliance, SPEC_TONE)), sortValue: (r) => r._absVar },
+          { key: 'orderBy', label: 'آخر موعد للطلب', priority: 'low', render: (r) => h('div', { class: 'stack gap-1' }, orderByCell(r.orderBy), h('span', { class: ['text-xs', 'nowrap', num(r.leadTimeDays) >= LONG_LEAD_DAYS ? 'semibold' : 'muted'] }, 'التوريد ', numSpan(fmt.num(num(r.leadTimeDays))), ' يوماً')), sortValue: (r) => (fmt.toDate(r.orderBy) || new Date(0)).getTime() },
         ],
         rows,
       });
@@ -569,7 +589,7 @@ export default {
         subtitle: `${fmt.num(rows.length)} بنداً — ${fmt.num(data.varianceCount)} منها بفرق ${fmt.pct(VARIANCE_WARN)} فأكثر · مرتبة حسب حجم الفرق`,
         body: table.el,
         footer: h('div', { class: 'tone-legend' },
-          h('span', { class: 'tone-legend-item tone-good' }, glyph('good', 12), h('span', {}, `ضمن ± ${fmt.pct(VARIANCE_WARN)}`)),
+          h('span', { class: 'tone-legend-item tone-good' }, glyph('good', 12), h('span', {}, 'ضمن ', h('span', { class: 'num', dir: 'ltr' }, `± ${fmt.pct(VARIANCE_WARN)}`))),
           h('span', { class: 'tone-legend-item tone-warning' }, glyph('warning', 12), h('span', {}, `من ${fmt.pct(VARIANCE_WARN)} إلى ${fmt.pct(VARIANCE_CRIT)}: مراجعة الكميات`)),
           h('span', { class: 'tone-legend-item tone-critical' }, glyph('critical', 12), h('span', {}, `${fmt.pct(VARIANCE_CRIT)} فأكثر: خطر تجاوز أو نقص`)),
         ),
@@ -670,7 +690,7 @@ export default {
     function schedule() { if (!raf) raf = requestAnimationFrame(build); }
 
     // Only the entities this view displays rebuild it (own data, AI risks, alerts, site names, full reset); tasks are read at action time only (C-4).
-    const RELEVANT = /^(\*|sites|platform\.(boqItems|suppliers|commodities|aiRisks|alerts))/;
+    const RELEVANT = /^(\*|sites|platform$|platform\.(boqItems|suppliers|commodities|aiRisks|alerts))/;
     const unsubs = [
       bus.on('store:change', (payload) => { const path = payload && payload.path ? String(payload.path) : '*'; if (RELEVANT.test(path)) schedule(); }),
       bus.on('filters:change', (payload) => { const key = payload && payload.key; if (!key || key === 'siteId' || key === 'range' || key === 'search') schedule(); }),

@@ -356,6 +356,13 @@ function hazardLabelText(hz) {
   return (m ? m[1] : raw).trim();
 }
 
+/** Offsets (dx, dy, weighted distance) around a hazard dot, nearest first: the fallback search for a free pill spot. */
+const PILL_LATTICE = (() => {
+  const out = [];
+  for (let dy = -120; dy <= 120; dy += 6) for (let dx = -170; dx <= 170; dx += 6) out.push([dx, dy, Math.hypot(dx * 0.7, dy)]);
+  return out.sort((a, b) => a[2] - b[2]);
+})();
+
 /** Rounded-rectangle path (used for label pills). */
 function roundRect(ctx, x, y, w, h, r) {
   const rr = Math.min(r, w / 2, h / 2);
@@ -1719,6 +1726,7 @@ export class SitePlanRadar extends RadarBase {
     this._geo = null;
     this._zoneLabels = null;
     this._pillCache = new Map();
+    this._pillPlace = null;
     this._occ = null;
   }
 
@@ -2133,6 +2141,12 @@ export class SitePlanRadar extends RadarBase {
         return isHover || o.showHazardLabels === 'all' || hz.tone === 'critical';
       });
       wanted.sort((a, b) => ((hoveredHazard && sameItem(hoveredHazard, b.data)) ? 1 : 0) - ((hoveredHazard && sameItem(hoveredHazard, a.data)) ? 1 : 0));
+      // Placement only changes with the layout, the hover target or the hazard set (never with the moving
+      // pings), so the result — including "nothing fits" — is memoised and the search runs once per change.
+      const placeKey = [w, h, g.W, this._zoneLabels.key, hoveredHazard ? hoveredHazard.index : '-',
+        wanted.map((hp) => `${hp.data.index}:${Math.round(hp.x)},${Math.round(hp.y)}:${hazardLabelText(hp.hz)}`).join(';')].join('|');
+      if (!this._pillPlace || this._pillPlace.key !== placeKey) this._pillPlace = { key: placeKey, map: new Map() };
+      const memo = this._pillPlace.map;
       for (const hp of wanted) {
         const text = hazardLabelText(hp.hz);
         if (!text) continue;
@@ -2155,15 +2169,38 @@ export class SitePlanRadar extends RadarBase {
           [x - pw / 2, y - 13 - ph, false],
           [x - pw / 2, y + 13, false],
         ];
-        for (const d of [26, 40, 56]) {
-          for (let a = 0; a < 8; a++) {
-            const ang = (a / 8) * TAU + Math.PI / 8;
+        // Displaced rings, nearest first (a short leader line joins the pill to its dot). The outer rings
+        // keep a crowded plan labelled instead of silently dropping a critical hazard's pill.
+        for (const d of [26, 40, 56, 76, 98]) {
+          for (let a = 0; a < 12; a++) {
+            const ang = (a / 12) * TAU + Math.PI / 12;
             cands.push([x + Math.cos(ang) * d - pw / 2, y + Math.sin(ang) * d - ph / 2, true]);
           }
         }
-        let placed = null;
-        for (const [px, py, displaced] of cands) {
-          if (occ.free(px - 2, py - 2, pw + 4, ph + 4)) { placed = { px, py, displaced }; break; }
+        const memoKey = hp.data.index;
+        let placed;
+        if (memo.has(memoKey)) {
+          placed = memo.get(memoKey);
+          if (placed && !occ.free(placed.px - 2, placed.py - 2, pw + 4, ph + 4)) placed = undefined;
+        }
+        if (placed === undefined) {
+          placed = null;
+          for (const [cx0, cy0, displaced] of cands) {
+            // Pull a candidate that pokes out of the canvas back inside; the occupancy test below still
+            // rejects it when that lands on the dot, a zone name or another pill.
+            const px = clamp(cx0, 3, Math.max(3, w - pw - 3));
+            const py = clamp(cy0, 3, Math.max(3, h - ph - 3));
+            if (occ.free(px - 2, py - 2, pw + 4, ph + 4)) { placed = { px, py, displaced }; break; }
+          }
+          if (!placed) {
+            // Crowded plan: scan the lattice around the dot for the nearest free spot (leader line drawn).
+            for (const [dx, dy] of PILL_LATTICE) {
+              const px = clamp(x + dx - pw / 2, 3, Math.max(3, w - pw - 3));
+              const py = clamp(y + dy - ph / 2, 3, Math.max(3, h - ph - 3));
+              if (occ.free(px - 2, py - 2, pw + 4, ph + 4)) { placed = { px, py, displaced: true }; break; }
+            }
+          }
+          memo.set(memoKey, placed);
         }
         if (!placed) continue;
         occ.take(placed.px - 2, placed.py - 2, pw + 4, ph + 4);
@@ -2175,12 +2212,14 @@ export class SitePlanRadar extends RadarBase {
           const dx = cxp - x;
           const dy = cyp - y;
           const dist = Math.hypot(dx, dy) || 1;
-          ctx.strokeStyle = rgba(color, 0.75);
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(x + (dx / dist) * 6.5, y + (dy / dist) * 6.5);
-          ctx.lineTo(cxp, cyp);
-          ctx.stroke();
+          if (dist > 9) {
+            ctx.strokeStyle = rgba(color, 0.75);
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(x + (dx / dist) * 6.5, y + (dy / dist) * 6.5);
+            ctx.lineTo(cxp, cyp);
+            ctx.stroke();
+          }
         }
         roundRect(ctx, px, py, pw, ph, 5);
         ctx.fillStyle = rgba(p.bg1, 0.92);

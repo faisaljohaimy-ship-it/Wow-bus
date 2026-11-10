@@ -238,8 +238,8 @@ button.legend-item:hover { color: var(--ink-1); }
   background: var(--key, currentColor);
 }
 .tooltip-swatch.is-line { inline-size: 10px; block-size: 2px; }
-.tooltip-note { margin-block-start: 6px; font-size: 11px; color: var(--ink-3); }
-.tooltip-kbd { font-family: var(--font-mono-mixed); font-size: 10px; color: var(--ink-3); }
+.tooltip-note { margin-block-start: 6px; font-size: 11px; color: var(--ink-2); }
+.tooltip-kbd { font-family: var(--font-mono-mixed); font-size: 10px; color: var(--ink-2); }
 
 /* --------------------------------------------------------------------------
    Table twin (chart "جدول" view)
@@ -352,7 +352,7 @@ button.legend-item:hover { color: var(--ink-1); }
   font-family: var(--font-mono-mixed);
   font-size: 10px;
   letter-spacing: .06em;
-  color: var(--ink-3);
+  color: var(--ink-2);
   pointer-events: none;
   z-index: 1;
   direction: ltr;
@@ -423,7 +423,7 @@ button.legend-item:hover { color: var(--ink-1); }
 .radar-grid > .is-wide { grid-column: 1 / -1; }
 
 /* Radar hover tooltip reuses the chart tooltip; blip code is mono */
-.tooltip .blip-code { font-family: var(--font-mono-mixed); font-size: 10px; letter-spacing: .06em; color: var(--ink-3); }
+.tooltip .blip-code { font-family: var(--font-mono-mixed); font-size: 10px; letter-spacing: .06em; color: var(--ink-2); }
 
 /* --------------------------------------------------------------------------
    Gauge, meters, rings
@@ -435,7 +435,7 @@ button.legend-item:hover { color: var(--ink-1); }
   font-size: var(--fs-hero);
   font-weight: 600;
   line-height: 1;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   font-variant-numeric: proportional-nums;
   fill: var(--ink-1);
   color: var(--ink-1);
@@ -600,7 +600,7 @@ button.legend-item:hover { color: var(--ink-1); }
    Pareto, ranked bars and small type helpers used by charts.js
    -------------------------------------------------------------------------- */
 
-.chart .cum-label { font-family: var(--font-mono-mixed); font-size: 11px; fill: var(--ink-3); }
+.chart .cum-label { font-family: var(--font-mono-mixed); font-size: 11px; fill: var(--ink-2); }
 .chart .bar-label { font-size: 12px; fill: var(--ink-2); }
 .chart .bar-value { font-family: var(--font-mono-mixed); font-size: 11px; fill: var(--ink-1); font-weight: 500; }
 .chart .bar.is-muted { opacity: .55; }

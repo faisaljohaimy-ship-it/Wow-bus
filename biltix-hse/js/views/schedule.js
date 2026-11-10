@@ -38,11 +38,15 @@ const CLOSED_RISK = new Set(['مغلق', 'مُتجاوز']);
 const OPEN_TASK = new Set(['جديدة', 'قيد التنفيذ', 'متأخرة']);
 
 const STYLE_ID = 'view-schedule-style';
-const STYLE_TEXT = `@layer views {
-  .view-schedule .grid-12 { align-items: start; }
+const STYLE_TEXT = `/* grid rows align to the top: unlayered so it wins over the stretch default in css/base.css */
+.view-schedule .grid-12 { align-items: start; }
+/* compact subcontractor rows (SCH-06): no icon tile, score and gap trail the title */
+.view-schedule .urgent-item.is-compact { grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding-block: 8px; }
+.view-schedule .urgent-item.is-compact > .urgent-icon { display: none; }
+.view-schedule .urgent-item.is-compact .urgent-due { align-items: flex-end; }
+@layer views {
   .view-schedule .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
   .view-schedule .weather-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
-  .view-schedule .subs-list.is-two-up { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .mc-timeline { position: relative; block-size: 64px; margin-block: 4px 2px; }
   .mc-timeline-track { position: absolute; inset-inline: 0; inset-block-start: 26px; block-size: 6px; border-radius: 3px; background: var(--bg-3); }
   .mc-timeline-fill { position: absolute; inset-block-start: 26px; block-size: 6px; border-radius: 3px; background: color-mix(in srgb, var(--warning) 55%, transparent); }
@@ -53,10 +57,21 @@ const STYLE_TEXT = `@layer views {
   .mc-mark.is-planned { inset-block-start: 0; }
   .mc-mark.is-planned .mc-mark-dot { inline-size: 2px; block-size: 34px; border-radius: 1px; border: 0; background: var(--ink-3); box-shadow: none; }
   @media (max-width: 1279.98px) { .view-schedule .weather-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-  @media (max-width: 599.98px) { .view-schedule .weather-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } .view-schedule .subs-list.is-two-up { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 599.98px) { .view-schedule .weather-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 }`;
 const CODE_RE = /\b[A-Z]{1,5}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
-const SUBS_DEFAULT = 4;
+const SUBS_DEFAULT = 5;
+
+/** Free text (seed titles, descriptions, rule names) → the active numeral system; Latin alphanumeric tokens (2B, P6, PN10) keep their ASCII digits (RTL-4). */
+const LATIN_NUM_TOKEN = /[A-Za-z][A-Za-z0-9._-]*\d[A-Za-z0-9._-]*|\d+[A-Za-z][A-Za-z0-9._-]*/g;
+function digitsIn(fmt, value) {
+  const s = String(value ?? '');
+  if (!fmt || typeof fmt.digits !== 'function' || !/\d/.test(s)) return s;
+  let out = ''; let last = 0; let m;
+  LATIN_NUM_TOKEN.lastIndex = 0;
+  while ((m = LATIN_NUM_TOKEN.exec(s))) { out += fmt.digits(s.slice(last, m.index)) + m[0]; last = m.index + m[0].length; }
+  return out + fmt.digits(s.slice(last));
+}
 
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
 const lower = (v) => String(v ?? '').toLowerCase();
@@ -93,6 +108,7 @@ export default {
     container.appendChild(root);
 
     let raf = 0;
+    let lastData = null;
     let openDrawer = null;
     let lastNumerals = safe(() => store.state.settings.numerals, 'latn');
     let lastPlatformSettings = safe(() => JSON.stringify(store.state.settings.platform || null), 'null');
@@ -105,9 +121,9 @@ export default {
     function withCodes(str) {
       const t = String(str ?? ''); const out = []; let last = 0; let m;
       CODE_RE.lastIndex = 0;
-      while ((m = CODE_RE.exec(t))) { if (m.index > last) out.push(t.slice(last, m.index)); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
-      if (last < t.length) out.push(t.slice(last));
-      return out.length ? out : [t];
+      while ((m = CODE_RE.exec(t))) { if (m.index > last) out.push(digitsIn(fmt, t.slice(last, m.index))); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
+      if (last < t.length) out.push(digitsIn(fmt, t.slice(last)));
+      return out.length ? out : [digitsIn(fmt, t)];
     }
     const startOfToday = () => { const d = store.now ? store.now() : new Date(); d.setHours(0, 0, 0, 0); return d; };
     const daysUntil = (iso) => { const d = fmt.toDate(iso); if (!d) return null; d.setHours(0, 0, 0, 0); return Math.round((d.getTime() - startOfToday().getTime()) / DAY_MS); };
@@ -200,7 +216,7 @@ export default {
       return t;
     }
     function site(state, id) { return (state.sites || []).find((x) => x.id === id) || null; }
-    function siteName(state, id) { const s = site(state, id); return s ? s.name : (id || '—'); }
+    function siteName(state, id) { const s = site(state, id); return digitsIn(fmt, s ? s.name : (id || '—')); }
 
     /* ───────────────────────── data ───────────────────────── */
 
@@ -374,7 +390,7 @@ export default {
           ]),
         ),
         weather.length ? h('section', { class: 'drawer-section' },
-          h('h3', { class: 'drawer-section-title' }, 'أثر الطقس خلال 7 أيام'),
+          h('h3', { class: 'drawer-section-title' }, `أثر الطقس خلال ${fmt.num(7)} أيام`),
           h('div', { class: 'tone-legend' }, ...weather.map((d) => h('span', { class: ['tone-legend-item', `tone-${riskTone(d._risk)}`] }, glyph(riskTone(d._risk), 12), h('span', {}, `${fmt.dayName(d.date)} ${fmt.pct(Math.round(d._risk * 100))}`)))),
         ) : null,
         h('section', { class: 'drawer-section' },
@@ -389,7 +405,7 @@ export default {
         ),
       );
       openDrawer = drawer({
-        title: t.name,
+        title: digitsIn(fmt, t.name),
         subtitle: `${codeText(t.code)} · ${siteName(data.state, t.projectId)}`,
         body, size: 'lg',
         actions: [
@@ -411,7 +427,7 @@ export default {
 
     function buildHead(data) {
       const cs = data.categoryScore;
-      const pill = cs ? h('div', { class: 'row gap-2', style: { alignItems: 'center' }, title: 'درجة مجال الجدول الزمني = 0.5 × أعلى درجة مفتوحة + 0.5 × متوسط الدرجات المفتوحة' },
+      const pill = cs ? h('div', { class: 'row gap-2', style: { alignItems: 'center' }, title: `درجة مجال الجدول الزمني = ${fmt.num(0.5, { maximumFractionDigits: 1 })} × أعلى درجة مفتوحة + ${fmt.num(0.5, { maximumFractionDigits: 1 })} × متوسط الدرجات المفتوحة` },
         h('span', { class: 'text-xs muted' }, 'درجة المجال'), mono(fmt.num(num(cs.score)), 'text-lg semibold'), ratingBadge(cs.score)) : null;
       return h('div', { class: 'view-head' },
         h('div', { class: 'view-head-text' },
@@ -447,16 +463,17 @@ export default {
       const rows = data.critical;
       const table = dataTable({
         caption: 'انزلاق المسار الحرج — الأنشطة الحرجة مرتبة حسب التأخير المرجّح',
-        pageSize: 8, rowKey: 'id', stickyFirst: true,
+        pageSize: 6, rowKey: 'id', stickyFirst: true,
         emptyText: data.search ? 'لا توجد أنشطة مطابقة للبحث' : 'لا توجد أنشطة حرجة ضمن هذا النطاق',
         onRowClick: (r) => openActivity(data, r),
         initialSort: { key: '_weighted', dir: 'desc' },
         columns: [
           { key: 'code', label: 'الرمز', width: 96, priority: 'high', render: (r) => codeSpan(r.code) },
-          { key: 'name', label: 'النشاط', priority: 'high', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.name), h('span', { class: 'text-xs muted row gap-2 wrap', style: { alignItems: 'center' } }, codeSpan(r.wbs || '—'), h('span', {}, r.trade || ''), h('span', {}, siteName(data.state, r.projectId)), r._sub ? h('span', {}, r._sub.name) : null, r.weatherSensitive ? badge('حساس للطقس', 'warning', { icon: svgIcon('sun', 12) }) : null)) },
+          { key: 'name', label: 'النشاط', priority: 'high', render: (r) => h('div', { class: 'stack gap-1' },
+            h('span', { class: 'semibold' }, digitsIn(fmt, r.name), r.weatherSensitive ? h('span', { title: 'حساس للطقس', role: 'img', 'aria-label': 'حساس للطقس', style: { display: 'inline-flex', verticalAlign: 'middle', marginInlineStart: '6px', color: 'var(--warning)' } }, svgIcon('sun', 13)) : null),
+            h('span', { class: 'text-xs muted row gap-2 wrap', style: { alignItems: 'center' } }, codeSpan(r.wbs || '—'), h('span', {}, r.trade || ''), h('span', {}, siteName(data.state, r.projectId)), r._sub ? h('span', {}, r._sub.name) : null)) },
           { key: 'finish', label: 'النهاية مقابل خط الأساس', priority: 'medium', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'nowrap' }, fmt.date(r.finish, { style: 'short' })), r._slip !== null && r._slip !== 0 ? badge(r._slip > 0 ? `انزلاق ${daysWord(r._slip)}` : `مبكر ${daysWord(r._slip)}`, r._slip > 14 ? 'critical' : r._slip > 0 ? 'warning' : 'good') : badge('مطابق', 'good')), sortValue: (r) => r._slip ?? 0 },
-          { key: 'floatDays', label: 'الفائض', align: 'end', priority: 'low', render: (r) => h('span', { class: ['nowrap', num(r.floatDays) <= 0 ? 'is-overdue semibold' : null] }, h('span', { class: 'num' }, fmt.num(num(r.floatDays))), ' يوماً'), sortValue: (r) => num(r.floatDays) },
-          { key: '_p', label: 'احتمال التأخير', priority: 'high', render: (r) => probMeter(r._p, `احتمال تأخير ${r.code}`), sortValue: (r) => r._p },
+          { key: '_p', label: 'احتمال التأخير / الفائض', priority: 'high', render: (r) => h('div', { class: 'stack gap-1' }, probMeter(r._p, `احتمال تأخير ${r.code}`), h('span', { class: ['text-xs', 'nowrap', num(r.floatDays) <= 0 ? 'is-overdue semibold' : 'muted'] }, 'الفائض ', h('span', { class: 'num' }, fmt.num(num(r.floatDays))), ' يوماً')), sortValue: (r) => r._p },
           { key: '_exp', label: 'التأخير المتوقع', align: 'end', priority: 'medium', render: (r) => h('div', { class: 'stack gap-1', style: { alignItems: 'flex-end' } }, h('span', { class: 'nowrap' }, h('span', { class: 'mono num' }, fmt.num(r._exp)), ' يوماً'), h('span', { class: 'text-xs muted nowrap' }, 'مرجّح ', h('span', { class: 'num' }, fmt.num(r._weighted, { maximumFractionDigits: 1 })))), sortValue: (r) => r._exp },
         ],
         rows,
@@ -486,7 +503,7 @@ export default {
         return h('div', { class: ['fact', tone ? `tone-${tone}` : null] },
           h('span', { class: 'fact-label' }, `${label} · ثقة ${fmt.pct(pct)}`),
           h('span', { class: 'fact-value', style: { fontSize: 'var(--fs-lg)' } }, fmt.date(iso, { style: 'short' })),
-          slip !== null ? h('span', { class: ['text-xs', `tone-${tone}`], style: { color: 'var(--tone-ink)' } }, slip > 0 ? `+${daysWord(slip)} عن المخطط` : slip < 0 ? `−${daysWord(slip)} قبل المخطط` : 'في الموعد المخطط') : null,
+          slip !== null ? h('span', { class: ['text-xs', `tone-${tone}`], style: { color: 'var(--tone-ink)' } }, slip > 0 ? `${daysWord(slip)} بعد المخطط` : slip < 0 ? `${daysWord(slip)} قبل المخطط` : 'في الموعد المخطط') : null,
         );
       };
       /** Finish-date timeline: planned finish as a marker line, P50 / P80 / P90 as dots along a scaled track. */
@@ -535,7 +552,7 @@ export default {
       const body = h('div', { class: 'stack gap-3' },
         h('div', { class: 'tone-legend' },
           h('span', { class: 'tone-legend-item' }, h('span', { class: 'legend-key', style: { background: 'var(--s1)', inlineSize: '10px', blockSize: '10px', borderRadius: '2px', display: 'inline-block' } }), h('span', {}, 'ضمن الطاقة المتاحة')),
-          h('span', { class: 'tone-legend-item tone-critical' }, glyph('critical', 12), h('span', {}, 'فوق التخصيص (> 100%)')),
+          h('span', { class: 'tone-legend-item tone-critical' }, glyph('critical', 12), h('span', {}, `فوق التخصيص (أكثر من ${fmt.pct(100)})`)),
         ),
         chart ? chart.el : fallback(),
         gaps.length ? h('ul', { class: 'urgent-list', style: gaps.length > 2 ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '8px' } : undefined }, ...gaps.map((r) => h('li', { class: 'urgent-item tone-warning' },
@@ -568,7 +585,7 @@ export default {
           ),
         );
       };
-      const fallback = () => simpleTable('توقعات الطقس 7 أيام', ['اليوم', 'الحرارة', 'الرياح', 'الأمطار', 'الغبار', 'خطر التأخير'], days.map((d) => [`${fmt.dayName(d.date)} ${fmt.date(d.date, { style: 'short' })}`, `${fmt.num(num(d.tempMax))}°`, `${fmt.num(num(d.windKmh))} كم/س`, fmt.pct(rainPct(d.rainProb)), d.dustRisk || '—', fmt.pct(Math.round(d._risk * 100))]));
+      const fallback = () => simpleTable(`توقعات الطقس ${fmt.num(7)} أيام`, ['اليوم', 'الحرارة', 'الرياح', 'الأمطار', 'الغبار', 'خطر التأخير'], days.map((d) => [`${fmt.dayName(d.date)} ${fmt.date(d.date, { style: 'short' })}`, `${fmt.num(num(d.tempMax))}°`, `${fmt.num(num(d.windKmh))} كم/س`, fmt.pct(rainPct(d.rainProb)), d.dustRisk || '—', fmt.pct(Math.round(d._risk * 100))]));
       const body = days.length
         ? h('div', { class: 'stack gap-3' },
           h('div', { class: 'weather-strip', role: 'list', 'aria-label': 'توقعات الطقس للأيام السبعة القادمة', style: { display: 'grid', gap: '10px' } }, ...days.map(dayCard)),
@@ -579,13 +596,22 @@ export default {
         )
         : emptyState({ title: 'لا تتوفر توقعات طقس لهذا المشروع' });
       return card({
-        code: 'SCH-04', title: 'خطر التأخير بسبب الطقس — 7 أيام', className: 'col-span-12',
+        code: 'SCH-04', title: `خطر التأخير بسبب الطقس — ${fmt.num(7)} أيام`, className: 'col-span-12',
         subtitle: projectSubtitle(data, `${fmt.num(7)} أيام: الحرارة القصوى، الرياح، الغبار، احتمال الأمطار وخطر التأخير اليومي`),
         body, tableView: fallback,
       });
     }
 
+    /** Escalate button (or its outcome) for one approval — kept inside the first cell so it is never hidden with the low-priority columns. */
+    function approvalAction(r) {
+      const data = lastData;
+      if (r.status === 'معتمد') return badge('معتمدة', 'good');
+      if (r.escalated) return badge('تم التصعيد', 'brand');
+      return button('تصعيد', { variant: r.status === 'متأخر' ? 'danger' : 'outline', size: 'sm', icon: svgIcon('bell', 13), attrs: { title: 'إنشاء مهمة تصعيد وإسنادها لمدير المشروع' }, onClick: () => { escalateApproval(data, r); } });
+    }
+
     function buildApprovalsCard(data) {
+      lastData = data;
       const rows = data.approvals;
       const table = dataTable({
         caption: 'الموافقات التنظيمية — المدة المنقضية مقابل المدة النظامية',
@@ -593,15 +619,12 @@ export default {
         emptyText: data.search ? 'لا توجد موافقات مطابقة للبحث' : 'لا توجد موافقات ضمن هذا النطاق',
         initialSort: { key: '_ratio', dir: 'desc' },
         columns: [
-          { key: 'authority', label: 'الجهة ونوع الموافقة', priority: 'high', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.authority), h('span', { class: 'text-sm' }, r.type), h('span', { class: 'text-xs muted' }, `${siteName(data.state, r.projectId)} · قُدِّمت ${fmt.date(r.submittedAt, { style: 'short' })}`)) },
-          { key: '_ratio', label: 'المنقضي / النظامي', priority: 'high', render: (r) => ratioMeter(r.elapsedDays, r.statutoryDays, `المدة المنقضية لموافقة ${r.authority}`), sortValue: (r) => r._ratio },
-          { key: 'status', label: 'الحالة', priority: 'medium', render: (r) => statusBadge(r.status, APPROVAL_STATUS_TONE) },
-          { key: 'riskScore', label: 'الدرجة', priority: 'low', render: (r) => scoreCell(r.riskScore), sortValue: (r) => num(r.riskScore) },
-          { key: 'actions', label: '', sortable: false, priority: 'medium', render: (r) => {
-            if (r.status === 'معتمد') return badge('معتمدة', 'good');
-            if (r.escalated) return badge('تم التصعيد', 'brand');
-            return button('تصعيد', { variant: r.status === 'متأخر' ? 'danger' : 'outline', size: 'sm', icon: svgIcon('bell', 13), attrs: { title: 'إنشاء مهمة تصعيد وإسنادها لمدير المشروع' }, onClick: () => { escalateApproval(data, r); } });
-          } },
+          { key: 'authority', label: 'الجهة ونوع الموافقة', priority: 'high', render: (r) => h('div', { class: 'stack gap-1' },
+            h('span', { class: 'semibold' }, r.authority),
+            h('span', { class: 'text-sm' }, digitsIn(fmt, r.type)),
+            h('span', { class: 'text-xs muted' }, `${siteName(data.state, r.projectId)} · قُدِّمت ${fmt.date(r.submittedAt, { style: 'short' })}`),
+            h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, statusBadge(r.status, APPROVAL_STATUS_TONE), approvalAction(r))) },
+          { key: '_ratio', label: 'المنقضي / النظامي', priority: 'high', render: (r) => h('div', { class: 'stack gap-1' }, ratioMeter(r.elapsedDays, r.statutoryDays, `المدة المنقضية لموافقة ${r.authority}`), h('span', { class: 'text-xs muted row gap-1', style: { alignItems: 'center' } }, 'الدرجة ', scoreCell(r.riskScore))), sortValue: (r) => r._ratio },
         ],
         rows,
       });
@@ -620,20 +643,21 @@ export default {
       const scoreTone = (v) => (v >= 80 ? 'good' : v >= 60 ? 'warning' : 'critical');
       const scoreLabel = (v) => (v >= 80 ? 'جيد' : v >= 60 ? 'مقبول' : 'ضعيف');
       // Two-up so the card stays level with the approvals table; four rows by default, «عرض الكل» for the rest.
-      const list = rows.length ? h('ul', { class: ['urgent-list', 'subs-list', rows.length > 1 ? 'is-two-up' : null], 'aria-label': 'أداء مقاولي الباطن' }, ...rows.map((s) => {
+      const list = rows.length ? h('ul', { class: ['urgent-list', 'subs-list'], 'aria-label': 'أداء مقاولي الباطن' }, ...rows.map((s) => {
         const sc = num(s.scorecard);
-        const spark = makeChart('sparkline', { values: (s.trend || []).map(num), width: 88, height: 26, color: 'var(--ink-3)', accentLast: true });
-        return h('li', { class: ['urgent-item', `tone-${scoreTone(sc)}`] },
+        const spark = makeChart('sparkline', { values: (s.trend || []).map(num), width: 72, height: 24, color: 'var(--ink-3)', accentLast: true });
+        const gapTone = s._gap < -5 ? 'critical' : s._gap < 0 ? 'warning' : 'good';
+        const planned = num(s.plannedProgressPct); const actual = num(s.actualProgressPct);
+        return h('li', { class: ['urgent-item', 'is-compact', `tone-${scoreTone(sc)}`] },
           h('span', { class: 'urgent-icon' }, glyph(scoreTone(sc), 15)),
-          h('div', { class: 'urgent-text', style: { gap: '6px' } },
+          h('div', { class: 'urgent-text', style: { gap: '4px' } },
             h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, h('span', { class: 'semibold' }, s.name), badge(`${scoreLabel(sc)} · ${fmt.num(sc)}`, scoreTone(sc)), num(s.openNotices) ? badge(`${fmt.num(num(s.openNotices))} إشعارات مفتوحة`, 'warning') : null),
             h('span', { class: 'urgent-sub' }, `${s.trade || '—'} · ${siteName(data.state, s.projectId)}`),
-            h('div', { class: 'bar-pair' },
-              h('div', { class: 'bar-pair-row' }, h('span', {}, 'المخطط'), progress({ value: num(s.plannedProgressPct), max: 100, tone: 'neutral', label: `التقدم المخطط ${s.name}` }), h('span', { class: 'progress-value' }, fmt.pct(num(s.plannedProgressPct)))),
-              h('div', { class: 'bar-pair-row' }, h('span', {}, 'الفعلي'), progress({ value: num(s.actualProgressPct), max: 100, tone: s._gap < -5 ? 'critical' : s._gap < 0 ? 'warning' : 'good', label: `التقدم الفعلي ${s.name}` }), h('span', { class: 'progress-value' }, fmt.pct(num(s.actualProgressPct)))),
-            ),
+            h('div', { class: 'row gap-2', style: { alignItems: 'center' } },
+              h('div', { class: 'grow', style: { minInlineSize: '60px' } }, progress({ value: actual, max: 100, tone: gapTone, label: `التقدم الفعلي ${s.name}: ${fmt.pct(actual)} مقابل مخطط ${fmt.pct(planned)}` })),
+              h('span', { class: 'text-xs muted nowrap' }, 'فعلي ', h('span', { class: 'num' }, fmt.pct(actual)), ' · مخطط ', h('span', { class: 'num' }, fmt.pct(planned)))),
           ),
-          h('div', { class: 'urgent-due' }, spark ? spark.el : null, badge(`${fmt.signed(s._gap, 1)} نقطة`, s._gap < -5 ? 'critical' : s._gap < 0 ? 'warning' : 'good')),
+          h('div', { class: 'urgent-due' }, spark ? spark.el : null, badge(s._gap < 0 ? `متأخر ${fmt.num(Math.abs(s._gap), { maximumFractionDigits: 1 })} نقطة` : s._gap > 0 ? `متقدم ${fmt.num(s._gap, { maximumFractionDigits: 1 })} نقطة` : 'مطابق للمخطط', gapTone)),
         );
       })) : emptyState({ title: 'لا يوجد مقاولو باطن ضمن النطاق' });
       const fallback = () => simpleTable('أداء مقاولي الباطن', ['المقاول', 'الحرفة', 'المشروع', 'المخطط', 'الفعلي', 'الفجوة', 'بطاقة الأداء', 'إشعارات مفتوحة'], all.map((s) => [s.name, s.trade || '—', siteName(data.state, s.projectId), fmt.pct(num(s.plannedProgressPct)), fmt.pct(num(s.actualProgressPct)), `${fmt.signed(s._gap, 1)}`, fmt.num(num(s.scorecard)), fmt.num(num(s.openNotices))]));
@@ -738,7 +762,7 @@ export default {
     function schedule() { if (!raf) raf = requestAnimationFrame(build); }
 
     // Only the entities this view displays rebuild it (own data, AI risks, alerts, site names, full reset); tasks are read at action time only (C-4).
-    const RELEVANT = /^(\*|sites|platform\.(scheduleTasks|monteCarlo|resources|weather|approvals|subcontractors|projects|aiRisks|alerts))/;
+    const RELEVANT = /^(\*|sites|platform$|platform\.(scheduleTasks|monteCarlo|resources|weather|approvals|subcontractors|projects|aiRisks|alerts))/;
     const unsubs = [
       bus.on('store:change', (payload) => { const path = payload && payload.path ? String(payload.path) : '*'; if (RELEVANT.test(path)) schedule(); }),
       bus.on('filters:change', (payload) => { const key = payload && payload.key; if (!key || key === 'siteId' || key === 'range' || key === 'search') schedule(); }),

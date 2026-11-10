@@ -285,6 +285,35 @@ export default {
     root.appendChild(h('div', { class: 'grid-12' }, registerCard, sideCol));
     container.appendChild(root);
 
+    /* Register density follows the card's own width (not the viewport): the rail and live feed take
+       ~600px of a 1440px screen. Re-created only when the mode flips; deferred a frame so the swap
+       never re-enters the observer callback. */
+    const REGISTER_WIDE_FROM = 1240;
+    let compact = (() => { const w = registerCard.getBoundingClientRect().width; return w > 0 && w < REGISTER_WIDE_FROM; })();
+    let layoutObserver = null;
+    let layoutRaf = 0;
+    let lastRegisterWidth = -1;
+    if (typeof ResizeObserver === 'function') {
+      layoutObserver = new ResizeObserver((entries) => {
+        for (const e of entries) {
+          const w = Math.round(e.contentRect.width);
+          if (w === lastRegisterWidth || w === 0) continue;
+          lastRegisterWidth = w;
+          const next = w < REGISTER_WIDE_FROM;
+          if (next === compact) continue;
+          if (layoutRaf) cancelAnimationFrame(layoutRaf);
+          layoutRaf = requestAnimationFrame(() => {
+            layoutRaf = 0;
+            if (destroyed || next === compact) return;
+            compact = next;
+            table = null;
+            renderTable();
+          });
+        }
+      });
+      layoutObserver.observe(registerCard);
+    }
+
     /* ───────────── table columns ───────────── */
     const scoreCell = (s) => h('span', { class: 'row gap-2 nowrap' }, h('strong', { class: 'mono' }, fmt.num(s)), C.tierBadge(tierOf(s)));
     function dueCell(r) {
@@ -301,9 +330,9 @@ export default {
        the code column stays sticky. Site names wrap on two lines instead of truncating. */
     const columns = [
       { key: 'code', label: 'الكود', priority: 'high', mono: true, width: 88, sortValue: (r) => r.code, render: (r) => h('span', { class: 'nowrap' }, String(r.code || '')) },
-      { key: 'hazard', label: 'الخطر', priority: 'high', sortValue: (r) => r.hazard, render: (r) => h('div', { class: 'stack gap-1', style: { minInlineSize: '200px', maxInlineSize: '300px' } }, h('strong', { class: 'truncate', title: String(r.hazard || '') }, String(r.hazard || '')), r.activity ? h('span', { class: 'muted text-xs truncate', title: String(r.activity) }, String(r.activity)) : null) },
+      { key: 'hazard', label: 'الخطر', priority: 'high', sortValue: (r) => r.hazard, render: (r) => h('div', { class: 'stack gap-1', style: { minInlineSize: '190px', maxInlineSize: '250px' } }, h('strong', { class: 'truncate', title: String(r.hazard || '') }, String(r.hazard || '')), r.activity ? h('span', { class: 'muted text-xs truncate', title: String(r.activity) }, String(r.activity)) : null) },
       { key: 'siteId', label: 'الموقع', priority: 'high', sortValue: (r) => siteName(r.siteId), render: (r) => { const s = siteById(r.siteId); return h('div', { class: 'stack gap-1', style: { minInlineSize: '110px', maxInlineSize: '160px' } }, h('span', { style: { whiteSpace: 'normal', lineHeight: '1.35' } }, s ? s.name : '—'), s ? h('span', { class: 'muted text-xs mono' }, String(s.code || '')) : null); } },
-      { key: 'categoryId', label: 'الفئة', priority: 'high', sortValue: (r) => categoryById(r.categoryId).name, render: (r) => { const c = categoryById(r.categoryId); return h('span', { class: 'row gap-2 nowrap', title: c.name }, ico(c.icon, 14), h('span', { class: 'truncate', style: { maxInlineSize: '140px' } }, c.name)); } },
+      { key: 'categoryId', label: 'الفئة', priority: 'high', sortValue: (r) => categoryById(r.categoryId).name, render: (r) => { const c = categoryById(r.categoryId); return h('span', { class: 'row gap-2 nowrap', title: c.name }, ico(c.icon, 14), h('span', { class: 'truncate', style: { maxInlineSize: '120px' } }, c.name)); } },
       { key: 'likelihood', label: 'الاحتمالية', priority: 'medium', align: 'center', sortValue: (r) => Number(r.likelihood) || 0, render: (r) => h('span', { class: 'mono', title: LIKELIHOOD_LABELS[(Number(r.likelihood) || 1) - 1] || '' }, fmt.num(Number(r.likelihood) || 0)) },
       { key: 'severity', label: 'الشدة', priority: 'medium', align: 'center', sortValue: (r) => Number(r.severity) || 0, render: (r) => h('span', { class: 'mono', title: SEVERITY_LABELS[(Number(r.severity) || 1) - 1] || '' }, fmt.num(Number(r.severity) || 0)) },
       { key: 'score', label: 'الدرجة', priority: 'high', sortValue: (r) => score(r), render: (r) => scoreCell(score(r)) },
@@ -311,6 +340,26 @@ export default {
       { key: 'owner', label: 'المالك', priority: 'medium', sortValue: (r) => r.owner, render: (r) => h('span', { class: 'nowrap' }, String(r.owner || '—')) },
       { key: 'dueDate', label: 'الاستحقاق', priority: 'high', sortValue: (r) => parseMs(r.dueDate), render: dueCell },
       { key: 'status', label: 'الحالة', priority: 'high', sortValue: (r) => riskStatuses().indexOf(r.status), render: (r) => { const b = C.badge(String(r.status || '—'), STATUS_TONE[r.status] || 'neutral'); b.classList.add('nowrap'); return b; } },
+    ];
+
+    /* Compact register (card narrower than REGISTER_WIDE_FROM, i.e. 1440px screens with both side panels
+       open, and phones): five columns instead of eleven so the score, due date and status are always
+       visible without sideways scrolling. Site and category fold into the hazard cell's second line;
+       likelihood, severity, residual and owner remain in the row drawer. */
+    const compactColumns = [
+      columns[0],
+      {
+        key: 'hazard', label: 'الخطر', priority: 'high', sortValue: (r) => r.hazard,
+        render: (r) => {
+          const s = siteById(r.siteId); const c = categoryById(r.categoryId);
+          return h('div', { class: 'stack gap-1', style: { minInlineSize: '150px', maxInlineSize: 'clamp(150px, 48cqi, 340px)' } },
+            h('strong', { title: String(r.hazard || ''), style: { whiteSpace: 'normal', lineHeight: '1.4' } }, String(r.hazard || '')),
+            h('span', { class: 'muted text-xs', style: { whiteSpace: 'normal' } }, s ? h('span', { class: 'code nowrap', dir: 'ltr' }, String(s.code || '')) : null, s ? ' · ' : null, c.name));
+        },
+      },
+      columns.find((c) => c.key === 'score'),
+      { ...columns.find((c) => c.key === 'dueDate'), priority: 'medium' },
+      columns.find((c) => c.key === 'status'),
     ];
 
     /* ───────────── table twins ───────────── */
@@ -358,7 +407,7 @@ export default {
       clearBtn.hidden = local.categoryId === 'all' && local.status === 'all' && local.tier === 'all';
       if (!table) {
         table = C.dataTable({
-          columns, rows, rowKey: 'id', pageSize: 10, dense: true, caption: 'سجل المخاطر', stickyFirst: true,
+          columns: compact ? compactColumns : columns, rows, rowKey: 'id', pageSize: 10, dense: true, caption: 'سجل المخاطر', stickyFirst: true,
           initialSort: { key: 'score', dir: 'desc' }, emptyText: 'لا توجد مخاطر مطابقة للمرشّحات الحالية',
           onRowClick: (row) => openDrawer(row.id),
         });
@@ -540,7 +589,7 @@ export default {
         siteId: C.formField({ label: 'الموقع', name: 'siteId', type: 'select', value: r.siteId, required: true, options: sites().map((s) => ({ value: s.id, label: `${s.code} — ${s.name}` })) }),
         categoryId: C.formField({ label: 'فئة الخطر', name: 'categoryId', type: 'select', value: r.categoryId, required: true, options: categories().map((c) => ({ value: c.id, label: c.name })) }),
         hazard: C.formField({ label: 'الخطر', name: 'hazard', type: 'text', value: r.hazard, required: true, placeholder: 'مثال: سقوط من حافة البلاطة غير المحمية' }),
-        activity: C.formField({ label: 'النشاط / موقع العمل', name: 'activity', type: 'text', value: r.activity, placeholder: 'مثال: صب الخرسانة — الطابق 23' }),
+        activity: C.formField({ label: 'النشاط / موقع العمل', name: 'activity', type: 'text', value: r.activity, placeholder: `مثال: صب الخرسانة — الطابق ${fmt.num(23)}` }),
         description: C.formField({ label: 'الوصف', name: 'description', type: 'textarea', value: r.description, rows: 3, placeholder: 'وصف الظروف والأشخاص المعرضين وسبب التقييم' }),
         likelihood: C.formField({ label: 'الاحتمالية (الكامنة)', name: 'likelihood', type: 'select', value: r.likelihood, options: scale(LIKELIHOOD_LABELS), required: true }),
         severity: C.formField({ label: 'الشدة (الكامنة)', name: 'severity', type: 'select', value: r.severity, options: scale(SEVERITY_LABELS), required: true }),
@@ -550,7 +599,7 @@ export default {
         dueDate: C.formField({ label: 'تاريخ الاستحقاق', name: 'dueDate', type: 'date', value: r.dueDate, required: true }),
         status: C.formField({ label: 'الحالة', name: 'status', type: 'select', value: r.status, options: riskStatuses().map((s) => ({ value: s, label: s })) }),
         source: C.formField({ label: 'المصدر', name: 'source', type: 'text', value: r.source, placeholder: 'تفتيش، جولة سلامة، تحليل حادث، بلاغ عامل…' }),
-        legalRef: C.formField({ label: 'المرجع النظامي', name: 'legalRef', type: 'text', value: r.legalRef, placeholder: 'مثال: لائحة السلامة والصحة المهنية — المادة 12' }),
+        legalRef: C.formField({ label: 'المرجع النظامي', name: 'legalRef', type: 'text', value: r.legalRef, placeholder: `مثال: لائحة السلامة والصحة المهنية — المادة ${fmt.num(12)}` }),
       };
       ['hazard', 'description'].forEach((k) => F[k].classList.add('span-2'));
       // Sub-grids keep related fields together whatever column count .form-grid resolves to.
@@ -699,6 +748,8 @@ export default {
       subs.splice(0).forEach((off) => { try { off(); } catch { /* ignore */ } });
       timers.splice(0).forEach((t) => { clearTimeout(t); clearInterval(t); });
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      if (layoutObserver) { try { layoutObserver.disconnect(); } catch { /* ignore */ } layoutObserver = null; }
+      if (layoutRaf) { cancelAnimationFrame(layoutRaf); layoutRaf = 0; }
       [drawerApi, modalApi, confirmApi].forEach((api) => { if (api) { try { api.close(); } catch { /* ignore */ } } });
       drawerApi = null; modalApi = null; confirmApi = null; drawerRiskId = null;
       try { if (charts && charts.tooltip && typeof charts.tooltip.hide === 'function') charts.tooltip.hide(); } catch { /* ignore */ }

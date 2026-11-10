@@ -687,7 +687,7 @@ export default {
         h('div', { class: 'note' },
           h('strong', {}, 'LTIFR'), ` = (الإصابات المضيعة للوقت × ${fmt.num(ltiBase)}) ÷ ساعات العمل · `,
           h('strong', {}, 'TRIR'), ` = (الإصابات المسجلة × ${fmt.num(trirBase)}) ÷ ساعات العمل، بافتراض ${fmt.num(hoursDay)} ساعات لكل عامل يومياً ضمن الفترة المحددة.`));
-      overlay = C.modal({ title: 'كيف يُحسب مؤشر السلامة؟', subtitle: 'الصيغة المعتمدة في مركز القيادة', body, actions: [{ label: 'حسناً', variant: 'primary' }], size: 'md', onClose: () => { overlay = null; } });
+      overlay = C.modal({ title: 'كيف يُحسب مؤشر السلامة؟', subtitle: 'الصيغة المعتمدة في قمرة القيادة', body, actions: [{ label: 'حسناً', variant: 'primary' }], size: 'md', onClose: () => { overlay = null; } });
       overlay.open();
     }
 

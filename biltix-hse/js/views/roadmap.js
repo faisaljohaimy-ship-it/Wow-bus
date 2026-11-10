@@ -18,7 +18,9 @@
  */
 
 const STYLE_ID = 'view-roadmap-style';
-const STYLE_TEXT = `@layer views {
+const STYLE_TEXT = `/* grid rows align to the top: unlayered so it wins over the stretch default in css/base.css */
+.view-roadmap .grid-12 { align-items: start; }
+@layer views {
   .layer-stack-item.is-v2 { border-color: color-mix(in srgb, var(--v2-tone, var(--line-2)) 55%, var(--line)); background: color-mix(in srgb, var(--v2-tone, var(--bg-2)) 8%, var(--bg-2)); }
   .layer-stack-body { display: flex; flex-direction: column; gap: 8px; min-inline-size: 0; }
   .layer-stack-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -44,7 +46,6 @@ const STYLE_TEXT = `@layer views {
   .principle-col { padding: 12px 14px; border-radius: var(--radius-ctl); border: 1px solid var(--line); background: var(--bg-2); border-block-start: 3px solid var(--tone, var(--line-2)); }
   .principle-col h3 { margin: 0 0 8px; font-size: var(--fs-sm); display: flex; align-items: center; gap: 8px; }
   .principle-col ul { margin: 0; padding-inline-start: 1.1em; font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.6; }
-  .view-roadmap .grid-12 { align-items: start; }
   .layer-stack-item h3.layer-stack-heading { margin: 0; font-size: var(--fs-sm); }
   .view-roadmap .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
   @media (max-width: 720px) { .principle-grid { grid-template-columns: minmax(0, 1fr); } }
@@ -63,11 +64,22 @@ const LAYERS = [
   { no: '1', title: 'طبقة التكامل', desc: 'موصلات REST/SDK وWebhooks تقرأ من وحدات تطبيق بلتكس، ومن الأنظمة المؤسسية، ومن التغذيات الخارجية.', nodes: [['layers', 'وحدات بلتكس: العقود · BoM/BoQ · الجدول · تقارير الموقع · التكلفة · الصور'], ['integration', 'Primavera P6 EPPM', 'connectors'], ['integration', 'Autodesk Platform Services', 'connectors'], ['integration', 'Oracle ERP / CRM', 'connectors'], ['plug', 'SAP · Zoho · HubSpot (قابلة للضبط)', 'connectors'], ['globe', 'السلع · أسعار الصرف · الأرصاد · GIS']] },
   { no: '2', title: 'طبقة التحقق والتنظيف', desc: 'فحص المخطط، إزالة التكرار، الاكتمال والاتساق — لا يصل سجل إلى المحرك قبل اجتيازها.', v2: 'validation', nodes: [['list', 'مخطط البيانات'], ['copy', 'إزالة التكرار'], ['badge-check', 'الاكتمال'], ['sliders', 'الاتساق'], ['alert', 'قائمة الحجر']] },
   { no: '3', title: 'بحيرة بيانات المخاطر', desc: 'بيانات مهيكلة وغير مهيكلة مُوحَّدة، مُصدَّرة (versioned) وقابلة للتدقيق.', nodes: [['erp', 'سجلات مهيكلة'], ['file-text', 'مستندات وصور'], ['clock', 'إصدارات زمنية'], ['shield-alert', 'مسار تدقيق']] },
-  { no: '4', title: 'محرك المخاطر بالذكاء الاصطناعي', desc: 'خمسة خطوط على طبقة تسجيل وتفسير مشتركة: درجة 0–100 مع تفسير بلغة واضحة.', nodes: [['file-text', 'العقود (NLP)'], ['list', 'توقع المواد (BoM)'], ['calendar', 'نموذج الجدول + مونت كارلو'], ['helmet', 'صور وتقارير الموقع'], ['chart', 'توقع التكلفة (EVM)']] },
+  { no: '4', title: 'محرك المخاطر بالذكاء الاصطناعي', desc: 'خمسة خطوط على طبقة تسجيل وتفسير مشتركة: درجة {range} مع تفسير بلغة واضحة.', nodes: [['file-text', 'العقود (NLP)'], ['list', 'توقع المواد (BoM)'], ['calendar', 'نموذج الجدول + مونت كارلو'], ['helmet', 'صور وتقارير الموقع'], ['chart', 'توقع التكلفة (EVM)']] },
   { no: '5', title: 'التصنيف والتنبيه وقمرة القيادة', desc: 'النوع (مالي / سلامة / تأخير / نزاع) والتقييم (أحمر / أصفر / أخضر)، ثم التنبيه وسير العمل والكتابة العكسية.', nodes: [['filter', 'منطق التصنيف الخلفي', 'classification'], ['bell', 'التنبيه والتصعيد'], ['refresh', 'الكتابة العكسية إلى Biltix PM'], ['file-check', 'مهام المعالجة'], ['radar', 'قمرة قيادة المخاطر']] },
 ];
 const READS = ['العقود والبنود والالتزامات', 'جداول الكميات BoM/BoQ وكميات BIM', 'الجدول الزمني والمسار الحرج (P6)', 'تقارير الموقع اليومية والصور', 'التكلفة والميزانية والقيمة المكتسبة (ERP)', 'السلع وأسعار الصرف والأرصاد'];
-const WRITES = ['أعلام المخاطر على العنصر الأصلي (بند / سطر / نشاط)', 'الدرجة 0–100 والتقييم اللوني', 'التنبيهات والتصعيدات', 'مهام المعالجة المُسندة ومواعيدها'];
+const WRITES = ['أعلام المخاطر على العنصر الأصلي (بند / سطر / نشاط)', 'الدرجة {range} والتقييم اللوني', 'التنبيهات والتصعيدات', 'مهام المعالجة المُسندة ومواعيدها'];
+
+/** Free text (seed titles, descriptions, rule names) → the active numeral system; Latin alphanumeric tokens (2B, P6, PN10) keep their ASCII digits (RTL-4). */
+const LATIN_NUM_TOKEN = /[A-Za-z][A-Za-z0-9._-]*\d[A-Za-z0-9._-]*|\d+[A-Za-z][A-Za-z0-9._-]*/g;
+function digitsIn(fmt, value) {
+  const s = String(value ?? '');
+  if (!fmt || typeof fmt.digits !== 'function' || !/\d/.test(s)) return s;
+  let out = ''; let last = 0; let m;
+  LATIN_NUM_TOKEN.lastIndex = 0;
+  while ((m = LATIN_NUM_TOKEN.exec(s))) { out += fmt.digits(s.slice(last, m.index)) + m[0]; last = m.index + m[0].length; }
+  return out + fmt.digits(s.slice(last));
+}
 
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
 const arr = (v) => (Array.isArray(v) ? v : []);
@@ -105,6 +117,8 @@ export default {
     const codeSpan = (code, extra = null) => h('span', { class: ['code', 'mono', 'nowrap', extra], dir: 'ltr' }, String(code ?? ''));
     /** Latin product / vendor names get lang="en" dir="ltr" (RTL-28). */
     const latin = (label) => { const str = String(label ?? ''); return /^[\x20-\x7E]+$/.test(str) ? h('span', { lang: 'en', dir: 'ltr' }, str) : str; };
+    /** «من ٠ إلى ١٠٠» in the active numeral system (RTL-4 / RTL-21). */
+    const range100 = () => `من ${fmt.num(0)} إلى ${fmt.num(100)}`;
     const pctSign = () => (typeof fmt.getNumerals === 'function' && fmt.getNumerals() === 'arab' ? '٪' : '%');
     const totalTone = (t) => (t === 100 ? 'good' : (t > 100 ? 'critical' : (t > 0 ? 'warning' : 'neutral')));
     const totalLabel = (t) => (t === 100 ? `المجموع ${fmt.pct(100)} — مكتمل` : (t > 100 ? `المجموع ${fmt.pct(t)} — يتجاوز ${fmt.pct(100)}` : (t > 0 ? `المجموع ${fmt.pct(t)} — المتبقي ${fmt.pct(100 - t)}` : 'لم تُحدد النسب بعد')));
@@ -144,7 +158,7 @@ export default {
       const total = milestones.reduce((a, m) => a + (m.pct === null ? 0 : m.pct), 0);
       const current = milestones.find((m) => m.status === 'جارٍ') || null;
       const span = Math.max(MONTHS, Math.ceil(Math.max(0, ...milestones.map((m) => m.month + m.duration))), num(roadmap.totalMonths, 0));
-      return { state, plat, roadmap, milestones, total, current, months: span, scope: arr(roadmap.scopeItems), assumptions: arr(roadmap.assumptions), outOfScope: arr(roadmap.outOfScope), paymentNote: roadmap.paymentNote || 'النسب تُستكمل مع العميل؛ المجموع 100%' };
+      return { state, plat, roadmap, milestones, total, current, months: span, scope: arr(roadmap.scopeItems), assumptions: arr(roadmap.assumptions), outOfScope: arr(roadmap.outOfScope), paymentNote: roadmap.paymentNote ? fmt.digits(String(roadmap.paymentNote)) : `النسب تُستكمل مع العميل؛ المجموع ${fmt.pct(100)}` };
     }
 
     /* ───────────────────────── sections ───────────────────────── */
@@ -173,16 +187,16 @@ export default {
           return h('span', { class: ['arch-node', tag ? 'is-v2' : null], style: tag ? { '--v2-tone': tag.tone } : undefined, title: tag ? `إضافة الإصدار الثاني — ${tag.label}` : undefined }, svgIcon(icon, 13), h('span', {}, latin(label)), tag ? h('span', { class: 'sr-only' }, ` (إضافة الإصدار الثاني: ${tag.label})`) : null);
         }));
         diagram.appendChild(h('div', { class: ['layer-stack-item', v2 ? 'is-v2' : null], 'data-layer': layer.no, style: v2 ? { '--v2-tone': v2.tone } : undefined },
-          h('span', { class: 'layer-stack-index', 'aria-hidden': 'true' }, layer.no),
+          h('span', { class: 'layer-stack-index', 'aria-hidden': 'true' }, fmt.num(Number(layer.no))),
           h('div', { class: 'layer-stack-body' },
             h('div', { class: 'layer-stack-title' }, h('h3', { class: 'layer-stack-heading' }, layer.title), v2 ? h('span', { class: 'v2-badge' }, svgIcon('sparkles', 12), h('span', {}, `إضافة الإصدار الثاني — ${v2.toneName}`)) : null),
-            h('p', {}, layer.desc),
+            h('p', {}, layer.desc.replace('{range}', range100())),
             nodes,
           ),
         ));
         if (i < LAYERS.length - 1) diagram.appendChild(h('div', { class: 'arch-connector', 'aria-hidden': 'true' }, glyph('chevronDown', 16)));
       });
-      const legend = h('div', { class: 'v2-legend', 'aria-label': 'دليل ألوان إضافات الإصدار الثاني' },
+      const legend = h('div', { class: 'v2-legend', role: 'group', 'aria-label': 'دليل ألوان إضافات الإصدار الثاني' },
         h('span', { class: 'semibold' }, 'إضافات الإصدار الثاني:'),
         ...Object.values(V2).map((v) => h('span', { class: 'v2-legend-item', style: { '--v2-tone': v.tone } }, h('span', { class: 'v2-legend-key', 'aria-hidden': 'true' }), svgIcon('sparkles', 12), h('span', {}, `${v.label} (${v.toneName})`))),
       );
@@ -197,7 +211,7 @@ export default {
       return h('ul', { class: ['check-list', className] }, ...items.map((item) => {
         const text = typeof item === 'string' ? item : (item && (item.text || item.title)) || '—';
         const done = item && typeof item === 'object' && item.done === true;
-        return h('li', {}, icon(), h('span', { class: 'row wrap gap-2', style: { alignItems: 'baseline' } }, h('span', {}, text), done ? badge('منجز', 'good') : null));
+        return h('li', {}, icon(), h('span', { class: 'row wrap gap-2', style: { alignItems: 'baseline' } }, h('span', {}, digitsIn(fmt, text)), done ? badge('منجز', 'good') : null));
       }));
     }
 
@@ -245,7 +259,7 @@ export default {
           h('div', { class: 'roadmap-row-track', role: 'cell' }, bar),
         ));
       });
-      const legend = h('div', { class: 'row wrap gap-2', 'aria-label': 'حالات المعالم' }, h('span', { class: 'text-xs muted' }, 'الحالة:'), ...Object.entries(STATUS_TONE).map(([label, tone]) => badge(label, tone)), h('span', { class: 'toolbar-spacer' }), h('span', { class: 'text-xs muted' }, `${fmt.num(months)} أشهر إجمالاً`));
+      const legend = h('div', { class: 'row wrap gap-2', role: 'group', 'aria-label': 'حالات المعالم' }, h('span', { class: 'text-xs muted' }, 'الحالة:'), ...Object.entries(STATUS_TONE).map(([label, tone]) => badge(label, tone)), h('span', { class: 'toolbar-spacer' }), h('span', { class: 'text-xs muted' }, `${fmt.num(months)} أشهر إجمالاً`));
       return card({
         code: 'RM-04', title: 'المعالم الزمنية (M0 – M4)', subtitle: data.current ? `المعلم الجاري: ${data.current.id} — ${data.current.name}` : `خمسة معالم على مدى ${fmt.num(months)} أشهر`,
         body: h('div', { class: 'stack gap-3' }, gantt, legend),
@@ -291,7 +305,7 @@ export default {
         inputs.set(m.id, input);
         tbody.appendChild(h('tr', {},
           h('td', {}, h('div', { class: 'stack', style: { gap: '2px' } }, codeSpan(m.id, 'text-xs'), h('span', { class: 'text-sm semibold' }, m.name || '—'))),
-          h('td', {}, m.deliverables.length ? h('ul', { class: 'deliverables' }, ...m.deliverables.map((d) => h('li', {}, typeof d === 'string' ? d : (d && (d.text || d.title)) || '—'))) : h('span', { class: 'muted' }, '—')),
+          h('td', {}, m.deliverables.length ? h('ul', { class: 'deliverables' }, ...m.deliverables.map((d) => h('li', {}, digitsIn(fmt, typeof d === 'string' ? d : (d && (d.text || d.title)) || '—')))) : h('span', { class: 'muted' }, '—')),
           h('td', { class: 'align-center' }, h('span', { class: 'stack', style: { gap: '1px', alignItems: 'center' } }, h('span', { class: 'mono num' }, `${fmt.num(Math.floor(m.month) + 1)}`), h('span', { class: 'text-xs muted nowrap' }, `${fmt.num(m.duration, { maximumFractionDigits: 1 })} شهر`))),
           h('td', {}, badge(m.status || '—', STATUS_TONE[m.status] || 'neutral')),
           h('td', { class: 'align-end' }, h('span', { class: 'roadmap-payment' }, input, h('span', { class: 'muted text-sm', 'aria-hidden': 'true' }, pctSign()))),
@@ -313,7 +327,7 @@ export default {
           h('div', { class: 'note', style: { '--tone': 'var(--accent)' } }, h('strong', {}, 'لا تُعدِّل المنصة أي بيانات مصدرية. '), 'تبقى العقود والكميات والجداول والتكاليف ملكاً لأنظمتها؛ تضيف المنصة طبقة مخاطر فوقها فقط، وكل كتابة عكسية مُسجَّلة في سجل التدقيق وقابلة للتراجع.'),
           h('div', { class: 'principle-grid' },
             h('div', { class: 'principle-col', style: { '--tone': 'var(--brand)' } }, h('h3', {}, svgIcon('download', 15), h('span', {}, 'تقرأ المنصة')), h('ul', {}, ...READS.map((t) => h('li', {}, t)))),
-            h('div', { class: 'principle-col', style: { '--tone': 'var(--good)' } }, h('h3', {}, svgIcon('upload', 15), h('span', {}, 'تكتب المنصة عكسياً')), h('ul', {}, ...WRITES.map((t) => h('li', {}, t)))),
+            h('div', { class: 'principle-col', style: { '--tone': 'var(--good)' } }, h('h3', {}, svgIcon('upload', 15), h('span', {}, 'تكتب المنصة عكسياً')), h('ul', {}, ...WRITES.map((t) => h('li', {}, t.replace('{range}', range100()))))),
           ),
         ),
         footer: h('div', { class: 'row between wrap' }, h('span', { class: 'text-xs muted' }, 'أمن ووصول حسب الدور، تدقيق وإصدارات، قابلية التفسير، وتجاوز بشري مُسجَّل — متطلبات عرضية على كل الطبقات.'), button('موصلات التكامل', { variant: 'ghost', size: 'sm', icon: 'link', onClick: () => router.navigate('integrations') })),

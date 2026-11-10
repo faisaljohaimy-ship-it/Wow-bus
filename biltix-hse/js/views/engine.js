@@ -83,6 +83,17 @@ const LAYERS = [
 ];
 const CODE_RE = /\b[A-Z]{1,5}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
 
+/** Free text (seed titles, descriptions, rule names) → the active numeral system; Latin alphanumeric tokens (2B, P6, PN10) keep their ASCII digits (RTL-4). */
+const LATIN_NUM_TOKEN = /[A-Za-z][A-Za-z0-9._-]*\d[A-Za-z0-9._-]*|\d+[A-Za-z][A-Za-z0-9._-]*/g;
+function digitsIn(fmt, value) {
+  const s = String(value ?? '');
+  if (!fmt || typeof fmt.digits !== 'function' || !/\d/.test(s)) return s;
+  let out = ''; let last = 0; let m;
+  LATIN_NUM_TOKEN.lastIndex = 0;
+  while ((m = LATIN_NUM_TOKEN.exec(s))) { out += fmt.digits(s.slice(last, m.index)) + m[0]; last = m.index + m[0].length; }
+  return out + fmt.digits(s.slice(last));
+}
+
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
 const arr = (v) => (Array.isArray(v) ? v : []);
 const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
@@ -138,9 +149,9 @@ export default {
     function withCodes(str) {
       const s = String(str ?? ''); const out = []; let last = 0; let m;
       CODE_RE.lastIndex = 0;
-      while ((m = CODE_RE.exec(s))) { if (m.index > last) out.push(s.slice(last, m.index)); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
-      if (last < s.length) out.push(s.slice(last));
-      return out.length ? out : [s];
+      while ((m = CODE_RE.exec(s))) { if (m.index > last) out.push(digitsIn(fmt, s.slice(last, m.index))); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
+      if (last < s.length) out.push(digitsIn(fmt, s.slice(last)));
+      return out.length ? out : [digitsIn(fmt, s)];
     }
     const range100 = () => `من ${fmt.num(0)} إلى ${fmt.num(100)}`;
     const statusOf = (p) => STATUS[p && p.status] || { label: p && p.status ? String(p.status) : '—', tone: 'neutral' };
@@ -394,7 +405,7 @@ export default {
       return {
         panel: h('div', { class: 'stack gap-4', role: 'tabpanel', id: `pipe-${p.id}`, 'aria-labelledby': `pipe-tab-${p.id}`, tabindex: '0' },
           h('div', { class: 'row between wrap gap-2' },
-            h('div', { class: 'stack gap-1', style: { minInlineSize: 0 } }, h('span', { class: 'text-sm semibold' }, p.nameAr || p.name || p.id), h('span', { class: 'text-xs muted' }, latin(p.name || ''), p.description ? ` — ${p.description}` : '')),
+            h('div', { class: 'stack gap-1', style: { minInlineSize: 0 } }, h('span', { class: 'text-sm semibold' }, p.nameAr || p.name || p.id), h('span', { class: 'text-xs muted' }, latin(p.name || ''), p.description ? ` — ${digitsIn(fmt, p.description)}` : '')),
             h('div', { class: 'row gap-2' }, badge(st.label, st.tone), liveDot(p._tone))),
           meta,
           arr(p.techniques).length ? h('ul', { class: 'engine-techniques', 'aria-label': 'التقنيات' }, ...arr(p.techniques).map((t) => h('li', {}, svgIcon('sparkles', 12), h('span', {}, String(t))))) : null,
@@ -487,7 +498,7 @@ export default {
         code: 'ENG-06', title: 'كيف تُحسب الدرجة ويُصاغ التفسير', subtitle: 'طبقة التفسير المشتركة لجميع الخطوط — من المدخلات المعتمدة إلى التجاوز البشري المُسجَّل',
         body: h('div', { class: 'stack gap-4' },
           h('ol', { class: 'explain-steps' }, ...steps.map(([t, d]) => h('li', {}, h('div', { class: 'stack', style: { gap: '2px' } }, h('span', { class: 'text-sm semibold' }, t), h('span', { class: 'text-xs ink-2', style: { lineHeight: '1.6' } }, d))))),
-          h('div', { class: 'row wrap gap-2', 'aria-label': 'نطاقات التقييم' },
+          h('div', { class: 'row wrap gap-2', role: 'group', 'aria-label': 'نطاقات التقييم' },
             ratingChip(`أحمر: ${fmt.num(70)} فأكثر — تدخل فوري`, 'red', 'critical'),
             ratingChip(`أصفر: من ${fmt.num(40)} إلى ${fmt.num(69)} — مراقبة`, 'yellow', 'warning'),
             ratingChip(`أخضر: أقل من ${fmt.num(40)} — ضمن حدود التحمل`, 'green', 'good'),
@@ -553,6 +564,8 @@ export default {
       if (pendingScroll) {
         const target = pendingScroll; pendingScroll = null;
         requestAnimationFrame(() => scrollTo(target));
+        // the deep-link params (?pipeline= / ?section=) are consumed once: drop them so a reload or back-forward starts clean
+        try { if (/^#\/engine\?/.test(location.hash || '')) history.replaceState(null, '', '#/engine'); } catch { /* ignore */ }
       }
     }
 

@@ -266,7 +266,7 @@ export default {
       const body = axes.length
         ? h('div', { class: 'stack gap-3' }, chartOr(spider, clausesTable(data)), spider ? null : legend, chips)
         : emptyState({ title: 'لا توجد بنود تقييم', text: 'تحقق من بيانات ISO 45001 في المصدر.' });
-      return card({ code: 'ISO-02', title: 'خريطة البنود مقابل المستهدف', subtitle: `البنود ${fmt.num(4)}–${fmt.num(10)} من ISO 45001:2018`, className: 'col-span-8', body, tableView: tableOf(spider, () => clausesTable(data)) });
+      return card({ code: 'ISO-02', title: 'خريطة البنود مقابل المستهدف', subtitle: `البنود من ${fmt.num(4)} إلى ${fmt.num(10)} في ISO 45001:2018`, className: 'col-span-8', body, tableView: tableOf(spider, () => clausesTable(data)) });
     }
 
     function subclauseList(clause) {
@@ -333,7 +333,7 @@ export default {
           h('div', { class: 'card-titles' }, h('span', { class: 'card-code', 'aria-hidden': 'true' }, 'ISO-03'), h('h2', { class: 'card-title', id: 'iso-clauses-title' }, 'بطاقات البنود والفجوات')),
           h('div', { class: 'matrix-legend' },
             h('span', { class: 'matrix-legend-item tone-good' }, glyph('good', 12), h('span', {}, `يحقق المستهدف (≥ ${fmt.pct(TARGET)})`)),
-            h('span', { class: 'matrix-legend-item tone-warning' }, glyph('warning', 12), h('span', {}, `دون المستهدف (${fmt.pct(70)}–${fmt.pct(TARGET - 1)})`)),
+            h('span', { class: 'matrix-legend-item tone-warning' }, glyph('warning', 12), h('span', {}, `دون المستهدف (من ${fmt.pct(70)} إلى ${fmt.pct(TARGET - 1)})`)),
             h('span', { class: 'matrix-legend-item tone-critical' }, glyph('critical', 12), h('span', {}, `فجوة حرجة (< ${fmt.pct(70)})`)),
           ),
         ),

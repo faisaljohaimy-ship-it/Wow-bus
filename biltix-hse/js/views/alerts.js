@@ -23,7 +23,16 @@
  */
 
 const STYLE_ID = 'view-alerts-style';
-const STYLE_TEXT = `@layer views {
+const STYLE_TEXT = `/* grid rows align to the top: unlayered so it wins over the stretch default in css/base.css */
+.view-alerts .grid-12 { align-items: start; }
+.alert-queue.is-compact .alert-queue-item { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 8px 12px; align-items: start; }
+.alert-queue.is-compact .alert-queue-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-inline-size: 0; }
+.alert-queue.is-compact .alert-queue-title { overflow-wrap: break-word; }
+.alert-queue.is-compact .alert-queue-meta { gap: 4px 10px; align-items: center; }
+.alert-queue.is-compact .alert-queue-channels { grid-column: auto; display: inline-flex; gap: 4px; }
+.alert-queue.is-compact .alert-queue-actions { flex-wrap: nowrap; white-space: nowrap; align-items: center; gap: 4px; }
+@media (max-width: 599.98px) { .alert-queue.is-compact .alert-queue-item { grid-template-columns: minmax(0, 1fr); } .alert-queue.is-compact .alert-queue-actions { justify-content: flex-start; flex-wrap: wrap; white-space: normal; } }
+@layer views {
   .threshold-block { display: grid; gap: 6px; }
   .threshold-block > label { font-size: var(--fs-sm); font-weight: 500; color: var(--ink-1); display: flex; align-items: center; gap: 8px; }
   .threshold-scale { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); }
@@ -33,18 +42,10 @@ const STYLE_TEXT = `@layer views {
   .channel-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 10px; border-block-end: 1px solid var(--line); }
   .channel-row:last-child { border-block-end: 0; }
   .channel-row-text { display: flex; flex-direction: column; gap: 1px; min-inline-size: 0; }
-  .view-alerts .grid-12 { align-items: start; }
   .queue-switch-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
   .ack-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-xs); color: var(--ink-2); }
-  .alert-queue.is-compact .alert-queue-item { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 8px 12px; align-items: start; }
-  .alert-queue.is-compact .alert-queue-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-inline-size: 0; }
-  .alert-queue.is-compact .alert-queue-title { overflow-wrap: break-word; }
-  .alert-queue.is-compact .alert-queue-meta { gap: 4px 10px; align-items: center; }
-  .alert-queue.is-compact .alert-queue-channels { grid-column: auto; display: inline-flex; gap: 4px; }
-  .alert-queue.is-compact .alert-queue-actions { flex-wrap: nowrap; white-space: nowrap; align-items: center; gap: 4px; }
   .view-alerts .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
   @media (max-width: 720px) { .threshold-previews { grid-template-columns: minmax(0, 1fr); } }
-  @media (max-width: 599.98px) { .alert-queue.is-compact .alert-queue-item { grid-template-columns: minmax(0, 1fr); } .alert-queue.is-compact .alert-queue-actions { justify-content: flex-start; flex-wrap: wrap; white-space: normal; } }
 }`;
 
 const DEFAULT_ALERT = 60;
@@ -64,6 +65,17 @@ const WB_STATUS = { synced: { label: 'متزامن', tone: 'good' }, pending: { 
 const QUEUE_DEFAULT = 6;
 const QUEUES = { immediate: { code: 'ALR-01', title: 'التصعيد الفوري', tone: 'critical', emptyTitle: 'لا توجد تصعيدات فورية' }, standard: { code: 'ALR-02', title: 'التنبيهات القياسية', tone: 'warning', emptyTitle: 'قائمة التنبيهات القياسية فارغة' } };
 const CODE_RE = /\b[A-Z]{1,5}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
+
+/** Free text (seed titles, descriptions, rule names) → the active numeral system; Latin alphanumeric tokens (2B, P6, PN10) keep their ASCII digits (RTL-4). */
+const LATIN_NUM_TOKEN = /[A-Za-z][A-Za-z0-9._-]*\d[A-Za-z0-9._-]*|\d+[A-Za-z][A-Za-z0-9._-]*/g;
+function digitsIn(fmt, value) {
+  const s = String(value ?? '');
+  if (!fmt || typeof fmt.digits !== 'function' || !/\d/.test(s)) return s;
+  let out = ''; let last = 0; let m;
+  LATIN_NUM_TOKEN.lastIndex = 0;
+  while ((m = LATIN_NUM_TOKEN.exec(s))) { out += fmt.digits(s.slice(last, m.index)) + m[0]; last = m.index + m[0].length; }
+  return out + fmt.digits(s.slice(last));
+}
 
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
 const arr = (v) => (Array.isArray(v) ? v : []);
@@ -113,9 +125,9 @@ export default {
     function withCodes(str) {
       const s = String(str ?? ''); const out = []; let last = 0; let m;
       CODE_RE.lastIndex = 0;
-      while ((m = CODE_RE.exec(s))) { if (m.index > last) out.push(s.slice(last, m.index)); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
-      if (last < s.length) out.push(s.slice(last));
-      return out.length ? out : [s];
+      while ((m = CODE_RE.exec(s))) { if (m.index > last) out.push(digitsIn(fmt, s.slice(last, m.index))); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
+      if (last < s.length) out.push(digitsIn(fmt, s.slice(last)));
+      return out.length ? out : [digitsIn(fmt, s)];
     }
     const now = () => (typeof store.now === 'function' ? store.now() : new Date());
 
@@ -141,7 +153,7 @@ export default {
     function switchBtn({ id, on, label, onToggle }) {
       return h('button', { type: 'button', id, role: 'switch', class: ['switch', on ? 'is-on' : null], 'aria-checked': on ? 'true' : 'false', 'aria-label': label, title: label, onClick: () => onToggle(!on) });
     }
-    function projectName(state, id) { const s = arr(state.sites).find((x) => x.id === id); return s ? s.name : (id || '—'); }
+    function projectName(state, id) { const s = arr(state.sites).find((x) => x.id === id); return digitsIn(fmt, s ? s.name : (id || '—')); }
     const scoreAtLeast = (n) => `الدرجة ${fmt.num(n)} فأكثر`;
 
     /* ───────────────────────── store bridges ───────────────────────── */
@@ -249,7 +261,7 @@ export default {
           risk ? codeSpan(risk.code, 'text-xs') : null,
           h('span', {}, projectName(data.state, a.projectId)),
           h('span', { title: fmt.dateTime(a.sentAt) }, `أُرسل ${fmt.relative(a.sentAt)}`),
-          arr(a.channels).length ? h('span', { class: 'alert-queue-channels', 'aria-label': 'القنوات' }, ...arr(a.channels).map(channelChip)) : null,
+          arr(a.channels).length ? h('span', { class: 'alert-queue-channels', role: 'group', 'aria-label': 'القنوات' }, ...arr(a.channels).map(channelChip)) : null,
           a.acknowledged ? h('span', { class: 'row gap-1' }, glyph('good', 12), h('span', {}, `أكده ${a.ackBy || '—'}${a.ackAt ? ` ${fmt.relative(a.ackAt)}` : ''}`)) : null,
         ),
       );
@@ -450,7 +462,7 @@ export default {
       });
       const el = card({
         code: 'ALR-05', title: 'سجل الكتابة العكسية', subtitle: 'أعلام المخاطر والدرجات ومهام المعالجة المكتوبة إلى تطبيق إدارة المشاريع',
-        body: h('div', { class: 'stack gap-3' }, h('div', { class: 'row wrap gap-2', 'aria-label': 'حالة مزامنة المهام' }, h('span', { class: 'text-xs muted' }, 'مهام المعالجة:'), ...chips), table.el),
+        body: h('div', { class: 'stack gap-3' }, h('div', { class: 'row wrap gap-2', role: 'group', 'aria-label': 'حالة مزامنة المهام' }, h('span', { class: 'text-xs muted' }, 'مهام المعالجة:'), ...chips), table.el),
         footer: h('div', { class: 'row between wrap' }, h('span', { class: 'text-xs muted' }, 'المنصة لا تكتب في أنظمة العميل سوى أعلام المخاطر والدرجات والتنبيهات ومهام المعالجة.'), button('مهام المعالجة', { variant: 'ghost', size: 'sm', icon: 'file-check', onClick: () => router.navigate('tasks') })),
       });
       ui.writeback = el;

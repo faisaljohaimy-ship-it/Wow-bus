@@ -17,6 +17,7 @@
     --line: #E3E8F0; --line-2: #C9D3E3;
     --ink-1: #0E1726; --ink-2: #4A5568; --ink-3: #5B6880;
     --brand: #2F6FED; --brand-ink: #FFFFFF; --accent: #0E93AC; --gold: #B8860B; --link: #2F6FED;
+    --accent-ink: #0E6F86;   /* accent darkened for text on white (≥5:1) */
     --good: #0CA30C; --warning: #FAB219; --serious: #EC835A; --critical: #D03B3B;
     --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
     --div-mid: #f0efec;
@@ -52,7 +53,7 @@
   .alert-banner, .skip-link, .menu, .modal-backdrop, .drawer-backdrop, #tooltip, .tooltip,
   .card-actions, .card-view-toggle, .view-actions, .toolbar, .chip-group, .pager, .form-actions,
   .btn, .noscript, .print-hide, .feed-open, .feed-close, .rail-toggle, .kanban-move, .kanban-grip,
-  .sort-ic, .chip-remove, .countdown-icon { display: none !important; }
+  .sort-ic, .chip-remove, .countdown-icon, .chips.is-scroll, .kanban-hint { display: none !important; }
   .sort-btn { pointer-events: none; }
 
   /* Report-only blocks (cover header, signatures, footers) appear in print */
@@ -104,8 +105,13 @@
   .card-code { color: var(--ink-3); }
   .card-view[hidden] { display: none !important; }
 
-  /* Tables: repeat headers, avoid splitting rows */
-  .table-wrap, .matrix-scroll, .card-view-table { max-block-size: none !important; overflow: visible !important; }
+  /* Tables: repeat headers, avoid splitting rows. A printed page has no horizontal scrolling, so the
+     scroll-edge shadows go, the sticky first column is plain, and every column prints — the
+     data-priority container queries (which hide low/medium columns in narrow cards) are overridden. */
+  .table-wrap, .matrix-scroll, .card-view-table { max-block-size: none !important; overflow: visible !important; background: none !important; }
+  .table [data-priority] { display: table-cell !important; }
+  .table.has-sticky-first th:first-child, .table.has-sticky-first td:first-child { position: static !important; }
+  .kanban { -webkit-mask-image: none !important; mask-image: none !important; overflow: visible !important; }
   table { break-inside: auto; }
   thead { display: table-header-group; }
   tfoot { display: table-footer-group; }

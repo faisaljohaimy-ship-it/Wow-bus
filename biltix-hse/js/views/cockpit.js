@@ -39,15 +39,21 @@ const USER = 'م. فيصل الحربي';
 const FLOW_INTERVAL_MS = 2400;
 const ALERT_QUEUE_CAP = 5;
 const STYLE_ID = 'view-cockpit-style';
-const STYLE_TEXT = `@layer views {
-  .cockpit-row-1, .cockpit-row-3, .cockpit-row-3c, .cockpit-row-4 { align-items: start; }
+const STYLE_TEXT = `/* grid rows align to the top: unlayered so it wins over the stretch default in css/base.css */
+.view-cockpit .cockpit-row-1, .view-cockpit .cockpit-row-3, .view-cockpit .cockpit-row-3c, .view-cockpit .cockpit-row-4 { align-items: start; }
+/* hero row: the tile column spans the hero height, so the category tiles grow instead of leaving a gap at wide widths (V29) */
+.view-cockpit .cockpit-row-1-side { align-self: stretch; }
+.view-cockpit .cockpit-row-1-side > .cat-tiles { flex: 1 1 auto; }
+.view-cockpit .cat-tile .cat-tile-score { margin-block-start: auto; }
+.view-cockpit .cat-tile .cat-tile-meta { margin-block-end: auto; }
+.view-cockpit .alert-queue.is-compact .alert-queue-item { gap: 4px 10px; padding: 8px 10px; }
+.view-cockpit .alert-queue.is-compact .alert-queue-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-inline-size: 0; }
+.view-cockpit .alert-queue.is-compact .alert-queue-actions { flex-wrap: nowrap; white-space: nowrap; }
+.view-cockpit .alert-queue.is-compact .alert-queue-channels { gap: 4px; }
+@layer views {
   .cockpit-row-1-side { gap: var(--space-4); }
   .view-cockpit .cat-tile { min-block-size: 164px; }
   .view-cockpit .cat-tile-meta strong { font-family: var(--font-mono-mixed); }
-  .view-cockpit .alert-queue.is-compact .alert-queue-item { gap: 4px 10px; padding: 8px 10px; }
-  .view-cockpit .alert-queue.is-compact .alert-queue-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-inline-size: 0; }
-  .view-cockpit .alert-queue.is-compact .alert-queue-actions { flex-wrap: nowrap; white-space: nowrap; }
-  .view-cockpit .alert-queue.is-compact .alert-queue-channels { gap: 4px; }
   .view-cockpit .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
   @media (max-width: 1279.98px) { .view-cockpit .cat-tile { min-block-size: 0; } }
 }`;
@@ -99,6 +105,17 @@ const FLOW_STAGES = [
 /* ------------------------------------------------------------------ */
 /* Guards & helpers                                                     */
 /* ------------------------------------------------------------------ */
+
+/** Free text (seed titles, descriptions, rule names) → the active numeral system; Latin alphanumeric tokens (2B, P6, PN10) keep their ASCII digits (RTL-4). */
+const LATIN_NUM_TOKEN = /[A-Za-z][A-Za-z0-9._-]*\d[A-Za-z0-9._-]*|\d+[A-Za-z][A-Za-z0-9._-]*/g;
+function digitsIn(fmt, value) {
+  const s = String(value ?? '');
+  if (!fmt || typeof fmt.digits !== 'function' || !/\d/.test(s)) return s;
+  let out = ''; let last = 0; let m;
+  LATIN_NUM_TOKEN.lastIndex = 0;
+  while ((m = LATIN_NUM_TOKEN.exec(s))) { out += fmt.digits(s.slice(last, m.index)) + m[0]; last = m.index + m[0].length; }
+  return out + fmt.digits(s.slice(last));
+}
 
 const warned = new Set();
 function warnOnce(key, err) {
@@ -153,12 +170,12 @@ function withCodes(str) {
   let last = 0; let m;
   CODE_RE.lastIndex = 0;
   while ((m = CODE_RE.exec(s))) {
-    if (m.index > last) out.push(s.slice(last, m.index));
+    if (m.index > last) out.push(digitsIn(defaultFmt, s.slice(last, m.index)));
     out.push(codeSpan(m[0]));
     last = m.index + m[0].length;
   }
-  if (last < s.length) out.push(s.slice(last));
-  return out.length ? out : [s];
+  if (last < s.length) out.push(digitsIn(defaultFmt, s.slice(last)));
+  return out.length ? out : [digitsIn(defaultFmt, s)];
 }
 /** Latin product / vendor names get lang="en" dir="ltr" so screen readers and bidi treat them as English runs. */
 function latin(label) {
@@ -309,7 +326,7 @@ export default {
       const siteId = filters.siteId || 'all';
       const inSite = (pid) => siteId === 'all' || !siteId || pid === siteId;
       const sites = state.sites || [];
-      const projectName = (id) => { const s = sites.find((x) => x.id === id); return s ? s.name : String(id || '—'); };
+      const projectName = (id) => { const s = sites.find((x) => x.id === id); return digitsIn(fmt, s ? s.name : String(id || '—')); };
 
       const allRisks = viaPsel(psel, 'filteredAiRisks', () => psel.filteredAiRisks(state, filters), null) || (platform.aiRisks || []).filter((r) => inSite(r.projectId));
       const openRisks = viaPsel(psel, 'openAiRisks', () => psel.openAiRisks(state, filters), null) || allRisks.filter(isOpenRisk);
@@ -402,7 +419,7 @@ export default {
       if (!Number.isFinite(n)) return null;
       const up = n > 0; const zero = n === 0;
       const tone = zero ? 'neutral' : (up ? 'critical' : 'good'); // higher consolidated score = worse
-      return h('span', { class: ['score-hero-delta', zero ? 'is-flat' : (up ? 'is-up' : 'is-down'), `tone-${tone}`], 'aria-label': `التغير مقارنة بالفترة السابقة: ${fmt.signed(n)}` },
+      return h('span', { class: ['score-hero-delta', zero ? 'is-flat' : (up ? 'is-up' : 'is-down'), `tone-${tone}`], title: `التغير مقارنة بالفترة السابقة: ${fmt.signed(n)}` },
         svgIcon(zero ? 'minus' : (up ? 'trend-up' : 'trend-down'), 14), h('span', { class: 'mono num' }, fmt.signed(n, Number.isInteger(n) ? 0 : 1)), h('span', { class: 'muted' }, 'مقارنة بالفترة السابقة'));
     }
 
@@ -585,9 +602,8 @@ export default {
         rows: d.red, rowKey: 'id', pageSize: 8, dense: true, stickyFirst: true, emptyText: 'لا توجد مخاطر حمراء مفتوحة ضمن عوامل التصفية الحالية',
         onRowClick: (row) => navigate('airisks', { risk: row.id }),
         columns: [
-          { key: 'title', label: 'المخاطرة', width: 240, priority: 'high', render: (r) => h('span', { class: 'stack gap-1', style: { minInlineSize: '200px' } }, h('span', { class: 'semibold' }, ...withCodes(r.title)), codeSpan(r.code, 'text-xs muted')), sortValue: (r) => r.title },
-          { key: 'projectId', label: 'المشروع', priority: 'medium', render: (r) => h('span', { class: 'site-name', style: { display: 'inline-block', minInlineSize: '7em' } }, d.projectName(r.projectId)), sortValue: (r) => d.projectName(r.projectId) },
-          { key: 'category', label: 'المجال / النوع', priority: 'medium', render: (r) => h('span', { class: 'stack gap-1', style: { alignItems: 'flex-start' } }, categoryChip(psel, r.category), typeChip(psel, r.type)), sortValue: (r) => `${categoryLabel(psel, r.category)} ${typeLabel(psel, r.type)}` },
+          { key: 'title', label: 'المخاطرة', width: 240, priority: 'high', render: (r) => h('span', { class: 'stack gap-1', style: { minInlineSize: '200px' } }, h('span', { class: 'semibold' }, ...withCodes(r.title)), h('span', { class: 'text-xs muted row gap-1 wrap', style: { alignItems: 'center' } }, codeSpan(r.code), h('span', { class: 'site-name' }, d.projectName(r.projectId)))), sortValue: (r) => r.title },
+          { key: 'category', label: 'المجال / النوع', priority: 'low', render: (r) => h('span', { class: 'stack gap-1', style: { alignItems: 'flex-start' } }, categoryChip(psel, r.category), typeChip(psel, r.type)), sortValue: (r) => `${categoryLabel(psel, r.category)} ${typeLabel(psel, r.type)}` },
           { key: 'score', label: 'الدرجة والتصنيف', priority: 'high', render: (r) => h('span', { class: 'row gap-2 score-cell' }, scoreNum(r.score, r.rating), ratingBadge(psel, r.rating)), sortValue: (r) => num(r.score) },
           { key: 'owner', label: 'المالك', priority: 'low', render: (r) => r.owner || '—' },
           { key: 'dueDate', label: 'الاستحقاق', priority: 'medium', render: (r) => dueCell(r.dueDate, d.now), sortValue: (r) => Date.parse(r.dueDate) || 0 },
@@ -611,7 +627,7 @@ export default {
           h('div', { class: 'alert-queue-title-row' }, h('span', { class: 'alert-queue-title' }, ...withCodes(a.title || 'تنبيه')), badge(critical ? 'تصعيد فوري' : 'قياسي', critical ? 'critical' : 'neutral')),
           h('span', { class: 'alert-queue-meta' }, h('span', {}, d.projectName(a.projectId)), h('span', { title: fmt.dateTime(a.sentAt) }, fmt.relative(a.sentAt)),
             a.acknowledged ? h('span', {}, `أقرّه ${a.ackBy || '—'}${a.ackAt ? ` ${fmt.relative(a.ackAt)}` : ''}`) : null,
-            channels.length ? h('span', { class: 'alert-queue-channels', 'aria-label': 'قنوات الإرسال', style: { gridColumn: 'auto', display: 'inline-flex' } }, channels.map((c) => h('span', { class: 'channel-chip' }, svgIcon(CHANNEL_ICON[c] || 'send', 11), latin(CHANNEL_LABEL[c] || String(c))))) : null)),
+            channels.length ? h('span', { class: 'alert-queue-channels', role: 'group', 'aria-label': 'قنوات الإرسال', style: { gridColumn: 'auto', display: 'inline-flex' } }, channels.map((c) => h('span', { class: 'channel-chip' }, svgIcon(CHANNEL_ICON[c] || 'send', 11), latin(CHANNEL_LABEL[c] || String(c))))) : null)),
         h('div', { class: 'alert-queue-actions' },
           a.acknowledged
             ? badge('تم الإقرار', 'good')
@@ -845,7 +861,7 @@ export default {
       }
       const d = collect();
       // Row 1: hero (4 cols) beside the five category tiles with the five pipeline mini cards under them (8 cols)
-      body.appendChild(h('div', { class: 'grid-12 cockpit-row-1' }, heroCard(d), h('div', { class: 'col-span-8 stack cockpit-row-1-side' }, categoryTiles(d), pipelineStrip(d))));
+      body.appendChild(h('div', { class: 'grid-12 cockpit-row-1' }, heroCard(d), h('div', { class: 'col-span-8 stack gap-4 cockpit-row-1-side' }, categoryTiles(d), pipelineStrip(d))));
       body.appendChild(flowCard(d));
       // Row 3: red risks (8) beside the alert queue + data-quality mini card (4) — rows align to the top so no card stretches into a void
       body.appendChild(h('div', { class: 'grid-12 cockpit-row-3' }, redRisksCard(d), h('div', { class: 'col-span-4 stack gap-4 cockpit-row-3-side' }, alertQueueCard(d), dataQualityCard(d))));

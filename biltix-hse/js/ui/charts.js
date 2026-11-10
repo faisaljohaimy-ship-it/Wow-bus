@@ -1342,6 +1342,7 @@ export function heatmap(opts = {}) {
       svg.style.minInlineSize = '';
       el.style.overflowX = '';
     }
+    el.classList.toggle('is-overflowing', naturalW > W);   // the matrix scrolls sideways (CSS may show an edge cue)
     // Grid origin: inline-start side after the row headers
     const gx0 = rtl ? totalW - rowTitleW - rowHeadW - gridW : rowTitleW + rowHeadW;
     const gy0 = colTitleH + colHeadH;

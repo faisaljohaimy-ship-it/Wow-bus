@@ -193,6 +193,16 @@ function safeChart(charts, name, opts, fallbackTable) {
   return { el: host, table: fallbackTable, native: false };
 }
 
+/** Smooth scrolling only when motion is allowed (html[data-motion] override wins over the OS query). */
+const scrollBehavior = () => {
+  try {
+    const forced = document.documentElement.getAttribute('data-motion');
+    if (forced === 'reduce' || forced === 'reduced') return 'auto';
+    if (forced === 'full') return 'smooth';
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  } catch { return 'auto'; }
+};
+
 /** Digit runs inside selector-made labels ("أسبوع 36") follow the numerals setting. */
 const digits = (fmt, s) => String(s ?? '').replace(/\d+(?:\.\d+)?/g, (m) => fmt.num(Number(m), { maximumFractionDigits: 2 }));
 
@@ -321,7 +331,7 @@ export const incidentsView = {
           label: 'الحوادث المفتوحة', value: open, icon: 'alert-triangle',
           delta: k ? k.deltas.openIncidents : null, deltaGoodWhen: 'down',
           tone: open > 0 ? 'serious' : 'good', hint: 'حوادث لم تُغلق بعد في الموقع المحدد',
-          onClick: () => { statusFilter = 'مفتوح'; typeFilter = 'all'; showAll = false; paintList(); listSection.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+          onClick: () => { statusFilter = 'مفتوح'; typeFilter = 'all'; showAll = false; paintList(); listSection.scrollIntoView({ behavior: scrollBehavior(), block: 'start' }); },
         }),
         statTile({
           label: `الحوادث الوشيكة (${fmt.num(30)} يوماً)`, value: k ? k.nearMisses30d : 0, icon: 'alert-triangle',
@@ -633,7 +643,7 @@ export const incidentsView = {
         formField({ label: 'نوع الحادث', name: 'type', type: 'select', value: NEAR_MISS_TYPE, options: INCIDENT_TYPES, required: true }),
         formField({ label: 'الشدة', name: 'severity', type: 'select', value: '2', required: true, options: [1, 2, 3, 4, 5].map((n) => ({ value: n, label: `${fmt.num(n)} — ${SEVERITY_LABEL[n]}` })), hint: `${fmt.num(1)} طفيف … ${fmt.num(5)} جسيم` }),
         formField({ label: 'الموقع', name: 'siteId', type: 'select', value: defaultSite, options: sites, required: true }),
-        formField({ label: 'المكان داخل الموقع', name: 'location', required: true, placeholder: 'مثال: المنطقة ب — الطابق 12' }),
+        formField({ label: 'المكان داخل الموقع', name: 'location', required: true, placeholder: `مثال: المنطقة ب — الطابق ${fmt.num(12)}` }),
         formField({ label: 'فئة الخطر', name: 'categoryId', type: 'select', value: CATEGORIES[0] ? CATEGORIES[0].id : 'height', options: CATEGORIES.map((c) => ({ value: c.id, label: c.name })), required: true }),
         formField({ label: 'التاريخ', name: 'date', type: 'date', value: todayISO(now), required: true, max: todayISO(now) }),
         formField({ label: 'الوقت', name: 'time', type: 'time', value: nowHHMM(now), required: true }),

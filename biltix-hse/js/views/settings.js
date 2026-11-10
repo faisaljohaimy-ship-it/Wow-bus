@@ -21,8 +21,6 @@ const BUILD_DATE = '2026-11-09';
 const PRODUCT_NAME = 'بلتكس Risk AI';
 const PILLAR = 'ركيزة السلامة والصحة المهنية';
 const THEME_DEFAULT_LABEL = 'افتراضي السمة';
-/** Theme token fallbacks for the colour pickers when brand colours are '' (= use theme tokens). */
-const TOKEN_FALLBACK = { brand: '#2f6fed', accent: '#19c6e6' };
 const SITE_URL = 'https://biltix.sa';
 const SITE_LABEL = 'biltix.sa';
 const HEX_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -172,14 +170,26 @@ function isoDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** Current theme token colour as #rrggbb (colour inputs need a full hex). */
+/**
+ * Current theme token colour as #rrggbb (colour inputs need a full hex). Resolved through the browser
+ * (computed `color` of a probe element) so no colour literal lives in JS and the active theme is honoured.
+ */
 function tokenHex(token) {
+  const hex2 = (v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
   try {
-    const v = getComputedStyle(document.documentElement).getPropertyValue(`--${token}`).trim();
-    const n = normalizeHex(v);
-    if (n) return n;
+    const probe = document.createElement('span');
+    probe.style.color = `var(--${token})`;
+    probe.style.display = 'none';
+    document.body.appendChild(probe);
+    const computed = getComputedStyle(probe).color;
+    probe.remove();
+    const nums = (computed.match(/-?[\d.]+/g) || []).map(Number);
+    if (nums.length >= 3) {
+      const unit = /^color\(/.test(computed) ? 255 : 1; // color(srgb r g b) channels are 0..1
+      return `#${hex2(nums[0] * unit)}${hex2(nums[1] * unit)}${hex2(nums[2] * unit)}`;
+    }
   } catch { /* fall through */ }
-  return TOKEN_FALLBACK[token] || '#2f6fed';
+  return `#${hex2(0)}${hex2(0)}${hex2(0)}`;
 }
 
 function validateSnapshot(obj) {
@@ -187,7 +197,7 @@ function validateSnapshot(obj) {
   const present = COLLECTIONS.filter((k) => Array.isArray(obj[k]));
   const hasSettings = Boolean(obj.settings && typeof obj.settings === 'object' && !Array.isArray(obj.settings));
   if (!present.length && !hasSettings) return { ok: false, reason: `لا يحتوي الملف على أي من مجموعات بيانات ${PRODUCT_NAME} (المخاطر، الحوادث، التصاريح، التفتيشات، التكاملات، الإعدادات).` };
-  if (obj.meta && obj.meta.version !== undefined && Number(obj.meta.version) !== 1) return { ok: false, reason: `إصدار الملف (${obj.meta.version}) غير متوافق مع هذا الإصدار من النظام.` };
+  if (obj.meta && obj.meta.version !== undefined && Number(obj.meta.version) !== 1) return { ok: false, reason: `إصدار الملف (${String(obj.meta.version)}) غير متوافق مع هذا الإصدار من النظام.` };
   for (const k of present) {
     if (obj[k].some((item) => !item || typeof item !== 'object' || Array.isArray(item))) return { ok: false, reason: `مجموعة «${COLLECTION_LABELS[k]}» تحتوي عناصر غير صالحة.` };
   }
@@ -353,7 +363,7 @@ function render(container, ctx) {
 
     const showDefault = (on) => {
       defaultBadge.hidden = !on;
-      text.placeholder = on ? THEME_DEFAULT_LABEL : '#2F6FED';
+      text.placeholder = on ? THEME_DEFAULT_LABEL : '#RRGGBB';
       wrap.classList.toggle('is-theme-default', on);
     };
     const setValue = (hex) => {
@@ -383,14 +393,14 @@ function render(container, ctx) {
       if (raw === '') { picker.value = tokenHex(token); showDefault(true); markInvalid(wrap, false); queueBrand({ [key]: '' }); return; }
       const n = normalizeHex(raw.startsWith('#') ? raw : `#${raw}`);
       if (n) { picker.value = n; showDefault(false); markInvalid(wrap, false); queueBrand({ [key]: n }); }
-      else markInvalid(wrap, true, 'استخدم صيغة HEX مثل #2F6FED أو اتركه فارغاً لافتراضي السمة');
+      else markInvalid(wrap, true, 'استخدم صيغة HEX مثل #RRGGBB أو اتركه فارغاً لافتراضي السمة');
     });
     text.addEventListener('change', () => {
       const raw = text.value.trim();
       if (raw === '') { flushBrand(); toast(`أُعيد ${label} إلى افتراضي السمة.`, { tone: 'neutral', timeout: 2200 }); return; }
       const n = normalizeHex(raw.startsWith('#') ? raw : `#${raw}`);
       if (!n) {
-        toast('صيغة اللون غير صحيحة — استخدم صيغة HEX مثل #2F6FED أو اتركه فارغاً.', { tone: 'warning' });
+        toast('صيغة اللون غير صحيحة — استخدم صيغة HEX مثل #RRGGBB أو اتركه فارغاً.', { tone: 'warning' });
         setValue(brand()[key]);
         return;
       }
@@ -442,8 +452,14 @@ function render(container, ctx) {
   function lockupNode() {
     let node = null;
     try {
-      if (typeof art.logoLockup === 'function') node = art.logoLockup();
-      else if (typeof art.logoMark === 'function') node = art.logoMark(32);
+      if (typeof art.logoLockup === 'function') {
+        node = art.logoLockup();
+        // art.logoLockup() may still carry the legacy "HSE" wordmark: stamp the single product name on it.
+        const name = node.querySelector && node.querySelector('.logo-lockup-name');
+        if (name) name.textContent = PRODUCT_NAME;
+        const mono = node.querySelector && node.querySelector('.logo-lockup-mono');
+        if (mono) mono.textContent = 'BILTIX RISK AI';
+      } else if (typeof art.logoMark === 'function') node = art.logoMark(32);
     } catch { node = null; }
     if (!(node instanceof Node)) node = components.glyph('brand', 28);
     if (node.setAttribute && !node.hasAttribute('aria-hidden')) node.setAttribute('aria-hidden', 'true');

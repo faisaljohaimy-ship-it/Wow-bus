@@ -202,6 +202,9 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
 }
 .appbar-center { justify-content: center; gap: var(--space-4); }
 .appbar-end { justify-content: flex-end; gap: var(--space-2); }
+/* Controls keep their size: when the bar is tight only the search field (and the brand text) give way,
+   so the bell / theme / user buttons never shrink below a tappable width. */
+.appbar-end > .btn-icon, .appbar-end > .pill, .appbar-end > .user-chip, .appbar-start > .btn-icon { flex: none; }
 
 /* Rail toggle (hamburger → three bars) */
 .rail-toggle-bars {
@@ -212,17 +215,19 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
   inline-size: 18px;
   block-size: 18px;
 }
+/* The middle bar changes length with transform (scaleX from the inline-start edge), never inline-size */
 .rail-toggle-bars i {
   display: block;
   block-size: 2px;
   border-radius: 1px;
   background: currentColor;
-  transition: transform var(--dur-1) var(--ease), inline-size var(--dur-1) var(--ease);
+  transform-origin: calc(50% - var(--dir) * 50%) 50%;
+  transition: transform var(--dur-1) var(--ease);
 }
-.rail-toggle-bars i:nth-child(2) { inline-size: 70%; }
-.rail-toggle:hover .rail-toggle-bars i:nth-child(2) { inline-size: 100%; }
+.rail-toggle-bars i:nth-child(2) { transform: scaleX(.7); }
+.rail-toggle:hover .rail-toggle-bars i:nth-child(2) { transform: scaleX(1); }
 .rail-collapsed .rail-toggle-bars i:nth-child(2),
-.is-rail-collapsed .rail-toggle-bars i:nth-child(2) { inline-size: 45%; }
+.is-rail-collapsed .rail-toggle-bars i:nth-child(2) { transform: scaleX(.45); }
 
 /* Brand */
 .brand {
@@ -302,7 +307,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   block-size: 20px;
   padding-inline: 5px;
   font-size: 10px;
-  color: var(--ink-3);
+  color: var(--ink-2);
   background: var(--bg-1);
   border: 1px solid var(--line-2);
   border-block-end-width: 2px;
@@ -536,7 +541,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
 .rail-list > li > button.is-active,
 .rail-list > li > a.is-active,
 .rail-list > li > a[aria-current="page"] {
-  color: var(--brand);
+  color: var(--link);
   background: color-mix(in srgb, var(--brand) 12%, transparent);
 }
 /* 6px isometric diamond indicator at inline-start */
@@ -579,11 +584,11 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
 .rail-code {
   font-family: var(--font-mono-mixed);
   font-size: 10px;
-  letter-spacing: .06em;
-  color: var(--ink-3);
+  letter-spacing: .06em;   /* Latin code only (CPT-00, SEC-03): tracking is for .mono, never for Arabic */
+  color: color-mix(in srgb, var(--ink-2) 80%, var(--ink-3));
 }
 .rail-item.is-active .rail-code,
-.rail-item[aria-current="page"] .rail-code { color: color-mix(in srgb, var(--brand) 70%, var(--ink-3)); opacity: 1; }
+.rail-item[aria-current="page"] .rail-code { color: color-mix(in srgb, var(--link) 80%, var(--ink-2)); opacity: 1; }
 
 .rail-foot {
   margin-block-start: auto;
@@ -593,11 +598,11 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   align-items: center;
   gap: var(--space-2);
   font-size: 11px;
-  color: var(--ink-3);
+  color: var(--ink-2);
   border-block-start: 1px solid var(--line);
 }
-.rail-site { color: var(--ink-3); }
-.rail-site:hover { color: var(--brand); }
+.rail-site { color: var(--ink-2); }
+.rail-site:hover { color: var(--link); }
 
 /* Collapsed rail: icons only (labels move to title tooltips, set by app.js) */
 .rail-collapsed .rail,
@@ -725,7 +730,7 @@ html[data-input="pointer"] .view-head h1:focus-visible { outline: none; }
   font-weight: 500;
   letter-spacing: .08em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--accent-ink);
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   border-radius: 5px;
   background: color-mix(in srgb, var(--accent) 8%, transparent);
@@ -938,7 +943,7 @@ body.is-feed-paused .feed-status::before,
   gap: 3px;
   min-inline-size: 0;
   padding: 6px 4px;
-  color: var(--ink-3);
+  color: var(--ink-2);
   font-size: 11px;
   font-weight: 500;
   text-decoration: none;
@@ -951,7 +956,7 @@ body.is-feed-paused .feed-status::before,
 .tabbar-item[aria-current="page"],
 .tabbar > button.is-active,
 .tabbar > a.is-active,
-.tabbar > a[aria-current="page"] { color: var(--brand); }
+.tabbar > a[aria-current="page"] { color: var(--link); }
 .tab-item.is-active::before,
 .tab-item[aria-current]::before,
 .tabbar-item.is-active::before,
@@ -1116,7 +1121,7 @@ body.is-feed-paused .feed-status::before,
   font-family: var(--font-mono-mixed);
   font-size: 10px;
   letter-spacing: .06em;
-  color: var(--ink-3);
+  color: var(--ink-2);
   padding: 1px 6px;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -1140,7 +1145,7 @@ body.is-feed-paused .feed-status::before,
   padding: 8px var(--space-4);
   border-block-start: 1px solid var(--line);
   font-size: 11px;
-  color: var(--ink-3);
+  color: var(--ink-2);
   background: color-mix(in srgb, var(--bg-2) 60%, transparent);
 }
 .cmdk-foot span { display: inline-flex; align-items: center; gap: 4px; }
@@ -1351,6 +1356,10 @@ body.is-feed-paused .feed-status::before,
   /* The connector pill is the first thing to go so the search button keeps its 40px */
   .integrations-pill { display: none; }
 }
+@media (max-width: 359.98px) {
+  /* Very narrow phones: the emblem alone (the link keeps its aria-label); an ellipsized brand name reads badly in RTL */
+  .brand-text { display: none; }
+}
 
 /* Short viewports: let the main pane breathe */
 @media (max-height: 560px) and (min-width: 960px) {
@@ -1360,8 +1369,9 @@ body.is-feed-paused .feed-status::before,
 /* Touch devices: every shell control is at least 40px tall (RTL-14) */
 @media (pointer: coarse) {
   .pill { block-size: 40px; }
-  .appbar .btn-icon { inline-size: 40px; block-size: 40px; }
-  .user-chip { block-size: 40px; }
+  .appbar .btn-icon, .filters .btn-icon { inline-size: 40px; block-size: 40px; }
+  .brand { min-block-size: 40px; }
+  .user-chip { block-size: 40px; min-inline-size: 40px; justify-content: center; }
   .filters .field-control { block-size: 40px; }
   .cmdk-item, .cmdk-list > li[role="option"] { min-block-size: 40px; }
   .feed-count { min-block-size: 24px; }

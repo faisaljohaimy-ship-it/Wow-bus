@@ -759,10 +759,10 @@ function radarBlips(state, filters, now) {
 export const SENSOR_AXES = Object.freeze([
   { key: 'wind', label: 'الرياح', unit: 'كم/س', max: 80, threshold: 38, match: ['الرياح', 'wind'] },
   { key: 'noise', label: 'الضوضاء', unit: 'dB(A)', max: 110, threshold: 85, match: ['الضوضاء', 'noise'] },
-  { key: 'pm25', label: 'الغبار PM2.5', unit: 'µg/m³', max: 150, threshold: 75, match: ['PM2.5', 'PM10', 'الغبار', 'dust'] },
-  { key: 'gas', label: 'الغازات (H2S/CO)', unit: 'ppm', max: 50, threshold: 25, match: ['H2S', 'CO', 'غاز', 'gas'] },
-  { key: 'heat', label: 'الحرارة/WBGT', unit: '°م', max: 40, threshold: 30, match: ['WBGT', 'الحرار', 'heat'] },
-  { key: 'oxygen', label: 'الأكسجين O₂', unit: '%', max: 25, threshold: 23.5, match: ['الأكسجين', 'O₂', 'O2', 'oxygen'] },
+  { key: 'pm25', label: 'PM2.5', unit: 'µg/m³', max: 150, threshold: 75, match: ['PM2.5', 'PM10', 'الغبار', 'dust'] },
+  { key: 'gas', label: 'الغازات', unit: 'ppm', max: 50, threshold: 25, match: ['H2S', 'CO', 'غاز', 'gas'] },
+  { key: 'heat', label: 'الحرارة', unit: '°م', max: 40, threshold: 30, match: ['WBGT', 'الحرار', 'heat'] },
+  { key: 'oxygen', label: 'الأكسجين', unit: '%', max: 25, threshold: 23.5, match: ['الأكسجين', 'O₂', 'O2', 'oxygen'] },
 ].map((a) => Object.freeze(a)));
 
 function axisKeyFor(sensor) {
@@ -820,30 +820,40 @@ function missingAxis(schema, siteId) {
   };
 }
 
-/**
- * Sensor axes for the SensorRadar — fixed six-axis schema per site (see SENSOR_AXES), missing
- * axes marked `missing: true` with `value: null`. 'all' (or an unknown site) falls back to the
- * first site that has sensors, as before. Return shape stays compatible with
- * live.getSensorValues() (same order, same ids) and the radar view.
- */
-function sensorAxes(state, siteId = 'all') {
+/** Site the radar describes: the requested one, else the first site that has sensors. */
+function sensorSiteId(state, siteId) {
   const sensors = arr(state.sensors).filter((s) => s && s.id != null);
   const knownSite = siteId && siteId !== 'all' && arr(state.sites).some((s) => s && s.id === siteId);
-  let target = knownSite ? siteId : null;
-  if (!target) {
-    const first = sensors.find((s) => s.siteId);
-    target = first ? first.siteId : (arr(state.sites)[0] ? arr(state.sites)[0].id : siteId);
-  }
-  const list = sensors.filter((s) => s.siteId === target);
+  if (knownSite) return siteId;
+  const first = sensors.find((s) => s.siteId);
+  return first ? first.siteId : (arr(state.sites)[0] ? arr(state.sites)[0].id : siteId);
+}
+
+/**
+ * Sensor axes for the SensorRadar — EXACTLY the six axes of SENSOR_AXES per site, in that order
+ * (الرياح، الضوضاء، PM2.5، الغازات، الحرارة، الأكسجين), missing ones marked `missing: true` with
+ * `value: null`. 'all' (or an unknown site) falls back to the first site that has sensors, as
+ * before. Return shape stays compatible with live.getSensorValues() (same order, same ids);
+ * sensors whose kind is outside the schema (e.g. الاهتزاز) are available from sensorExtras().
+ */
+function sensorAxes(state, siteId = 'all') {
+  const target = sensorSiteId(state, siteId);
+  const list = arr(state.sensors).filter((s) => s && s.id != null && s.siteId === target);
   const used = new Set();
-  const out = SENSOR_AXES.map((schema) => {
+  return SENSOR_AXES.map((schema) => {
     const sensor = list.find((s) => !used.has(s.id) && axisKeyFor(s) === schema.key);
     if (!sensor) return missingAxis(schema, target);
     used.add(sensor.id);
     return axisFromSensor(sensor, schema.key);
   });
-  for (const s of list) if (!used.has(s.id)) out.push(axisFromSensor(s, null));
-  return out;
+}
+
+/** Site sensors that have no place on the six-axis radar (vibration …), in axis shape (`key: 'other'`). */
+function sensorExtras(state, siteId = 'all') {
+  const target = sensorSiteId(state, siteId);
+  return arr(state.sensors)
+    .filter((s) => s && s.id != null && s.siteId === target && axisKeyFor(s) === null)
+    .map((s) => axisFromSensor(s, null));
 }
 
 /* ────────────────────────────── urgent actions ────────────────────────────── */
@@ -1052,6 +1062,7 @@ export const sel = {
   // radars
   radarBlips,
   sensorAxes,
+  sensorExtras,
   // actions
   urgentActions,
   // convenience

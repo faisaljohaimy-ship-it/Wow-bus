@@ -22,6 +22,8 @@ const REPORT_TITLE = 'تقرير السلامة والصحة المهنية';
 const PREPARED_BY = 'بلتكس Risk AI';
 const PILLAR = 'ركيزة السلامة والصحة المهنية';
 const TRAINING_TARGET = 85;
+/** "/100" as an isolated LTR run: a leading slash otherwise flips to "100/" inside RTL text. */
+const outOf = (fmt, n) => `\u2066/${fmt.num(n)}\u2069`;
 const ISO_TARGET = 85;
 
 const PERIODS = [
@@ -529,11 +531,21 @@ function render(container, ctx) {
 
   /* ── builders ── */
 
+  /** art.logoLockup() may still carry the legacy "HSE" wordmark: stamp the single product name on it. */
+  function stampProductName(node) {
+    try {
+      const name = node.querySelector && node.querySelector('.logo-lockup-name');
+      if (name) name.textContent = PREPARED_BY;
+      const mono = node.querySelector && node.querySelector('.logo-lockup-mono');
+      if (mono) mono.textContent = 'BILTIX RISK AI';
+    } catch { /* ignore */ }
+  }
+
   function lockup() {
     const wrap = h('div', { class: 'row gap-3 report-lockup' });
     let node = null;
     try {
-      if (typeof art.logoLockup === 'function') node = art.logoLockup();
+      if (typeof art.logoLockup === 'function') { node = art.logoLockup(); stampProductName(node); }
       else if (typeof art.logoMark === 'function') node = art.logoMark(40);
     } catch { node = null; }
     if (node instanceof Node) {
@@ -651,7 +663,7 @@ function render(container, ctx) {
     const k = d.kpis;
     const paragraphs = summaryParagraphs(d);
     const strip = h('div', { class: 'summary-strip', style: { gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' } },
-      stripCell('مؤشر السلامة', fmt.num(k.safetyIndex), `/${fmt.num(100)}`, k.deltas.safetyIndex, 'up'),
+      stripCell('مؤشر السلامة', fmt.num(k.safetyIndex), outOf(fmt, 100), k.deltas.safetyIndex, 'up'),
       stripCell('البلاغات في الفترة', fmt.num(k.incidentsInPeriod), '', k.deltas.incidentsInPeriod, 'down'),
       stripCell('المخاطر الحرجة المفتوحة', fmt.num(k.criticalRisks), '', k.deltas.criticalRisks, 'down'),
       stripCell('الامتثال التدريبي', fmt.pct(k.trainingCompliance), '', k.deltas.trainingCompliance, 'up'));
@@ -684,7 +696,7 @@ function render(container, ctx) {
     // bidi marks → NaN → inverted arrow/tone). Rounded to two decimals for the rate metrics.
     const rate = (v) => Number((Number(v) || 0).toFixed(2));
     const tiles = h('div', { class: 'kpi-row' },
-      statTile({ label: 'مؤشر السلامة', value: k.safetyIndex, unit: `/${fmt.num(100)}`, delta: dl.safetyIndex, deltaGoodWhen: 'up', tone: toneFor(k.safetyIndex), hint: 'مؤشر مركّب من المخاطر المفتوحة والإصابات والحوادث الوشيكة والامتثال التدريبي' }),
+      statTile({ label: 'مؤشر السلامة', value: k.safetyIndex, unit: outOf(fmt, 100), delta: dl.safetyIndex, deltaGoodWhen: 'up', tone: toneFor(k.safetyIndex), hint: 'مؤشر مركّب من المخاطر المفتوحة والإصابات والحوادث الوشيكة والامتثال التدريبي' }),
       statTile({ label: 'LTIFR', value: fmt.num(k.ltifr, { maximumFractionDigits: 2 }), delta: rate(dl.ltifr), deltaGoodWhen: 'down', hint: 'إصابات مضيعة للوقت لكل مليون ساعة عمل' }),
       statTile({ label: 'TRIR', value: fmt.num(k.trir, { maximumFractionDigits: 2 }), delta: rate(dl.trir), deltaGoodWhen: 'down', hint: `الحوادث المسجلة لكل ${fmt.num(200)} ألف ساعة عمل` }),
       statTile({ label: 'الحوادث المسجلة', value: d.incidentsOnly, delta: (dl.incidentsInPeriod || 0), deltaGoodWhen: 'down', hint: 'الإصابات وتلف الممتلكات والحوادث البيئية خلال الفترة (دون الحوادث الوشيكة)' }),
@@ -863,8 +875,8 @@ function render(container, ctx) {
     sec.appendChild(h('div', { class: 'grid-12' },
       h('div', { class: 'col-span-5' }, card({ code: 'RPT-07A', title: 'الامتثال العام', body: overall })),
       h('div', { class: 'col-span-7' }, d.iso.length
-        ? chartCard({ code: 'RPT-07B', title: `درجات البنود ${fmt.num(4)}–${fmt.num(10)}`, subtitle: 'متوسط درجات البنود الفرعية لكل بند رئيسي', chart: spider })
-        : card({ code: 'RPT-07B', title: `درجات البنود ${fmt.num(4)}–${fmt.num(10)}`, body: emptyState({ title: 'لا تتوفر بيانات امتثال' }) }))));
+        ? chartCard({ code: 'RPT-07B', title: `درجات البنود من ${fmt.num(4)} إلى ${fmt.num(10)}`, subtitle: 'متوسط درجات البنود الفرعية لكل بند رئيسي', chart: spider })
+        : card({ code: 'RPT-07B', title: `درجات البنود من ${fmt.num(4)} إلى ${fmt.num(10)}`, body: emptyState({ title: 'لا تتوفر بيانات امتثال' }) }))));
     return sec;
   }
 
@@ -1033,10 +1045,18 @@ function render(container, ctx) {
     }
   }
 
+  // A hidden tab never repaints the report: the rebuild is parked and runs once when the tab is visible again.
+  let staleWhileHidden = false;
   function scheduleRebuild() {
     if (rebuildTimer) clearTimeout(rebuildTimer);
-    rebuildTimer = setTimeout(rebuild, 350);
+    rebuildTimer = setTimeout(() => {
+      rebuildTimer = null;
+      if (document.hidden) { staleWhileHidden = true; return; }
+      rebuild();
+    }, 350);
   }
+  const onVisibility = () => { if (!document.hidden && staleWhileHidden) { staleWhileHidden = false; rebuild(); } };
+  document.addEventListener('visibilitychange', onVisibility);
 
   rebuild();
 
@@ -1068,6 +1088,7 @@ function render(container, ctx) {
     subs.splice(0).forEach((off) => { try { off(); } catch { /* ignore */ } });
     window.removeEventListener('pagehide', onPageHide);
     window.removeEventListener('beforeprint', onBeforePrint);
+    document.removeEventListener('visibilitychange', onVisibility);
     if (voicesHandler && window.speechSynthesis && typeof window.speechSynthesis.removeEventListener === 'function') {
       window.speechSynthesis.removeEventListener('voiceschanged', voicesHandler);
     }

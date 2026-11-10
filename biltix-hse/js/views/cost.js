@@ -22,8 +22,9 @@ const RATING_TONE = { red: 'critical', yellow: 'warning', green: 'good' };
 const CLOSED_STATUSES = new Set(['مغلق', 'مُتجاوز']);
 
 const STYLE_ID = 'view-cost-style';
-const STYLE_TEXT = `@layer views {
-  .view-cost .grid-12 { align-items: start; }
+const STYLE_TEXT = `/* grid rows align to the top: unlayered so it wins over the stretch default in css/base.css */
+.view-cost .grid-12 { align-items: start; }
+@layer views {
   .view-cost .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
   .view-cost .wrap-2 { overflow-wrap: break-word; }
   @media (max-width: 599.98px) {
@@ -33,6 +34,17 @@ const STYLE_TEXT = `@layer views {
 }`;
 const CODE_RE = /\b[A-Z]{1,5}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
 const LABOUR_DEFAULT = 6;
+
+/** Free text (seed titles, descriptions, rule names) → the active numeral system; Latin alphanumeric tokens (2B, P6, PN10) keep their ASCII digits (RTL-4). */
+const LATIN_NUM_TOKEN = /[A-Za-z][A-Za-z0-9._-]*\d[A-Za-z0-9._-]*|\d+[A-Za-z][A-Za-z0-9._-]*/g;
+function digitsIn(fmt, value) {
+  const s = String(value ?? '');
+  if (!fmt || typeof fmt.digits !== 'function' || !/\d/.test(s)) return s;
+  let out = ''; let last = 0; let m;
+  LATIN_NUM_TOKEN.lastIndex = 0;
+  while ((m = LATIN_NUM_TOKEN.exec(s))) { out += fmt.digits(s.slice(last, m.index)) + m[0]; last = m.index + m[0].length; }
+  return out + fmt.digits(s.slice(last));
+}
 
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
 const arr = (v) => (Array.isArray(v) ? v : []);
@@ -63,6 +75,7 @@ export default {
     let raf = 0;
     let localProject = 'portfolio'; // used only while the global project filter is "all"
     let labourExpanded = false;
+    let kriOpen = false; // the KRI matrix is reference material: collapsed until asked for
 
     /* ───────────────────────── helpers ───────────────────────── */
 
@@ -72,9 +85,9 @@ export default {
     function withCodes(str) {
       const t = String(str ?? ''); const out = []; let last = 0; let m;
       CODE_RE.lastIndex = 0;
-      while ((m = CODE_RE.exec(t))) { if (m.index > last) out.push(t.slice(last, m.index)); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
-      if (last < t.length) out.push(t.slice(last));
-      return out.length ? out : [t];
+      while ((m = CODE_RE.exec(t))) { if (m.index > last) out.push(digitsIn(fmt, t.slice(last, m.index))); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
+      if (last < t.length) out.push(digitsIn(fmt, t.slice(last)));
+      return out.length ? out : [digitsIn(fmt, t)];
     }
     /** Signed percentage through fmt.signedPct when the core provides it (RTL-4 / RTL-23). */
     const signedPct = (n, d = 0) => (typeof fmt.signedPct === 'function' ? fmt.signedPct(n, d) : `${fmt.signed(n, d)}${typeof fmt.getNumerals === 'function' && fmt.getNumerals() === 'arab' ? '٪' : '%'}`);
@@ -151,7 +164,7 @@ export default {
     function projectName(state, id) {
       if (!id || id === 'all' || id === 'portfolio') return 'محفظة المشاريع';
       const s = arr(state.sites).find((x) => x.id === id);
-      return s ? s.name : String(id);
+      return digitsIn(fmt, s ? s.name : String(id));
     }
     function projectCode(state, id) {
       const s = arr(state.sites).find((x) => x.id === id);
@@ -309,8 +322,8 @@ export default {
         return card({ code: 'CST-01', title: 'إدارة القيمة المكتسبة (EVM)', body: emptyState({ title: 'لا تتوفر بيانات القيمة المكتسبة', text: 'تأكد من اتصال موصل «Biltix — التكلفة والميزانية».' }) });
       }
       const strip = h('div', { class: 'evm-strip', role: 'group', 'aria-label': 'مؤشرات القيمة المكتسبة' },
-        evmCell({ code: 'CPI', label: 'مؤشر أداء التكلفة', value: ratio(e.CPI), tone: indexTone(e.CPI), statusLabel: cpiLabel(e.CPI), formula: 'CPI = EV / AC', hint: 'أعلى من 1 يعني إنفاقاً أقل من القيمة المُنجزة' }),
-        evmCell({ code: 'SPI', label: 'مؤشر أداء الجدول', value: ratio(e.SPI), tone: indexTone(e.SPI), statusLabel: spiLabel(e.SPI), formula: 'SPI = EV / PV', hint: 'أقل من 1 يعني إنجازاً أبطأ من المخطط' }),
+        evmCell({ code: 'CPI', label: 'مؤشر أداء التكلفة', value: ratio(e.CPI), tone: indexTone(e.CPI), statusLabel: cpiLabel(e.CPI), formula: 'CPI = EV / AC', hint: `أعلى من ${fmt.num(1)} يعني إنفاقاً أقل من القيمة المُنجزة` }),
+        evmCell({ code: 'SPI', label: 'مؤشر أداء الجدول', value: ratio(e.SPI), tone: indexTone(e.SPI), statusLabel: spiLabel(e.SPI), formula: 'SPI = EV / PV', hint: `أقل من ${fmt.num(1)} يعني إنجازاً أبطأ من المخطط` }),
         evmCell({ code: 'EAC', label: 'التقدير عند الإنجاز', value: sar(e.EAC), tone: eacTone(e.EAC, e.BAC), statusLabel: eacLabel(e.EAC, e.BAC), formula: 'EAC = BAC / CPI', hint: `الميزانية عند الإنجاز (BAC): ${sar(e.BAC)}` }),
         evmCell({ code: 'ETC', label: 'التقدير للإنجاز المتبقي', value: sar(e.ETC), tone: 'brand', statusLabel: 'المتبقي للإنجاز', formula: 'ETC = EAC − AC', hint: `التكلفة الفعلية حتى اليوم (AC): ${sar(e.AC)}` }),
         evmCell({ code: 'VAC', label: 'الانحراف عند الإنجاز', value: `${e.VAC < 0 ? '−' : ''}${sar(Math.abs(e.VAC))}`, tone: vacTone(e.VAC), statusLabel: vacLabel(e.VAC), formula: 'VAC = BAC − EAC', hint: e.VAC < 0 ? 'قيمة سالبة: التكلفة المتوقعة تتجاوز الميزانية' : 'قيمة موجبة: وفر متوقع مقابل الميزانية' }),
@@ -333,7 +346,7 @@ export default {
 
       const pc = Math.max(0, Math.min(100, num(e.percentComplete)));
       const pp = Math.max(0, Math.min(100, num(e.plannedPercent)));
-      const progressPair = h('div', { class: 'bar-pair', 'aria-label': 'نسبة الإنجاز الفعلية مقابل المخططة' },
+      const progressPair = h('div', { class: 'bar-pair', role: 'group', 'aria-label': 'نسبة الإنجاز الفعلية مقابل المخططة' },
         h('div', { class: 'bar-pair-row' }, h('span', {}, 'الإنجاز الفعلي'), progress({ value: pc, tone: pc >= pp ? 'good' : 'warning', label: 'نسبة الإنجاز الفعلية' }), h('span', { class: 'progress-value' }, fmt.pct(pc))),
         h('div', { class: 'bar-pair-row' }, h('span', {}, 'الإنجاز المخطط'), progress({ value: pp, tone: 'brand', label: 'نسبة الإنجاز المخططة' }), h('span', { class: 'progress-value' }, fmt.pct(pp))),
       );
@@ -344,7 +357,7 @@ export default {
         subtitle: `${projectName(data.state, data.scopeId)} — حالة التكلفة الإجمالية`,
         actions: [toneBadge(e.status || '—', statusTone)],
         body: h('div', { class: 'stack gap-4' }, strip, facts, progressPair),
-        footer: h('p', { class: 'text-xs muted' }, 'تُحسب المؤشرات من بيانات Oracle ERP و«Biltix — التكلفة والميزانية» بعد اجتياز طبقة التحقق؛ الدرجات 0–100 لمخاطر التكلفة تُشتق من CPI وVAC واتجاه السلع وأوامر التغيير.'),
+        footer: h('p', { class: 'text-xs muted' }, `تُحسب المؤشرات من بيانات Oracle ERP و«Biltix — التكلفة والميزانية» بعد اجتياز طبقة التحقق؛ الدرجات ${`من ${fmt.num(0)} إلى ${fmt.num(100)}`} لمخاطر التكلفة تُشتق من CPI وVAC واتجاه السلع وأوامر التغيير.`),
       });
     }
 
@@ -358,7 +371,7 @@ export default {
             { id: 'actual', label: 'الفعلي', color: 'var(--s2)', values: arr(f.actual).map((v) => (v === null || v === undefined ? null : num(v))) },
             { id: 'forecast', label: 'المتوقع', color: 'var(--s3)', values: arr(f.forecast).map((v) => num(v)) },
           ],
-          labels: arr(f.labels && f.labels.length ? f.labels : f.months).map((m) => (m instanceof Date ? fmt.date(m, { style: 'short' }) : String(m))), height: 240, yFormat: (v) => fmt.compact(v), ariaLabel: 'اتجاه التكلفة: الميزانية مقابل الفعلي والمتوقع',
+          labels: arr(f.labels && f.labels.length ? f.labels : f.months).map((m) => (m instanceof Date ? fmt.date(m, { style: 'short' }) : digitsIn(fmt, String(m)))), height: 240, yFormat: (v) => fmt.compact(v), ariaLabel: 'اتجاه التكلفة: الميزانية مقابل الفعلي والمتوقع',
         });
       }
       const fallbackTable = () => simpleTable(['الشهر', 'الميزانية', 'الفعلي', 'المتوقع'], arr(f && f.months).map((m, i) => [m, sar(arr(f.budget)[i]), arr(f.actual)[i] == null ? '—' : sar(arr(f.actual)[i]), sar(arr(f.forecast)[i])]));
@@ -424,8 +437,7 @@ export default {
         columns: [
           { key: 'code', label: 'الرمز', priority: 'high', render: (r) => codeSpan(r.code) },
           { key: 'title', label: 'الأمر', priority: 'high', render: (r) => h('span', { class: 'stack', style: { gap: '2px' } }, h('span', { class: 'wrap-2', title: r.title || '' }, ...withCodes(r.title || '—')), h('span', { class: 'text-xs muted' }, `${data.scopeId === 'portfolio' ? `${projectCode(data.state, r.projectId)} · ` : ''}أثر ${fmt.num(num(r.impactDays))} يوماً · قُدّم ${fmt.relative(r.submittedAt)}${r.driver ? ` · ${r.driver}` : ''}`)) },
-          { key: 'amountSAR', label: 'القيمة', align: 'end', priority: 'high', render: (r) => h('span', { class: 'mono num nowrap' }, sar(r.amountSAR)), sortValue: (r) => num(r.amountSAR) },
-          { key: 'status', label: 'الحالة', priority: 'medium', render: (r) => toneBadge(r.status || '—', CO_TONE[r.status] || 'neutral') },
+          { key: 'amountSAR', label: 'القيمة / الحالة', align: 'end', priority: 'high', render: (r) => h('span', { class: 'stack gap-1', style: { alignItems: 'flex-end' } }, h('span', { class: 'mono num nowrap' }, sar(r.amountSAR)), toneBadge(r.status || '—', CO_TONE[r.status] || 'neutral')), sortValue: (r) => num(r.amountSAR) },
         ],
         rows: data.changeOrders, initialSort: { key: 'amountSAR', dir: 'desc' },
       });
@@ -465,7 +477,7 @@ export default {
         dense: true, pageSize: 6, stickyFirst: true, emptyText: 'لا توجد بنود تكلفة في هذا النطاق', caption: 'انحراف بنود التكلفة',
         columns: [
           { key: 'wbs', label: 'WBS', priority: 'high', render: (r) => h('span', { class: 'code mono nowrap', dir: 'ltr' }, String(r.wbs ?? '—')) },
-          { key: 'name', label: 'البند', priority: 'high', render: (r) => h('span', { class: 'stack wrap-2', style: { gap: '1px' } }, h('span', { title: r.name || '' }, r.name || '—'), data.scopeId === 'portfolio' ? h('span', { class: 'text-xs muted' }, projectCode(data.state, r.projectId)) : null) },
+          { key: 'name', label: 'البند', priority: 'high', render: (r) => h('span', { class: 'stack wrap-2', style: { gap: '1px' } }, h('span', { title: r.name || '' }, digitsIn(fmt, r.name || '—')), data.scopeId === 'portfolio' ? h('span', { class: 'text-xs muted' }, projectCode(data.state, r.projectId)) : null) },
           { key: 'budget', label: 'الميزانية', align: 'end', priority: 'medium', render: (r) => mono(sar(r.budget)), sortValue: (r) => num(r.budget) },
           { key: 'actual', label: 'الفعلي', align: 'end', priority: 'low', render: (r) => mono(sar(r.actual)), sortValue: (r) => num(r.actual) },
           { key: 'committed', label: 'الملتزم', align: 'end', priority: 'low', render: (r) => mono(sar(r.committed)), sortValue: (r) => num(r.committed) },
@@ -494,12 +506,26 @@ export default {
         rows: kris.map((k, i) => ({ id: `kri-${i}`, ...k })),
       });
       table.table.classList.add('kri-table');
-      return card({
+      const toggle = button(kriOpen ? 'طيّ' : 'عرض', { variant: 'ghost', size: 'sm', icon: glyph('chevronDown', 14), attrs: { 'aria-expanded': kriOpen ? 'true' : 'false', 'aria-controls': 'cst-kri-body' } });
+      const el = card({
         code: 'CST-08', title: 'مصفوفة مؤشرات المخاطر (KRI) — التكلفة',
         subtitle: data.pipeline ? `${data.pipeline.nameAr || data.pipeline.name || ''} · ${data.pipeline.version || ''} — المؤشر، التقنية، المدخلات، وإجراء التخفيف` : 'خط توقع التكلفة',
-        actions: [button('المحرك', { variant: 'ghost', size: 'sm', icon: 'sliders', onClick: () => router.navigate('engine', { pipeline: PIPELINE_ID }) })],
+        actions: [toggle, button('المحرك', { variant: 'ghost', size: 'sm', icon: 'sliders', onClick: () => router.navigate('engine', { pipeline: PIPELINE_ID }) })],
         body: table.el,
       });
+      el.classList.add('kri-card');
+      const bodyEl = el.querySelector('.card-body');
+      if (bodyEl) { bodyEl.id = 'cst-kri-body'; bodyEl.hidden = !kriOpen; }
+      const ic = toggle.querySelector('svg');
+      if (ic && !kriOpen) ic.style.transform = 'rotate(180deg)';
+      toggle.addEventListener('click', () => {
+        kriOpen = !kriOpen;
+        if (bodyEl) bodyEl.hidden = !kriOpen;
+        toggle.setAttribute('aria-expanded', kriOpen ? 'true' : 'false');
+        const lbl = toggle.querySelector('.btn-label'); if (lbl) lbl.textContent = kriOpen ? 'طيّ' : 'عرض';
+        if (ic) ic.style.transform = kriOpen ? '' : 'rotate(180deg)';
+      });
+      return el;
     }
 
     function buildAiRisksCard(data) {

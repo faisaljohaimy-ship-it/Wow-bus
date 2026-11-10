@@ -494,7 +494,7 @@ export const permitsView = {
         formField({ label: 'نوع التصريح', name: 'type', type: 'select', value: PERMIT_TYPES[0], options: PERMIT_TYPES, required: true }),
         formField({ label: 'الحالة الأولية', name: 'status', type: 'select', value: PENDING, options: [DRAFT, PENDING], hint: 'يُفعَّل التصريح من اللوحة بعد اعتماده' }),
         formField({ label: 'الموقع', name: 'siteId', type: 'select', value: defaultSite, options: sites, required: true }),
-        formField({ label: 'المكان داخل الموقع', name: 'location', required: true, placeholder: 'مثال: المنطقة ج — المستوى 12' }),
+        formField({ label: 'المكان داخل الموقع', name: 'location', required: true, placeholder: `مثال: المنطقة ج — المستوى ${fmt.num(12)}` }),
         formField({ label: 'مقدّم الطلب', name: 'requester', required: true, placeholder: 'الاسم والصفة' }),
         formField({ label: 'المعتمِد', name: 'approver', required: true, placeholder: 'مهندس السلامة المسؤول' }),
         h('h3', { class: 'form-section-title' }, 'الفترة والطاقم'),

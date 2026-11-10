@@ -59,12 +59,15 @@
   --font-mono-mixed: "IBM Plex Mono", "IBM Plex Sans Arabic", ui-monospace, SFMono-Regular, Menlo, monospace;
   /* Link ink: brand blue is only 4.1:1 on the dark card surface, so links lift it toward white (5.7:1). */
   --link: color-mix(in srgb, var(--brand) 80%, white);
+  /* Accent as TEXT ink (codes, mono labels): the raw accent is only 3.3:1 on white, so the light theme darkens it. */
+  --accent-ink: var(--accent);
   /* Blueprint grid strength on the page plane (base.css); lighter in the light theme. */
   --grid-alpha: 4%;
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23AAB6CC' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 }
 :root[data-theme="light"] {
-  --link: var(--brand);
+  --link: color-mix(in srgb, var(--brand) 80%, var(--ink-1));   /* ≥4.8:1 on bg-0…bg-3 and on brand-tinted active fills (raw brand is 4.2:1 on the page plane) */
+  --accent-ink: color-mix(in srgb, var(--accent) 70%, var(--ink-1));   /* ≥5.3:1 on bg-0…bg-3 and on the accent tint */
   --grid-alpha: 2.5%;
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235B6880' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 }
@@ -148,11 +151,12 @@ pre {
   unicode-bidi: isolate;
 }
 /* Codes (CT-2026-014, AIR-1042) never break across lines: views wrap them in
-   <span class="code"> or <span class="mono nowrap">; .mono alone may still wrap. */
-.code, .code-tag, .mono.nowrap {
+   <span class="code nowrap" dir="ltr"> or <span class="mono nowrap">; .mono alone may still wrap. */
+.code, .code-tag, .mono.nowrap, .nowrap {
   white-space: nowrap;
   unicode-bidi: isolate;
 }
+.code { font-family: var(--font-mono-mixed); font-variant-numeric: tabular-nums; letter-spacing: 0; direction: ltr; }
 
 /* --------------------------------------------------------------------------
    Focus, selection, scrollbars

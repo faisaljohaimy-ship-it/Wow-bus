@@ -48,12 +48,24 @@ const OPEN_TASK = new Set(['جديدة', 'قيد التنفيذ', 'متأخرة'
 const SUBCONTRACT_TYPE = 'عقد من الباطن';
 
 const STYLE_ID = 'view-contracts-style';
-const STYLE_TEXT = `@layer views {
-  .view-contracts .grid-12 { align-items: start; }
+const STYLE_TEXT = `/* grid rows align to the top: unlayered so it wins over the stretch default in css/base.css */
+.view-contracts .grid-12 { align-items: start; }
+@layer views {
   .view-contracts .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
 }`;
 const CODE_RE = /\b[A-Z]{1,5}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
 const OBLIGATIONS_DEFAULT = 6;
+
+/** Free text (seed titles, descriptions, rule names) → the active numeral system; Latin alphanumeric tokens (2B, P6, PN10) keep their ASCII digits (RTL-4). */
+const LATIN_NUM_TOKEN = /[A-Za-z][A-Za-z0-9._-]*\d[A-Za-z0-9._-]*|\d+[A-Za-z][A-Za-z0-9._-]*/g;
+function digitsIn(fmt, value) {
+  const s = String(value ?? '');
+  if (!fmt || typeof fmt.digits !== 'function' || !/\d/.test(s)) return s;
+  let out = ''; let last = 0; let m;
+  LATIN_NUM_TOKEN.lastIndex = 0;
+  while ((m = LATIN_NUM_TOKEN.exec(s))) { out += fmt.digits(s.slice(last, m.index)) + m[0]; last = m.index + m[0].length; }
+  return out + fmt.digits(s.slice(last));
+}
 
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
 const lower = (v) => String(v ?? '').toLowerCase();
@@ -101,9 +113,9 @@ export default {
     function withCodes(str) {
       const t = String(str ?? ''); const out = []; let last = 0; let m;
       CODE_RE.lastIndex = 0;
-      while ((m = CODE_RE.exec(t))) { if (m.index > last) out.push(t.slice(last, m.index)); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
-      if (last < t.length) out.push(t.slice(last));
-      return out.length ? out : [t];
+      while ((m = CODE_RE.exec(t))) { if (m.index > last) out.push(digitsIn(fmt, t.slice(last, m.index))); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
+      if (last < t.length) out.push(digitsIn(fmt, t.slice(last)));
+      return out.length ? out : [digitsIn(fmt, t)];
     }
     const sar = (n) => (Number.isFinite(Number(n)) ? `${fmt.compact(Number(n))} ر.س` : '—');
     const startOfToday = () => { const d = store.now ? store.now() : new Date(); d.setHours(0, 0, 0, 0); return d; };
@@ -189,7 +201,7 @@ export default {
     }
     function siteName(state, id) {
       const s = (state.sites || []).find((x) => x.id === id);
-      return s ? s.name : (id || '—');
+      return digitsIn(fmt, s ? s.name : (id || '—'));
     }
 
     /* ───────────────────────── data ───────────────────────── */
@@ -351,20 +363,20 @@ export default {
       return h('article', { class: ['evidence', 'clause-item', `tone-${tone}`], 'data-clause': clause.id, style: { display: 'flex', flexDirection: 'column', gap: '10px', padding: '12px', border: '1px solid var(--line)', borderInlineStart: '3px solid var(--tone)', borderRadius: '10px', background: 'color-mix(in srgb, var(--bg-2) 55%, transparent)' } },
         h('div', { class: 'row between wrap gap-2' },
           h('div', { class: 'row gap-2 wrap', style: { alignItems: 'center' } },
-            mono(`§${clause.ref || '—'}`, 'evidence-ref semibold'),
+            mono(`§${digitsIn(fmt, clause.ref || '—')}`, 'evidence-ref semibold'),
             h('span', { class: 'semibold' }, clause.title || 'بند'),
           ),
           h('div', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, flagBadge(clause), status),
         ),
-        clause.excerpt ? h('blockquote', { class: 'evidence-excerpt text-sm', style: { margin: 0, paddingInline: '12px 0', borderInlineStart: '2px solid var(--line-2)', color: 'var(--ink-2)', fontStyle: 'normal' } }, clause.excerpt) : null,
+        clause.excerpt ? h('blockquote', { class: 'evidence-excerpt text-sm', style: { margin: 0, paddingInline: '12px 0', borderInlineStart: '2px solid var(--line-2)', color: 'var(--ink-2)', fontStyle: 'normal' } }, digitsIn(fmt, clause.excerpt)) : null,
         clause.flag ? h('div', { class: 'row gap-3', style: { alignItems: 'center' } },
           h('span', { class: 'text-xs muted nowrap' }, 'درجة الخطورة'),
           h('div', { class: 'progress-row grow' }, progress({ value: sev, max: 100, tone, label: `درجة خطورة البند ${clause.ref}` }), h('span', { class: 'progress-value' }, fmt.num(sev))),
           ratingBadge(sev),
         ) : null,
-        clause.explanation ? h('p', { class: 'text-sm' }, h('strong', { class: 'ink-2' }, 'تفسير المحرك: '), clause.explanation) : null,
-        clause.benchmark ? h('div', { class: 'note tone-accent' }, h('strong', {}, 'المعيار المرجعي: '), clause.benchmark) : null,
-        clause.redline ? h('div', { class: 'note tone-brand' }, h('strong', {}, 'الصياغة المقترحة (Redline): '), clause.redline) : null,
+        clause.explanation ? h('p', { class: 'text-sm' }, h('strong', { class: 'ink-2' }, 'تفسير المحرك: '), digitsIn(fmt, clause.explanation)) : null,
+        clause.benchmark ? h('div', { class: 'note tone-accent' }, h('strong', {}, 'المعيار المرجعي: '), digitsIn(fmt, clause.benchmark)) : null,
+        clause.redline ? h('div', { class: 'note tone-brand' }, h('strong', {}, 'الصياغة المقترحة (Redline): '), digitsIn(fmt, clause.redline)) : null,
         clause.flag ? h('div', { class: 'row end gap-2' }, refer) : null,
       );
     }
@@ -405,7 +417,7 @@ export default {
           obligations.length
             ? h('ul', { class: 'urgent-list' }, ...obligations.map((o) => h('li', { class: ['urgent-item', o.status === 'متأخر' || (daysUntil(o.due) ?? 1) < 0 ? 'is-overdue' : null] },
               h('span', { class: 'urgent-icon' }, glyph('clock', 15)),
-              h('div', { class: 'urgent-text' }, h('span', {}, o.text), h('span', { class: 'urgent-sub' }, `${o.owner || '—'} · §${o.clauseRef || '—'}`)),
+              h('div', { class: 'urgent-text' }, h('span', {}, digitsIn(fmt, o.text)), h('span', { class: 'urgent-sub' }, `${o.owner || '—'} · §${digitsIn(fmt, o.clauseRef || '—')}`)),
               h('div', { class: 'urgent-due' }, h('span', {}, fmt.date(o.due, { style: 'short' })), dueBadge(o.due, o.status)),
             )))
             : emptyState({ title: 'لا توجد التزامات مسجلة' }),
@@ -448,7 +460,7 @@ export default {
 
     function buildHead(data) {
       const cs = data.categoryScore;
-      const scorePill = cs ? h('div', { class: 'row gap-2', style: { alignItems: 'center' }, title: 'درجة مجال العقود = 0.5 × أعلى درجة مفتوحة + 0.5 × متوسط الدرجات المفتوحة' },
+      const scorePill = cs ? h('div', { class: 'row gap-2', style: { alignItems: 'center' }, title: `درجة مجال العقود = ${fmt.num(0.5, { maximumFractionDigits: 1 })} × أعلى درجة مفتوحة + ${fmt.num(0.5, { maximumFractionDigits: 1 })} × متوسط الدرجات المفتوحة` },
         h('span', { class: 'text-xs muted' }, 'درجة المجال'),
         mono(fmt.num(Number(cs.score) || 0), 'text-lg semibold'),
         ratingBadge(cs.score),
@@ -494,19 +506,17 @@ export default {
       });
       const table = dataTable({
         caption: 'العقود المراقبة ضمن النطاق',
-        pageSize: 8, stickyFirst: true,
+        pageSize: 6, stickyFirst: true,
         rowKey: 'id',
         emptyText: data.search ? 'لا توجد عقود مطابقة للبحث' : 'لا توجد عقود ضمن هذا النطاق',
         onRowClick: (r) => openContract(data, data.contractsAll.find((c) => c.id === r.id) || r),
         initialSort: { key: 'riskScore', dir: 'desc' },
         columns: [
           { key: 'code', label: 'الرمز', width: 120, priority: 'high', render: (r) => codeSpan(r.code) },
-          { key: 'title', label: 'العقد والطرف المقابل', priority: 'high', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, ...withCodes(r.title)), h('span', { class: 'text-xs muted' }, `${r.counterparty || '—'} · ${siteName(data.state, r.projectId)}`)) },
-          { key: 'type', label: 'النوع', priority: 'low', render: (r) => badge(r.type || '—', r.type === SUBCONTRACT_TYPE ? 'accent' : 'neutral') },
-          { key: 'valueSAR', label: 'القيمة', align: 'end', priority: 'medium', render: (r) => mono(sar(r.valueSAR), 'num'), sortValue: (r) => Number(r.valueSAR) || 0 },
+          { key: 'title', label: 'العقد والطرف المقابل', priority: 'high', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, ...withCodes(r.title)), h('span', { class: 'text-xs muted' }, `${r.type || '—'} · ${r.counterparty || '—'} · ${siteName(data.state, r.projectId)}`)), sortValue: (r) => r.title },
+          { key: 'valueSAR', label: 'القيمة / الحالة', align: 'end', priority: 'medium', render: (r) => h('div', { class: 'stack gap-1', style: { alignItems: 'flex-end' } }, mono(sar(r.valueSAR), 'num nowrap'), statusBadge(r.status, CONTRACT_STATUS_TONE)), sortValue: (r) => Number(r.valueSAR) || 0 },
           { key: '_flagged', label: 'بنود مُعلَّمة', align: 'center', priority: 'medium', render: (r) => (r._flagged ? badge(fmt.num(r._flagged), ratingTone(ratingOf(r._maxSev))) : badge(fmt.num(0), 'good')), sortValue: (r) => r._flagged },
           { key: 'riskScore', label: 'درجة المخاطر', priority: 'high', render: (r) => scoreCell(r.riskScore), sortValue: (r) => Number(r.riskScore) || 0 },
-          { key: 'status', label: 'الحالة', priority: 'low', render: (r) => statusBadge(r.status, CONTRACT_STATUS_TONE) },
         ],
         rows,
       });
@@ -550,7 +560,7 @@ export default {
         onRowClick: (r) => openContract(data, r.contract, r.clauseId),
         initialSort: { key: 'severity', dir: 'desc' },
         columns: [
-          { key: 'code', label: 'العقد والمادة', priority: 'high', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, codeSpan(r.code), mono(`§${r.ref}`, 'semibold num')), h('span', { class: 'text-sm' }, r.title), h('span', { class: 'text-xs muted' }, r.counterparty)), sortValue: (r) => `${r.code} ${r.ref}` },
+          { key: 'code', label: 'العقد والمادة', priority: 'high', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, codeSpan(r.code), mono(`§${digitsIn(fmt, r.ref)}`, 'semibold num')), h('span', { class: 'text-sm' }, r.title), h('span', { class: 'text-xs muted' }, r.counterparty)), sortValue: (r) => `${r.code} ${r.ref}` },
           { key: 'flag', label: 'العلامة', priority: 'medium', render: (r) => flagBadge(r.clause) },
           { key: 'severity', label: 'الخطورة', priority: 'high', render: (r) => scoreCell(r.severity), sortValue: (r) => r.severity },
           { key: 'status', label: 'الحالة', priority: 'low', render: (r) => statusBadge(r.status, CLAUSE_STATUS_TONE) },
@@ -573,8 +583,8 @@ export default {
         ? h('ul', { class: 'urgent-list', 'aria-label': 'تقويم الالتزامات التعاقدية', style: shown.length > 4 ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '8px' } : undefined }, ...shown.map((o) => h('li', { class: ['urgent-item', o.overdue ? 'is-overdue' : null, `tone-${o.overdue ? 'critical' : o.days <= 7 ? 'serious' : o.days <= 30 ? 'warning' : 'neutral'}`] },
           h('span', { class: 'urgent-icon' }, glyph(o.overdue ? 'critical' : o.days <= 7 ? 'serious' : 'clock', 15)),
           h('div', { class: 'urgent-text' },
-            h('button', { type: 'button', class: 'btn btn-ghost btn-sm', style: { blockSize: 'auto', padding: 0, justifyContent: 'flex-start', textAlign: 'start', whiteSpace: 'normal', fontSize: 'var(--fs-sm)' }, onClick: () => openContract(data, o.contract) }, o.text),
-            h('span', { class: 'urgent-sub row gap-2 wrap' }, codeSpan(o.contract.code), h('span', { class: 'num' }, `§${o.clauseRef || '—'}`), h('span', {}, o.owner || '—')),
+            h('button', { type: 'button', class: 'btn btn-ghost btn-sm', style: { blockSize: 'auto', padding: 0, justifyContent: 'flex-start', textAlign: 'start', whiteSpace: 'normal', fontSize: 'var(--fs-sm)' }, onClick: () => openContract(data, o.contract) }, digitsIn(fmt, o.text)),
+            h('span', { class: 'urgent-sub row gap-2 wrap' }, codeSpan(o.contract.code), h('span', { class: 'num' }, `§${digitsIn(fmt, o.clauseRef || '—')}`), h('span', {}, o.owner || '—')),
           ),
           h('div', { class: 'urgent-due' }, h('span', {}, `${fmt.dayName(o.due)} ${fmt.date(o.due, { style: 'short' })}`), dueBadge(o.due, o.status)),
         )))
@@ -587,7 +597,7 @@ export default {
         footer: data.obligations.length > shown.length ? h('p', { class: 'text-xs muted' }, `يُعرض أقرب ${fmt.num(shown.length)} التزاماً من أصل ${fmt.num(data.obligations.length)}؛ اضغط «عرض الكل» أو افتح العقد لعرض القائمة كاملة.`) : h('div', { class: 'tone-legend' },
           h('span', { class: 'tone-legend-item tone-critical' }, glyph('critical', 12), h('span', {}, 'متأخر')),
           h('span', { class: 'tone-legend-item tone-serious' }, glyph('serious', 12), h('span', {}, 'خلال أسبوع')),
-          h('span', { class: 'tone-legend-item tone-warning' }, glyph('warning', 12), h('span', {}, 'خلال 30 يوماً')),
+          h('span', { class: 'tone-legend-item tone-warning' }, glyph('warning', 12), h('span', {}, `خلال ${fmt.num(30)} يوماً`)),
           h('span', { class: 'tone-legend-item tone-neutral' }, glyph('clock', 12), h('span', {}, 'قادم')),
         ),
       });
@@ -688,7 +698,7 @@ export default {
 
     // Only the entities this view displays rebuild it: contracts, AI risks, alerts (and site names / a full reset).
     // Tasks are read at action time only (duplicate detection), pipeline / validation / connector telemetry is never shown (C-4).
-    const RELEVANT = /^(\*|sites|platform\.(contracts|aiRisks|alerts))/;
+    const RELEVANT = /^(\*|sites|platform$|platform\.(contracts|aiRisks|alerts))/;
     const unsubs = [
       bus.on('store:change', (payload) => { const path = payload && payload.path ? String(payload.path) : '*'; if (RELEVANT.test(path)) schedule(); }),
       bus.on('filters:change', (payload) => { const key = payload && payload.key; if (!key || key === 'siteId' || key === 'range' || key === 'search') schedule(); }),

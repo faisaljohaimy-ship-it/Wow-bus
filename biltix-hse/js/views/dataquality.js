@@ -22,8 +22,9 @@
  */
 
 const STYLE_ID = 'view-dataquality-style';
-const STYLE_TEXT = `@layer views {
-  .view-dataquality .grid-12 { align-items: start; }
+const STYLE_TEXT = `/* grid rows align to the top: unlayered so it wins over the stretch default in css/base.css */
+.view-dataquality .grid-12 { align-items: start; }
+@layer views {
   .view-dataquality .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
   @media (max-width: 599.98px) {
     .view-dataquality .chips.is-scroll { flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; padding-block-end: 4px; scrollbar-width: thin; }
@@ -42,6 +43,17 @@ const Q_STATUS = { 'معلّق': 'warning', 'مُصحح': 'good', 'مرفوض': 
 const Q_FILTERS = [{ value: 'all', label: 'الكل' }, { value: 'معلّق', label: 'معلّق' }, { value: 'مُصحح', label: 'مُصحح' }, { value: 'مرفوض', label: 'مرفوض' }];
 const Q_PAGE = 6;
 const SECTION_IDS = { sources: 'dq-sources', rules: 'dq-rules', quarantine: 'dq-quarantine' };
+
+/** Free text (seed titles, descriptions, rule names) → the active numeral system; Latin alphanumeric tokens (2B, P6, PN10) keep their ASCII digits (RTL-4). */
+const LATIN_NUM_TOKEN = /[A-Za-z][A-Za-z0-9._-]*\d[A-Za-z0-9._-]*|\d+[A-Za-z][A-Za-z0-9._-]*/g;
+function digitsIn(fmt, value) {
+  const s = String(value ?? '');
+  if (!fmt || typeof fmt.digits !== 'function' || !/\d/.test(s)) return s;
+  let out = ''; let last = 0; let m;
+  LATIN_NUM_TOKEN.lastIndex = 0;
+  while ((m = LATIN_NUM_TOKEN.exec(s))) { out += fmt.digits(s.slice(last, m.index)) + m[0]; last = m.index + m[0].length; }
+  return out + fmt.digits(s.slice(last));
+}
 
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
 const arr = (v) => (Array.isArray(v) ? v : []);
@@ -281,7 +293,7 @@ export default {
       const table = dataTable({
         dense: true, pageSize: 0, stickyFirst: true, emptyText: 'لا توجد قواعد تحقق', caption: 'قواعد التحقق والتنظيف',
         columns: [
-          { key: 'name', label: 'القاعدة', priority: 'high', render: (r) => { const t = RULE_TYPE[r.type] || { label: r.type || '—', icon: 'list', hint: '' }; return h('span', { class: 'semibold', title: t.hint || undefined, style: { opacity: r.enabled === false ? '.6' : '1' } }, r.name || '—'); } },
+          { key: 'name', label: 'القاعدة', priority: 'high', render: (r) => { const t = RULE_TYPE[r.type] || { label: r.type || '—', icon: 'list', hint: '' }; return h('span', { class: 'semibold', title: t.hint || undefined, style: { opacity: r.enabled === false ? '.6' : '1' } }, digitsIn(fmt, r.name || '—')); } },
           { key: 'type', label: 'النوع', priority: 'low', render: (r) => { const t = RULE_TYPE[r.type] || { label: r.type || '—', icon: 'list' }; return badge(t.label, 'neutral', { icon: t.icon }); } },
           { key: 'hitsToday', label: 'إصابات اليوم', align: 'end', priority: 'medium', render: (r) => mono(fmt.num(num(r.hitsToday))), sortValue: (r) => num(r.hitsToday) },
           { key: 'enabled', label: 'مفعّلة', align: 'center', sortable: false, priority: 'high', render: (r) => h('span', { class: 'row gap-2', style: { justifyContent: 'center' } },
@@ -320,7 +332,7 @@ export default {
       return h('li', { class: 'quarantine-item', 'data-status': q.status || 'معلّق' },
         h('div', { class: 'quarantine-main' },
           h('span', { class: 'row gap-2 wrap' }, h('span', { class: 'quarantine-ref code mono nowrap', dir: 'ltr' }, q.recordRef || q.id), q.status === 'معلّق' ? badge('معلّق', 'warning') : null),
-          h('span', { class: 'quarantine-reason' }, q.reason || '—'),
+          h('span', { class: 'quarantine-reason' }, digitsIn(fmt, q.reason || '—')),
         ),
         actions,
         h('div', { class: 'quarantine-meta' },

@@ -54,6 +54,17 @@ const TYPE_META = {
 /* Guards & helpers                                                     */
 /* ------------------------------------------------------------------ */
 
+/** Free text (seed titles, descriptions, rule names) → the active numeral system; Latin alphanumeric tokens (2B, P6, PN10) keep their ASCII digits (RTL-4). */
+const LATIN_NUM_TOKEN = /[A-Za-z][A-Za-z0-9._-]*\d[A-Za-z0-9._-]*|\d+[A-Za-z][A-Za-z0-9._-]*/g;
+function digitsIn(fmt, value) {
+  const s = String(value ?? '');
+  if (!fmt || typeof fmt.digits !== 'function' || !/\d/.test(s)) return s;
+  let out = ''; let last = 0; let m;
+  LATIN_NUM_TOKEN.lastIndex = 0;
+  while ((m = LATIN_NUM_TOKEN.exec(s))) { out += fmt.digits(s.slice(last, m.index)) + m[0]; last = m.index + m[0].length; }
+  return out + fmt.digits(s.slice(last));
+}
+
 const warned = new Set();
 function warnOnce(key, err) {
   if (warned.has(key)) return;
@@ -107,6 +118,17 @@ const statusBadge = (status) => badge(status || '—', TASK_STATUS_TONE[status] 
 const sourceBadge = (source) => h('span', { class: 'source-badge', 'data-source': source || '' }, SOURCE_LABEL[source] || source || '—');
 /** Latin product / vendor names get lang="en" dir="ltr" (RTL-28). */
 const latin = (label) => h('span', { lang: 'en', dir: 'ltr' }, String(label ?? ''));
+const CODE_RE = /\b[A-Z]{1,5}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
+/** A code such as AIR-1042 / MT-0224 as an isolated LTR mono run that never breaks (RTL-5). */
+const codeSpan = (code, extra = null) => h('span', { class: ['code', 'mono', 'nowrap', extra], dir: 'ltr' }, String(code ?? ''));
+/** Split a title mixing Arabic prose and Latin codes into text + code spans. */
+function withCodes(str) {
+  const t = String(str ?? ''); const out = []; let last = 0; let m;
+  CODE_RE.lastIndex = 0;
+  while ((m = CODE_RE.exec(t))) { if (m.index > last) out.push(digitsIn(defaultFmt, t.slice(last, m.index))); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
+  if (last < t.length) out.push(digitsIn(defaultFmt, t.slice(last)));
+  return out.length ? out : [digitsIn(defaultFmt, t)];
+}
 /** Static chip — write-back changes are announced once through a toast, so no live region here (RTL-18). */
 function writebackChip(wb) {
   const status = wb && wb.status ? String(wb.status) : '';
@@ -152,7 +174,7 @@ export default {
     const settings = () => (stateOf().settings || {});
     const platformOf = () => (stateOf().platform || {});
     const sites = () => (stateOf().sites || []);
-    const projectName = (id) => { const s = sites().find((x) => x.id === id); return s ? s.name : String(id || '—'); };
+    const projectName = (id) => { const s = sites().find((x) => x.id === id); return digitsIn(fmt, s ? s.name : String(id || '—')); };
     const findTask = (id) => (platformOf().tasks || []).find((t) => t && t.id === id) || null;
     const riskOf = (task) => (task && task.riskId ? (platformOf().aiRisks || []).find((r) => r.id === task.riskId) || null : null);
     const addTimer = (fn, ms) => { const id = setTimeout(() => { timers.delete(id); if (alive) fn(); }, ms); timers.add(id); return id; };
@@ -263,7 +285,7 @@ export default {
           risk
             ? h('span', { class: 'row gap-1 task-risk-ref', title: risk.title }, h('span', { class: 'code mono nowrap text-xs', dir: 'ltr' }, risk.code), ratingBadge(psel, ratingOf(psel, num(risk.score)), { sm: true }))
             : badge('بدون مخاطرة مرتبطة', 'neutral')),
-        h('p', { class: 'kanban-card-title' }, task.title || '—'),
+        h('p', { class: 'kanban-card-title' }, ...withCodes(task.title || '—')),
         h('div', { class: 'kanban-card-meta' },
           h('span', { title: 'المالك' }, svgIcon('user', 12), task.owner || '—'),
           h('span', { class: overdue ? 'is-overdue' : null, title: 'تاريخ الاستحقاق' }, dueCell(task.dueDate, now, task.status === 'مغلقة')),
@@ -294,7 +316,7 @@ export default {
       if (!requireStore('updateTask')) return;
       const form = h('form', { class: 'stack gap-3', novalidate: true },
         h('p', { class: 'note text-sm' }, 'سجّل نتيجة المعالجة: تُغلق المخاطرة المرتبطة وتُسجَّل النتيجة في سجل التدقيق لتغذية إعادة معايرة النموذج.'),
-        formField({ label: 'نتيجة المعالجة', name: 'outcome', type: 'textarea', required: true, rows: 3, placeholder: 'مثال: تم تعديل البند تعاقدياً وخُفّضت الدرجة إلى 28' }));
+        formField({ label: 'نتيجة المعالجة', name: 'outcome', type: 'textarea', required: true, rows: 3, placeholder: `مثال: تم تعديل البند تعاقدياً وخُفّضت الدرجة إلى ${fmt.num(28)}` }));
       const submit = () => {
         if (!form.reportValidity()) return false;
         const outcome = text(readForm(form).outcome);
@@ -370,7 +392,7 @@ export default {
         ['المشروع', projectName(task.projectId)],
         ['أُنشئت', fmt.dateTime(task.createdAt)],
         ['أُغلقت', task.closedAt ? fmt.dateTime(task.closedAt) : '—'],
-        ['النتيجة', task.outcome ? h('span', {}, task.outcome) : '—'],
+        ['النتيجة', task.outcome ? h('span', {}, digitsIn(fmt, task.outcome)) : '—'],
       ]);
       details.classList.add('is-compact');
 
@@ -379,8 +401,8 @@ export default {
           h('div', { class: 'recommendation-head' },
             h('h4', {}, h('span', { class: 'code mono nowrap', dir: 'ltr' }, risk.code)),
             h('div', { class: 'recommendation-chips' }, ratingBadge(psel, ratingOf(psel, num(risk.score))), typeChip(psel, risk.type), h('span', { class: 'recommendation-chip' }, 'الدرجة ', h('span', { class: 'mono' }, fmt.num(num(risk.score)))))),
-          h('p', { class: 'recommendation-action' }, risk.title),
-          risk.recommendation && risk.recommendation.action ? h('p', { class: 'recommendation-rationale' }, risk.recommendation.action) : null,
+          h('p', { class: 'recommendation-action' }, ...withCodes(risk.title)),
+          risk.recommendation && risk.recommendation.action ? h('p', { class: 'recommendation-rationale' }, digitsIn(fmt, risk.recommendation.action)) : null,
           h('div', { class: 'recommendation-actions' }, button('فتح المخاطرة في السجل الذكي', { variant: 'outline', size: 'sm', icon: 'shield-alert', onClick: () => { closeDrawer(); navigate('airisks', { risk: risk.id }); } })))
         : h('p', { class: 'note text-sm' }, 'هذه مهمة يدوية غير مرتبطة بمخاطرة مكتشفة.');
 

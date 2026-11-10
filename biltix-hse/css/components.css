@@ -128,9 +128,9 @@
 .card-code {
   font-family: var(--font-mono-mixed);
   font-size: 10px;
-  letter-spacing: .1em;
+  letter-spacing: .1em;   /* Latin module code only (RSK-5X5, CPT-00) */
   text-transform: uppercase;
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 .card-title-wrap { min-inline-size: 0; }
 .card-title { font-size: var(--fs-lg); font-weight: 600; line-height: 1.3; }
@@ -229,7 +229,7 @@
   font-size: var(--fs-2xl);
   font-weight: 600;
   line-height: 1.1;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   font-variant-numeric: proportional-nums;
   color: var(--ink-1);
   white-space: nowrap;
@@ -340,7 +340,7 @@
 
 .btn-ghost, .btn--ghost { color: var(--ink-2); }
 .btn-ghost:hover:not(:disabled), .btn--ghost:hover:not(:disabled) { color: var(--ink-1); background: var(--bg-2); }
-.btn-ghost[aria-pressed="true"], .btn-ghost.is-active { color: var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); }
+.btn-ghost[aria-pressed="true"], .btn-ghost.is-active { color: var(--link); background: color-mix(in srgb, var(--brand) 12%, transparent); }
 
 .btn-outline, .btn--outline {
   color: var(--ink-1);
@@ -348,7 +348,7 @@
   background: color-mix(in srgb, var(--bg-2) 60%, transparent);
 }
 .btn-outline:hover:not(:disabled), .btn--outline:hover:not(:disabled) { border-color: var(--ink-3); background: var(--bg-2); }
-.btn-outline[aria-pressed="true"], .btn-outline.is-active { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 55%, transparent); background: color-mix(in srgb, var(--brand) 12%, transparent); }
+.btn-outline[aria-pressed="true"], .btn-outline.is-active { color: var(--link); border-color: color-mix(in srgb, var(--brand) 55%, transparent); background: color-mix(in srgb, var(--brand) 12%, transparent); }
 
 .btn-danger, .btn--danger {
   color: var(--ink-on-dark);
@@ -441,12 +441,16 @@
 
 .tabs-wrap { display: flex; flex-direction: column; gap: var(--space-4); min-inline-size: 0; }
 .tabs {
+  position: relative;
   display: flex;
   gap: var(--space-1);
   border-block-end: 1px solid var(--line);
   overflow-x: auto;
   scrollbar-width: none;
 }
+/* Horizontal scrollers (tab strips, chip rows) contain their absolutely positioned descendants: an
+   .sr-only label inside a long nowrap row would otherwise escape the scroller's clip and widen the page. */
+[role="tablist"], .chips.is-scroll { position: relative; }
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
   position: relative;
@@ -463,7 +467,7 @@
   transition: color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
 }
 .tab:hover { color: var(--ink-1); }
-.tab.is-active, .tab[aria-selected="true"] { color: var(--brand); border-block-end-color: var(--brand); }
+.tab.is-active, .tab[aria-selected="true"] { color: var(--link); border-block-end-color: var(--brand); }
 .tab:focus-visible { outline-offset: -2px; border-radius: 6px; }
 .tab > svg { inline-size: 15px; block-size: 15px; }
 .tab-count {
@@ -472,7 +476,7 @@
   padding: 0 6px;
   border-radius: var(--radius-pill);
   background: var(--bg-2);
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 .tabpanel:focus-visible { outline-offset: 4px; border-radius: 6px; }
 
@@ -577,6 +581,8 @@
   letter-spacing: inherit;
   color: inherit;
   text-align: start;
+  white-space: normal;          /* UA <button> is white-space:pre — long titles must wrap inside the cell */
+  overflow-wrap: break-word;
   cursor: pointer;
   border-radius: 4px;
 }
@@ -1285,7 +1291,30 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
    Chips (filters) & live chips (telemetry strip)
    -------------------------------------------------------------------------- */
 
-.chip-group { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-group, .chips { display: flex; flex-wrap: wrap; gap: 8px; min-inline-size: 0; }
+/* Phones: a `.chips.is-scroll` row is ONE horizontally scrolling, snapping line instead of a wrapped
+   wall of pills (V24). The scrollbar is hidden (touch scrolls), and the inline-end edge fades to
+   say "more". --fade-end is the physical direction of inline-end (left in RTL). */
+.chips.is-scroll { --fade-end: to left; }
+:root[dir="ltr"] .chips.is-scroll { --fade-end: to right; }
+@media (max-width: 599.98px) {
+  .chips.is-scroll {
+    flex-wrap: nowrap;
+    max-inline-size: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: var(--space-3);
+    scrollbar-width: none;
+    padding-block: 5px 6px;        /* room for the 2px focus ring + offset (overflow clips it otherwise) */
+    padding-inline-end: 28px;      /* last chip clears the edge fade */
+    -webkit-mask-image: linear-gradient(var(--fade-end), transparent, black 24px);
+    mask-image: linear-gradient(var(--fade-end), transparent, black 24px);
+  }
+  .chips.is-scroll::-webkit-scrollbar { display: none; }
+  .chips.is-scroll > * { flex: none; scroll-snap-align: start; }
+}
 .chip {
   display: inline-flex;
   align-items: center;
@@ -1317,7 +1346,7 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
   padding: 0 6px;
   border-radius: var(--radius-pill);
   background: var(--bg-3);
-  color: var(--ink-3);
+  color: var(--ink-2);
   line-height: 16px;
 }
 .chip.is-active .chip-count { background: color-mix(in srgb, var(--brand) 30%, transparent); color: var(--ink-1); }
@@ -1426,7 +1455,7 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
 /* Hairlines come from each cell's 1px spread shadow, so an unfilled grid slot stays bg-1 */
 .summary-cell { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; background: var(--bg-1); box-shadow: 0 0 0 1px var(--line); min-inline-size: 0; }
 .summary-label { font-size: var(--fs-xs); color: var(--ink-3); display: inline-flex; align-items: center; gap: 6px; }
-.summary-value { font-size: var(--fs-xl); font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: proportional-nums; }
+.summary-value { font-size: var(--fs-xl); font-weight: 600; letter-spacing: 0; font-variant-numeric: proportional-nums; }
 .summary-value small { font-size: var(--fs-xs); color: var(--ink-3); font-weight: 400; margin-inline-start: 4px; }
 
 /* --------------------------------------------------------------------------
@@ -1451,14 +1480,24 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
 .feed-item.tone-critical { background: color-mix(in srgb, var(--critical) 10%, var(--bg-1)); border-color: color-mix(in srgb, var(--critical) 35%, var(--line)); }
 .feed-item.tone-serious  { background: color-mix(in srgb, var(--serious) 7%, var(--bg-1)); }
 /* Only freshly streamed items slide in (app.js removes .is-new on animationend) */
-.feed-item.is-new { animation: feed-in var(--dur-2) var(--ease) both, feed-flash 900ms var(--ease) both; }
+.feed-item.is-new { animation: feed-in var(--dur-2) var(--ease) both; }
 @keyframes feed-in {
   from { opacity: 0; transform: translateY(-8px); }
   to   { opacity: 1; transform: none; }
 }
+/* Arrival flash: a static tone ring on a pseudo-element whose opacity fades out (no box-shadow animation) */
+.feed-item.is-new::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone, var(--accent)) 60%, transparent), 0 0 18px -4px color-mix(in srgb, var(--tone, var(--accent)) 55%, transparent);
+  animation: feed-flash var(--dur-2) var(--ease) both;   /* same length as feed-in: app.js drops .is-new on the first animationend */
+}
 @keyframes feed-flash {
-  0%   { box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone, var(--accent)) 60%, transparent), 0 0 18px -4px color-mix(in srgb, var(--tone, var(--accent)) 55%, transparent); }
-  100% { box-shadow: 0 0 0 0 transparent; }
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
 }
 .feed-title-row { display: flex; align-items: baseline; gap: 8px; min-inline-size: 0; }
 /* break-word (not anywhere): codes such as CT-2026-014 are not split mid-token unless nothing else fits */
@@ -1572,7 +1611,7 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
   transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
 }
 .sheet-item:hover { background: var(--bg-2); color: var(--ink-1); }
-.sheet-item.is-active, .sheet-item[aria-current="page"] { color: var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); }
+.sheet-item.is-active, .sheet-item[aria-current="page"] { color: var(--link); background: color-mix(in srgb, var(--brand) 12%, transparent); }
 .sheet-item.is-active::before, .sheet-item[aria-current="page"]::before {
   content: "";
   position: absolute;
@@ -1588,8 +1627,8 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
 .sheet-icon { display: grid; place-items: center; inline-size: 24px; block-size: 24px; }
 .sheet-icon svg { inline-size: 20px; block-size: 20px; }
 .sheet-label { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sheet-code { font-family: var(--font-mono-mixed); font-size: 10px; letter-spacing: .06em; color: var(--ink-3); }
-.sheet-item.is-active .sheet-code { color: color-mix(in srgb, var(--brand) 70%, var(--ink-3)); }
+.sheet-code { font-family: var(--font-mono-mixed); font-size: 10px; letter-spacing: .06em; color: var(--ink-2); }
+.sheet-item.is-active .sheet-code { color: color-mix(in srgb, var(--link) 80%, var(--ink-2)); }
 
 /* --------------------------------------------------------------------------
    Site rows
@@ -1614,7 +1653,7 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
   font-family: var(--font-mono-mixed);
   font-size: 10px;
   letter-spacing: .06em;
-  color: var(--ink-3);
+  color: var(--ink-2);
   padding: 2px 6px;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -1668,7 +1707,7 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
   border-radius: 50%;
   background: var(--bg-2);
   border: 2px solid var(--line-2);
-  color: var(--ink-3);
+  color: var(--ink-2);
   font-family: var(--font-mono-mixed);
   font-size: 11px;
   font-weight: 600;
@@ -1729,7 +1768,7 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
 }
 .timeline-item.has-dot::before { display: none; }
 .timeline-item:first-child::before { background: var(--tone, var(--brand)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone, var(--brand)) 20%, transparent); }
-.timeline-time { font-family: var(--font-mono-mixed); font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-3); display: block; margin-block-end: 2px; }
+.timeline-time { font-family: var(--font-mono-mixed); font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-2); display: block; margin-block-end: 2px; }
 .timeline-text { font-size: var(--fs-sm); color: var(--ink-1); line-height: 1.5; overflow-wrap: anywhere; }
 .timeline-by { font-size: var(--fs-xs); color: var(--ink-3); margin-block-start: 2px; }
 
@@ -1821,7 +1860,7 @@ a.urgent-item:hover, button.urgent-item:hover, .urgent-item.is-clickable:hover {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.fact-value { font-size: var(--fs-xl); font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: proportional-nums; line-height: 1.15; }
+.fact-value { font-size: var(--fs-xl); font-weight: 600; letter-spacing: 0; font-variant-numeric: proportional-nums; line-height: 1.15; }
 .fact-value small { font-size: var(--fs-xs); color: var(--ink-3); font-weight: 400; margin-inline-start: 3px; }
 
 /* --------------------------------------------------------------------------
@@ -1862,8 +1901,8 @@ a.urgent-item:hover, button.urgent-item:hover, .urgent-item.is-clickable:hover {
 .logo-lockup { display: inline-flex; align-items: center; gap: 12px; color: var(--ink-1); min-inline-size: 0; }
 .logo-lockup .logo-mark, .logo-lockup > svg { flex: none; color: var(--gold); }
 .logo-lockup-text { display: flex; flex-direction: column; line-height: 1.2; min-inline-size: 0; }
-.logo-lockup-name { font-weight: 700; font-size: var(--fs-lg); letter-spacing: -0.01em; white-space: nowrap; }
-.logo-lockup-mono { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+.logo-lockup-name { font-weight: 700; font-size: var(--fs-lg); letter-spacing: 0; white-space: nowrap; }
+.logo-lockup-mono { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
 .logo-mark { display: block; }
 
 /* Brand colour swatch (settings.js live preview) */
@@ -1881,8 +1920,10 @@ a.urgent-item:hover, button.urgent-item:hover, .urgent-item.is-clickable:hover {
 
 .chip { position: relative; }
 @media (pointer: coarse) {
+  .btn { min-block-size: 40px; }
   .btn-sm { block-size: 40px; padding-inline: 12px; }
-  .btn-icon.btn-sm { inline-size: 40px; }
+  .btn-icon, .btn-icon.btn-sm { inline-size: 40px; block-size: 40px; }
+  input[type="range"], input[type="range"].field-control { min-block-size: 40px; }
   .seg-btn, .seg-sm .seg-btn { min-block-size: 40px; }
   .chip { block-size: 40px; }
   .chip.is-sm { block-size: 32px; }
@@ -1893,9 +1934,8 @@ a.urgent-item:hover, button.urgent-item:hover, .urgent-item.is-clickable:hover {
   .tab { padding-block: 11px; }
   .switch::before { content: ""; position: absolute; inset: -9px; }
   .legend-item { padding: 6px 4px; margin: -6px -4px; }
-  .row-open { padding-block: 10px; margin-block: -10px; }
+  .row-open { padding-block: 11px; margin-block: -11px; }
   .row-open.row-open-aux { inline-size: 40px; block-size: 40px; margin-block: -8px; }
-  .weights-legend button { padding-block: 10px; margin-block: -10px; }
   .kanban-grip { inline-size: 20px; block-size: 20px; }
 }
 

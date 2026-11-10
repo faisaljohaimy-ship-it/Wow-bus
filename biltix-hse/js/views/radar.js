@@ -172,6 +172,13 @@ export default {
         C.glyph(it.tone, 12), h('span', { class: 'legend-key' }), h('span', {}, it.label))));
     }
 
+    /* Phones: telemetry labels wrap onto a second line instead of ellipsising ("5 القيادة ومشاركة العا…");
+       the full text stays in the title attribute everywhere. */
+    const phoneMq = typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 640px)') : null;
+    const WRAP_LABEL = { whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', overflowWrap: 'anywhere' };
+    const UNWRAP_LABEL = { whiteSpace: '', overflow: '', textOverflow: '', overflowWrap: '' };
+    const paintTeleLabel = (label) => Object.assign(label.style, phoneMq && phoneMq.matches ? WRAP_LABEL : UNWRAP_LABEL);
+
     /* Telemetry strips: rebuilt only when the row set changes; otherwise text nodes are patched. */
     const teleRefs = new WeakMap();
     function setTelemetry(ul, rows) {
@@ -183,7 +190,9 @@ export default {
           const text = document.createTextNode('');
           const unit = h('span', { class: 'tele-unit' });
           const value = h('span', { class: 'tele-value' }, text, unit);
-          const li = h('li', { class: 'tele-row' }, h('span', { class: 'tele-label', title: r.label }, r.label), value);
+          const label = h('span', { class: 'tele-label', title: r.label }, r.label);
+          paintTeleLabel(label);
+          const li = h('li', { class: 'tele-row' }, label, value);
           refs.rows.set(r.key, { li, text, unit });
           return li;
         }));
@@ -643,6 +652,8 @@ export default {
     // Telemetry labels are patched in place, so the label set must be rebuilt when the numerals change.
     const onVisibility = () => { if (!destroyed && !document.hidden) tick(); };
     document.addEventListener('visibilitychange', onVisibility);
+    const onPhoneChange = () => { root.querySelectorAll('.tele-label').forEach(paintTeleLabel); };
+    if (phoneMq && typeof phoneMq.addEventListener === 'function') phoneMq.addEventListener('change', onPhoneChange);
 
     subs.push(bus.on('store:change', (p) => {
       const path = String((p && p.path) || '*');
@@ -667,6 +678,7 @@ export default {
     return function cleanup() {
       destroyed = true;
       document.removeEventListener('visibilitychange', onVisibility);
+      if (phoneMq && typeof phoneMq.removeEventListener === 'function') phoneMq.removeEventListener('change', onPhoneChange);
       subs.splice(0).forEach((off) => { try { off(); } catch { /* ignore */ } });
       timers.splice(0).forEach((t) => { clearInterval(t); clearTimeout(t); });
       Object.keys(radars).forEach((k) => { killRadar(radars[k]); radars[k] = null; });

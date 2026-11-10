@@ -5,7 +5,8 @@
  * Contract (ARCHITECTURE.md §4). Highlights:
  *
  *   • State shape: { ...seed, feed, settings, filters, meta:{version, savedAt, anchorDate, anchorNow} }
- *   • Persistence key 'biltix-hse:v1', debounced 2 s, every storage access guarded
+ *   • Persistence key 'biltix-hse:v1', debounced 2 s (max-wait 8 s under a steady stream of live
+ *     updates; also flushed on pagehide / tab hidden), every storage access guarded
  *     (private mode / quota / disabled storage never throws; a quota overflow is surfaced
  *     once through bus 'alert' with tone 'warning'). Only MUTABLE data is written: settings,
  *     filters, meta, the last 30 feed events and, for every user-mutable collection, a
@@ -73,6 +74,8 @@ export const AUDIT_CAP = 500;
 /** Feed events kept in localStorage (the live engines refill the rest). */
 export const PERSIST_FEED_CAP = 30;
 export const PERSIST_DEBOUNCE_MS = 2000;
+/** Upper bound for a burst of changes (live engines mutate every few seconds): the write is never starved. */
+export const PERSIST_MAX_WAIT_MS = 8000;
 const WRITEBACK_MS = 1500;
 const DAY_MS = 86_400_000;
 /** Legacy brand defaults (pre-RTL-2); saved copies of these migrate to '' = "use theme tokens". */
@@ -1095,6 +1098,7 @@ const state = createInitialState();
 
 let persistTimer = null;
 let flushHookInstalled = false;
+let dirtySince = 0;     // epoch ms of the first unsaved non-feed change (max-wait anchor)
 let dirty = false;      // non-feed changes waiting to be written
 let feedDirty = false;  // feed-only changes (ride along with the next write / pagehide)
 let quotaReported = false;
@@ -1134,7 +1138,12 @@ function persistNow() {
 function installFlushHook() {
   if (flushHookInstalled || typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
   flushHookInstalled = true;
-  window.addEventListener('pagehide', () => { if (dirty || feedDirty || persistTimer) persistNow(); });
+  const flushIfPending = () => { if (dirty || feedDirty || persistTimer) persistNow(); };
+  window.addEventListener('pagehide', flushIfPending);
+  // Mobile browsers may kill a backgrounded tab without pagehide: flush when it is hidden.
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushIfPending(); });
+  }
 }
 
 /** Debounced write (≥ 2 s). Feed-only changes never start the timer on their own. */
@@ -1145,9 +1154,14 @@ function schedulePersist(path = '*') {
     feedDirty = true;
     return;
   }
+  const now = Date.now();
+  if (!dirty || !persistTimer) dirtySince = now;
   dirty = true;
   if (persistTimer) clearTimeout(persistTimer);
-  persistTimer = setTimeout(persistNow, PERSIST_DEBOUNCE_MS);
+  // Trailing debounce (>= 2 s after the last change) capped by a max-wait so a steady stream of
+  // live updates still reaches storage every PERSIST_MAX_WAIT_MS.
+  const wait = Math.max(0, Math.min(PERSIST_DEBOUNCE_MS, PERSIST_MAX_WAIT_MS - (now - dirtySince)));
+  persistTimer = setTimeout(persistNow, wait);
 }
 
 function changed(path) {

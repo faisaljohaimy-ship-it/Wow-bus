@@ -125,7 +125,8 @@
     </div>
   </header>
 
-  <div class="alert-banner" id="alertBanner" role="alert" hidden></div>
+  <!-- Visual banner only: the alert is spoken once through #liveAnnouncer, so no role="alert" here. -->
+  <div class="alert-banner" id="alertBanner" role="region" aria-label="تنبيه حرج" hidden></div>
 
   <nav class="rail" id="rail" aria-label="التنقل الرئيسي">
     <ul class="rail-list" id="railList" role="list"></ul>

@@ -48,6 +48,15 @@ const history = new Map();
 /** Connector grid presentation ('cards' | 'list'), remembered for the session. */
 let viewMode = 'cards';
 const PRODUCT_NAME = 'بلتكس Risk AI';
+/** Smooth scrolling only when motion is allowed (html[data-motion] override wins over the OS query). */
+const scrollBehavior = () => {
+  try {
+    const forced = document.documentElement.getAttribute('data-motion');
+    if (forced === 'reduce' || forced === 'reduced') return 'auto';
+    if (forced === 'full') return 'smooth';
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  } catch { return 'auto'; }
+};
 
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -260,24 +269,28 @@ export default {
       refs.latency = h('span', { class: 'int-stat-value' });
       refs.events = h('span', { class: 'int-stat-value' });
       refs.sparkHost = h('div', { class: 'int-spark', 'aria-hidden': 'true' });
-      refs.footSync = h('span', { class: 'int-sync' });
       refs.actions = h('div', { class: 'row gap-2 wrap' });
-      refs.meta = h('div', { class: 'int-meta' });
+      // Meta row: status first (cards mode; list mode moves it into the head), then category / uptime / type / id.
+      refs.metaBadges = h('span', { style: { display: 'contents' } });
+      refs.meta = h('div', { class: 'int-meta' }, refs.metaBadges);
       refs.error = h('div', { class: 'stack', hidden: true });
 
-      /* Compact anatomy: head → 2-line description → meta badges → stats (with the sparkline as a
-         fourth cell) → actions. The footer "last sync" line is dropped: the stat already carries it. */
+      /* Compact anatomy: head (icon + names) → 2-line description → status + meta badges → stats
+         (2×2 in cards, 4-up in list rows; the sparkline is the fourth cell) → actions. The footer
+         "last sync" line is dropped: the stat already carries it. Values wrap instead of colliding. */
       refs.desc = g.description ? h('p', { class: 'int-desc', title: g.description, style: { display: '-webkit-box', webkitBoxOrient: 'vertical', webkitLineClamp: '2', overflow: 'hidden' } }, g.description) : null;
       refs.head = h('div', { class: 'int-head' },
         h('span', { class: 'int-icon', 'aria-hidden': 'true' }, connectorIcon(g, 22)),
         h('div', { class: 'int-titles' }, h('span', { class: 'int-name' }, g.name || g.id), h('span', { class: 'int-vendor' }, g.vendor || '—')),
-        refs.statusHost,
       );
-      refs.stats = h('div', { class: 'int-stats', style: { gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' } },
-        h('div', { class: 'int-stat' }, h('span', { class: 'int-stat-label' }, 'آخر مزامنة'), refs.sync),
-        h('div', { class: 'int-stat' }, h('span', { class: 'int-stat-label' }, 'زمن الاستجابة'), refs.latency),
-        h('div', { class: 'int-stat' }, h('span', { class: 'int-stat-label' }, 'أحداث / ساعة'), refs.events),
-        h('div', { class: 'int-stat' }, h('span', { class: 'int-stat-label' }, 'آخر القراءات'), refs.sparkHost),
+      const wrapText = { whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', overflowWrap: 'anywhere' };
+      [refs.sync, refs.latency, refs.events].forEach((v) => Object.assign(v.style, wrapText));
+      const statLabel = (text) => h('span', { class: 'int-stat-label', style: wrapText }, text);
+      refs.stats = h('div', { class: 'int-stats' },
+        h('div', { class: 'int-stat' }, statLabel('آخر مزامنة'), refs.sync),
+        h('div', { class: 'int-stat' }, statLabel('زمن الاستجابة'), refs.latency),
+        h('div', { class: 'int-stat' }, statLabel('أحداث / ساعة'), refs.events),
+        h('div', { class: 'int-stat' }, statLabel('آخر القراءات'), refs.sparkHost),
       );
       refs.foot = h('div', { class: 'int-foot' }, refs.actions);
       const el = h('article', { class: 'int-card is-compact', 'data-status': g.status || 'configurable', 'data-id': g.id, 'aria-label': g.name || g.id },
@@ -296,13 +309,20 @@ export default {
       el.classList.toggle('is-list', list);
       if (refs.desc) refs.desc.hidden = list;
       refs.meta.hidden = list;
+      // Status badge: end of the head in list rows, first item of the meta row in cards.
+      if (list) { refs.head.appendChild(refs.statusHost); refs.statusHost.style.marginInlineStart = ''; }
+      else { refs.meta.insertBefore(refs.statusHost, refs.meta.firstChild); refs.statusHost.style.marginInlineStart = '0'; }
+      refs.stats.style.gridTemplateColumns = list ? 'repeat(4, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))';
+      refs.stats.style.rowGap = list ? '' : '10px';
       if (list) {
-        Object.assign(el.style, { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px 16px' });
+        Object.assign(el.style, { display: 'flex', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: '10px 16px' });
         Object.assign(refs.head.style, { flex: '1 1 240px', minInlineSize: '0' });
+        refs.error.style.flex = '1 1 100%';
         Object.assign(refs.stats.style, { flex: '1 1 340px', borderBlock: '0', paddingBlock: '0' });
         Object.assign(refs.foot.style, { flex: '0 0 auto', marginInlineStart: 'auto' });
       } else {
-        ['display', 'flexWrap', 'alignItems', 'gap'].forEach((k) => { el.style[k] = ''; });
+        ['display', 'flexDirection', 'flexWrap', 'alignItems', 'gap'].forEach((k) => { el.style[k] = ''; });
+        refs.error.style.flex = '';
         ['flex', 'minInlineSize'].forEach((k) => { refs.head.style[k] = ''; });
         ['flex', 'borderBlock', 'paddingBlock'].forEach((k) => { refs.stats.style[k] = ''; });
         ['flex', 'marginInlineStart'].forEach((k) => { refs.foot.style[k] = ''; });
@@ -345,7 +365,7 @@ export default {
       refs.sparkHost.replaceChildren(sparkFor(g));
       const uptime = g.uptimePct === null || g.uptimePct === undefined || g.uptimePct === '' ? NaN : Number(g.uptimePct);
       const realType = testTypeFor(g);
-      refs.meta.replaceChildren(...[
+      refs.metaBadges.replaceChildren(...[
         badge(CATEGORY_LABEL[g.category] || g.category || 'غير مصنف', 'neutral', { icon: svgIcon('grid', 12) }),
         Number.isFinite(uptime) ? badge(`توافر ${fmt.pct(uptime, uptime % 1 ? 1 : 0)}`, uptime >= 99 ? 'good' : uptime >= 95 ? 'warning' : 'critical') : null,
         realType ? badge({ json: 'JSON API', sheets: 'CSV', supabase: 'REST', webhook: 'Webhook' }[realType], 'brand', { icon: svgIcon('plug', 12) }) : null,
@@ -604,7 +624,7 @@ export default {
     function buildTemplateGuide() {
       const cols = [
         ['code', 'رمز المخاطرة (اختياري، يُولَّد تلقائياً)'], ['siteId', 'معرّف الموقع S1…S6'], ['categoryId', 'فئة الخطر (height, electrical, …)'],
-        ['hazard', 'وصف الخطر'], ['activity', 'النشاط'], ['likelihood', `الاحتمالية ${fmt.num(1)}–${fmt.num(5)}`], ['severity', `الشدة ${fmt.num(1)}–${fmt.num(5)}`],
+        ['hazard', 'وصف الخطر'], ['activity', 'النشاط'], ['likelihood', `الاحتمالية من ${fmt.num(1)} إلى ${fmt.num(5)}`], ['severity', `الشدة من ${fmt.num(1)} إلى ${fmt.num(5)}`],
         ['owner', 'المسؤول'], ['dueDate', 'تاريخ الاستحقاق YYYY-MM-DD'], ['status', 'الحالة (مفتوح، قيد المعالجة، …)'],
       ];
       const table = h('table', { class: 'table is-dense' }, h('caption', { class: 'sr-only' }, 'أعمدة قالب CSV'),
@@ -670,13 +690,13 @@ export default {
       sectionHandled = true;
       const el = dsPanel.el;
       requestAnimationFrame(() => {
-        try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { el.scrollIntoView(); }
+        try { el.scrollIntoView({ behavior: scrollBehavior(), block: 'start' }); } catch { el.scrollIntoView(); }
         el.classList.add('is-highlight');
         el.style.boxShadow = 'var(--glow-accent)';
         el.style.transition = 'box-shadow var(--dur-2) var(--ease)';
         try { el.focus({ preventScroll: true }); } catch { /* ignore */ }
         setTimeout(() => { el.classList.remove('is-highlight'); el.style.boxShadow = ''; }, 2600);
-        try { history.replaceState(null, '', router && typeof router.href === 'function' ? router.href('integrations') : '#/integrations'); } catch { /* ignore */ }
+        try { window.history.replaceState(null, '', router && typeof router.href === 'function' ? router.href('integrations') : '#/integrations'); } catch { /* ignore */ }
       });
     }
 

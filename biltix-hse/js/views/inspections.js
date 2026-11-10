@@ -352,7 +352,8 @@ export const inspectionsView = {
       const completionTable = () => simpleTable('نسبة إنجاز التفتيش حسب الموقع', ['الموقع', 'المنجز', 'الإجمالي', 'النسبة'], completion.map((c) => [c.label, fmt.num(c.done), fmt.num(c.total), fmt.pct(c.value)]));
       const completionChart = withData.length
         ? safeChart(charts, 'barChart', {
-          items: withData.map((c) => ({ id: c.id, label: c.label, value: c.value })),
+          // Bar labels use the short site name (first segment, ≤ 3 words) so none is ellipsised; the table twin keeps the full name.
+          items: withData.map((c) => ({ id: c.id, label: String(c.label || '').split(/\s+[—–]\s+/)[0].split(/\s+/).slice(0, 3).join(' '), value: c.value })),
           // Capped so the bar card stays a close height partner of the findings card beside it.
           horizontal: true, height: Math.min(236, Math.max(160, 32 * withData.length + 24)), valueFormat: (v) => fmt.pct(v), color: 'var(--s1)', showValues: true, maxBars: 6,
           ariaLabel: 'نسبة إنجاز التفتيش حسب الموقع',
