@@ -456,6 +456,9 @@ a.domain-card:hover, button.domain-card:hover, .domain-card.is-clickable:hover {
 .status-badge[data-status="live"]:not(:has(> svg))::before { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
 :root[data-theme="light"] .status-badge[data-status="offline"],
 :root[data-theme="light"] .status-badge.is-offline { --tone-soft: var(--bg-2); --tone-line: var(--line-2); }
+/* On the page plane (view header, over the ambient background art) the tint sits on an opaque surface, so the
+   badge's contrast never depends on the art behind it (views no longer need a local copy of this rule). */
+.view-head .status-badge { background: linear-gradient(var(--tone-soft), var(--tone-soft)), var(--bg-1); }
 .status-badge.is-lg { font-size: var(--fs-sm); min-block-size: 26px; padding-inline: 10px; }
 .status-badge.is-sm { font-size: 11px; min-block-size: 20px; padding: 0 7px 0 6px; gap: 4px; }
 .status-badge.is-sm > svg, .status-badge.is-sm .icon { inline-size: 11px; block-size: 11px; }
@@ -1109,7 +1112,11 @@ input[type="search"].field-control { padding-inline-start: 12px; }
 :root[dir="ltr"] .filter-bar-search input[type="search"].field-control { background-position: 12px 50%; }
 /* :not(.is-scroll) so a chip row marked .chips.is-scroll keeps its one-line swipe layout on phones */
 .filter-bar-group.is-chips .chip-group:not(.is-scroll) { flex-wrap: wrap; gap: 6px; }
-.filter-bar-group.is-segmented .seg { flex: none; }
+/* Segmented groups always fit their row: the label and the control wrap onto two lines when needed, and the
+   control wraps its own buttons instead of scrolling them out of sight (.seg alone hides its scrollbar). */
+.filter-bar-group.is-segmented { flex-wrap: wrap; max-inline-size: 100%; }
+.filter-bar-group.is-segmented .seg { flex: 0 1 auto; flex-wrap: wrap; overflow: visible; min-inline-size: 0; }
+.filter-bar-group.is-segmented .seg-btn { flex: 1 1 auto; }
 .filter-bar-group.is-select .field-control { min-inline-size: 150px; }
 .filter-bar .seg { padding: 2px; }
 .filter-bar .seg-btn { min-block-size: calc(var(--ctl-h-sm) - 6px); font-size: var(--fs-sm); }
@@ -1138,6 +1145,10 @@ input[type="search"].field-control { padding-inline-start: 12px; }
   .filter-bar .field-control { inline-size: 100%; min-inline-size: 0; max-inline-size: none; }
   .filter-bar-group.is-select .field-control { min-inline-size: 0; } /* beats the 150px desktop minimum (same specificity, later) */
   .filter-bar-search { flex-basis: 100%; max-inline-size: none; }
+  /* Phones: a segmented group takes its own row and its control fills it; a label longer than one button wraps. */
+  .filter-bar-group.is-segmented { flex-basis: 100%; }
+  .filter-bar-group.is-segmented .seg { flex: 1 1 auto; }
+  .filter-bar-group.is-segmented .seg-btn { min-inline-size: 0; white-space: normal; text-align: center; }
 }
 
 /* --------------------------------------------------------------------------
@@ -1476,6 +1487,26 @@ dialog.modal.video-dialog, .video-dialog { inline-size: min(1040px, 100%); }
 .toast::before { content: ""; position: absolute; inset-block: 0; inset-inline-start: 0; inline-size: 3px; background: var(--tone, var(--line-strong)); }
 .toast.is-in { opacity: 1; transform: none; }
 .toast.is-leaving { opacity: 0; transform: translateY(6px) scale(.98); }
+/* Docked: while a modal / drawer is open, components.js moves #toasts into the topmost open dialog, in flow between
+   its body and its footer. A toast then never covers the dialog's controls (a phone drawer is full width, so a
+   floating stack had no free edge) and stays outside the inert page, so role=status / alert are still announced. */
+dialog > .toast-stack.is-docked {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  flex: none;
+  inline-size: auto;
+  max-block-size: min(40vh, 300px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-2) var(--space-5);
+  border-block-start: 1px solid var(--line);
+  background: var(--bg-1);
+  pointer-events: auto;
+}
+dialog > .toast-stack.is-docked:empty { display: none; }
+dialog > .toast-stack.is-docked .toast { box-shadow: none; }
+:root[data-theme="light"] dialog > .toast-stack.is-docked { background: var(--bg-2); }
 .toast-icon { flex: none; inline-size: 18px; block-size: 18px; margin-block-start: 1px; color: var(--tone-ink, var(--ink-2)); }
 .toast.tone-neutral .toast-icon { color: var(--ink-2); }
 .toast-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); line-height: 1.5; }
@@ -2707,6 +2738,7 @@ a.urgent-item:hover, button.urgent-item:hover, .urgent-item.is-clickable:hover {
 
 @media (max-width: 959.98px) {
   .toast-stack { inset-inline-start: var(--space-4); inset-block-end: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + var(--space-3)); }
+  dialog > .toast-stack.is-docked { padding-inline: var(--space-4); }
   .card { --card-pad: var(--space-4); }
   .modal-backdrop { padding: var(--space-3); align-items: end; }
   dialog.modal { max-block-size: calc(100dvh - 24px); }

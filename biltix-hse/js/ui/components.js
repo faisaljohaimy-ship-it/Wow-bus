@@ -1523,8 +1523,11 @@ function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', 
       isOpen = true;
       previouslyFocused = document.activeElement;
       overlayHost().appendChild(backdrop);
+      // Dock the toast stack inside this dialog before the page goes inert (see dockToasts()).
+      openDialogs.push(dialog);
+      dockToasts();
       Array.from(document.body.children).forEach((child) => {
-        if (child === backdrop || child.contains(backdrop) || child.tagName === 'SCRIPT') return;
+        if (child === backdrop || child.contains(backdrop) || child.tagName === 'SCRIPT' || child.id === 'toasts') return;
         if (!child.inert) { child.inert = true; inerted.push(child); }
       });
       document.body.classList.add(`has-${kind}`);
@@ -1553,6 +1556,9 @@ function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', 
       backdrop.removeEventListener('click', onBackdropClick);
       dialog.removeEventListener('cancel', onCancel);
       inerted.splice(0).forEach((n) => { n.inert = false; });
+      const at = openDialogs.indexOf(dialog);
+      if (at >= 0) openDialogs.splice(at, 1);
+      dockToasts();
       document.body.classList.remove(`has-${kind}`);
       const animated = !isModal && motion.enabled();
       const slide = animated ? motion.drawer(dialog, false) : null;
@@ -1698,10 +1704,39 @@ export function menu(anchor, items = [], { ariaLabel = null } = {}) {
 /* Toasts                                                              */
 /* ------------------------------------------------------------------ */
 
+/** Open modals / drawers, oldest first (overlay() pushes on open and removes on close). */
+const openDialogs = [];
+
+/**
+ * While a modal or drawer is open the page behind it is inert, which would also take the toasts out of the
+ * accessibility tree, and a floating stack would sit over the dialog's own controls (on a phone the drawer is
+ * full width, so there is no free edge). The stack is therefore docked inside the topmost open dialog, in flow
+ * between its body and its footer (css: dialog > .toast-stack.is-docked), and returns to its place in <body>
+ * when the last dialog closes. Toast roles (status / alert) are unchanged.
+ */
+function dockToasts() {
+  const stack = document.getElementById('toasts');
+  if (!stack) return;
+  const top = openDialogs[openDialogs.length - 1] || null;
+  if (top && top.isConnected) {
+    const foot = Array.from(top.children).find((n) => n.classList && (n.classList.contains('drawer-foot') || n.classList.contains('modal-foot'))) || null;
+    if (stack.parentElement !== top || stack.nextElementSibling !== foot) top.insertBefore(stack, foot);
+    stack.classList.add('is-docked');
+    stack.inert = false;
+    return;
+  }
+  stack.classList.remove('is-docked');
+  if (stack.parentElement === document.body) return;
+  const modals = document.getElementById('modals');
+  if (modals && modals.parentElement === document.body) document.body.insertBefore(stack, modals);
+  else document.body.appendChild(stack);
+}
+
 function toastStack() {
   let stack = document.getElementById('toasts');
   if (!stack) { stack = h('div', { id: 'toasts' }); document.body.appendChild(stack); }
   stack.classList.add('toast-stack');
+  if (openDialogs.length && (!stack.classList.contains('is-docked') || stack.parentElement !== openDialogs[openDialogs.length - 1])) dockToasts();
   // Each toast carries its own role=status / role=alert; the container itself is not a
   // live region, so a toast is announced exactly once (RTL-18).
   if (stack.hasAttribute('aria-live')) stack.removeAttribute('aria-live');

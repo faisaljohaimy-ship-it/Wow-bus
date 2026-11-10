@@ -99,6 +99,13 @@ disabled (dashed, 55 %), readonly (bg-2, quiet border). `select.field-control` d
 chevron on the inline-end. `.input-icon` wraps a leading search icon. `.switch[role=switch][aria-checked]`,
 `.form-grid` (auto-fit 220 px), `.form-actions`, `.form-section-title`, `.form-error-summary`.
 
+**Note — native date / time inputs.** `input[type=date|time|datetime-local]` show their value in the
+browser's locale format (order, separators, digits, 12/24 h), whatever the app language or numerals
+setting. This is a platform limitation: the control's text cannot be restyled or localised from CSS/JS,
+and its `value` is always ISO (`2026-11-10`). Everywhere else the app formats every displayed date and
+time through `fmt` (`fmt.date`, `fmt.dateTime`, `fmt.time`; Asia/Riyadh), so do not copy an input's
+display format into other UI.
+
 ## Segmented, chips, tabs
 
 - `.seg` > `.seg-btn[aria-pressed|aria-checked|aria-selected]` (`.seg-sm`, `.is-block`). Dark:
@@ -114,7 +121,8 @@ chevron on the inline-end. `.input-icon` wraps a leading search icon. `.switch[r
 `.filter-bar-reset` (ghost, disabled when nothing is filtered). Groups carry their type:
 `.filter-bar-group.is-chips|is-select|is-segmented`; the search input gets a per-theme magnifier
 (`--search-glyph`) at the inline-start. `.is-plain` drops the surface.
-Below 640 px of content, groups pair up and search takes the full row.
+Below 640 px of content, groups pair up and search takes the full row; a segmented group takes its own
+row and its `.seg` wraps its buttons (never a hidden scroll), so views need no per-view width patches.
 **Do** place it directly above what it filters. **Don't** hide the active count.
 
 ## Tables — `.table-wrap` > `table.table`
@@ -157,7 +165,10 @@ holding `video[controls]` (captions styled via `::cue`) or `button.video-poster`
   (pure CSS, not inside scrolling containers). Collapsed rail: `.rail-tip`.
 - `.toast-stack` > `.toast.tone-*.is-in` (`.toast-icon`, `.toast-text`: `.toast-title`,
   `.toast-msg`; `.toast-action`, `.toast-close`). Tone stripe at inline-start. Toasts never claim a
-  success that did not happen; simulated operations say "Simulated".
+  success that did not happen; simulated operations say "Simulated". While a modal or drawer is open,
+  components.js docks `#toasts` inside the topmost dialog (`.toast-stack.is-docked`, in flow between the
+  body and the footer): a toast never covers the dialog's controls and stays outside the inert page, so
+  its `role=status|alert` is still announced. It returns to `<body>` when the dialog closes.
 
 ## Kanban
 
@@ -181,6 +192,13 @@ for data that is already local.
 `.priority-rank` (auto-numbered, Arabic-Indic with `data-numerals="arab"`) + `.priority-main`
 (`.priority-title`, `.priority-meta`) + `.priority-side` (`.rating`, `.priority-due[.is-overdue]`) +
 optional `.priority-action`. Rows ≥ 60 px; re-flows in narrow cards.
+
+**Note — put `.priority-item` on the `<li>`.** The class (with `.tone-*`, `.is-clickable`,
+`.is-overdue`) goes on the list child itself, not on an `<a>` or `<button>` inside the `<li>`: the row
+separator is removed by `.priority-item:last-child`, and an `<a>` that is the only child of its `<li>`
+is always `:last-child`, so every separator disappears (the rank counter and the grid also expect the
+list child). For a clickable row use `li.priority-item.is-clickable` and put the link / button inside
+`.priority-main` or `.priority-action`.
 
 ## Lifecycle — `ol.lifecycle` > `li.lifecycle-step[data-state]`
 
@@ -211,7 +229,10 @@ hover / focus thickens the link; `.is-unassessed` rows (no residual yet) draw a 
 ring. Legend key for the hollow marker: `.legend-key.is-ring`. Radar frames: `.radar-status`
 (top inline-start) and `.radar-caption` (bottom inline-end, `unicode-bidi: plaintext` so Latin
 captions read LTR without moving the chip). Sparklines: `.spark`
-(`.is-up`, `.is-down` use the status text tokens).
+(`.is-up`, `.is-down` use the status text tokens). Segmented bar (`.chart-segbar`): inside value labels
+use the better of the two inks for the segment's own fill, or an opaque plate when neither reaches
+4.5:1; hover / focus / active draw a ring and never brighten or dim a fill, so the label keeps that
+contrast in every state (labels that do not fit are dropped; tooltip and table carry the value).
 
 ## Print (css/print.css)
 

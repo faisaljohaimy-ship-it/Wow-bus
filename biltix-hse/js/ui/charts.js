@@ -270,11 +270,11 @@ function luminance(rgb) {
 }
 
 /**
- * Ink class for text placed inside a fill: light ink by default, near-black on
- * light fills (yellow / warning / light sequential steps). Threshold chosen so the
- * eight categorical steps and status tones match the dataviz palette rule.
+ * Ink for a label inside a fill (segmented bar values, heatmap cells): the better of --ink-on-light /
+ * --ink-on-dark against the fill, or `plate: true` when neither reaches 4.5:1 (the label then sits on an
+ * opaque .cell-plate). Fills never change luminance on hover / focus / active (css/charts.css), so the
+ * ratio computed here holds in every state.
  */
-/** Ink for a label inside a fill: the better of the two inks, or a plate when neither reaches 4.5:1. */
 function insideInk(cssColor) {
   const bg = resolveColor(cssColor);
   if (!bg) return { cls: 'is-on-dark', plate: true };
@@ -287,11 +287,6 @@ function insideInk(cssColor) {
   return { cls: cDark >= cLight ? 'is-on-light' : 'is-on-dark', plate: Math.max(cDark, cLight) < 4.5 };
 }
 
-function inkOn(cssColor) {
-  const rgb = resolveColor(cssColor);
-  if (!rgb) return 'is-on-dark';
-  return luminance(rgb) > 0.28 ? 'is-on-light' : 'is-on-dark';
-}
 
 /* ------------------------------------------------------------------------- */
 /* Palette                                                                    */
@@ -1425,10 +1420,18 @@ export function heatmap(opts = {}) {
           style: { fill: color || 'var(--bg-2)', stroke: color ? 'none' : 'var(--line)', strokeWidth: color ? '0' : '1' },
         }, cellsG);
         if (clickable) rect.style.cursor = 'pointer';
-        if (label && measure(label, 12, { weight: 600 }) <= cell - 8 && cell >= 22) {
+        const lw = label ? measure(label, 12, { weight: 600 }) : 0;
+        if (label && lw <= cell - 8 && cell >= 22) {
+          // Same rule as the segmented bar: the better of the two inks for this fill, or an opaque plate
+          // when neither reaches 4.5:1 (white on a mid green was 3.2:1 with the old luminance threshold).
+          const ink = empty ? null : insideInk(color);
+          if (ink && ink.plate) {
+            const pw = Math.min(cell - 4, lw + 10);
+            svgEl('rect', { x: r2(x + cell / 2 - pw / 2), y: r2(y + cell / 2 - 9), width: r2(pw), height: 18, rx: 4, class: 'cell-plate' }, cellsG);
+          }
           svgEl('text', {
             x: x + cell / 2, y: y + cell / 2 + 4, 'text-anchor': 'middle',
-            class: ['cell-label', empty ? 'is-empty' : inkOn(color)], text: label,
+            class: ['cell-label', empty ? 'is-empty' : (ink.plate ? 'is-on-plate' : ink.cls)], text: label,
           }, cellsG);
         }
       }

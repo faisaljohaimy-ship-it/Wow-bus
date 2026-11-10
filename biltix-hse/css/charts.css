@@ -536,12 +536,17 @@ button.legend-item:hover { color: var(--ink-1); }
 
 /* SVG heatmap */
 .matrix rect.cell, .chart rect.cell { stroke: var(--bg-1); stroke-width: 2; transition: filter var(--dur-1) var(--ease); }
-.chart rect.cell.mark:hover, .chart rect.cell.mark:focus-visible { filter: brightness(1.15); }
+/* Cell labels are inked for the cell's own fill (charts.js insideInk), so a hovered / active cell is ringed instead
+   of brightened, and the other cells are not dimmed (both moved labels below 4.5:1). Coloured cells carry an
+   inline stroke:none, hence an outline ring; keyboard focus keeps the --focus ring (declared last). */
+.chart rect.cell.mark:hover, .chart rect.cell.mark.is-active { filter: none; outline: 2px solid var(--ink-1); outline-offset: -2px; }
+.chart rect.cell.mark:focus-visible { filter: none; outline: 2px solid var(--focus); outline-offset: 1px; }
+.chart-heatmap.has-active .mark:not(.is-active):not(:hover) { opacity: 1; }
 .chart text.cell-label { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; pointer-events: none; }
 .chart text.cell-label.is-on-light { fill: var(--ink-on-light); }
 .chart text.cell-label.is-on-dark { fill: var(--ink-on-dark); }
-/* Labels inside mid-tone segments (e.g. --s1) cannot reach 4.5:1 with either ink at 12 px: a soft
-   halo in the opposite ink lifts legibility (paint-order keeps the glyph shape). */
+/* A soft halo in the opposite ink smooths the glyph edge (paint-order keeps the glyph shape); the ≥ 4.5:1
+   guarantee comes from the ink choice and the .cell-plate, not from the halo. */
 .chart text.cell-label.is-on-dark { paint-order: stroke fill; stroke: rgba(4, 8, 15, .55); stroke-width: 3px; stroke-linejoin: round; }
 .chart text.cell-label.is-on-light { paint-order: stroke fill; stroke: rgba(255, 255, 255, .55); stroke-width: 3px; stroke-linejoin: round; }
 .chart text.cell-label.is-empty { fill: var(--ink-3); font-weight: 500; }
@@ -585,6 +590,14 @@ button.legend-item:hover { color: var(--ink-1); }
 /* Segmented bar (replaces donuts). The .segbar-part rules style the HTML bar; the SVG bar (charts.segmentedBar) reuses the
    class on <rect>, so rect.segbar-part drops the HTML background (it confused contrast checkers; SVG paints with fill). */
 rect.segbar-part { background: none; }
+/* Inside labels (charts.segmentedBar → insideInk) are chosen against the segment's own fill, so the SVG bar never
+   changes a fill's luminance: no brightness filter on hover / focus / active (white on a brightened --s1 fell to
+   4.0:1) and no dimming of the other segments (labels on a 55 % faded fill fell to 2.2:1). A ring marks the
+   segment instead; keyboard focus keeps the --focus outline from .mark:focus-visible. */
+.chart-segbar rect.segbar-part.mark:hover,
+.chart-segbar rect.segbar-part.mark:focus-visible,
+.chart-segbar rect.segbar-part.mark.is-active { filter: none; stroke: var(--ink-1); stroke-width: 2px; }
+.chart-segbar.has-active .mark:not(.is-active):not(:hover) { opacity: 1; }
 .segbar { display: flex; flex-direction: column; gap: 8px; }
 .segbar-track { display: flex; block-size: 28px; border-radius: 8px; overflow: hidden; background: var(--bg-3); }
 .segbar-track.is-thin { block-size: 10px; border-radius: var(--radius-pill); }
