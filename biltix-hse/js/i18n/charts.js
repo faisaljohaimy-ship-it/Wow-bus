@@ -43,6 +43,11 @@ export default {
       notAssessed: 'لم يُقيَّم',
       rowAria: '{label}: {fromLabel} {from}، {toLabel} {to}',
     },
+    gauge: {
+      trend: 'آخر {weeks} أسبوعاً: من {first} إلى {last}، {direction}.',
+      noTrend: 'اتجاه آخر {weeks} أسبوعاً غير متاح بعد.',
+      dir: { up: 'في ارتفاع', down: 'في انخفاض', flat: 'دون تغيير' },
+    },
   },
   en: {
     sep: ', ',
@@ -82,6 +87,11 @@ export default {
       change: 'Change',
       notAssessed: 'Not assessed',
       rowAria: '{label}: {fromLabel} {from}, {toLabel} {to}',
+    },
+    gauge: {
+      trend: 'Last {weeks} weeks: from {first} to {last}, {direction}.',
+      noTrend: 'Trend for the last {weeks} weeks not available yet.',
+      dir: { up: 'rising', down: 'falling', flat: 'unchanged' },
     },
   },
 };

@@ -249,6 +249,38 @@ use the better of the two inks for the segment's own fill, or an opaque plate wh
 4.5:1; hover / focus / active draw a ring and never brighten or dim a fill, so the label keeps that
 contrast in every state (labels that do not fit are dropped; tooltip and table carry the value).
 
+**Ring gauge** (`charts.ringGauge`, v3.1) replaces the line sparkline inside the cockpit's executive
+metric tiles and domain cards. `span.ring-gauge[data-size][data-tone][data-state]` (aria-hidden, fixed
+square box: `sm` 64, `md` 80, `lg` 104, `xl` 120 px, so nothing shifts when data arrives) draws:
+- a **ring** for one honest ratio, 0 to 1 (`gaugeRatio(part, whole)`; a zero or unknown whole gives
+  `value: null` and the empty state: dashed neutral track, no arc, centre "—"). The cockpit uses the
+  numbers the tile already shows: open risks = open of the period's risks (open, plus closed or
+  dismissed in the period: `psel.metrics().openRisks` of `psel.registerRows().length`), critical =
+  red of open, overdue = overdue of open mitigation actions (total minus closed), completion = closed
+  of all actions, domain card = score of 100 in the rating tone (the rating badge keeps icon + word);
+- **radial bars** around it, one per week (`gaugeBars(values, { max })`): oldest first, length
+  proportional to the value from zero (fixed `max` 100 for scores and percentages, otherwise the
+  highest week is full length), unknown weeks keep an empty slot, the current week is the tone colour
+  and slightly wider, earlier weeks a lighter step of the same hue;
+- an optional centre value (the ring's own percentage; on domain cards the card's visible score sits
+  in the centre instead, outside the aria-hidden gauge).
+The ring is named in the gauge's `title` (ratio + how to read the bars) and, on tiles, in a visible
+caption under the number ("of 58 open risks"); each tile and card carries an sr-only sentence with the
+ring value and the trend (`trendSentence`: "Last 12 weeks: from 7 to 23, rising.").
+**Geometry and direction:** a dial, so ring progress and bar order run clockwise from 12 o'clock in
+both Arabic and English (the root is `direction: ltr`; only the centre text follows the document
+direction). **Motion:** HTML layers only, Web Animations on `transform` / `opacity` (composited, no
+per-frame paint): the ring is two half-rings rotating inside half-width clips plus a rotating end cap,
+driven by one set of sampled keyframes with an exact keyframe at 180° (`ringKeyframes`); the bars
+scale along their length (`scaleY`, origin at the inner end). Entrance once per render, when the
+gauge is first on screen: 900 ms ease-out sweep with the centre counting in step, bars growing 32 ms
+apart. Later values (filters, live data) animate from the shown value to the new one in 620 / 300 ms
+and never replay the entrance. Idle: one soft sheen orbits the ring every 11 s (transform only), only
+while the gauge is on screen; none under reduced motion (OS or setting), the Static background or
+forced colours. Print settles every gauge to its final state (`beforeprint`) and hides the sheen.
+**Do** pass ratios computed from the same selector values the tile shows. **Don't** use the gauge for
+a value without a meaningful whole, and don't colour-code it without a text or badge equivalent.
+
 ## Print (css/print.css)
 
 A4, 16 mm margins, page numbers ("n / N") from page 2. Chrome, background layers, filters and

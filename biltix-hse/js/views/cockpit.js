@@ -10,8 +10,11 @@
  *      (shared/risk-form.js) and "How the platform works" (explainer dialog, lazy <video preload=none>).
  *      Under it the cockpit filter bar (domain, rating, status, owner, search) — it scopes every section.
  *   B  four executive metrics (psel.metrics): open, critical, overdue mitigation, completion (n of N),
- *      deltas vs the previous period with the right good/bad direction, 12-week sparkline, click → register lens.
- *   C  five domain cards (psel.categoryScores) + consolidated score and the weights link (#/settings?section=weights).
+ *      deltas vs the previous period with the right good/bad direction, a ring gauge for the tile's headline ratio
+ *      (open of the period's risks, red of open, overdue of open actions, closed of all actions) with the 12 weekly
+ *      values as radial bars (charts.ringGauge), click → register lens.
+ *   C  five domain cards (psel.categoryScores): a dial per card (ring = score / 100 in the rating colour, radial bars =
+ *      the 12-week score trend, the score in the centre) + consolidated score and the weights link (#/settings?section=weights).
  *   D  analysis: severity distribution, likelihood × impact matrix (inherent / residual; a cell filters the
  *      register and scrolls to it), 12-week trend as small multiples (no dual axis), inherent vs residual dumbbell.
  *   E  priority actions (psel.priorityActions, psel.nextAction) with an open-details button.
@@ -35,7 +38,7 @@ import {
   loadingState, offlineState, filterBar, statusBadge, modal, toast,
 } from '../ui/components.js';
 import { motion as motionLib } from '../ui/motion.js';
-import { charts as chartsLib } from '../ui/charts.js';
+import { charts as chartsLib, gaugeRatio } from '../ui/charts.js';
 import { fmt as fmtLib } from '../core/fmt.js';
 import { store as storeLib } from '../core/store.js';
 import { bus as busLib } from '../core/bus.js';
@@ -119,18 +122,44 @@ const STYLE_TEXT = `
 .view-cockpit .ck-cons-scale { font-size: var(--fs-sm); color: var(--ink-3); }
 .view-cockpit .metric-tile { align-content: start; }
 .view-cockpit .metric-tile .metric-label { text-wrap: balance; }
-.view-cockpit .ck-metric-sub { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin-block-start: 2px; }
-.view-cockpit .ck-metric-sub .progress { block-size: 6px; }
 .view-cockpit .ck-metric-unit { font-size: var(--fs-sm); font-weight: 500; color: var(--ink-3); }
 .view-cockpit .domain-card.is-selected { border-color: color-mix(in srgb, var(--brand) 60%, var(--line)); box-shadow: var(--elev-1), 0 0 0 1px color-mix(in srgb, var(--brand) 40%, transparent); }
-.view-cockpit .ck-domain-scoreline { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
-.view-cockpit .ck-domain-scoreline .domain-score { justify-content: flex-start; }
 .view-cockpit .metric-tile .ck-metric-unit { font-size: var(--fs-xs); white-space: nowrap; }
 .view-cockpit .metric-tile .metric-value { flex-wrap: wrap; row-gap: 2px; }
+/* Gauge tiles: number, ratio caption and delta in the first column; the ring gauge (fixed box) at the inline end. */
+.view-cockpit .metric-tile.has-gauge {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "head head" "value gauge" "ratio gauge" "foot gauge";
+  grid-template-rows: auto auto auto 1fr;
+  align-items: start;
+  row-gap: 6px;
+}
+.view-cockpit .metric-tile.has-gauge .metric-head { margin-block-end: 2px; }
+.view-cockpit .metric-tile.has-gauge .metric-foot { align-self: end; margin-block-start: 2px; }
+.view-cockpit .ck-gauge { grid-area: gauge; align-self: center; justify-self: end; display: block; line-height: 0; }
+.view-cockpit .ck-ratio { grid-area: ratio; min-inline-size: 0; font-size: var(--fs-xs); line-height: 1.4; color: var(--ink-2); }
+.view-cockpit .ck-ratio.is-empty { color: var(--ink-3); }
+@container main (max-width: 560px) {
+  .view-cockpit .metric-tile.has-gauge { grid-template-areas: "head head" "value gauge" "ratio ratio" "foot foot"; grid-template-rows: auto auto auto auto; align-items: center; }
+  .view-cockpit .metric-tile.has-gauge .ring-gauge { --g-size: 64px; --g-ring: 40px; --g-stroke: 5px; --g-bar-in: 24px; --g-bar-len: 7px; --g-bar-w: 3px; --g-center: 11px; }
+}
+/* Domain dial: the visible score sits in the ring's centre (stacked in one grid cell; the gauge itself is aria-hidden). */
+.view-cockpit .domain-card.has-gauge { container: ck-domain / inline-size; }
+.view-cockpit .ck-domain-body { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); min-inline-size: 0; }
+.view-cockpit .ck-dial { display: grid; place-items: center; flex: none; }
+.view-cockpit .ck-dial > * { grid-area: 1 / 1; }
+.view-cockpit .ck-dial .domain-score.ck-dial-score { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; direction: ltr; }
+.view-cockpit .ck-dial .ck-dial-score .t-metric { font-size: var(--fs-3xl); line-height: 1; }
+.view-cockpit .ck-dial .ck-dial-score .domain-scale { font-size: 11px; line-height: 1; }
+.view-cockpit .ck-domain-side { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 12px; inline-size: 100%; min-inline-size: 0; }
+.view-cockpit .ck-domain-side .domain-meta { justify-content: center; }
+@container ck-domain (min-width: 300px) {
+  .view-cockpit .ck-domain-body { flex-direction: row; justify-content: flex-start; gap: var(--space-5); }
+  .view-cockpit .ck-domain-side { flex-direction: column; align-items: flex-start; justify-content: center; inline-size: auto; flex: 1 1 auto; }
+  .view-cockpit .ck-domain-side .domain-meta { justify-content: flex-start; }
+}
 .view-cockpit .domain-card .ck-sel-tag { font-size: 11px; font-weight: 600; color: var(--brand-text); }
 .view-cockpit .domain-foot svg { inline-size: 14px; block-size: 14px; }
-.view-cockpit .domain-spark .spark { display: block; }
-.view-cockpit .domain-spark svg { inline-size: 100%; }
 .view-cockpit .ck-analysis { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--gap); align-items: stretch; }
 .view-cockpit .ck-analysis > * { min-inline-size: 0; }
 .view-cockpit .ck-sev { grid-column: span 4; }
@@ -368,6 +397,7 @@ export default {
     const bus = ctx.bus || busLib;
     const fmt = ctx.fmt || fmtLib;
     const charts = ctx.charts && typeof ctx.charts.sparkline === 'function' ? ctx.charts : chartsLib;
+    const gaugeLib = typeof charts.ringGauge === 'function' && typeof charts.trendSentence === 'function' ? charts : chartsLib;
     const psel = ctx.psel && typeof ctx.psel.metrics === 'function' ? ctx.psel : pselLib;
     const status = ctx.status && typeof ctx.status.source === 'function' ? ctx.status : statusLib;
     const motion = ctx.motion && typeof ctx.motion.enter === 'function' ? ctx.motion : motionLib;
@@ -792,6 +822,10 @@ export default {
 
     const metricsBlock = (() => {
       const days = () => i18n.tn('core.filters.days', Number(globalFilters().range) || 30);
+      const gaugeBarsTitle = (pct) => t('metrics.gauge.bars', {
+        weeks: fmt.num(WEEKS), twelve: fmt.num(12),
+        scale: pct ? t('metrics.gauge.scale100', { zero: fmt.num(0), hundred: fmt.pct(100) }) : t('metrics.gauge.scaleMax'),
+      });
       const specs = [
         { key: 'openRisks', label: () => t('metrics.open'), icon: 'shield-alert', tone: 'brand', lens: 'open', action: () => t('metrics.actionOpen') },
         { key: 'criticalRisks', label: () => t('metrics.critical'), icon: 'alert-octagon', tone: 'critical', lens: 'critical', action: () => t('metrics.actionCritical') },
@@ -803,30 +837,53 @@ export default {
       const el = h('section', { class: ['ck-section', 'ck-metrics'], 'aria-labelledby': heading.id }, heading, grid);
       const tiles = specs.map((spec) => {
         const valueEl = h('span', { class: 't-metric' });
-        const unitEl = spec.key === 'criticalRisks' ? h('span', { class: 'ck-metric-unit' }, t('metrics.criticalUnit')) : (spec.pct ? h('span', { class: 'ck-metric-unit' }) : null);
-        const spark = charts.sparkline({ values: [], width: 96, height: 30, color: 'var(--ink-3)' });
+        const unitEl = spec.key === 'criticalRisks' ? h('span', { class: 'ck-metric-unit' }, t('metrics.criticalUnit')) : null;
+        // Ring = the tile's headline ratio (named in the tooltip and the caption under the number); radial bars =
+        // the 12 weekly "as of" values of the same metric (they arrive on idle, see weeklySeries).
+        const gauge = gaugeLib.ringGauge({
+          size: 'md', tone: spec.tone, center: true, format: (p) => fmt.pct(p),
+          title: `${t(`metrics.gauge.ring.${spec.key}`)} ${gaugeBarsTitle(spec.pct)}`,
+        });
+        const ratioEl = h('span', { class: 'ck-ratio' });
+        const gaugeSr = h('span', { class: 'sr-only' });
         const arrowHost = h('span', { class: 'ck-delta-arrow', 'aria-hidden': 'true' });
         const deltaText = h('bdi', { dir: 'ltr' });
         const deltaSr = h('span', { class: 'sr-only' });
         const delta = h('span', { class: 'delta' }, arrowHost, deltaText, deltaSr);
         const helper = h('span', { class: 'metric-helper' });
         const actionSr = h('span', { class: 'sr-only' });
-        const progressBar = spec.pct ? h('div', { class: ['progress', 'tone-good'], 'aria-hidden': 'true' }, h('div', { class: 'progress-bar' })) : null;
-        const sub = spec.pct ? h('div', { class: 'ck-metric-sub' }, progressBar) : null;
-        const subText = spec.pct ? unitEl : null;
         const tile = h('button', {
-          type: 'button', class: ['metric-tile', `tone-${spec.tone}`, 'is-clickable'], 'data-metric': spec.key,
+          type: 'button', class: ['metric-tile', `tone-${spec.tone}`, 'is-clickable', 'has-gauge'], 'data-metric': spec.key,
           onClick: () => { if (spec.lens) showInRegister({ lens: spec.lens }); else navigate('tasks'); },
         },
         h('div', { class: 'metric-head' }, h('span', { class: 'metric-label' }, spec.label()), h('span', { class: 'metric-icon', 'aria-hidden': 'true' }, svgIcon(spec.icon, 16))),
         h('div', { class: 'metric-value' }, valueEl, unitEl),
-        h('span', { class: 'metric-spark', 'aria-hidden': 'true', title: t('metrics.sparkHint', { weeks: fmt.num(WEEKS) }) }, spark.el),
+        h('span', { class: 'ck-gauge' }, gauge.el),
+        ratioEl,
         h('div', { class: 'metric-foot' }, delta, helper),
-        sub, actionSr);
-        chartsToDestroy.push(spark);
+        gaugeSr, actionSr);
+        chartsToDestroy.push(gauge);
         grid.appendChild(tile);
-        return { spec, tile, valueEl, spark, delta, arrowHost, deltaText, deltaSr, helper, subText, progressBar, actionSr, value: null, dir: null };
+        return { spec, tile, valueEl, gauge, ratioEl, gaugeSr, delta, arrowHost, deltaText, deltaSr, helper, actionSr, value: null, dir: null, ratio: null, series: null };
       });
+
+      /** The ring's ratio per tile, from the same psel numbers the tile shows (null = honest empty state). */
+      function ratioOf(spec, dd) {
+        const m = dd.metrics;
+        const mc = m.mitigationCompletion || { closed: 0, total: 0, pct: 0 };
+        switch (spec.key) {
+          case 'openRisks': return gaugeRatio(m.openRisks, dd.all.length);                         // open of (open + closed/dismissed in the period)
+          case 'criticalRisks': return gaugeRatio(m.criticalRisks, m.openRisks);                   // red of open
+          case 'overdueMitigations': return gaugeRatio(m.overdueMitigations, num(mc.total) - num(mc.closed)); // overdue of open actions
+          default: return gaugeRatio(mc.closed, mc.total);                                           // closed of all actions
+        }
+      }
+      function srText(tile) {
+        const r = tile.ratio;
+        const ring = r && r.value !== null ? t('metrics.gauge.sr', { pct: fmt.pct(r.pct) }) : t('metrics.gauge.srEmpty');
+        const trend = Array.isArray(tile.series) ? ` ${gaugeLib.trendSentence(tile.series, { format: (v) => (tile.spec.pct ? fmt.pct(v) : fmt.num(v)) })}` : '';
+        setText(tile.gaugeSr, ` — ${ring}${trend}`);
+      }
 
       const formatValue = (spec, v) => (spec.pct ? fmt.pct(v) : fmt.num(v));
       function update(dd, { live = false } = {}) {
@@ -851,16 +908,26 @@ export default {
           setText(tile.deltaText, dir === 'flat' ? fmt.num(0) : signedLtr(fmt, dv));
           setText(tile.deltaSr, dir === 'flat' ? '' : ` (${good ? t('metrics.better') : t('metrics.worse')})`);
           setText(tile.helper, spec.pct ? t('metrics.vsPreviousPts', { days: days() }) : t('metrics.vsPrevious', { days: days() }));
+          const ratio = ratioOf(spec, dd);
+          tile.ratio = ratio;
           if (spec.pct) {
-            const mc = m.mitigationCompletion || { closed: 0, total: 0, pct: 0 };
-            setText(tile.subText, mc.total ? t('metrics.completionUnit', { closed: fmt.num(mc.closed), total: fmt.num(mc.total) }) : t('metrics.completionNone'));
-            tile.progressBar.firstChild.style.inlineSize = `${Math.max(0, Math.min(100, num(mc.pct)))}%`;
+            setText(tile.ratioEl, ratio.value !== null ? t('metrics.completionUnit', { closed: fmt.num(ratio.part), total: fmt.num(ratio.whole) }) : t('metrics.completionNone'));
+          } else {
+            setText(tile.ratioEl, ratio.value !== null ? t(`metrics.gauge.ratio.${spec.key}`, { whole: fmt.num(ratio.whole) }) : t(`metrics.gauge.empty.${spec.key}`));
           }
+          tile.ratioEl.classList.toggle('is-empty', ratio.value === null);
+          tile.gauge.update({ value: ratio.value });
+          srText(tile);
           setText(tile.actionSr, ` — ${spec.action()}`);
         });
       }
       function updateSeries(series) {
-        tiles.forEach((tile) => tile.spark.update(series[tile.spec.key] || []));
+        tiles.forEach((tile) => {
+          const values = Array.isArray(series[tile.spec.key]) ? series[tile.spec.key] : [];
+          tile.series = values;
+          tile.gauge.update({ bars: values, barMax: tile.spec.pct ? 100 : null });
+          srText(tile);
+        });
       }
       return { el, update, updateSeries, tiles };
     })();
@@ -893,19 +960,28 @@ export default {
         const badgeHost = h('span', { class: 'ck-rating-host' });
         const openEl = h('strong', {});
         const redEl = h('strong', {});
-        const spark = charts.sparkline({ values: [], width: 220, height: 30, color: 'var(--ink-3)' });
+        // Dial: ring = score / 100 in the rating colour (the rating badge carries icon + word), radial bars = the
+        // card's 12-week score trend on the same 0–100 scale. The visible score sits in the ring's centre.
+        const gauge = gaugeLib.ringGauge({
+          size: 'xl', tone: 'neutral', barMax: 100,
+          title: t('domains.gauge.title', { max: fmt.num(100), zero: fmt.num(0), weeks: fmt.num(WEEKS), twelve: fmt.num(12) }),
+        });
+        const gaugeSr = h('span', { class: 'sr-only' });
         const selTag = h('span', { class: 'ck-sel-tag', hidden: true }, t('domains.selected'));
         const a = h('a', {
-          class: 'domain-card', href: hrefOf(CATEGORY_VIEW[cat]), 'data-category': cat,
+          class: ['domain-card', 'has-gauge'], href: hrefOf(CATEGORY_VIEW[cat]), 'data-category': cat,
         },
         h('div', { class: 'domain-head' }, h('span', { class: 'domain-icon', 'aria-hidden': 'true' }, svgIcon(CATEGORY_ICON[cat], 16)), h('span', { class: 'domain-name' }, domainName(cat))),
-        h('div', { class: 'ck-domain-scoreline' }, h('div', { class: 'domain-score' }, scoreEl, h('span', { class: 'domain-scale' }, `/${fmt.num(100)}`)), badgeHost),
-        h('div', { class: 'domain-meta' }, h('span', {}, `${t('domains.open')} `, openEl), h('span', {}, `${t('domains.red')} `, redEl), selTag),
-        h('div', { class: 'domain-spark', 'aria-hidden': 'true' }, spark.el),
-        h('div', { class: 'domain-foot' }, h('span', {}, t('domains.trend', { weeks: fmt.num(WEEKS) })), h('span', { class: 'row gap-1', style: { display: 'inline-flex', alignItems: 'center', gap: '4px' } }, t('domains.openPage'), glyph('chevronEnd', 14))));
-        chartsToDestroy.push(spark);
+        h('div', { class: 'ck-domain-body' },
+          h('div', { class: 'ck-dial' }, gauge.el, h('div', { class: ['domain-score', 'ck-dial-score'] }, scoreEl, h('span', { class: 'domain-scale' }, `/${fmt.num(100)}`))),
+          h('div', { class: 'ck-domain-side' },
+            badgeHost,
+            h('div', { class: 'domain-meta' }, h('span', {}, `${t('domains.open')} `, openEl), h('span', {}, `${t('domains.red')} `, redEl), selTag))),
+        h('div', { class: 'domain-foot' }, h('span', {}, t('domains.trend', { weeks: fmt.num(WEEKS) })), h('span', { class: 'row gap-1', style: { display: 'inline-flex', alignItems: 'center', gap: '4px' } }, t('domains.openPage'), glyph('chevronEnd', 14))),
+        gaugeSr);
+        chartsToDestroy.push(gauge);
         grid.appendChild(a);
-        return { cat, a, scoreEl, badgeHost, openEl, redEl, spark, selTag, score: null, rating: null };
+        return { cat, a, scoreEl, badgeHost, openEl, redEl, gauge, gaugeSr, selTag, score: null, rating: null };
       });
 
       function update(dd, { live = false } = {}) {
@@ -924,7 +1000,9 @@ export default {
           }
           setText(c.openEl, fmt.num(num(data.open)));
           setText(c.redEl, fmt.num(num(data.red)));
-          c.spark.update(Array.isArray(data.trend) ? data.trend : []);
+          const trend = Array.isArray(data.trend) ? data.trend : [];
+          c.gauge.update({ value: gaugeRatio(score, 100).value, tone: RATING_TONE[data.rating] || 'neutral', bars: trend, barMax: 100 });
+          setText(c.gaugeSr, ` — ${gaugeLib.trendSentence(trend, { format: (v) => fmt.num(v) })}`);
           const selected = ui.domain === c.cat;
           c.a.classList.toggle('is-selected', selected);
           c.selTag.hidden = !selected;

@@ -58,6 +58,29 @@ export default {
       deltaFlat: 'دون تغيير مقارنة بالفترة السابقة',
       better: 'تحسّن',
       worse: 'تراجع',
+      gauge: {
+        ratio: {
+          openRisks: 'من {whole} من مخاطر الفترة',
+          criticalRisks: 'من {whole} من المخاطر المفتوحة',
+          overdueMitigations: 'من {whole} من الإجراءات المفتوحة',
+        },
+        empty: {
+          openRisks: 'لا مخاطر في هذه الفترة',
+          criticalRisks: 'لا مخاطر مفتوحة ضمن النطاق',
+          overdueMitigations: 'لا إجراءات معالجة مفتوحة ضمن النطاق',
+        },
+        ring: {
+          openRisks: 'الحلقة: نسبة مخاطر الفترة التي ما زالت مفتوحة (المفتوحة مع المغلقة أو المستبعدة خلال الفترة).',
+          criticalRisks: 'الحلقة: نسبة المخاطر المفتوحة ذات التصنيف الأحمر.',
+          overdueMitigations: 'الحلقة: نسبة إجراءات المعالجة المفتوحة التي تجاوزت موعدها.',
+          mitigationCompletion: 'الحلقة: إجراءات المعالجة المغلقة من إجمالي الإجراءات ضمن النطاق.',
+        },
+        bars: 'الأعمدة: القيمة في نهاية كل أسبوع من آخر {weeks} أسبوعاً، باتجاه عقارب الساعة بدءاً من موضع الساعة {twelve}، {scale}؛ الأسبوع الحالي مُبرز.',
+        scaleMax: 'وأطول عمود هو أعلى أسبوع',
+        scale100: 'على مقياس من {zero} إلى {hundred}',
+        sr: 'الحلقة {pct}.',
+        srEmpty: 'الحلقة دون قيمة.',
+      },
     },
     domains: {
       heading: 'مجالات المخاطر',
@@ -73,6 +96,9 @@ export default {
       openPage: 'فتح المجال',
       cardAria: '{domain}: الدرجة {score} من {max}، {rating}. {open} مخاطر مفتوحة منها {red} حمراء. فتح صفحة المجال',
       selected: 'مُصفّى',
+      gauge: {
+        title: 'الحلقة: درجة المجال من {max} بلون تصنيفه. الأعمدة: الدرجة في نهاية كل أسبوع من آخر {weeks} أسبوعاً، باتجاه عقارب الساعة بدءاً من موضع الساعة {twelve}، على مقياس من {zero} إلى {max}؛ الأسبوع الحالي مُبرز.',
+      },
     },
     analysis: {
       heading: 'تحليل المخاطر',
@@ -262,6 +288,29 @@ export default {
       deltaFlat: 'no change vs the previous period',
       better: 'improved',
       worse: 'worsened',
+      gauge: {
+        ratio: {
+          openRisks: 'of {whole} risks in the period',
+          criticalRisks: 'of {whole} open risks',
+          overdueMitigations: 'of {whole} open actions',
+        },
+        empty: {
+          openRisks: 'No risks in this period',
+          criticalRisks: 'No open risks in scope',
+          overdueMitigations: 'No open mitigation actions in scope',
+        },
+        ring: {
+          openRisks: 'Ring: share of the period\'s risks still open (open, plus closed or dismissed in the period).',
+          criticalRisks: 'Ring: share of open risks rated red.',
+          overdueMitigations: 'Ring: share of open mitigation actions past their due date.',
+          mitigationCompletion: 'Ring: closed mitigation actions out of all actions in scope.',
+        },
+        bars: 'Bars: the value at the end of each of the last {weeks} weeks, clockwise from {twelve} o\'clock, {scale}; the current week is highlighted.',
+        scaleMax: 'the longest bar is the highest week',
+        scale100: 'on a {zero} to {hundred} scale',
+        sr: 'Ring {pct}.',
+        srEmpty: 'Ring has no value.',
+      },
     },
     domains: {
       heading: 'Risk domains',
@@ -277,6 +326,9 @@ export default {
       openPage: 'Open domain',
       cardAria: '{domain}: score {score} of {max}, {rating}. {open} open risks, {red} red. Open the domain page',
       selected: 'Filtered',
+      gauge: {
+        title: 'Ring: the domain score out of {max}, in its rating colour. Bars: the score at the end of each of the last {weeks} weeks, clockwise from {twelve} o\'clock, on a {zero} to {max} scale; the current week is highlighted.',
+      },
     },
     analysis: {
       heading: 'Risk analysis',

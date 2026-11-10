@@ -587,6 +587,172 @@ button.legend-item:hover { color: var(--ink-1); }
 .spark.is-down { color: var(--critical-text); }
 .spark.is-brand { color: var(--brand-text); }
 
+/* --------------------------------------------------------------------------
+   Ring gauge (charts.ringGauge) — ratio ring + radial weekly bars
+   span.ring-gauge[data-size][data-tone][data-state="value"|"empty"][data-zero][data-idle="on"]
+     > .rg-bars > .rg-spoke(.is-current|.is-unknown) > .rg-slot > .rg-fill
+     + .rg-ring > .rg-face + .rg-track + .rg-half.is-a|is-b > .rg-arc + .rg-start + .rg-cap + .rg-sheen
+     + .rg-center (optional)
+   HTML layers only; JS sets transforms (rotate / scaleY) and animates them with Web Animations, so the
+   browser composites every frame and nothing is repainted. The box is a fixed square per size (no layout
+   shift). Geometry is a dial: clockwise from 12 o'clock in both languages (direction: ltr on the root).
+   Sizes (px): box / ring diameter / ring stroke / bar inner radius / bar length / bar width — all integers
+   so the two half-ring clips meet on whole pixels.
+   -------------------------------------------------------------------------- */
+
+.ring-gauge {
+  --g-size: 80px; --g-ring: 52px; --g-stroke: 6px; --g-bar-in: 30px; --g-bar-len: 9px; --g-bar-w: 3px; --g-center: 13px;
+  --rg-tone: var(--brand);
+  --rg-track: color-mix(in srgb, var(--rg-tone) 15%, var(--bg-2));
+  --rg-slot: color-mix(in srgb, var(--ink-3) 13%, transparent);
+  --rg-bar: color-mix(in srgb, var(--rg-tone) 50%, var(--bg-2));   /* past weeks: a lighter step of the same hue */
+  --rg-glow: color-mix(in srgb, var(--rg-tone) 55%, transparent);
+  position: relative;
+  display: block;
+  flex: none;
+  inline-size: var(--g-size);
+  block-size: var(--g-size);
+  direction: ltr;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  contain: layout style;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.ring-gauge[data-size="sm"] { --g-size: 64px; --g-ring: 40px; --g-stroke: 5px; --g-bar-in: 24px; --g-bar-len: 7px; --g-bar-w: 3px; --g-center: 11px; }
+.ring-gauge[data-size="lg"] { --g-size: 104px; --g-ring: 68px; --g-stroke: 7px; --g-bar-in: 39px; --g-bar-len: 12px; --g-bar-w: 3px; --g-center: 15px; }
+.ring-gauge[data-size="xl"] { --g-size: 120px; --g-ring: 78px; --g-stroke: 8px; --g-bar-in: 45px; --g-bar-len: 14px; --g-bar-w: 4px; --g-center: 17px; }
+.ring-gauge[data-tone="accent"]   { --rg-tone: var(--accent); }
+.ring-gauge[data-tone="good"]     { --rg-tone: var(--good); }
+.ring-gauge[data-tone="warning"]  { --rg-tone: var(--warning); }
+.ring-gauge[data-tone="serious"]  { --rg-tone: var(--serious); }
+.ring-gauge[data-tone="critical"] { --rg-tone: var(--critical); }
+.ring-gauge[data-tone="neutral"]  { --rg-tone: var(--ink-3); }
+/* Amber on white is too faint for a 6 px stroke: the light theme deepens it toward its text tone. */
+:root[data-theme="light"] .ring-gauge[data-tone="warning"] { --rg-tone: color-mix(in srgb, var(--warning) 72%, var(--warning-text)); }
+:root[data-theme="light"] .ring-gauge { --rg-slot: color-mix(in srgb, var(--ink-3) 11%, transparent); }
+.ring-gauge span { position: absolute; display: block; box-sizing: border-box; }
+
+/* Radial bars: a fixed spoke per week, the fill scales along its length from the inner end. */
+.ring-gauge .rg-bars { inset: 0; }
+.ring-gauge .rg-spoke { inset-block-start: 50%; inset-inline-start: 50%; inline-size: 0; block-size: 0; }
+.ring-gauge .rg-slot {
+  inset-block-end: var(--g-bar-in);
+  inset-inline-start: calc(var(--g-bar-w) / -2);
+  inline-size: var(--g-bar-w);
+  block-size: var(--g-bar-len);
+  border-radius: var(--g-bar-w);
+  background: var(--rg-slot);
+}
+.ring-gauge .rg-fill { inset: 0; border-radius: inherit; background: var(--rg-bar); transform-origin: 50% 100%; transform: scaleY(0); }
+.ring-gauge .rg-spoke.is-current .rg-slot {
+  inline-size: calc(var(--g-bar-w) + 1px);
+  inset-inline-start: calc((var(--g-bar-w) + 1px) / -2);
+  background: color-mix(in srgb, var(--rg-tone) 16%, transparent);
+}
+.ring-gauge .rg-spoke.is-current .rg-fill { background: var(--rg-tone); box-shadow: 0 0 6px 0 var(--rg-glow); }
+.ring-gauge .rg-spoke.is-unknown .rg-slot { opacity: .7; }
+
+/* Ring: face, track, two half-ring clips, start cap, rotating end cap, idle sheen. */
+.ring-gauge .rg-ring {
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: var(--g-ring);
+  block-size: var(--g-ring);
+  margin-block-start: calc(var(--g-ring) / -2);
+  margin-inline-start: calc(var(--g-ring) / -2);
+  border-radius: 50%;
+}
+.ring-gauge .rg-face {
+  inset: var(--g-stroke);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 28%, color-mix(in srgb, var(--rg-tone) 10%, var(--bg-1)), var(--bg-1) 72%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rg-tone) 12%, transparent);
+}
+.ring-gauge .rg-track { inset: 0; border-radius: 50%; border: var(--g-stroke) solid var(--rg-track); }
+.ring-gauge .rg-half { inset-block: 0; inline-size: 50%; overflow: hidden; }
+.ring-gauge .rg-half.is-a { inset-inline-start: 50%; }
+.ring-gauge .rg-half.is-b { inset-inline-start: 0; }
+.ring-gauge .rg-arc {
+  inset-block: 0;
+  inline-size: var(--g-ring);
+  border-radius: 50%;
+  border: var(--g-stroke) solid transparent;
+  transform: rotate(45deg);
+}
+/* a: the half-ring through 6 and 9 o'clock, swept into the 12 → 6 half; b: the half through 12 and 3, swept into 6 → 12. */
+.ring-gauge .rg-half.is-a .rg-arc { inset-inline-start: calc(var(--g-ring) / -2); border-block-end-color: var(--rg-tone); border-inline-start-color: var(--rg-tone); }
+.ring-gauge .rg-half.is-b .rg-arc { inset-inline-start: 0; border-block-start-color: var(--rg-tone); border-inline-end-color: var(--rg-tone); }
+.ring-gauge .rg-start, .ring-gauge .rg-cap, .ring-gauge .rg-sheen { inset: 0; border-radius: 50%; }
+.ring-gauge .rg-start::before, .ring-gauge .rg-cap::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 50%;
+  inline-size: var(--g-stroke);
+  block-size: var(--g-stroke);
+  margin-inline-start: calc(var(--g-stroke) / -2);
+  border-radius: 50%;
+  background: var(--rg-tone);
+}
+.ring-gauge .rg-cap::before {
+  background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--rg-tone) 55%, #FFFFFF), var(--rg-tone) 70%);
+  box-shadow: 0 0 7px 1px var(--rg-glow);
+}
+.ring-gauge[data-zero] .rg-start, .ring-gauge[data-zero] .rg-cap { opacity: 0; }
+.ring-gauge .rg-sheen { opacity: 0; transition: opacity var(--dur-slow) var(--ease-out); }
+.ring-gauge .rg-sheen::before {
+  content: "";
+  position: absolute;
+  inset-block-start: calc(var(--g-stroke) * -0.3);
+  inset-inline-start: 50%;
+  inline-size: calc(var(--g-stroke) * 3.6);
+  block-size: calc(var(--g-stroke) * 1.6);
+  margin-inline-start: calc(var(--g-stroke) * -1.8);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, .4), rgba(255, 255, 255, .1) 60%, transparent);
+}
+.ring-gauge[data-idle="on"] .rg-sheen { opacity: 1; }
+:root[data-theme="light"] .ring-gauge .rg-sheen::before { background: radial-gradient(closest-side, rgba(255, 255, 255, .72), rgba(255, 255, 255, .2) 60%, transparent); }
+
+/* Centre value: the ring's own ratio (tabular, ink; the document direction orders "٪"). */
+.ring-gauge .rg-center {
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-sans);
+  font-size: var(--g-center);
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -.01em;
+  color: var(--ink-1);
+  white-space: nowrap;
+}
+:root[dir="rtl"] .ring-gauge .rg-center { direction: rtl; }
+
+/* Honest empty state: no ratio → dashed neutral track, no arc, no caps, centre "—". */
+.ring-gauge[data-state="empty"] .rg-track { border-style: dashed; border-color: color-mix(in srgb, var(--ink-3) 38%, transparent); }
+.ring-gauge[data-state="empty"] .rg-half, .ring-gauge[data-state="empty"] .rg-start, .ring-gauge[data-state="empty"] .rg-cap, .ring-gauge[data-state="empty"] .rg-sheen { display: none; }
+.ring-gauge[data-state="empty"] .rg-face { background: var(--bg-1); box-shadow: none; }
+.ring-gauge[data-state="empty"] .rg-center { color: var(--ink-3); font-weight: 500; }
+
+/* No idle motion under reduced motion, the Static background, forced colours or print (JS pauses it too). */
+:root[data-bg="static"] .ring-gauge .rg-sheen, :root[data-motion="reduce"] .ring-gauge .rg-sheen, :root[data-motion="reduced"] .ring-gauge .rg-sheen { display: none; }
+@media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .ring-gauge .rg-sheen { display: none; } }
+@media (forced-colors: active) {
+  .ring-gauge { forced-color-adjust: none; --rg-tone: Highlight; --rg-track: GrayText; --rg-slot: transparent; --rg-bar: CanvasText; --rg-glow: transparent; }
+  .ring-gauge .rg-face { background: Canvas; box-shadow: none; }
+  .ring-gauge .rg-center { color: CanvasText; }
+  .ring-gauge .rg-sheen { display: none; }
+}
+@media print {
+  .ring-gauge .rg-sheen { display: none; }
+  .ring-gauge .rg-face { background: #FFFFFF; }
+  .ring-gauge { break-inside: avoid; }
+}
+
 /* Segmented bar (replaces donuts). The .segbar-part rules style the HTML bar; the SVG bar (charts.segmentedBar) reuses the
    class on <rect>, so rect.segbar-part drops the HTML background (it confused contrast checkers; SVG paints with fill). */
 rect.segbar-part { background: none; }

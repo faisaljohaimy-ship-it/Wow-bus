@@ -3,7 +3,9 @@
  *
  * Plain ES module. Implements docs/ARCHITECTURE.md §5 plus v3 CONTRACT §7:
  *   lineChart, barChart, groupedBars, heatmap, segmentedBar, dumbbell (v3), sparkline,
- *   meter, gauge, ring, spider, tooltip (singleton), paletteFor.
+ *   meter, gauge, ring, ringGauge (v3.1: ratio ring + radial weekly bars, composited motion),
+ *   spider, tooltip (singleton), paletteFor; pure gauge helpers gaugeRatio, gaugeBars,
+ *   trendSummary, trendSentence, halfAngles, ringKeyframes, gaugeEase.
  *
  * Every chart returns `{ el, update(data), table(), destroy() }` where `el` is a
  * `<div class="chart">` wrapping an `<svg>`; `update` re-renders in place and
@@ -2048,6 +2050,540 @@ export function ring(opts = {}) {
 }
 
 /* ------------------------------------------------------------------------- */
+/* Ring gauge with radial weekly bars (v3.1 cockpit tiles and domain cards)    */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Geometry and ratio helpers are pure (node-tested in tests/gauge.test.mjs). The component draws with
+ * HTML layers only and animates transform / opacity only (Web Animations, composited), so nothing is
+ * repainted per frame:
+ *   - ring progress = two half-rings, each a bordered circle rotating inside a half-width clip
+ *     (0–180° in the inline-end half, 180–360° in the other), plus a round start cap and a rotating
+ *     end cap; the sweep is one set of sampled keyframes shared by the three layers, with an exact
+ *     keyframe where it crosses 180°, so the halves and the cap never drift apart;
+ *   - radial bars = one fixed spoke per week (static rotate) whose fill is scaled along its length
+ *     (scaleY, origin at the inner end); the at-rest scale is the value, so the bars are exact
+ *     without animation (print, reduced motion);
+ *   - optional idle sheen = one soft highlight on a ring-sized layer rotating slowly (transform only),
+ *     running only while the gauge is on screen and motion is allowed (not under reduced motion, the
+ *     Static background or forced colours).
+ * Ring progress and bar order run clockwise from 12 o'clock in both languages (a dial, not a
+ * reading-order axis); the root is direction: ltr so the geometry is identical in Arabic.
+ */
+
+const finiteOrNull = (v) => {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v === 'string' && v.trim() !== '') { const n = Number(v); return Number.isFinite(n) ? n : null; }
+  return null;
+};
+
+/**
+ * Honest ring ratio: part / whole clamped to [0, 1]. A zero, negative or unknown whole (or an unknown
+ * part) gives value null: the gauge shows its empty state instead of a made-up 0 % or 100 %.
+ * @returns {{ value: number|null, part: number|null, whole: number|null, pct: number|null }}
+ */
+export function gaugeRatio(part, whole) {
+  const p = finiteOrNull(part);
+  const w = finiteOrNull(whole);
+  if (p === null || w === null || w <= 0) {
+    return { value: null, part: p === null ? null : Math.max(0, p), whole: w === null ? null : Math.max(0, w), pct: null };
+  }
+  const pc = clamp(p, 0, w);
+  const value = pc / w;
+  return { value, part: pc, whole: w, pct: Math.round(value * 100) };
+}
+
+/**
+ * Radial bars for a series (oldest first): one slot per value, slot centres at (k + ½)·360°/n clockwise
+ * from 12 o'clock, the last value is the current week. Lengths are proportional to the value from zero:
+ * `max` fixes the scale (e.g. 100 for a score or a percentage); without it the highest value of the
+ * series is the full length. Unknown values keep their slot with no bar; an all-zero series has no bars.
+ * @returns {{ bars: Array<{ index, angle, value, fraction, current }>, max: number, empty: boolean }}
+ */
+export function gaugeBars(values, { max = null } = {}) {
+  const list = arr(values).map(finiteOrNull);
+  const n = list.length;
+  const known = list.filter((v) => v !== null);
+  const fixed = finiteOrNull(max);
+  const scale = fixed !== null && fixed > 0 ? fixed : (known.length ? Math.max(0, ...known) : 0);
+  const step = n ? 360 / n : 0;
+  const bars = list.map((v, i) => ({
+    index: i,
+    angle: r2((i + 0.5) * step),
+    value: v,
+    fraction: v === null || !(scale > 0) ? 0 : clamp(v / scale, 0, 1),
+    current: i === n - 1,
+  }));
+  return { bars, max: scale, empty: known.length === 0 };
+}
+
+/** First and last known values of a series and the direction between them; null below two known points. */
+export function trendSummary(values) {
+  const known = arr(values).map(finiteOrNull).filter((v) => v !== null);
+  if (known.length < 2) return null;
+  const first = known[0];
+  const last = known[known.length - 1];
+  return { first, last, change: last - first, direction: last > first ? 'up' : last < first ? 'down' : 'flat', points: known.length };
+}
+
+/**
+ * Localised text equivalent of a weekly series for an sr-only node (charts.gauge.*):
+ * "Last 12 weeks: from 4 to 3, falling." — or "Trend for the last 12 weeks not available yet."
+ */
+export function trendSentence(values, { format = (v) => fmt.num(v) } = {}) {
+  const weeks = fmt.num(arr(values).length || 12);
+  const s = trendSummary(values);
+  if (!s) return t('charts.gauge.noTrend', { weeks });
+  return t('charts.gauge.trend', { weeks, first: str(format(s.first)), last: str(format(s.last)), direction: t(`charts.gauge.dir.${s.direction}`) });
+}
+
+/** Angles of the two half-rings for a sweep of `deg` (0–360): a covers 0–180°, b covers 180–360°. */
+export function halfAngles(deg) {
+  const d = clamp(num(deg), 0, 360);
+  return { a: Math.min(d, 180), b: Math.max(0, d - 180) };
+}
+
+/** CSS cubic-bezier as a function of time (Newton steps with a bisection fallback). */
+function cubicBezier(x1, y1, x2, y2) {
+  const cx = 3 * x1; const bx = 3 * (x2 - x1) - cx; const ax = 1 - cx - bx;
+  const cy = 3 * y1; const by = 3 * (y2 - y1) - cy; const ay = 1 - cy - by;
+  const sx = (s) => ((ax * s + bx) * s + cx) * s;
+  const sy = (s) => ((ay * s + by) * s + cy) * s;
+  const dx = (s) => (3 * ax * s + 2 * bx) * s + cx;
+  return (x) => {
+    if (!(x > 0)) return 0;
+    if (x >= 1) return 1;
+    let s = x;
+    for (let i = 0; i < 8; i += 1) {
+      const e = sx(s) - x;
+      if (Math.abs(e) < 1e-7) return sy(s);
+      const d = dx(s);
+      if (Math.abs(d) < 1e-6) break;
+      s -= e / d;
+    }
+    let lo = 0; let hi = 1; s = x;
+    for (let i = 0; i < 40; i += 1) {
+      const v = sx(s);
+      if (Math.abs(v - x) < 1e-7) break;
+      if (v < x) lo = s; else hi = s;
+      s = (lo + hi) / 2;
+    }
+    return sy(s);
+  };
+}
+
+/** The motion token ease-out (cubic-bezier(.16, 1, .3, 1)) as a function. */
+export const gaugeEase = cubicBezier(0.16, 1, 0.3, 1);
+
+/** Time at which a monotonic easing reaches y (bisection). */
+function invertEase(ease, y) {
+  let lo = 0; let hi = 1;
+  for (let i = 0; i < 48; i += 1) { const mid = (lo + hi) / 2; if (ease(mid) < y) lo = mid; else hi = mid; }
+  return (lo + hi) / 2;
+}
+
+/**
+ * Keyframes for a ring sweep from `fromDeg` to `toDeg` (clamped to 0–360): sampled from the easing, plus an
+ * exact keyframe where the sweep crosses 180°. a / b rotate the two half-rings (45° base: the half-ring is
+ * two adjacent borders of a circle), cap rotates the end cap. Played with linear easing between keyframes.
+ */
+export function ringKeyframes(fromDeg, toDeg, { ease = gaugeEase, samples = 24 } = {}) {
+  const from = clamp(num(fromDeg), 0, 360);
+  const to = clamp(num(toDeg), 0, 360);
+  const steps = Math.max(2, Math.round(num(samples, 24)));
+  const offsets = [];
+  for (let i = 0; i <= steps; i += 1) offsets.push(i / steps);
+  let cross = null;
+  if ((from - 180) * (to - 180) < 0) {
+    const c = invertEase(ease, (180 - from) / (to - from));
+    if (c > 0 && c < 1) { cross = c; offsets.push(c); }
+  }
+  offsets.sort((x, y) => x - y);
+  const last = offsets.length - 1;
+  const frames = offsets.map((o, i) => {
+    // Endpoints and the 180° crossing are exact; the samples in between follow the easing.
+    const d = i === 0 ? from : (i === last ? to : (o === cross ? 180 : from + (to - from) * ease(o)));
+    const half = halfAngles(d);
+    return { offset: o, deg: d, a: half.a, b: half.b };
+  });
+  const rot = (deg) => `rotate(${deg.toFixed(3)}deg)`;
+  // A half-ring at rest (0°) has its anti-aliased edge on the clip line: it stays transparent until it moves.
+  const op = (v) => (v > 0.01 ? 1 : 0);
+  return {
+    frames,
+    a: frames.map((f) => ({ offset: f.offset, transform: rot(45 + f.a), opacity: op(f.a) })),
+    b: frames.map((f) => ({ offset: f.offset, transform: rot(45 + f.b), opacity: op(f.b) })),
+    cap: frames.map((f) => ({ offset: f.offset, transform: rot(f.deg) })),
+  };
+}
+
+const GAUGE_TONES = ['brand', 'accent', 'good', 'warning', 'serious', 'critical', 'neutral'];
+const GAUGE_SIZES = ['sm', 'md', 'lg', 'xl'];
+const GAUGE_SWEEP_MS = 900;        // entrance sweep (ease-out)
+const GAUGE_UPDATE_MS = 620;       // value change, old → new
+const GAUGE_BAR_MS = 340;          // bar growth
+const GAUGE_BAR_STAGGER = 32;      // ms between bars on entrance (motion token)
+const GAUGE_DELAY_MS = 110;        // entrance starts as the tile settles
+const GAUGE_SHEEN_MS = 11000;      // one idle sheen lap
+
+/** Same gate as js/ui/motion.js enabled(): reduced motion (OS unless forced on, or the setting), hidden page, no WAAPI. */
+function gaugeMotionOn() {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return false;
+  if (document.hidden) return false;
+  if (typeof Element === 'undefined' || typeof Element.prototype.animate !== 'function') return false;
+  const forced = document.documentElement.getAttribute('data-motion');
+  if (forced === 'reduce' || forced === 'reduced') return false;
+  if (forced === 'full') return true;
+  try { return !window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return true; }
+}
+
+/** Idle motion also stops for the Static background and forced colours. */
+function gaugeIdleOn() {
+  if (!gaugeMotionOn()) return false;
+  if (document.documentElement.getAttribute('data-bg') === 'static') return false;
+  try { if (window.matchMedia('(forced-colors: active)').matches) return false; } catch { /* noop */ }
+  return true;
+}
+
+/* One IntersectionObserver for every gauge (entrance when first seen, idle sheen only on screen) and one
+   MutationObserver for the motion / background settings on <html>. Created on first use. */
+const gaugeHub = { io: null, mo: null, live: new Set(), byEl: new WeakMap(), media: false };
+function gaugeHubInit() {
+  if (typeof window === 'undefined') return;
+  if (!gaugeHub.io && typeof IntersectionObserver === 'function') {
+    gaugeHub.io = new IntersectionObserver((entries) => {
+      for (const e of entries) { const g = gaugeHub.byEl.get(e.target); if (g) g.onVisible(e.isIntersecting); }
+    }, { threshold: 0 });
+  }
+  if (!gaugeHub.mo && typeof MutationObserver === 'function') {
+    gaugeHub.mo = new MutationObserver(() => gaugeHub.live.forEach((g) => g.refreshIdle()));
+    try { gaugeHub.mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-motion', 'data-bg'] }); } catch { /* noop */ }
+  }
+  if (!gaugeHub.media && typeof window.matchMedia === 'function') {
+    gaugeHub.media = true;
+    for (const q of ['(prefers-reduced-motion: reduce)', '(forced-colors: active)']) {
+      try { window.matchMedia(q).addEventListener('change', () => gaugeHub.live.forEach((g) => g.refreshIdle())); } catch { /* old engines */ }
+    }
+    // Print is static: jump every running sweep, growth and count to its final value first.
+    const settleAll = () => gaugeHub.live.forEach((g) => g.settle());
+    try { window.addEventListener('beforeprint', settleAll); } catch { /* noop */ }
+    try { window.matchMedia('print').addEventListener('change', (e) => { if (e.matches) settleAll(); }); } catch { /* noop */ }
+  }
+}
+
+let gaugeSeq = 0;
+
+/**
+ * Circular gauge: a ring for a ratio (0–1) and, around it, one radial bar per week (oldest first,
+ * clockwise from 12 o'clock, current week emphasised). Decorative: the root is aria-hidden; the caller
+ * keeps the visible number and an sr-only sentence (see trendSummary).
+ *
+ *   ringGauge({ value, tone, bars, barMax, size, center, format, title })
+ *     value   ratio 0–1, or null for the honest empty state (dashed track, no arc, centre "—")
+ *     tone    brand | accent | good | warning | serious | critical | neutral (ring and current-week bar)
+ *     bars    weekly values (null = not known yet: `slots` empty slots, default 12); barMax fixes the scale
+ *             (else the series max)
+ *     size    sm 64 px | md 80 px | lg 104 px | xl 120 px (fixed box: no layout shift)
+ *     center  true to print the ratio in the middle (format(pct) → text, default fmt.pct)
+ *     title   tooltip naming the ratio and the bars
+ * Returns { el, update(partial), destroy }. The first values sweep in once when the gauge is first seen
+ * (900 ms ring, bars growing 32 ms apart); later updates animate from the shown value to the new one and
+ * never replay the entrance. Reduced motion: final state, no animation.
+ */
+export function ringGauge(opts = {}) {
+  const o = { value: null, tone: 'brand', bars: null, barMax: null, slots: 12, size: 'md', center: false, format: null, title: '', ...opts };
+  const el = htmlEl('span', { class: 'ring-gauge', attrs: { 'aria-hidden': 'true', 'data-state': 'empty', 'data-zero': '' } });
+  const barsEl = htmlEl('span', { class: 'rg-bars' }, el);
+  const ringEl = htmlEl('span', { class: 'rg-ring' }, el);
+  htmlEl('span', { class: 'rg-face' }, ringEl);
+  htmlEl('span', { class: 'rg-track' }, ringEl);
+  const halfA = htmlEl('span', { class: ['rg-half', 'is-a'] }, ringEl);
+  const arcA = htmlEl('span', { class: 'rg-arc' }, halfA);
+  const halfB = htmlEl('span', { class: ['rg-half', 'is-b'] }, ringEl);
+  const arcB = htmlEl('span', { class: 'rg-arc' }, halfB);
+  const startCap = htmlEl('span', { class: 'rg-start' }, ringEl);
+  const cap = htmlEl('span', { class: 'rg-cap' }, ringEl);
+  const sheen = htmlEl('span', { class: 'rg-sheen' }, ringEl);
+  const centerEl = o.center ? htmlEl('span', { class: 'rg-center' }, el) : null;
+
+  const st = {
+    deg: 0,              // ring angle at rest (target)
+    ringAnims: [],       // running sweep (arc a, arc b, cap [, cap fades])
+    ringFrom: 0,
+    ringTo: 0,
+    spokes: [],          // { spoke, fill, shown, anim }
+    barsKnown: false,
+    barsEntered: false,
+    mode: 'wait',        // 'wait' (entrance pending) | 'live'
+    ioSeen: false,
+    visible: false,
+    hasData: false,
+    pct: null,           // centre value shown
+    cancelCount: () => {},
+    timers: new Set(),
+    sheenAnim: null,
+    phase: (gaugeSeq++ * 0.381966) % 1,
+    dead: false,
+  };
+
+  const fmtCenter = (pct) => (pct === null ? '—' : (typeof o.format === 'function' ? str(o.format(pct)) : fmt.pct(pct)));
+
+  function applyAttrs() {
+    el.setAttribute('data-size', GAUGE_SIZES.includes(o.size) ? o.size : 'md');
+    el.setAttribute('data-tone', GAUGE_TONES.includes(o.tone) ? o.tone : 'brand');
+    if (o.title) el.setAttribute('title', str(o.title)); else el.removeAttribute('title');
+  }
+
+  /* ---- ring ---- */
+  function paintRing(deg) {
+    const { a, b } = halfAngles(deg);
+    arcA.style.transform = `rotate(${(45 + a).toFixed(3)}deg)`;
+    arcB.style.transform = `rotate(${(45 + b).toFixed(3)}deg)`;
+    arcA.style.opacity = a > 0.01 ? '1' : '0';   // at 0° a half's anti-aliased edge sits on the clip line
+    arcB.style.opacity = b > 0.01 ? '1' : '0';
+    cap.style.transform = `rotate(${clamp(deg, 0, 360).toFixed(3)}deg)`;
+    if (deg > 0.05) el.removeAttribute('data-zero'); else el.setAttribute('data-zero', '');
+  }
+  function ringNow() {
+    const an = st.ringAnims[0];
+    if (an && an.playState !== 'finished' && an.playState !== 'idle') {
+      try {
+        const p = an.effect.getComputedTiming().progress;
+        return st.ringFrom + (st.ringTo - st.ringFrom) * gaugeEase(isNum(p) ? p : 0);
+      } catch { /* fall through */ }
+    }
+    return st.deg;
+  }
+  function cancelRing() {
+    st.ringAnims.forEach((a) => { try { a.cancel(); } catch { /* noop */ } });
+    st.ringAnims = [];
+  }
+  function setRing(toDeg, { animate = false, from = null, duration = GAUGE_UPDATE_MS, delay = 0 } = {}) {
+    const start = from === null ? ringNow() : from;
+    cancelRing();
+    st.deg = toDeg;
+    paintRing(toDeg);
+    if (!animate || !gaugeMotionOn() || Math.abs(toDeg - start) < 0.25) return;
+    const kf = ringKeyframes(start, toDeg);
+    const timing = { duration, delay, easing: 'linear', fill: 'backwards' };
+    try {
+      const anims = [arcA.animate(kf.a, timing), arcB.animate(kf.b, timing), cap.animate(kf.cap, timing)];
+      // Caps fade in from a zero start and out on the way to zero (CSS hides them at rest when zero).
+      if (start <= 0.05) {
+        const fade = [{ opacity: 0 }, { opacity: 1, offset: 0.06 }, { opacity: 1 }];
+        anims.push(startCap.animate(fade, timing), cap.animate(fade, timing));
+      } else if (toDeg <= 0.05) {
+        const fade = [{ opacity: 1 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }];
+        anims.push(startCap.animate(fade, timing), cap.animate(fade, timing));
+      }
+      st.ringAnims = anims;
+      st.ringFrom = start;
+      st.ringTo = toDeg;
+      anims[0].finished.then(() => { if (st.ringAnims === anims) st.ringAnims = []; }).catch(() => {});
+    } catch { cancelRing(); }
+  }
+
+  /* ---- centre ---- */
+  function setCenter(pct, { animate = false, duration = GAUGE_UPDATE_MS, delay = 0, from = null } = {}) {
+    if (!centerEl) return;
+    if (from === null && pct === st.pct && centerEl.textContent) return;   // unchanged: let a running count finish
+    st.cancelCount();
+    st.cancelCount = () => {};
+    const start = from === null ? st.pct : from;
+    st.pct = pct;
+    if (pct === null || start === null || !animate || !gaugeMotionOn() || start === pct) { centerEl.textContent = fmtCenter(pct); return; }
+    centerEl.textContent = fmtCenter(start);
+    // Same easing as the ring sweep, so the number and the arc agree on every frame (text only, under a second).
+    const run = () => {
+      let raf = 0;
+      const t0 = performance.now();
+      const step = (now) => {
+        const p = clamp((now - t0) / duration, 0, 1);
+        const text = fmtCenter(Math.round(start + (pct - start) * gaugeEase(p)));
+        if (centerEl.textContent !== text) centerEl.textContent = text;
+        if (p < 1 && !st.dead) raf = requestAnimationFrame(step);
+      };
+      raf = requestAnimationFrame(step);
+      st.cancelCount = () => cancelAnimationFrame(raf);
+    };
+    if (delay > 0) {
+      const id = setTimeout(() => { st.timers.delete(id); if (!st.dead) run(); }, delay);
+      st.timers.add(id);
+      st.cancelCount = () => { clearTimeout(id); st.timers.delete(id); };
+    } else run();
+  }
+
+  /* ---- bars ---- */
+  function buildSpokes(model) {
+    st.spokes.forEach((s) => { try { if (s.anim) s.anim.cancel(); } catch { /* noop */ } });
+    clear(barsEl);
+    st.spokes = model.bars.map((b) => {
+      const spoke = htmlEl('span', { class: 'rg-spoke' }, barsEl);
+      spoke.style.transform = `rotate(${b.angle}deg)`;
+      const slot = htmlEl('span', { class: 'rg-slot' }, spoke);
+      const fill = htmlEl('span', { class: 'rg-fill' }, slot);
+      fill.style.transform = 'scaleY(0)';
+      return { spoke, fill, shown: 0, anim: null };
+    });
+  }
+  function fracNow(s) {
+    if (s.anim && s.anim.playState !== 'finished' && s.anim.playState !== 'idle') {
+      try {
+        const m = /matrix\(([^)]+)\)/.exec(getComputedStyle(s.fill).transform || '');
+        if (m) { const d = Number(m[1].split(',')[3]); if (Number.isFinite(d)) return clamp(d, 0, 1); }
+      } catch { /* fall through */ }
+    }
+    return s.shown;
+  }
+  /** Paint the bars; animate = 'enter' (grow from zero in sequence) | 'update' (old → new together) | false. */
+  const barValues = () => (Array.isArray(o.bars) ? o.bars : Array.from({ length: Math.max(0, Math.round(num(o.slots, 12))) }, () => null));
+  function setBars(animate) {
+    const model = gaugeBars(barValues(), { max: o.barMax });
+    if (model.bars.length !== st.spokes.length) buildSpokes(model);
+    el.toggleAttribute('data-bars-empty', model.empty);
+    const motionOn = animate && gaugeMotionOn();
+    model.bars.forEach((b, i) => {
+      const s = st.spokes[i];
+      s.spoke.classList.toggle('is-current', b.current);
+      s.spoke.classList.toggle('is-unknown', b.value === null);
+      if (animate !== 'enter' && Math.abs(s.shown - b.fraction) < 1e-4) return;   // unchanged: a running growth carries on
+      const from = animate === 'enter' ? 0 : fracNow(s);
+      if (s.anim) { try { s.anim.cancel(); } catch { /* noop */ } s.anim = null; }
+      s.shown = b.fraction;
+      s.fill.style.transform = `scaleY(${b.fraction.toFixed(4)})`;
+      if (!motionOn || Math.abs(from - b.fraction) < 0.002) return;
+      const timing = animate === 'enter'
+        ? { duration: GAUGE_BAR_MS, delay: GAUGE_DELAY_MS + 60 + i * GAUGE_BAR_STAGGER }
+        : { duration: Math.round(GAUGE_BAR_MS * 0.9), delay: 0 };
+      try {
+        const anim = s.fill.animate([{ transform: `scaleY(${from.toFixed(4)})` }, { transform: `scaleY(${b.fraction.toFixed(4)})` }], { ...timing, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards' });
+        s.anim = anim;
+        anim.finished.then(() => { if (s.anim === anim) s.anim = null; }).catch(() => {});
+      } catch { s.anim = null; }
+    });
+  }
+
+  /* ---- states ---- */
+  const ratioNow = () => (isNum(o.value) ? clamp(o.value, 0, 1) : null);
+  function paintZero() {
+    paintRing(0);
+    st.spokes.forEach((s) => { s.shown = 0; s.fill.style.transform = 'scaleY(0)'; });
+    if (centerEl) centerEl.textContent = fmtCenter(ratioNow() === null ? null : 0);
+  }
+  function paintFinal() {
+    const r = ratioNow();
+    setRing(r === null ? 0 : r * 360);
+    if (st.barsKnown) setBars(false);
+    setCenter(r === null ? null : Math.round(r * 100));
+  }
+  function entrance() {
+    st.mode = 'live';
+    const r = ratioNow();
+    const deg = r === null ? 0 : r * 360;
+    setRing(deg, { animate: true, from: 0, duration: GAUGE_SWEEP_MS, delay: GAUGE_DELAY_MS });
+    setCenter(r === null ? null : Math.round(r * 100), { animate: true, from: 0, duration: GAUGE_SWEEP_MS, delay: GAUGE_DELAY_MS });
+    if (st.barsKnown) { setBars('enter'); st.barsEntered = true; }
+    refreshIdle();
+  }
+
+  function refreshIdle() {
+    const want = !st.dead && st.mode === 'live' && st.visible && el.isConnected && gaugeIdleOn();
+    if (want) {
+      if (!st.sheenAnim) {
+        try {
+          st.sheenAnim = sheen.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], { duration: GAUGE_SHEEN_MS, iterations: Infinity, easing: 'linear' });
+          st.sheenAnim.currentTime = st.phase * GAUGE_SHEEN_MS;
+        } catch { st.sheenAnim = null; }
+      } else if (st.sheenAnim.playState === 'paused') st.sheenAnim.play();
+      if (st.sheenAnim) el.setAttribute('data-idle', 'on');
+    } else {
+      if (st.sheenAnim) { try { st.sheenAnim.pause(); } catch { /* noop */ } }
+      el.removeAttribute('data-idle');
+    }
+  }
+
+  /** Final state now (print): finish running animations, skip a pending entrance, final centre text. */
+  function settle() {
+    if (st.dead) return;
+    st.ringAnims.forEach((a) => { try { a.finish(); } catch { /* noop */ } });
+    st.ringAnims = [];
+    st.spokes.forEach((s) => { if (s.anim) { try { s.anim.finish(); } catch { /* noop */ } s.anim = null; } });
+    st.cancelCount();
+    st.cancelCount = () => {};
+    st.timers.forEach((id) => clearTimeout(id));
+    st.timers.clear();
+    if (st.mode === 'wait' && st.hasData) { st.mode = 'live'; if (st.barsKnown) st.barsEntered = true; paintFinal(); }
+    if (centerEl) { const r = ratioNow(); st.pct = r === null ? null : Math.round(r * 100); centerEl.textContent = fmtCenter(st.pct); }
+  }
+
+  function onVisible(isVisible) {
+    if (st.dead) return;
+    st.ioSeen = true;
+    st.visible = isVisible;
+    if (st.mode === 'wait' && st.hasData) {
+      if (isVisible && gaugeMotionOn()) entrance();
+      else {
+        paintFinal();                    // off screen (or no motion): the correct static state until it is seen
+        if (!gaugeMotionOn()) st.mode = 'live';
+      }
+    }
+    refreshIdle();
+  }
+
+  function update(data = {}) {
+    if (st.dead) return;
+    const d = data && typeof data === 'object' ? data : { value: data };
+    Object.assign(o, d);
+    applyAttrs();
+    const r = ratioNow();
+    el.setAttribute('data-state', r === null ? 'empty' : 'value');
+    const barsGiven = Object.prototype.hasOwnProperty.call(d, 'bars') || Object.prototype.hasOwnProperty.call(d, 'barMax');
+    if (barsGiven) st.barsKnown = Array.isArray(o.bars);
+    st.hasData = true;
+    if (st.mode === 'wait' && (!gaugeHub.io || !gaugeMotionOn())) st.mode = 'live';
+    if (st.mode === 'wait') {
+      if (!st.ioSeen) { setBars(false); paintZero(); }   // not measured yet: hold at zero for the entrance
+      else if (st.visible) entrance();
+      else paintFinal();
+      return;
+    }
+    const deg = r === null ? 0 : r * 360;
+    if (Math.abs(deg - st.deg) > 0.01) setRing(deg, { animate: true });
+    setCenter(r === null ? null : Math.round(r * 100), { animate: true });
+    if (barsGiven) {
+      if (!st.barsKnown) setBars(false);
+      else if (!st.barsEntered) { setBars(st.visible ? 'enter' : false); st.barsEntered = true; }
+      else setBars('update');
+    }
+  }
+
+  const handle = { onVisible, refreshIdle, settle };
+  applyAttrs();
+  setBars(false);
+  gaugeHubInit();
+  if (gaugeHub.io) { gaugeHub.byEl.set(el, handle); gaugeHub.io.observe(el); }
+  gaugeHub.live.add(handle);
+  if (Object.prototype.hasOwnProperty.call(opts, 'value') || Object.prototype.hasOwnProperty.call(opts, 'bars')) update({});
+
+  return {
+    el,
+    update,
+    destroy() {
+      st.dead = true;
+      cancelRing();
+      st.cancelCount();
+      st.timers.forEach((id) => clearTimeout(id));
+      st.timers.clear();
+      st.spokes.forEach((s) => { try { if (s.anim) s.anim.cancel(); } catch { /* noop */ } });
+      if (st.sheenAnim) { try { st.sheenAnim.cancel(); } catch { /* noop */ } st.sheenAnim = null; }
+      if (gaugeHub.io) { try { gaugeHub.io.unobserve(el); } catch { /* noop */ } }
+      gaugeHub.byEl.delete(el);
+      gaugeHub.live.delete(handle);
+    },
+  };
+}
+
+/* ------------------------------------------------------------------------- */
 /* Spider (static radar)                                                      */
 /* ------------------------------------------------------------------------- */
 
@@ -2141,8 +2677,8 @@ export function spider(opts = {}) {
 /* ------------------------------------------------------------------------- */
 
 export const charts = {
-  lineChart, barChart, groupedBars, heatmap, segmentedBar, dumbbell, sparkline, meter, gauge, ring, spider,
-  tooltip, paletteFor, prefersReducedMotion,
+  lineChart, barChart, groupedBars, heatmap, segmentedBar, dumbbell, sparkline, meter, gauge, ring, ringGauge, spider,
+  tooltip, paletteFor, prefersReducedMotion, gaugeRatio, gaugeBars, trendSummary, trendSentence,
 };
 
 export default charts;
