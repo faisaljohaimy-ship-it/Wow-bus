@@ -928,7 +928,8 @@
    Spatial — SEC-12 site spatial view (js/views/spatial.js) + simulated camera feed (js/ui/camfeed.js)
    Owner: spatial view. Design: docs/design/spatial.md. Logical properties only; the plan and the feed are
    drawings (direction: ltr, never mirrored). Nothing here animates continuously: hover / selection use
-   short colour transitions; the feed's grain moves by a Web Animations transform set in camfeed.js.
+   short colour transitions; the plan's zone framing (viewBox tween) and the viewer's lens iris are one-shot
+   Web Animations / rAF moves started by a user action in spatial.js, and never run under reduced motion.
    ========================================================================== */
 
 .view-spatial .sp-head-actions { align-items: flex-end; gap: var(--space-3); flex-wrap: wrap; }
@@ -942,7 +943,13 @@
 .sp-plan-note { margin: 0; }
 
 /* ---- plan (SVG) ---- */
-.sp-plan { margin: 0; container-type: inline-size; border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; background: var(--bg-1); }
+.sp-plan { position: relative; margin: 0; container-type: inline-size; border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; background: var(--bg-1); }
+/* "Show whole site": appears while the plan frames a zone */
+.sp-fit-dock { position: absolute; inset-block-start: 8px; inset-inline-end: 8px; }
+.sp-fit { gap: 6px; min-block-size: 36px; padding-inline: 10px; border: 1px solid var(--line-strong); background: color-mix(in srgb, var(--bg-1) 92%, transparent); color: var(--ink-1); box-shadow: var(--elev-1); }
+.sp-fit:hover { background: var(--bg-2); }
+.sp-fit[hidden] { display: none; }
+@media (pointer: coarse) { .sp-fit { min-block-size: 40px; } }
 .sp-svg { display: block; inline-size: 100%; block-size: auto; direction: ltr; font-family: var(--font-sans); user-select: none; -webkit-tap-highlight-color: transparent; }
 .sp-svg text { paint-order: stroke; stroke: var(--bg-1); stroke-width: 3px; stroke-linejoin: round; }
 .sp-paper-bg { fill: var(--bg-1); }
@@ -954,13 +961,14 @@
 .sp-boundary { fill: none; stroke: var(--ink-2); stroke-width: 2.4; stroke-dasharray: 16 4 3 4; pointer-events: none; }
 
 .sp-zone { cursor: pointer; outline: none; }
-.sp-zone-shape { fill: color-mix(in srgb, var(--bg-2) 80%, transparent); stroke: var(--line-2); stroke-width: 1.5; transition: fill var(--dur-micro) var(--ease-out), stroke var(--dur-micro) var(--ease-out); }
+/* strokes keep their CSS-px width at any plan size and while a zone is framed */
+.sp-zone-shape { fill: color-mix(in srgb, var(--bg-2) 80%, transparent); stroke: var(--line-2); stroke-width: 1px; vector-effect: non-scaling-stroke; transition: fill var(--dur-micro) var(--ease-out), stroke var(--dur-micro) var(--ease-out); }
 .sp-zone[data-tone="critical"] .sp-zone-shape { fill: color-mix(in srgb, var(--critical) 7%, var(--bg-1)); }
 .sp-zone[data-tone="serious"] .sp-zone-shape { fill: color-mix(in srgb, var(--serious) 8%, var(--bg-1)); }
 .sp-zone[data-tone="warning"] .sp-zone-shape { fill: color-mix(in srgb, var(--warning) 9%, var(--bg-1)); }
 .sp-zone:hover .sp-zone-shape { stroke: var(--line-strong); fill: color-mix(in srgb, var(--brand) 6%, var(--bg-2)); }
-.sp-zone.is-selected .sp-zone-shape, .sp-zone[aria-pressed="true"] .sp-zone-shape { stroke: var(--brand); stroke-width: 3.2; fill: color-mix(in srgb, var(--brand) 11%, var(--bg-1)); }
-.sp-zone:focus-visible .sp-zone-shape { stroke: var(--focus); stroke-width: 4.5; }
+.sp-zone.is-selected .sp-zone-shape, .sp-zone[aria-pressed="true"] .sp-zone-shape { stroke: var(--brand); stroke-width: 2.5px; fill: color-mix(in srgb, var(--brand) 11%, var(--bg-1)); }
+.sp-zone:focus-visible .sp-zone-shape { stroke: var(--focus); stroke-width: 3px; }
 .sp-plan.has-selection .sp-zone:not(.is-selected) .sp-zone-shape { fill-opacity: .7; }
 
 .sp-features, .sp-zone-labels, .sp-furniture, .sp-context { pointer-events: none; }
@@ -997,7 +1005,9 @@
 .sp-gate-label { font-size: 11px; font-weight: 600; fill: var(--brand-text); }
 .sp-sensor { fill: var(--accent); stroke: var(--bg-1); stroke-width: 1.6; }
 .sp-zone-code { font-family: var(--font-mono); font-size: 13px; font-weight: 600; fill: var(--ink-3); }
+.sp-zone-code.is-narrow { display: none; }
 .sp-zone-name { font-size: 14px; font-weight: 600; fill: var(--ink-1); }
+.sp-zone-name.is-selected { fill: var(--brand-text); }
 .sp-badge-dot { fill: var(--good); stroke: var(--bg-1); stroke-width: 2; }
 .sp-zone-badge[data-tone="critical"] .sp-badge-dot { fill: var(--critical); }
 .sp-zone-badge[data-tone="serious"] .sp-badge-dot { fill: var(--serious); }
@@ -1006,8 +1016,12 @@
 .sp-zone-badge[data-tone="critical"] .sp-badge-num { fill: #FFFFFF; }
 
 .sp-cam { cursor: pointer; outline: none; }
-.sp-cam-cone { fill: color-mix(in srgb, var(--accent) 15%, transparent); stroke: color-mix(in srgb, var(--accent) 60%, transparent); stroke-width: 1; transition: fill var(--dur-micro) var(--ease-out); }
-.sp-cam-hit { fill: transparent; }
+/* the view cone is a picture, not a target: taps inside it reach the zone underneath */
+.sp-cam-cone { fill: color-mix(in srgb, var(--accent) 15%, transparent); stroke: color-mix(in srgb, var(--accent) 60%, transparent); stroke-width: 1; pointer-events: none; transition: fill var(--dur-micro) var(--ease-out); }
+/* hit area: ≥ 22 CSS px with a fine pointer, ≥ 26 CSS px on touch / small plans (radius set in spatial.js from
+   the rendered scale; split along the bisector between close cameras) */
+.sp-cam-hit { fill: transparent; stroke: none; vector-effect: non-scaling-stroke; }
+.sp-cam-glyph { transition: transform var(--dur-micro) var(--ease-out); }
 .sp-cam-body { fill: var(--ink-1); stroke: var(--bg-1); stroke-width: 1.5; }
 .sp-cam-lens { fill: var(--accent); }
 .sp-cam-label { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; fill: var(--accent-text); opacity: 0; transition: opacity var(--dur-micro) var(--ease-out); }
@@ -1015,7 +1029,8 @@
 .sp-cam:hover .sp-cam-label, .sp-cam:focus-visible .sp-cam-label, .sp-cam.is-active .sp-cam-label, .sp-cam.in-zone .sp-cam-label { opacity: 1; }
 @media print { .sp-cam-label { opacity: 1; } }
 .sp-cam:hover .sp-cam-cone { fill: color-mix(in srgb, var(--accent) 26%, transparent); }
-.sp-cam:focus-visible .sp-cam-hit { stroke: var(--focus); stroke-width: 3.5; }
+.sp-cam:focus-visible .sp-cam-hit { stroke: var(--focus); stroke-width: 2.5px; }
+.sp-plan.is-touch .sp-cam:active .sp-cam-hit { fill: color-mix(in srgb, var(--accent) 18%, transparent); }
 .sp-cam.is-active .sp-cam-cone { fill: color-mix(in srgb, var(--accent) 34%, transparent); stroke: var(--accent); stroke-width: 1.6; }
 
 .sp-north-ring { fill: var(--bg-1); stroke: var(--line-strong); stroke-width: 1.2; }
@@ -1033,9 +1048,17 @@
 /* narrow plans: names move to the table; codes and counts grow */
 @container (max-width: 620px) {
   .sp-zone-name, .sp-feature-label, .sp-gate-label, .sp-code-label, .sp-cam-label, .sp-ctx-label, .sp-footprint-label, .sp-label-plate, .sp-furn-small, .sp-titleblock, .sp-titleblock-rule, .sp-titleblock-code { display: none; }
-  .sp-zone-code { font-size: 30px; fill: var(--ink-2); }
+  .sp-zone-code { display: none; }
+  .sp-zone-code.is-narrow { display: inline; font-size: 30px; fill: var(--ink-2); }
   .sp-svg .sp-badge-num { font-size: 15px; }
   .sp-north-label { font-size: 22px; }
+  /* camera glyphs double on small plans (their placement keeps zone codes clear at this size) */
+  .sp-cam-glyph { transform: scale(2); }
+  /* a framed zone is drawn larger: its own name returns */
+  .sp-plan.is-framed .sp-zone-name.is-selected { display: inline; }
+  /* small plans: the button sits under the drawing, never over the framed zone */
+  .sp-fit-dock { position: static; display: flex; justify-content: flex-end; padding: 6px 8px 8px; border-block-start: 1px solid var(--line); }
+  .sp-plan:not(.is-framed) .sp-fit-dock { display: none; }
 }
 
 .sp-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: var(--fs-xs); color: var(--ink-2); }
@@ -1096,9 +1119,27 @@
 .sp-cam-specs dd { margin: 0; font-size: var(--fs-sm); color: var(--ink-1); font-variant-numeric: tabular-nums; }
 .sp-cam-tile .btn { align-self: flex-start; }
 
-/* ---- zones table (text alternative) ---- */
-.sp-table-wrap { overflow-x: auto; }
+/* ---- zones table (text alternative) ----
+   Numbers use .num-col (a table cell, end-aligned under its header); the global .num is inline-block and must
+   not be used on th / td. Narrow containers stack each row into a card whose numbers keep a visible label
+   (data-label, hidden from the accessibility tree: the column header already names the cell). */
+.sp-table-wrap { overflow-x: auto; max-block-size: none; container-type: inline-size; }
 .sp-table th[scope="row"] { font-weight: 500; }
+.sp-table .num-col { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sp-table td.is-zero .sp-cell-num { color: var(--ink-3); }
+.sp-cell-num { unicode-bidi: isolate; }
+@container (max-width: 560px) {
+  .sp-table, .sp-table tbody, .sp-table tr, .sp-table th, .sp-table td { display: block; }
+  .sp-table thead { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .sp-table tbody tr { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 10px; padding: 10px 12px; border-block-end: 1px solid var(--line); }
+  .sp-table tbody tr:last-child { border-block-end: 0; }
+  .sp-table tbody th[scope="row"] { grid-column: 1 / -1; padding: 0; border: 0; block-size: auto; }
+  .sp-table tbody td { display: flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 0; border: 0; block-size: auto; text-align: start; white-space: normal; }
+  .sp-table tbody td::before { content: attr(data-label); content: attr(data-label) / ""; font-size: var(--fs-xs); line-height: 1.35; color: var(--ink-3); overflow-wrap: anywhere; }
+  .sp-table tbody td .sp-cell-num { font-size: var(--fs-md); font-weight: 600; color: var(--ink-1); }
+  .sp-table tbody td.is-zero .sp-cell-num { color: var(--ink-3); font-weight: 500; }
+  .sp-table tr.is-selected { background: var(--selected); }
+}
 .sp-row-btn { display: inline-flex; align-items: baseline; gap: 8px; min-block-size: 36px; padding: 6px 0; border: 0; background: none; color: var(--brand-text); font: inherit; text-align: start; cursor: pointer; }
 .sp-row-btn:hover span:last-child { text-decoration: underline; }
 .sp-row-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
@@ -1111,6 +1152,9 @@ dialog.modal.sp-viewer-dialog { inline-size: min(1080px, 100%); }
 .sp-viewer-honest { display: flex; gap: var(--space-2); align-items: flex-start; margin: 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--warning) 50%, transparent); border-radius: var(--radius-md); background: color-mix(in srgb, var(--warning) 11%, var(--bg-1)); color: var(--ink-1); font-size: var(--fs-sm); line-height: var(--lh-body); }
 .sp-viewer-honest .icon { flex: none; margin-block-start: 3px; color: var(--warning-text); }
 .sp-feed-figure { margin: 0; }
+/* the dark shell shows behind the lens iris while the picture opens */
+.sp-feed-shell { border-radius: 14px; background: radial-gradient(circle at 50% 50%, #1A1F24 0, #07090B 70%); }
+.sp-feed.is-iris { will-change: clip-path; }
 .sp-feed-caption { margin-block-start: 6px; }
 .sp-viewer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 @media (max-width: 760px) { .sp-viewer-grid { grid-template-columns: minmax(0, 1fr); } }
@@ -1121,7 +1165,9 @@ dialog.modal.sp-viewer-dialog { inline-size: min(1080px, 100%); }
 .sp-ppe-note { margin: 0; }
 
 .cf-frame { position: relative; inline-size: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 14px; background: #101214; isolation: isolate; box-shadow: 0 0 0 1px rgba(0, 0, 0, .35), var(--elev-2); }
-.cf-frame canvas { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; display: block; }
+.cf-frame canvas, .cf-frame .cf-video { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; display: block; }
+/* main-thread fallback: the composed picture arrives as a muted stream (no controls, no pointer) */
+.cf-frame .cf-video { object-fit: fill; pointer-events: none; background: #101214; }
 .cf-grain { position: absolute; inset: -80px; background-repeat: repeat; opacity: .6; pointer-events: none; will-change: transform; }
 .cf-fx { position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
   background: radial-gradient(ellipse at 50% 48%, transparent 56%, rgba(0, 0, 0, .44) 100%), repeating-linear-gradient(0deg, rgba(0, 0, 0, .055) 0 1px, transparent 1px 3px);
@@ -1148,19 +1194,24 @@ dialog.modal.sp-viewer-dialog { inline-size: min(1080px, 100%); }
   .view-spatial .sp-head-actions { inline-size: 100%; }
 }
 
-@media (prefers-reduced-motion: reduce) { .sp-zone-shape, .sp-cam-cone, .sp-cam-label, .sp-link { transition: none; } }
-:root[data-motion="reduce"] .sp-zone-shape, :root[data-motion="reduce"] .sp-cam-cone, :root[data-motion="reduce"] .sp-cam-label, :root[data-motion="reduce"] .sp-link { transition: none; }
+@media (prefers-reduced-motion: reduce) { .sp-zone-shape, .sp-cam-cone, .sp-cam-label, .sp-link, .sp-cam-glyph { transition: none; } }
+:root[data-motion="reduce"] .sp-zone-shape, :root[data-motion="reduce"] .sp-cam-cone, :root[data-motion="reduce"] .sp-cam-label, :root[data-motion="reduce"] .sp-link, :root[data-motion="reduce"] .sp-cam-glyph { transition: none; }
 @media (forced-colors: active) {
   .sp-zone-shape { stroke: CanvasText; }
   .sp-zone.is-selected .sp-zone-shape, .sp-zone:focus-visible .sp-zone-shape { stroke: Highlight; }
   .sp-cam-cone { stroke: CanvasText; }
 }
 @media print {
-  .sp-cam-card .btn, .sp-clear { display: none; }
+  .sp-cam-card .btn, .sp-clear, .sp-fit { display: none; }
   .sp-plan { break-inside: avoid; }
+  /* print is always the real table, numbers aligned under their headers */
+  .sp-table-wrap { container-type: normal; overflow: visible; border-color: #C5D2E1; }
+  .sp-table { display: table; }
+  .sp-table .num-col { text-align: end; }
 }
-/* "Show on site map" links placed by the radar view (js/views/radar.js) and the AI-risk drawer */
-.radar-side .radar-map-link { align-self: flex-start; text-decoration: none; gap: 6px; }
+/* "Show on site map" links placed by the radar view (js/views/radar.js), the AI-risk drawer and the HSE register
+   drawer (js/views/risks.js) */
+.radar-side .radar-map-link, .risk-map-link { align-self: flex-start; text-decoration: none; gap: 6px; }
 
 /* ==========================================================================
    End of Spatial

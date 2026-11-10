@@ -203,6 +203,11 @@ files `js/i18n/<view>.js`:
 - B-PLATFORM: settings.js, integrations.js, dataquality.js, engine.js.
 - B-DOMAINS: contracts.js, bom.js, schedule.js, cost.js, roadmap.js.
 - B-HSE1: overview.js, radar.js, risks.js, incidents.js. B-HSE2: permits.js, inspections.js, training.js, compliance.js, reports.js.
+- SPATIAL (v3.1, route `#/spatial`, SEC-12; the app has 23 routes): `js/views/spatial.js`, `js/ui/camfeed.js`,
+  `js/data/spatial-seed.js`, `js/i18n/spatial.js`, the "Spatial" section at the end of `css/platform.css`,
+  `docs/design/spatial.md`, `tests/spatial*.test.mjs`. Entry points owned elsewhere carry only a deep link
+  (`router.href('spatial', { site, zone, risk })`): the AI-risk drawer, the HSE register drawer (risks.js), the radar.
+  Feed events of `js/data/live.js` carry `zoneId` when their sentence names a zone (the view matches PPE on it).
 Explainer: `biltix-explainer/**`, `assets/video/**` (video engineer).
 
 ## 10. Definition of done

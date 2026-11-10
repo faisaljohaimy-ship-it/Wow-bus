@@ -24,6 +24,7 @@ real BILTIX, Primavera P6, Autodesk APS, Oracle or sensor system. The UI must sa
 | Baseline measurements before v3 | `docs/specs/v3-precision/baseline.md` |
 | Design tokens (both themes, contrast) | `docs/design/tokens.md` |
 | Component guidance | `docs/design/components.md` |
+| Site spatial view `#/spatial` (SEC-12): plan, zone links, simulated cameras | `docs/design/spatial.md` |
 | Translation runtime and dictionaries | `docs/i18n.md` |
 | Older v1/v2 module contract (still accurate for data shapes and charts) | `docs/ARCHITECTURE.md` |
 
@@ -34,7 +35,7 @@ python3 -m http.server 8080            # serve; open http://localhost:8080 (Engl
 node tests/run.mjs                     # unit tests: scoring, metrics, lifecycle, import, report, time, settings
 node --check js/path/to/file.js        # syntax check a module (there is no bundler to catch it)
 node tools/qa.mjs --lang ar,en --theme dark,light --viewport 1440x900,390x844 --out ./qa-out
-                                       # browser smoke test of all 22 routes (Playwright + Chromium)
+                                       # browser smoke test of all 23 routes (Playwright + Chromium)
 node tools/vendor-motion.mjs           # re-vendor the Motion mini build into js/vendor/motion.js
 node tools/stamp-build.mjs             # stamp index.html before each publish (open pages then offer a reload)
 ```

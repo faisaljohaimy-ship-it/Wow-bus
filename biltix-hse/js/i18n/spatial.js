@@ -21,6 +21,7 @@ export default {
       permits: { zero: 'لا تصاريح مفتوحة', one: 'تصريح مفتوح واحد', two: 'تصريحان مفتوحان', few: '{count} تصاريح مفتوحة', many: '{count} تصريحاً مفتوحاً', other: '{count} تصريح مفتوح' },
       days: { zero: '{count} يوم', one: 'يوم واحد', two: 'يومان', few: '{count} أيام', many: '{count} يوماً', other: '{count} يوم' },
       levels: { zero: 'بلا طوابق', one: 'طابق واحد', two: 'طابقان', few: '{count} طوابق', many: '{count} طابقاً', other: '{count} طابق' },
+      fps: { zero: '{count} إطار في الثانية', one: 'إطار واحد في الثانية', two: 'إطاران في الثانية', few: '{count} إطارات في الثانية', many: '{count} إطاراً في الثانية', other: '{count} إطار في الثانية' },
     },
     plan: {
       title: 'مخطط الموقع — {site}',
@@ -38,8 +39,16 @@ export default {
       cameraAria: 'الكاميرا {code} — {purpose}، {zone}. محاكاة وغير متصلة. فتح العارض',
       zoneAria: 'المنطقة {code} — {name}: {risks}، {sensors}، {cameras}، {permits}',
       note: 'التخطيط توضيحي ومرسوم من مستطيلات المناطق في سجل الموقع. الحساسات موضوعة داخل منطقتها لأن البيانات لا تتضمن إحداثيات مساحية لها.',
+      camerasNote: 'يمكن فتح كل كاميرا أيضاً من قائمة «كاميرات الموقع» أدناه، وتظهر الأسماء الكاملة للمناطق في جدول «المناطق والروابط».',
+      fit: 'عرض الموقع كاملاً',
     },
-    units: { m: '{n} م', deg: '{n}°' },
+    announce: {
+      zone: 'تم تحديد المنطقة {code} — {name}: {risks}، {sensors}، {cameras}، {permits}.',
+      cleared: 'أُلغي تحديد المنطقة؛ تعرض اللوحة إجمالي موقع {site}.',
+      camera: 'عارض الكاميرا {code} مفتوح — {zone}. بث محاكى، والكاميرا غير متصلة.',
+      site: 'مخطط {site}: {zones} و{cameras}.',
+    },
+    units: { m: '{n} م', deg: '{n}°', mm: '{n} مم' },
     compass: { n: 'شمال', ne: 'شمال شرق', e: 'شرق', se: 'جنوب شرق', s: 'جنوب', sw: 'جنوب غرب', w: 'غرب', nw: 'شمال غرب' },
     counts: {
       risks: 'مخاطر السجل',
@@ -102,7 +111,9 @@ export default {
       fov: 'مجال الرؤية',
       lens: 'العدسة',
       rate: 'معدل الإطارات',
-      rateValue: '{n} إطاراً في الثانية (محاكاة)',
+      rateValue: '{fps} (محاكاة)',
+      rateFallback: '{fps} (محاكاة، بدقة مخفّضة لأن المتصفح لا يدعم الرسم خارج الخيط الرئيسي)',
+      rateStill: 'إطار ثابت (تقليل الحركة مفعّل)',
       status: 'الحالة',
     },
     list: {
@@ -148,6 +159,7 @@ export default {
       permits: { zero: 'no open permits', one: '{count} open permit', other: '{count} open permits' },
       days: { one: '{count} day', other: '{count} days' },
       levels: { one: '{count} level', other: '{count} levels' },
+      fps: { one: '{count} fps', other: '{count} fps' },
     },
     plan: {
       title: 'Site plan — {site}',
@@ -165,8 +177,16 @@ export default {
       cameraAria: 'Camera {code}: {purpose}, {zone}. Simulated, not connected. Open the viewer',
       zoneAria: 'Zone {code}, {name}: {risks}, {sensors}, {cameras}, {permits}',
       note: 'The layout is illustrative and drawn from the zone rectangles in the site register. Sensors are placed inside their zone because the data has no surveyed coordinates for them.',
+      camerasNote: 'Every camera can also be opened from the “Site cameras” list below, and the “Zones and links” table gives the full zone names.',
+      fit: 'Show whole site',
     },
-    units: { m: '{n} m', deg: '{n}°' },
+    announce: {
+      zone: 'Selected zone {code}, {name}: {risks}, {sensors}, {cameras}, {permits}.',
+      cleared: 'Zone selection cleared; the panel shows the totals for {site}.',
+      camera: 'Camera {code} viewer open, {zone}. Simulated feed; the camera is not connected.',
+      site: 'Site plan of {site}: {zones} and {cameras}.',
+    },
+    units: { m: '{n} m', deg: '{n}°', mm: '{n} mm' },
     compass: { n: 'N', ne: 'NE', e: 'E', se: 'SE', s: 'S', sw: 'SW', w: 'W', nw: 'NW' },
     counts: {
       risks: 'Register risks',
@@ -229,7 +249,9 @@ export default {
       fov: 'Field of view',
       lens: 'Lens',
       rate: 'Frame rate',
-      rateValue: '{n} fps (simulated)',
+      rateValue: '{fps} (simulated)',
+      rateFallback: '{fps} (simulated, reduced resolution: this browser cannot draw off the main thread)',
+      rateStill: 'Still frame (reduced motion is on)',
       status: 'Status',
     },
     list: {

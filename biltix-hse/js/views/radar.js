@@ -94,10 +94,13 @@ export default {
     const categoryLabel = (id) => label('hseCategory', id) || '—';
     const unitLabel = (u) => (u ? label('unit', u) : '');
     const isEn = () => I.lang() !== 'ar';
-    /** Site the sensor/site-plan radars follow: the global filter, or the first site for 'all'. */
+    /** Site the sensor/site-plan radars follow: the global filter, else a ?site= deep link (e.g. from the site
+     *  spatial view), else the first site for 'all'. */
+    const paramSite = ctx.params && ctx.params.site ? String(ctx.params.site) : null;
     const siteFor = () => {
       const f = filters();
       if (f.siteId && f.siteId !== 'all' && siteById(f.siteId)) return f.siteId;
+      if (paramSite && siteById(paramSite)) return paramSite;
       return siteById('S1') ? 'S1' : (sites()[0] ? sites()[0].id : 'S1');
     };
     const fmtValue = (v) => (v === null || !Number.isFinite(v) ? '—' : fmt.num(v, { maximumFractionDigits: Math.abs(v) < 10 ? 1 : 0 }));

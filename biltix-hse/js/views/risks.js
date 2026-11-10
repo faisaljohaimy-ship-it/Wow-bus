@@ -632,6 +632,15 @@ export default {
       statusSeg.el.classList.add('is-block');
       statusSeg.el.dataset.focusKey = 'status';
 
+      // "Show on site map": the risk's zone on the site spatial view (#/spatial), highlighted there (&risk=)
+      const mapLink = zone && site ? h('a', {
+        class: 'btn btn-outline btn-sm risk-map-link',
+        href: router.href('spatial', { site: site.id, zone: risk.zoneId, risk: risk.id }),
+        'aria-label': t('risks.drawer.showOnMapAria', { code: risk.code, zone: zone.name || risk.zoneId }),
+        'data-focus-key': 'show-on-map',
+        onClick: (e) => { if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button) return; if (drawerApi) { const api = drawerApi; try { api.close('navigate'); } catch { /* ignore */ } } },
+      }, ico('map-pin', 14), h('span', { class: 'btn-label' }, t('risks.drawer.showOnMap'))) : null;
+
       return h('div', {},
         section(null,
           h('div', { class: 'row wrap gap-2' },
@@ -642,7 +651,7 @@ export default {
         section(t('risks.drawer.basics'), C.kv([
           [t('risks.drawer.site'), site ? h('span', {}, L(site, 'name', 'sites'), ' ', h('span', { class: 'code mono', dir: 'ltr', translate: 'no' }, `(${site.code})`)) : '—'],
           [t('risks.drawer.activity'), text(risk, 'activity') || '—'],
-          [t('risks.drawer.zone'), zone ? (zone.name || risk.zoneId) : '—'],
+          [t('risks.drawer.zone'), zone ? h('span', { class: 'stack gap-1' }, h('span', {}, zone.name || risk.zoneId), mapLink) : '—'],
           [t('risks.drawer.owner'), ownerName(risk.owner) || '—'],
           [t('risks.drawer.source'), sourceLabel(risk.source, risk) || '—'],
           [t('risks.drawer.due'), risk.dueDate ? fmt.date(risk.dueDate) : '—'],

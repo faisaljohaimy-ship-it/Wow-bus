@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, arr) => { if (v.startsWith('--')) a.push([v.slice(2), arr[i + 1] && !arr[i + 1].startsWith('--') ? arr[i + 1] : 'true']); return a; }, []));
 const port = Number(args.port || 8131);
 const root = args.root || fileURLToPath(new URL('..', import.meta.url));
-const routes = (args.routes || 'cockpit,airisks,tasks,alerts,contracts,bom,schedule,cost,overview,radar,risks,incidents,permits,inspections,training,compliance,engine,dataquality,integrations,reports,roadmap,settings').split(',').filter(Boolean);
+const routes = (args.routes || 'cockpit,airisks,tasks,alerts,contracts,bom,schedule,cost,overview,radar,spatial,risks,incidents,permits,inspections,training,compliance,engine,dataquality,integrations,reports,roadmap,settings').split(',').filter(Boolean);
 const viewports = (args.viewport || '1440x900').split(',').map(v => { const [w, h] = v.split('x').map(Number); return { width: w, height: h }; });
 const themes = (args.theme || 'dark').split(',');
 const langs = (args.lang || 'ar').split(',');

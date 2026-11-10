@@ -201,7 +201,8 @@ function arDigits(text) {
 }
 
 /** Optional raw fields copied verbatim from a partial event into the stored FeedEvent. */
-const EXTRA_FIELDS = ['code', 'value', 'unit', 'threshold', 'ms', 'minutes', 'hours', 'days', 'pct', 'count', 'direction', 'source'];
+// zoneId: the zone the sentence names, when it names one (the spatial view matches PPE events structurally on it)
+const EXTRA_FIELDS = ['code', 'value', 'unit', 'threshold', 'ms', 'minutes', 'hours', 'days', 'pct', 'count', 'direction', 'source', 'zoneId'];
 
 function warn(context, error) {
   try { console.warn(`[biltix-hse] live engine (${context}):`, error); } catch { /* no console */ }
@@ -892,7 +893,7 @@ function seedContext(t, base) {
       ctx.code = m.kind; ctx.rawCode = m.code || m.id; ctx.refId = m.id;
       ctx.en.code = enumEn('sensorKind', m.kind, 'Sensor');
       setValue(ctx, round(raw.displayValue, 2), m.unit, 1);
-      if (m.zoneId) { ctx.zone = zoneName(m.siteId, m.zoneId) || ctx.zone; ctx.en.zone = zoneEn(zoneOf(m.siteId, m.zoneId), siteOf(m.siteId)) || ctx.en.zone; }
+      if (m.zoneId) { ctx.zone = zoneName(m.siteId, m.zoneId) || ctx.zone; ctx.en.zone = zoneEn(zoneOf(m.siteId, m.zoneId), siteOf(m.siteId)) || ctx.en.zone; ctx.zoneId = m.zoneId; }
       break;
     }
     case 'permit': {
@@ -914,6 +915,7 @@ function seedContext(t, base) {
       setCode(ctx, p); ctx.siteId = p.siteId;
       ctx.site = (siteById(p.siteId) || {}).name || ctx.site;
       ctx.zone = p.location || zoneName(p.siteId, p.zoneId) || ctx.zone;
+      ctx.zoneId = p.zoneId || '';
       ctx.en.site = siteEn(siteOf(p.siteId)) || ctx.en.site;
       ctx.en.zone = dataEn('permits', p.id, 'location') || zoneEn(zoneOf(p.siteId, p.zoneId), siteOf(p.siteId)) || ctx.en.zone;
       break;
@@ -924,6 +926,7 @@ function seedContext(t, base) {
       setCode(ctx, i); ctx.siteId = i.siteId;
       ctx.site = (siteById(i.siteId) || {}).name || ctx.site;
       ctx.zone = i.location || zoneName(i.siteId, i.zoneId) || ctx.zone;
+      ctx.zoneId = i.zoneId || '';
       ctx.en.site = siteEn(siteOf(i.siteId)) || ctx.en.site;
       ctx.en.zone = dataEn('incidents', i.id, 'location') || latinOnly(i.locationEn) || zoneEn(zoneOf(i.siteId, i.zoneId), siteOf(i.siteId)) || ctx.en.site;
       break;
@@ -937,6 +940,7 @@ function seedContext(t, base) {
       setCode(ctx, ins); ctx.siteId = ins.siteId;
       ctx.site = (siteById(ins.siteId) || {}).name || ctx.site;
       ctx.zone = zoneName(ins.siteId, ins.zoneId) || ctx.zone;
+      ctx.zoneId = ins.zoneId || '';
       ctx.en.site = siteEn(siteOf(ins.siteId)) || ctx.en.site;
       ctx.en.zone = zoneEn(zoneOf(ins.siteId, ins.zoneId), siteOf(ins.siteId)) || ctx.en.zone;
       break;
@@ -951,7 +955,7 @@ function seedContext(t, base) {
       const g = /تدهور|متدهور/.test(phrase) ? raw.integrationDegraded : raw.integration;
       if (!g) return null;
       if (/استعادة/.test(phrase) && g.status !== 'connected') return null;
-      ctx.code = g.name; ctx.rawCode = g.id; ctx.siteId = null;
+      ctx.code = g.name; ctx.rawCode = g.id; ctx.siteId = null; ctx.zoneId = '';
       ctx.en.code = integrationEn(g);
       if (/الاستجابة/.test(phrase)) { const ms = Math.max(20, num(g.latencyMs, 120)); setValue(ctx, ms, 'مللي ثانية'); ctx.payload.ms = ms; }
       else setValue(ctx, randInt(12, 180), '');
@@ -1033,6 +1037,8 @@ function emitRandomFeed() {
       sourceId: sourceId || null,
       code: code || undefined,
       refId: refId || undefined,
+      // structural zone of the event: only when the sentence names the context zone of a site
+      zoneId: /\{zone\}/.test(text) && ctx.siteId && ctx.zoneId && zonesOf(siteById(ctx.siteId)).some((z) => z && z.id === ctx.zoneId) ? ctx.zoneId : undefined,
       ...payloadFor(text, ctx),
     });
   }
@@ -1197,6 +1203,7 @@ function sensorStep(now = Date.now()) {
         tone: 'good',
         siteId: m.siteId,
         simulated: true,
+        zoneId: m.zoneId || undefined,
         title: `محاكاة: عودة قراءة ${m.kind} إلى المعدل الطبيعي — ${zoneName(m.siteId, m.zoneId) || 'الموقع'}`,
         titleEn: `Simulated: ${recKindEn} reading back to normal — ${recZoneEn || (recSite ? siteEn(recSite) : 'site')}`,
         detail: `القراءة الحالية ${n1(m.value)} ${m.unit} (${low ? 'الحد الأدنى' : 'الحد'} ${n1(limit)} ${m.unit}) · رفع الإجراءات الاحترازية`,
@@ -1260,6 +1267,7 @@ function raiseSensorAlert(m, now) {
     type: 'sensor',
     tone: 'critical',
     siteId: m.siteId,
+    zoneId: zone ? m.zoneId : undefined,
     title: `${title} — ${zone || (site ? site.name : '')}`,
     titleEn: `${titleEn} — ${zoneEnName || (site ? siteEn(site) : '')}`,
     detail,
@@ -1364,6 +1372,7 @@ function permitStep(now = Date.now()) {
         type: 'permit',
         tone: 'warning',
         siteId: p.siteId,
+        zoneId: p.zoneId || undefined,
         title: `تصريح ${nbh(p.code)} يقترب من الانتهاء خلال ${n0(minutes)} دقيقة`,
         titleEn: `Permit ${nbh(p.code)} expires in ${enNum(minutes)} minutes`,
         detail: `${p.type} — ${p.location || ''} · ينتهي ${safeTime(p.expiresAt)} · يلزم الإقفال أو التمديد قبل الموعد`,
@@ -1438,6 +1447,7 @@ function issueReplacement(p, now) {
     type: 'permit',
     tone: 'accent',
     siteId: p.siteId,
+    zoneId: p.zoneId || undefined,
     title: `انتهاء صلاحية التصريح ${nbh(p.code)} — إغلاق تلقائي`,
     titleEn: `Permit ${nbh(p.code)} expired — closed automatically`,
     detail: `تم إصدار تصريح جديد ${nbh(created.code)} (${p.type}) بديلاً عنه حتى ${safeTime(created.expiresAt)} · ${p.location || ''}`,

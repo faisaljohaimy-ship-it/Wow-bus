@@ -176,22 +176,23 @@ export const SITE_PLANS = Object.freeze({
   },
 });
 
-/** Simulated cameras: one record per mounted position. Codes are Latin and never localised. */
-const CAM = (o) => Object.freeze({ simulated: true, connected: false, lens: '4 mm', range: 0.2, ...o });
+/** Simulated cameras: one record per mounted position. Codes are Latin and never localised; numbers are plain
+ *  numbers (lensMm = focal length in mm, mountHeight in m) so the view localises digits and units. */
+const CAM = (o) => Object.freeze({ simulated: true, connected: false, lensMm: 4, range: 0.2, ...o });
 export const CAMERAS = Object.freeze([
   /* S1 — Financial Gateway Tower (Riyadh) */
-  CAM({ id: 'CAM-S1-01', siteId: 'S1', zoneId: 'S1-Z6', x: 0.04, y: 0.86, heading: 96, fov: 92, mountHeight: 6, lens: '2.8 mm', scene: 'gate',
+  CAM({ id: 'CAM-S1-01', siteId: 'S1', zoneId: 'S1-Z6', x: 0.04, y: 0.86, heading: 96, fov: 92, mountHeight: 6, lensMm: 2.8, scene: 'gate',
     purpose: 'بوابة الدخول وحركة المركبات', purposeEn: 'Entrance gate and vehicle movements' }),
   CAM({ id: 'CAM-S1-02', siteId: 'S1', zoneId: 'S1-Z1', x: 0.57, y: 0.55, heading: 318, fov: 70, mountHeight: 12, scene: 'frame',
     purpose: 'نواة البرج وحواف البلاطات العليا', purposeEn: 'Tower core and upper slab edges' }),
-  CAM({ id: 'CAM-S1-03', siteId: 'S1', zoneId: 'S1-Z2', x: 0.63, y: 0.27, heading: 40, fov: 62, mountHeight: 18, lens: '6 mm', range: 0.22, scene: 'frame',
+  CAM({ id: 'CAM-S1-03', siteId: 'S1', zoneId: 'S1-Z2', x: 0.63, y: 0.27, heading: 40, fov: 62, mountHeight: 18, lensMm: 6, range: 0.22, scene: 'frame',
     purpose: 'منطقة الرفع أسفل برج الرافعة 2', purposeEn: 'Lift zone below tower crane 2' }),
-  CAM({ id: 'CAM-S1-04', siteId: 'S1', zoneId: 'S1-Z3', x: 0.97, y: 0.55, heading: 296, fov: 100, mountHeight: 5, lens: '2.8 mm', range: 0.17, scene: 'yard',
+  CAM({ id: 'CAM-S1-04', siteId: 'S1', zoneId: 'S1-Z3', x: 0.97, y: 0.55, heading: 296, fov: 100, mountHeight: 5, lensMm: 2.8, range: 0.17, scene: 'yard',
     purpose: 'ورشة الحديد ومحطة القص', purposeEn: 'Rebar workshop and cutting station' }),
   CAM({ id: 'CAM-S1-05', siteId: 'S1', zoneId: 'S1-Z4', x: 0.96, y: 0.97, heading: 292, fov: 88, mountHeight: 8, scene: 'yard',
     purpose: 'ساحة التخزين وبوابة الشاحنات', purposeEn: 'Laydown yard and truck gate' }),
   /* S2 — Red Sea Residential Compound (Jeddah) */
-  CAM({ id: 'CAM-S2-01', siteId: 'S2', zoneId: 'S2-Z6', x: 0.97, y: 0.95, heading: 296, fov: 92, mountHeight: 6, lens: '2.8 mm', scene: 'gate',
+  CAM({ id: 'CAM-S2-01', siteId: 'S2', zoneId: 'S2-Z6', x: 0.97, y: 0.95, heading: 296, fov: 92, mountHeight: 6, lensMm: 2.8, scene: 'gate',
     purpose: 'البوابة الرئيسية ومنطقة التسليم', purposeEn: 'Main gate and delivery bay' }),
   CAM({ id: 'CAM-S2-02', siteId: 'S2', zoneId: 'S2-Z3', x: 0.69, y: 0.47, heading: 22, fov: 74, mountHeight: 10, scene: 'midrise',
     purpose: 'سقالات واجهات المبنى ج', purposeEn: 'Building C façade scaffolding' }),
@@ -200,13 +201,13 @@ export const CAMERAS = Object.freeze([
   CAM({ id: 'CAM-S2-04', siteId: 'S2', zoneId: 'S2-Z1', x: 0.31, y: 0.47, heading: 322, fov: 78, mountHeight: 9, scene: 'midrise',
     purpose: 'أعمال التشطيبات في المبنى أ', purposeEn: 'Building A finishing works' }),
   /* S3 — NEOM solar plant */
-  CAM({ id: 'CAM-S3-01', siteId: 'S3', zoneId: 'S3-Z1', x: 0.48, y: 0.43, heading: 300, fov: 96, mountHeight: 8, lens: '2.8 mm', range: 0.24, scene: 'solar',
+  CAM({ id: 'CAM-S3-01', siteId: 'S3', zoneId: 'S3-Z1', x: 0.48, y: 0.43, heading: 300, fov: 96, mountHeight: 8, lensMm: 2.8, range: 0.24, scene: 'solar',
     purpose: 'حقل الألواح الشمالي وتركيب المتتبعات', purposeEn: 'North array and tracker installation' }),
-  CAM({ id: 'CAM-S3-02', siteId: 'S3', zoneId: 'S3-Z2', x: 0.52, y: 0.43, heading: 58, fov: 96, mountHeight: 8, lens: '2.8 mm', range: 0.24, scene: 'solar',
+  CAM({ id: 'CAM-S3-02', siteId: 'S3', zoneId: 'S3-Z2', x: 0.52, y: 0.43, heading: 58, fov: 96, mountHeight: 8, lensMm: 2.8, range: 0.24, scene: 'solar',
     purpose: 'حقل الألواح الجنوبي — الصف 48', purposeEn: 'South array, row 48' }),
   CAM({ id: 'CAM-S3-03', siteId: 'S3', zoneId: 'S3-Z4', x: 0.68, y: 0.97, heading: 318, fov: 86, mountHeight: 7, scene: 'yard',
     purpose: 'ساحة التجميع ومسار الشاحنات', purposeEn: 'Assembly yard and truck route' }),
-  CAM({ id: 'CAM-S3-04', siteId: 'S3', zoneId: 'S3-Z6', x: 0.03, y: 0.97, heading: 48, fov: 92, mountHeight: 6, lens: '2.8 mm', scene: 'gate',
+  CAM({ id: 'CAM-S3-04', siteId: 'S3', zoneId: 'S3-Z6', x: 0.03, y: 0.97, heading: 48, fov: 92, mountHeight: 6, lensMm: 2.8, scene: 'gate',
     purpose: 'بوابة المعسكر ونقطة التجمع', purposeEn: 'Camp gate and muster point' }),
   /* S4 — Dammam port logistics warehouses */
   CAM({ id: 'CAM-S4-01', siteId: 'S4', zoneId: 'S4-Z1', x: 0.03, y: 0.57, heading: 28, fov: 80, mountHeight: 10, scene: 'warehouse',
@@ -215,7 +216,7 @@ export const CAMERAS = Object.freeze([
     purpose: 'أعمال الأسقف والتكسية في المستودع 2', purposeEn: 'Warehouse 2 roofing and cladding' }),
   CAM({ id: 'CAM-S4-03', siteId: 'S4', zoneId: 'S4-Z5', x: 0.73, y: 0.97, heading: 290, fov: 90, mountHeight: 8, scene: 'yard',
     purpose: 'ساحة المناورة والشحن', purposeEn: 'Manoeuvring and loading yard' }),
-  CAM({ id: 'CAM-S4-04', siteId: 'S4', zoneId: 'S4-Z6', x: 0.97, y: 0.96, heading: 296, fov: 92, mountHeight: 6, lens: '2.8 mm', scene: 'gate',
+  CAM({ id: 'CAM-S4-04', siteId: 'S4', zoneId: 'S4-Z6', x: 0.97, y: 0.96, heading: 296, fov: 92, mountHeight: 6, lensMm: 2.8, scene: 'gate',
     purpose: 'بوابة الميناء ومكاتب الموقع', purposeEn: 'Port gate and site offices' }),
   /* S5 — Qiddiya phase 2 earthworks */
   CAM({ id: 'CAM-S5-01', siteId: 'S5', zoneId: 'S5-Z1', x: 0.53, y: 0.53, heading: 314, fov: 84, mountHeight: 9, range: 0.26, scene: 'earthworks',
@@ -224,7 +225,7 @@ export const CAMERAS = Object.freeze([
     purpose: 'الكسارة ومحطة الخلط', purposeEn: 'Crusher and batching plant' }),
   CAM({ id: 'CAM-S5-03', siteId: 'S5', zoneId: 'S5-Z4', x: 0.28, y: 0.68, heading: 84, fov: 76, mountHeight: 7, range: 0.26, scene: 'earthworks',
     purpose: 'طريق النقل الداخلي', purposeEn: 'Internal haul road' }),
-  CAM({ id: 'CAM-S5-04', siteId: 'S5', zoneId: 'S5-Z6', x: 0.63, y: 0.97, heading: 22, fov: 92, mountHeight: 6, lens: '2.8 mm', scene: 'gate',
+  CAM({ id: 'CAM-S5-04', siteId: 'S5', zoneId: 'S5-Z6', x: 0.63, y: 0.97, heading: 22, fov: 92, mountHeight: 6, lensMm: 2.8, scene: 'gate',
     purpose: 'بوابة الدخول ومكاتب الموقع', purposeEn: 'Entrance gate and site offices' }),
   /* S6 — Madinah specialist hospital expansion */
   CAM({ id: 'CAM-S6-01', siteId: 'S6', zoneId: 'S6-Z2', x: 0.33, y: 0.58, heading: 30, fov: 72, mountHeight: 11, scene: 'frame',
@@ -233,7 +234,7 @@ export const CAMERAS = Object.freeze([
     purpose: 'البهو الرئيسي والسقالات', purposeEn: 'Main atrium and scaffolding' }),
   CAM({ id: 'CAM-S6-03', siteId: 'S6', zoneId: 'S6-Z1', x: 0.02, y: 0.58, heading: 34, fov: 82, mountHeight: 8, scene: 'midrise',
     purpose: 'منطقة الربط مع المبنى القائم', purposeEn: 'Link to the existing building' }),
-  CAM({ id: 'CAM-S6-04', siteId: 'S6', zoneId: 'S6-Z6', x: 0.97, y: 0.97, heading: 300, fov: 92, mountHeight: 6, lens: '2.8 mm', scene: 'gate',
+  CAM({ id: 'CAM-S6-04', siteId: 'S6', zoneId: 'S6-Z6', x: 0.97, y: 0.97, heading: 300, fov: 92, mountHeight: 6, lensMm: 2.8, scene: 'gate',
     purpose: 'بوابة المقاول', purposeEn: 'Contractor gate' }),
 ]);
 
@@ -272,6 +273,268 @@ export function markerPoint(zone, key, slot = 0) {
   const fx = 0.16 + ((h & 0xff) / 255) * 0.68;
   const fy = 0.62 + (((h >>> 8) & 0xff) / 255) * 0.26;
   return { x: zone.x + zone.w * fx, y: zone.y + zone.h * fy };
+}
+
+/* ────────────────────────────── plan label placement (pure) ────────────────────────────── */
+
+/** Drawing geometry shared by the view and the placement (plan units). */
+export const LABEL = Object.freeze({
+  name: Object.freeze({ size: 14, weight: 600, line: 17, ascent: 13, pad: 9, padY: 5 }),
+  code: Object.freeze({ size: 13, weight: 600, h: 16, ascent: 12.5, pad: 8 }),
+  codeNarrow: Object.freeze({ size: 30, weight: 600, h: 32, ascent: 26, pad: 8 }),
+  badge: Object.freeze({ r: 13, pad: 7 }),
+  cam: Object.freeze({ body: 13, bodyNarrow: 30, labelSize: 10.5 }),
+});
+
+const rectArea = (r) => Math.max(0, r.x1 - r.x0) * Math.max(0, r.y1 - r.y0);
+const rectOverlap = (a, b) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+const approxWidth = (str, size, mono) => String(str || '').length * size * (mono ? 0.62 : 0.56);
+
+/** Camera code label offset on the plan (the view draws it there). */
+export function camLabelOffset(cam) {
+  return { dx: cam.x > 0.8 ? -14 : 14, dy: cam.y > 0.85 ? -14 : 24, anchor: cam.x > 0.8 ? 'end' : 'start' };
+}
+
+/**
+ * What a zone label must not cover, in plan units: `{ x0, y0, x1, y1, w }` (w = weight; ≥ 2 is "hard").
+ * Footprint outlines, label plates, cameras (body; code label softer), crane masts, gates, manholes, sensors and
+ * feature labels are hard; structures, roads, solar rows and pits are soft (a haloed label may sit on them).
+ * @param {string} siteId
+ * @param {object} site      store site (zones)
+ * @param {{ sensors?: object[], measure?: Function, isEn?: boolean, narrow?: boolean }} [opts]
+ */
+export function planObstacles(siteId, site, { sensors = [], measure = null, isEn = false, narrow = false } = {}) {
+  const plan = planFor(siteId) || {};
+  const { inner } = PLAN;
+  const X = (x) => inner.x + x * inner.w;
+  const Y = (y) => inner.y + y * inner.h;
+  const mw = (text, size, weight = 500, mono = false) => (measure ? measure(text, size, weight, mono) : approxWidth(text, size, mono));
+  const out = [];
+  // k (kind) lets a label type weigh an obstacle differently: a short zone code may sit on a building outline
+  const add = (x0, y0, x1, y1, w, k = '') => out.push({ x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1), w, k });
+  for (const fp of arr(plan.footprints)) {
+    const pts = fp.poly.map(([x, y]) => [X(x), Y(y)]);
+    for (let i = 0; i < pts.length; i += 1) {
+      const a = pts[i]; const b = pts[(i + 1) % pts.length];
+      add(a[0] - 3, a[1] - 3, b[0] + 3, b[1] + 3, 4, 'edge');
+    }
+    const xs = pts.map((p) => p[0]); const ys = pts.map((p) => p[1]);
+    add(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), 0.6, 'inside');
+    // the level plate sits at the footprint centre
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2; const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    add(cx - 90, cy - 12, cx + 90, cy + 10, 4);
+  }
+  for (const st of arr(plan.structures)) {
+    const [x, y, w, h] = st.rect;
+    add(X(x), Y(y), X(x + w), Y(y + h), st.type === 'scaffold' || st.type === 'tank' || st.type === 'plant' ? 2.5 : 0.9);
+    if (st.label) { const lw = mw(isEn ? (st.labelEn || st.label) : st.label, 11) / 2 + 4; add(X(x + w / 2) - lw, Y(y + h / 2) - 9, X(x + w / 2) + lw, Y(y + h / 2) + 7, 2.5); }
+  }
+  for (const a of arr(plan.arrays)) { const [x, y, w, h] = a.rect; add(X(x), Y(y), X(x + w), Y(y + h), 0.25); }
+  for (const p of arr(plan.pits)) { const [x, y, w, h] = p.rect; add(X(x), Y(y), X(x + w), Y(y + h), 0.4); add(X(x + w / 2) - 34, Y(y + h / 2) - 9, X(x + w / 2) + 34, Y(y + h / 2) + 7, 2.5); }
+  for (const road of arr(plan.roads)) {
+    for (let i = 0; i < road.length - 1; i += 1) add(X(road[i][0]) - 8, Y(road[i][1]) - 8, X(road[i + 1][0]) + 8, Y(road[i + 1][1]) + 8, 0.35);
+  }
+  for (const cr of arr(plan.cranes)) {
+    add(X(cr.x) - 8, Y(cr.y) - 8, X(cr.x) + 8, Y(cr.y) + 8, 3);
+    add(X(cr.x) + 8, Y(cr.y) + 8, X(cr.x) + 10 + mw(cr.id, 10.5, 500, true), Y(cr.y) + 21, 1.5);
+  }
+  for (const gt of arr(plan.gates)) { const horiz = gt.side === 'n' || gt.side === 's'; add(X(gt.x) - (horiz ? 22 : 7), Y(gt.y) - (horiz ? 7 : 22), X(gt.x) + (horiz ? 22 : 7), Y(gt.y) + (horiz ? 7 : 22), 3); }
+  for (const mh of arr(plan.manholes)) { add(X(mh.x) - 9, Y(mh.y) - 9, X(mh.x) + 9, Y(mh.y) + 9, 3); add(X(mh.x) + 9, Y(mh.y) - 7, X(mh.x) + 13 + mw(mh.code, 10.5, 500, true), Y(mh.y) + 7, 2); }
+  const zones = arr(site && site.zones);
+  arr(sensors).filter((sn) => sn && sn.siteId === siteId).forEach((sn, i) => {
+    const z = zones.find((zz) => zz.id === sn.zoneId);
+    if (!z) return;
+    const p = markerPoint(z, sn.id, i);
+    add(X(p.x) - 9, Y(p.y) - 9, X(p.x) + 9, Y(p.y) + 9, 2);
+  });
+  const body = narrow ? LABEL.cam.bodyNarrow : LABEL.cam.body;
+  for (const cam of camerasFor(siteId)) {
+    const cx = X(cam.x); const cy = Y(cam.y);
+    add(cx - body, cy - body, cx + body, cy + body, 4);
+    if (!narrow) {
+      const o = camLabelOffset(cam);
+      const lw = mw(cam.id, LABEL.cam.labelSize, 600, true);
+      const lx0 = o.anchor === 'end' ? cx + o.dx - lw : cx + o.dx;
+      add(lx0, cy + o.dy - 10, lx0 + lw, cy + o.dy + 3, 1);
+    }
+  }
+  return out;
+}
+
+function zoneRectPlan(z) {
+  const { inner } = PLAN;
+  return { x0: inner.x + z.x * inner.w + 3, y0: inner.y + z.y * inner.h + 3, x1: inner.x + (z.x + z.w) * inner.w - 3, y1: inner.y + (z.y + z.h) * inner.h - 3 };
+}
+
+function overlapCost(rect, obstacles, weights = null) {
+  const a = rectArea(rect) || 1;
+  let c = 0;
+  for (const o of obstacles) {
+    const ov = rectOverlap(rect, o);
+    if (ov > 0) c += (ov / a) * (weights && o.k && weights[o.k] !== undefined ? weights[o.k] : o.w);
+  }
+  return c;
+}
+/** Zone codes are two characters with a halo: they may sit on a building outline, never on a camera. */
+const CODE_WEIGHTS = Object.freeze({ edge: 0.5, inside: 0.1 });
+
+/** Best of a few fixed corner spots for a w × h box inside the zone (prefs in order of preference). */
+function cornerSpot(zr, w, h, pad, prefs, obstacles, weights = null) {
+  let best = null;
+  prefs.forEach((corner, i) => {
+    for (const inset of [0, 10, 22, 36]) {
+      for (const lift of [0, -4, 12, 26]) {
+        const left = corner.includes('l');
+        const top = corner.includes('t');
+        const x0 = left ? zr.x0 + pad + inset : zr.x1 - pad - inset - w;
+        const y0 = top ? zr.y0 + pad + lift : zr.y1 - pad - h - lift;
+        const rect = { x0, y0, x1: x0 + w, y1: y0 + h };
+        if (rect.x0 < zr.x0 || rect.x1 > zr.x1 || rect.y0 < zr.y0 || rect.y1 > zr.y1) continue;
+        const cost = overlapCost(rect, obstacles, weights) * 10 + i * 0.6 + inset * 0.01 + Math.abs(lift) * 0.012;
+        if (!best || cost < best.cost) best = { ...rect, cost };
+      }
+    }
+  });
+  return best || { x0: zr.x0 + pad, y0: zr.y0 + pad, x1: zr.x0 + pad + w, y1: zr.y0 + pad + h, cost: Infinity };
+}
+
+/** Splits a name at a word boundary into two lines whose longer line is as short as possible. */
+function twoLines(text, measureLine) {
+  const words = String(text).split(/\s+/).filter(Boolean);
+  if (words.length < 2) return null;
+  let best = null;
+  for (let i = 1; i < words.length; i += 1) {
+    let a = words.slice(0, i).join(' '); let b = words.slice(i).join(' ');
+    if (b.startsWith('— ')) { a = `${a} —`; b = b.slice(2); }
+    if (a === '—' || !b) continue;
+    const w = Math.max(measureLine(a), measureLine(b));
+    if (!best || w < best.w) best = { lines: [a, b], w };
+  }
+  return best;
+}
+
+/**
+ * Places the open-risk badge, the zone code (normal and narrow-plan sizes) and the zone name of every zone so
+ * that nothing important is covered. The name falls back to two lines, then to its specific part (after " — "),
+ * then to an ellipsis; the full name stays in the zone button's accessible name and in the zones table.
+ * @param {object} site   store site
+ * @param {string[]} names  display names per zone (same order as site.zones)
+ * @param {{ obstacles: object[], obstaclesNarrow?: object[], measure?: Function }} opts
+ * @returns {Map<string, { badge: {cx,cy}, code: {x,y}, codeNarrow: {x,y}, name: { cx, y0, lines: string[], full: string, shortened: boolean, cost: number } }>}
+ */
+export function layoutZoneLabels(site, names, { obstacles = [], obstaclesNarrow = null, measure = null } = {}) {
+  const mw = (text, size, weight, mono = false) => (measure ? measure(text, size, weight, mono) : approxWidth(text, size, mono));
+  const N = LABEL.name; const Cd = LABEL.code; const Cn = LABEL.codeNarrow; const B = LABEL.badge;
+  const out = new Map();
+  arr(site && site.zones).forEach((z, zi) => {
+    const zr = zoneRectPlan(z);
+    const obs = obstacles.slice();
+    const obsN = (obstaclesNarrow || obstacles).slice();
+    const short = String(z.id).split('-').pop();
+    const bs = 2 * B.r + 4;
+    const badgePrefs = ['tr', 'tl', 'br', 'bl'];
+    // 1. zone code, normal and narrow sizes (top start corner preferred; never under a camera)
+    const cw = mw(short, Cd.size, Cd.weight, true) + 4;
+    const c = cornerSpot(zr, cw, Cd.h, Cd.pad, ['tl', 'bl', 'tr', 'br'], obs, CODE_WEIGHTS);
+    obs.push({ ...c, w: 5 });
+    const cnw = mw(short, Cn.size, Cn.weight, true) + 6;
+    const cn = cornerSpot(zr, cnw, Cn.h, Cn.pad, ['tl', 'bl', 'tr', 'br'], obsN, CODE_WEIGHTS);
+    obsN.push({ ...cn, w: 5 });
+    // 2. the badge's preferred spot is reserved (softly) while the name is placed; the badge then avoids the name
+    const b0 = cornerSpot(zr, bs, bs, B.pad, badgePrefs, obs);
+    const nameObs = obs.concat([{ ...b0, w: 1.2 }]);
+    // 3. name: full → two lines → specific part → two lines → ellipsis
+    const full = String(names[zi] || z.name || z.id);
+    const lineW = (s) => mw(s, N.size, N.weight) + 6;
+    const maxW = zr.x1 - zr.x0 - 2 * N.pad;
+    const options = [];
+    const push = (lines, pen, shortened) => { const w = Math.max(...lines.map(lineW)); if (w <= maxW) options.push({ lines, w, h: lines.length * N.line + 1, pen, shortened }); };
+    push([full], 0, false);
+    const two = twoLines(full, lineW); if (two) push(two.lines, 0.35, false);
+    const dash = full.indexOf(' — ');
+    const specific = dash > 0 ? full.slice(dash + 3).trim() : '';
+    if (specific) { push([specific], 0.9, true); const two2 = twoLines(specific, lineW); if (two2) push(two2.lines, 1.2, true); }
+    {
+      const base = specific || full;
+      let n = base.length;
+      while (n > 3 && lineW(`${base.slice(0, n).trim()}…`) > maxW) n -= 1;
+      push([`${base.slice(0, n).trim()}…`], 2.5, true);
+    }
+    let best = null;
+    const zh = zr.y1 - zr.y0;
+    for (const opt of options) {
+      const ys = [];
+      for (let y = zr.y1 - N.padY - opt.h; y >= zr.y0 + N.padY - 0.01; y -= 3) ys.push(y);
+      if (zr.y1 - N.padY - opt.h >= zr.y0 + N.padY) ys.push(zr.y0 + N.padY);   // flush with the top as well
+      for (const y0 of ys) {
+        for (const align of ['center', 'start', 'end', 'q1', 'q3']) {
+          const zw = zr.x1 - zr.x0;
+          const cx = align === 'center' ? (zr.x0 + zr.x1) / 2
+            : align === 'start' ? zr.x0 + N.pad + opt.w / 2
+              : align === 'end' ? zr.x1 - N.pad - opt.w / 2
+                : zr.x0 + zw * (align === 'q1' ? 0.25 : 0.75);
+          const rect = { x0: cx - opt.w / 2, y0, x1: cx + opt.w / 2, y1: y0 + opt.h };
+          if (rect.x0 < zr.x0 + N.pad - 0.5 || rect.x1 > zr.x1 - N.pad + 0.5) continue;
+          const pos = ((zr.y1 - N.padY - opt.h - y0) / Math.max(1, zh)) * 0.7 + (align === 'center' ? 0 : 0.12);
+          const cost = overlapCost(rect, nameObs) * 10 + opt.pen + pos;
+          if (!best || cost < best.cost) best = { cx, y0, lines: opt.lines, shortened: opt.shortened, cost, rect };
+        }
+      }
+    }
+    const b = cornerSpot(zr, bs, bs, B.pad, badgePrefs, best ? obs.concat([{ ...best.rect, w: 5 }]) : obs);
+    const badge = { cx: (b.x0 + b.x1) / 2, cy: (b.y0 + b.y1) / 2 };
+    out.set(z.id, {
+      badge,
+      code: { x: c.x0 + 2, y: c.y0 + Cd.ascent },
+      codeNarrow: { x: cn.x0 + 3, y: cn.y0 + Cn.ascent },
+      name: best ? { cx: best.cx, y0: best.y0, baseline: best.y0 + N.ascent, lines: best.lines, full, shortened: best.shortened, cost: best.cost, rect: best.rect } : null,
+    });
+  });
+  return out;
+}
+
+/** Sutherland–Hodgman: keeps the part of a polygon where n·p ≤ c. */
+function clipHalfPlane(poly, nx, ny, c) {
+  const next = [];
+  for (let i = 0; i < poly.length; i += 1) {
+    const p = poly[i]; const q = poly[(i + 1) % poly.length];
+    const fp = p[0] * nx + p[1] * ny - c; const fq = q[0] * nx + q[1] * ny - c;
+    if (fp <= 0) next.push(p);
+    if ((fp <= 0) !== (fq <= 0)) { const k = fp / (fp - fq); next.push([p[0] + (q[0] - p[0]) * k, p[1] + (q[1] - p[1]) * k]); }
+  }
+  return next;
+}
+
+/** A polygon clipped to an axis-aligned rectangle (used for camera view cones: no SVG clip-path needed). */
+export function clipToRect(poly, x0, y0, x1, y1) {
+  let out = poly;
+  out = clipHalfPlane(out, -1, 0, -x0);
+  out = clipHalfPlane(out, 1, 0, x1);
+  out = clipHalfPlane(out, 0, -1, -y0);
+  out = clipHalfPlane(out, 0, 1, y1);
+  return out;
+}
+
+/**
+ * Camera hit areas: a circle of radius r around each camera, cut by the perpendicular bisector to every
+ * neighbour closer than 2r, so two close cameras split the space between them instead of stacking.
+ * @param {{ id: string, x: number, y: number }[]} cams  plan coordinates
+ * @param {number} r  radius in plan units
+ * @returns {Map<string, number[][]>} polygon per camera, relative to the camera
+ */
+export function hitPolygons(cams, r, segments = 28) {
+  const out = new Map();
+  for (const a of cams) {
+    let poly = Array.from({ length: segments }, (_, k) => { const t = (k / segments) * Math.PI * 2; return [r * Math.cos(t), r * Math.sin(t)]; });
+    for (const b of cams) {
+      if (b === a) continue;
+      const dx = b.x - a.x; const dy = b.y - a.y; const d = Math.hypot(dx, dy);
+      if (!(d > 0) || d >= 2 * r) continue;
+      poly = clipHalfPlane(poly, dx / d, dy / d, d / 2 - 1);   // keep 1 unit of gap between neighbours
+    }
+    out.set(a.id, poly);
+  }
+  return out;
 }
 
 /* ────────────────────────────── zone links (shared selectors) ────────────────────────────── */
@@ -339,9 +602,11 @@ export function ppeItemOf(event) {
 }
 
 /**
- * PPE NON-compliance events that the simulated feed reported for a camera's zone. The feed events carry a
- * siteId but no zoneId, so the zone is matched on the zone name the engine wrote into the sentence
- * (Arabic title, digits normalised; or the English mirror). Compliance sentences (tone good) are excluded.
+ * PPE NON-compliance events that the simulated feed reported for a camera's zone. Events of the live engine
+ * carry the zoneId of the zone their sentence names (structural match); older events (the seeded history, a
+ * stored feed from an earlier build) have only a siteId, so for those the zone is matched on the zone name the
+ * engine wrote into the sentence (Arabic title, digits normalised; or the English mirror). Compliance
+ * sentences (tone good) are excluded.
  * Only these events may drive the illustrative detection boxes in the viewer.
  * @param {object} state  store state (state.feed, state.sites)
  * @param {object} camera camera record
@@ -409,4 +674,4 @@ export function spatialParams({ site, zone, camera, risk } = {}) {
   return { site: site || null, zone: zone || null, camera: camera || null, risk: risk || null };
 }
 
-export default { PLAN, SCENES, SITE_PLANS, CAMERAS, camerasFor, cameraById, camerasInZone, planFor, toPlan, inZone, markerPoint, zoneLinks, zoneTone, ppeEventsFor, ppeItemOf, spatialTargetForAiRisk, spatialParams };
+export default { PLAN, SCENES, SITE_PLANS, CAMERAS, LABEL, camerasFor, cameraById, camerasInZone, planFor, toPlan, inZone, markerPoint, camLabelOffset, planObstacles, layoutZoneLabels, hitPolygons, clipToRect, zoneLinks, zoneTone, ppeEventsFor, ppeItemOf, spatialTargetForAiRisk, spatialParams };

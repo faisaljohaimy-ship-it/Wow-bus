@@ -14,15 +14,24 @@
  *   • dyn canvas    — crane jib, workers, vehicle, boxes, sensor grain, frame counter; redrawn per frame;
  *   • both canvases are handed to a module WORKER (OffscreenCanvas): this same file is the worker script,
  *     so frames are drawn and committed off the main thread. Without OffscreenCanvas / module workers the
- *     same renderer runs on the main thread (fallback, more main-thread time);
+ *     same renderer runs on the main thread as a FALLBACK at reduced cost: 6 fps (never above 8) and half
+ *     resolution (FALLBACK_FPS, FALLBACK_RES; drawn in the same 768 × 432 units and scaled), composed into a
+ *     detached canvas streamed (captureStream) into a muted <video>, so a picture costs no document frame;
  *   • vignette / scanlines / OSD — static DOM layers (the OSD clock text changes once per second).
  * The loop runs at FPS (15, a typical CCTV rate; never above 30) only while started, the frame is on
  * screen (IntersectionObserver) and the tab is visible. Under reduced motion (prefers-reduced-motion or
- * html[data-motion="reduce"]) it renders ONE still frame and stops.
+ * html[data-motion="reduce"]) it renders ONE still frame and stops; the burned-in counter then reads
+ * "STILL · SIM" (it never claims a frame rate the picture does not have).
  *
- *   const feed = createCamFeed(host, { camera, preset, kind, levels, labels, rtlZone, rtlLabels, fps })
+ * PPE boxes: helmet / vest / glasses events go to the nearest legible ground worker; a harness event goes to
+ * a worker who is actually at height (on a scissor lift or a scaffold lift), drawn with the lanyard hanging
+ * unclipped. Every preset has one such worker; workers at height who are not flagged are drawn clipped on.
+ *
+ *   const feed = createCamFeed(host, { camera, preset, kind, levels, labels, rtlZone, rtlLabels, fps, onMode })
  *   feed.setEvents([{ id, item }]) · feed.start() · feed.stop() · feed.still() · feed.destroy()
- *   feed.stats() → { frames, avgDrawMs, running, mode, backend: 'worker'|'main', phase }
+ *   feed.stats() → { frames, avgDrawMs, running, mode: 'live-sim'|'still'|'paused', backend: 'worker'|'main', fps, res,
+ *                    present: 'offscreen'|'video'|'canvas', phase }
+ *   onMode(stats) is called whenever the mode, backend or frame rate changes (the viewer's caption follows it).
  *
  * Geometry is a picture: the frame is dir="ltr" and never mirrors in Arabic; only text inside follows its language.
  */
@@ -31,6 +40,8 @@ const W = 768;
 const H = 432;
 const FPS = 15;
 const MAX_FPS = 30;
+const FALLBACK_FPS = 6;   // main-thread fallback: frame rate cap (≤ 8; 6 keeps it within +15 ms/s) …
+const FALLBACK_RES = 0.5; // … and canvas resolution (fraction of W × H)
 const LENS_K = -0.05;     // barrel curvature
 const LENS_ZOOM = 1.045;  // hides the pulled-in corners
 
@@ -461,6 +472,33 @@ function mobileCarrier(ctx, m, L, cr) {
   line3(ctx, m, [X - 5, 0.6, Z - 1.4], [X - 6.5, 0, Z - 4]); line3(ctx, m, [X + 5, 0.6, Z - 1.4], [X + 6.5, 0, Z - 4]);
 }
 
+/**
+ * Scissor lift (mobile elevating work platform) with its guardrail; returns the worker standing on the deck
+ * (aloft: true, anchorY = guardrail height, where a clipped-on lanyard is tied).
+ */
+function scissorLift(ctx, m, L, x, z, h = 4.5) {
+  const hw = 1.3; const d = 0.8;
+  cuboid(ctx, m, L, x - hw, x + hw, 0.15, 0.85, z - d, z + d, P.dump);
+  ctx.fillStyle = css(L.col(P.tyre, z));
+  for (const wx of [x - hw + 0.3, x + hw - 0.3]) { const c = wp(m, wx, 0.25, z - d); ctx.beginPath(); ctx.arc(c[0], c[1], Math.max(1.2, (m.f * 0.25) / z), 0, Math.PI * 2); ctx.fill(); }
+  // scissor arms
+  ctx.strokeStyle = css(L.col(P.craneDark, z)); ctx.lineWidth = Math.max(1, (m.f * 0.12) / z);
+  const n = Math.max(2, Math.round((h - 0.85) / 1.2));
+  const seg = (h - 0.85) / n;
+  for (let i = 0; i < n; i += 1) {
+    const y0 = 0.85 + i * seg; const y1 = y0 + seg;
+    line3(ctx, m, [x - hw + 0.2, y0, z - d], [x + hw - 0.2, y1, z - d]);
+    line3(ctx, m, [x + hw - 0.2, y0, z - d], [x - hw + 0.2, y1, z - d]);
+  }
+  // deck, toe board and guardrail
+  cuboid(ctx, m, L, x - hw - 0.2, x + hw + 0.2, h, h + 0.18, z - d - 0.1, z + d + 0.1, P.dump, { shadow: false });
+  ctx.strokeStyle = css(L.col(P.dump, z, 0.9)); ctx.lineWidth = Math.max(1, (m.f * 0.07) / z);
+  line3(ctx, m, [x - hw - 0.2, h + 1.1, z - d - 0.1], [x + hw + 0.2, h + 1.1, z - d - 0.1]);
+  line3(ctx, m, [x - hw - 0.2, h + 0.6, z - d - 0.1], [x + hw + 0.2, h + 0.6, z - d - 0.1]);
+  for (const px of [x - hw - 0.2, x, x + hw + 0.2]) line3(ctx, m, [px, h + 0.18, z - d - 0.1], [px, h + 1.1, z - d - 0.1]);
+  return { x0: x - 0.2, range: 0.5, z: z - 0.2, y: h + 0.18, speed: 0.4, phase: 2, vest: 'O', helmet: 'Y', idle: true, aloft: true, anchorY: h + 1.1, anchorX: x - hw - 0.2 };
+}
+
 function stackRebar(ctx, m, L, x, z, len = 9) {
   for (let k = 0; k < 3; k += 1) cuboid(ctx, m, L, x, x + len, k * 0.35, k * 0.35 + 0.3, z + k * 0.2, z + 1.2 + k * 0.2, P.rebar, { top: 1.25 });
   cuboid(ctx, m, L, x + 0.5, x + 0.9, 0, 0.12, z - 0.2, z + 1.6, P.pallet);
@@ -501,6 +539,7 @@ function drawPresetStatic(ctx, m, L) {
       container(ctx, m, L, 19, near + 12, P.contG);
       for (let k = 0; k < 4; k += 1) cuboid(ctx, m, L, -6 + k * 1.7, -4.6 + k * 1.7, 0, 1.1, near + 4, near + 5.2, P.block);
       addWorkers(3, near + 1, near + 9, -8, 10);
+      dyn.workers.push(scissorLift(ctx, m, L, -15, near + 10, 4.8));
       dyn.vehicle = { kind: 'mixer', z: near + 4.5, y: 0, speed: 2.8, span: 70 };
       break;
     }
@@ -518,6 +557,7 @@ function drawPresetStatic(ctx, m, L) {
       for (let k = 0; k < 3; k += 1) cuboid(ctx, m, L, 4 + k * 2.2, 5.8 + k * 2.2, 0, 1.1, z0 - 9, z0 - 7.6, P.block);
       addWorkers(3, z0 - 10, z0 - 4, -8, 14);
       addWorkers(2, z0 - 1.6, z0 - 1.4, -34, -6, 3 * 3.3);
+      for (const w of dyn.workers) if (w.y > 0) { w.aloft = true; w.anchorY = w.y + 2; w.idle = true; w.range = 1.2; }
       dyn.vehicle = { kind: 'pickup', z: z0 - 13, y: 0, speed: 3.2, span: 60 };
       break;
     }
@@ -542,6 +582,7 @@ function drawPresetStatic(ctx, m, L) {
       towerMast(ctx, m, L, cr);
       dyn.crane = cr;
       addWorkers(4, z0, z0 + 10, -14, 18);
+      dyn.workers.push(scissorLift(ctx, m, L, 24, z0 + 7, 4.5));
       dyn.vehicle = { kind: 'flatbed', z: z0 + 0.4, y: 0, speed: 2.6, span: 64 };
       break;
     }
@@ -584,6 +625,7 @@ function drawPresetStatic(ctx, m, L) {
       if (cr.type === 'tower') towerMast(ctx, m, L, cr); else mobileCarrier(ctx, m, L, cr);
       dyn.crane = cr;
       addWorkers(2, z0 + 2, z0 + 7, -4, 6);
+      dyn.workers.push(scissorLift(ctx, m, L, -15, z0 + 11, 4.2));
       dyn.vehicle = { kind: 'dump', z: z0 + 12, y: 0, speed: 2.4, span: 54, across: true };
       break;
     }
@@ -603,13 +645,17 @@ function drawPresetStatic(ctx, m, L) {
       mobileCarrier(ctx, m, L, cr);
       dyn.crane = cr;
       addWorkers(3, z0 - 1, z0 + 7, -10, 10);
+      dyn.workers.push(scissorLift(ctx, m, L, 25, z0 + 11, 4.2));
       dyn.vehicle = { kind: 'pickup', z: z0 + 16, y: 0, speed: 3, span: 60 };
       break;
     }
     case 'solar': {
       const zStart = Math.max(12, zg * 1.05);
+      const liftZ = zStart + 11.5;
+      let lift = null;
       for (let z = 360; z >= zStart; z -= 7.5) {
         const zc = z;
+        if (!lift && zc < liftZ + 1.5) lift = scissorLift(ctx, m, L, 17, liftZ, 4.2);
         ctx.fillStyle = css(L.col(P.pile, zc));
         for (let x = -70; x <= 70; x += 7) { wpoly(ctx, m, [[x, 0, zc + 1], [x + 0.25, 0, zc + 1], [x + 0.25, 1.3, zc + 1], [x, 1.3, zc + 1]]); ctx.fill(); }
         // module face tilted towards the camera: low edge near, high edge far
@@ -627,6 +673,7 @@ function drawPresetStatic(ctx, m, L) {
       mobileCarrier(ctx, m, L, cr);
       dyn.crane = cr;
       addWorkers(4, zStart + 2, zStart + 12, -12, 14);
+      if (lift) dyn.workers.push(lift);
       dyn.vehicle = { kind: 'pickup', z: zStart + 5, y: 0, speed: 3.4, span: 70 };
       break;
     }
@@ -652,7 +699,7 @@ function drawPresetStatic(ctx, m, L) {
       mobileCarrier(ctx, m, L, cr);
       dyn.crane = cr;
       addWorkers(3, zStart + 2, zStart + 14, -16, 16);
-      dyn.workers.push({ x0: 7.5, range: 0.8, z: zStart + 7, y: 6.8, speed: 0.4, phase: 1, vest: 'O', helmet: 'W', idle: true });
+      dyn.workers.push({ x0: 7.5, range: 0.8, z: zStart + 7, y: 6.8, speed: 0.4, phase: 1, vest: 'O', helmet: 'W', idle: true, aloft: true, anchorY: 7.7, anchorX: 5.6 });
       dyn.vehicle = { kind: 'forklift', z: zStart + 4, y: 0, speed: 2, span: 40 };
       break;
     }
@@ -687,6 +734,7 @@ function drawPresetStatic(ctx, m, L) {
       mobileCarrier(ctx, m, L, cr);
       dyn.crane = cr;
       addWorkers(2, zStart + 3, zStart + 9, -6, 12);
+      dyn.workers.push(scissorLift(ctx, m, L, 21, zStart + 14, 4.2));
       dyn.vehicle = { kind: 'dump', z: zStart + 10, y: 0, speed: 3.2, span: 80 };
       break;
     }
@@ -810,6 +858,22 @@ function drawWorker(ctx, m, L, w, t, missing) {
   ctx.strokeStyle = css(L.col(vestHex, w.z, 0.85)); ctx.lineWidth = Math.max(1, s * 0.11);
   const arm = w.idle ? 0.1 : -step * 0.6;
   ctx.beginPath(); ctx.moveTo(x - tw / 2, torsoTop + 2); ctx.lineTo(x - tw / 2 - arm * 0.4, torsoTop + torsoH); ctx.moveTo(x + tw / 2, torsoTop + 2); ctx.lineTo(x + tw / 2 + arm * 0.4, torsoTop + torsoH); ctx.stroke();
+  if (w.aloft) {
+    // harness lanyard: clipped to the guardrail / scaffold tube, or hanging loose when the event says so
+    const waist = [x, torsoTop + torsoH * 0.9];
+    ctx.strokeStyle = css(L.col('#1F2A30', w.z), 0.95); ctx.lineWidth = Math.max(0.8, s * 0.06);
+    ctx.beginPath(); ctx.moveTo(waist[0], waist[1]);
+    if (missing.harness) {
+      const sway = Math.sin(t * 1.7 + w.phase) * s * 0.08;
+      ctx.quadraticCurveTo(waist[0] + s * 0.25, waist[1] + s * 0.55, waist[0] + s * 0.12 + sway, waist[1] + s * 0.95);
+      ctx.stroke();
+      ctx.fillStyle = css(L.col(P.steelLight, w.z)); ctx.fillRect(waist[0] + s * 0.06 + sway, waist[1] + s * 0.93, Math.max(1.2, s * 0.14), Math.max(1.2, s * 0.14));
+    } else {
+      const a = wp(m, Number.isFinite(w.anchorX) ? w.anchorX : X - 0.9, Number.isFinite(w.anchorY) ? w.anchorY : w.y + 1.1, w.z);
+      ctx.quadraticCurveTo((waist[0] + a[0]) / 2, Math.max(waist[1], a[1]) + s * 0.12, a[0], a[1]);
+      ctx.stroke();
+    }
+  }
   const hr = Math.max(1.2, s * 0.12);
   const hy = torsoTop - hr * 1.1;
   ctx.fillStyle = css(L.col(P.skin, w.z));
@@ -917,6 +981,7 @@ function makeRenderer(plate, dyn, cfg) {
   const labels = cfg.labels || {};
   const fonts = cfg.fonts || { mono: 'monospace', sans: 'sans-serif' };
   const fps = clamp(Number(cfg.fps) || FPS, 1, MAX_FPS);
+  const res = clamp(Number(cfg.res) || 1, 0.25, 1);   // canvases are W·res × H·res; drawing stays in W × H units
   const model = buildModel(camera, cfg.preset || camera.scene || 'yard', cfg.kind, cfg.levels);
   const pctx = plate.getContext('2d', { alpha: false });
   const dctx = dyn.getContext('2d');
@@ -934,6 +999,9 @@ function makeRenderer(plate, dyn, cfg) {
   }
   const grain = dctx.createPattern(tile, 'repeat');
   const grainRng = mulberry32(hash32(`${camera.id}:grain`));
+  // Reduced-resolution (main-thread fallback) feeds bake the grain into the plate once instead of moving it
+  // every frame: the full-frame pattern fill is the largest single cost of a dynamic frame.
+  const staticGrain = res < 1;
 
   function ensurePlate(now) {
     const hour = riyadhHour(now);
@@ -944,6 +1012,7 @@ function makeRenderer(plate, dyn, cfg) {
     light = makeLight(phase, model.kind);
     model.rng = mulberry32(hash32(String(camera.id || 'cam')));
     pctx.save();
+    pctx.setTransform(res, 0, 0, res, 0, 0);
     pctx.fillStyle = light.sky[2]; pctx.fillRect(0, 0, W, H);
     drawSky(pctx, model, light);
     drawSun(pctx, model, light, hour);
@@ -951,27 +1020,41 @@ function makeRenderer(plate, dyn, cfg) {
     drawGround(pctx, model, light);
     dynModel = drawPresetStatic(pctx, model, light);
     drawAtmosphere(pctx, model, light);
+    if (staticGrain && grain) { const pg = pctx.createPattern(tile, 'repeat'); if (pg) { pctx.fillStyle = pg; pctx.fillRect(0, 0, W, H); } }
     pctx.restore();
     return true;
   }
 
-  function frame(now) {
+  /** Which worker carries which PPE event: harness → a worker at height; the rest → the nearest ground worker. */
+  function assign() {
+    const flagged = new Map();
+    const byZ = (list) => list.sort((a, b) => dynModel.workers[a].z - dynModel.workers[b].z);
+    const legible = (i) => (model.f * 1.0) / dynModel.workers[i].z >= 3;
+    const all = dynModel.workers.map((_, i) => i).filter(legible);
+    const aloft = byZ(all.filter((i) => dynModel.workers[i].aloft));
+    const ground = byZ(all.filter((i) => !dynModel.workers[i].aloft));
+    for (const ev of events.slice(0, 2)) {
+      const pool = ev.item === 'harness' ? aloft : (ground.length ? ground : aloft);
+      const i = pool.find((k) => !flagged.has(k));
+      if (i !== undefined) flagged.set(i, ev);   // no legible worker at height: no box (the viewer still lists the event)
+    }
+    return flagged;
+  }
+
+  function frame(now, { still = false } = {}) {
     const started = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     ensurePlate(now);
     const t = (now - t0) / 1000;
+    dctx.setTransform(res, 0, 0, res, 0, 0);
     dctx.clearRect(0, 0, W, H);
     drawCrane(dctx, model, light, dynModel.crane, t);
     drawVehicle(dctx, model, light, dynModel.vehicle, t);
-    // The first ground workers carry the PPE events the caller passed (illustrative boxes only for those).
-    const flagged = new Map();
-    // nearest ground workers first: the illustrative box sits on the most legible silhouette
-    const ground = dynModel.workers.map((w, i) => ({ w, i })).filter((x) => x.w.y === 0).sort((a, b) => a.w.z - b.w.z).map((x) => x.i);
-    const pool = ground.length ? ground : dynModel.workers.map((_, i) => i);
-    events.slice(0, 2).forEach((ev, k) => { if (pool[k] !== undefined) flagged.set(pool[k], ev); });
+    // Illustrative boxes only for the PPE events the caller passed.
+    const flagged = assign();
     const boxes = [];
     for (const { w, i } of dynModel.workers.map((w, i) => ({ w, i })).sort((a, b) => b.w.z - a.w.z)) {
       const ev = flagged.get(i);
-      const bb = drawWorker(dctx, model, light, w, t, { helmet: Boolean(ev && ev.item === 'helmet'), vest: Boolean(ev && ev.item === 'vest') });
+      const bb = drawWorker(dctx, model, light, w, t, { helmet: Boolean(ev && ev.item === 'helmet'), vest: Boolean(ev && ev.item === 'vest'), harness: Boolean(ev && ev.item === 'harness') });
       if (ev && bb) boxes.push({ bb, ev });
     }
     for (const { bb, ev } of boxes) {
@@ -979,15 +1062,15 @@ function makeRenderer(plate, dyn, cfg) {
       drawBox(dctx, bb, `${labels.illustrative || 'ILLUSTRATIVE'} · ${item}`, cfg.rtlLabels ? fonts.sans : fonts.mono, Boolean(cfg.rtlLabels));
     }
     // grain
-    if (grain) {
+    if (grain && !staticGrain) {
       const ox = Math.floor(grainRng() * 160); const oy = Math.floor(grainRng() * 160);
       dctx.save(); dctx.translate(-ox, -oy); dctx.fillStyle = grain; dctx.fillRect(ox, oy, W, H); dctx.restore();
     }
-    // burned-in frame counter (Latin, like a camera OSD code)
+    // burned-in frame counter (Latin, like a camera OSD code); a still frame never claims a frame rate
     frames += 1;
     dctx.font = `500 11px ${fonts.mono}`;
     dctx.textAlign = 'right';
-    const fc = `FRM ${String(frames).padStart(6, '0')}  ${fps} FPS SIM`;
+    const fc = still ? 'STILL · SIM' : `FRM ${String(frames).padStart(6, '0')}  ${fps} FPS SIM`;
     dctx.fillStyle = 'rgba(0,0,0,0.6)'; dctx.fillText(fc, W - 13, H - 11);
     dctx.fillStyle = 'rgba(255,255,255,0.9)'; dctx.fillText(fc, W - 14, H - 12);
     dctx.textAlign = 'left';
@@ -996,9 +1079,12 @@ function makeRenderer(plate, dyn, cfg) {
 
   return {
     fps,
+    res,
     frame,
     setEvents(list) { events = Array.isArray(list) ? list.slice(0, 2) : []; },
-    stats: () => ({ frames, avgDrawMs: frames ? +(drawMs / frames).toFixed(3) : 0, phase: light ? light.phase : null, ir: Boolean(light && light.ir) }),
+    /** Index of the worker that carries each event (tests / probes): [{ item, aloft }] */
+    assignment() { if (!dynModel) ensurePlate(Date.now()); const f = assign(); return Array.from(f.entries()).map(([i, ev]) => ({ item: ev.item, aloft: Boolean(dynModel.workers[i].aloft), y: dynModel.workers[i].y })); },
+    stats: () => ({ frames, avgDrawMs: frames ? +(drawMs / frames).toFixed(3) : 0, phase: light ? light.phase : null, ir: Boolean(light && light.ir), fps, res }),
   };
 }
 
@@ -1022,7 +1108,7 @@ function makeLoop(renderer, { useRaf = false, onFrame = null, now = () => Date.n
   return {
     run() { if (running) return; running = true; tick(); },
     pause() { running = false; if (timer) { clearTimeout(timer); timer = 0; } if (raf) { cancelAnimationFrame(raf); raf = 0; } },
-    still(at) { this.pause(); try { renderer.frame(at || now()); } catch { /* ignore */ } if (onFrame) onFrame(); },
+    still(at) { this.pause(); try { renderer.frame(at || now(), { still: true }); } catch { /* ignore */ } if (onFrame) onFrame(); },
     get running() { return running; },
   };
 }
@@ -1059,7 +1145,8 @@ if (IS_WORKER) {
           ? { mono: '"CF Mono", ui-monospace, monospace', sans: '"CF Arabic", "CF Sans", sans-serif' }
           : { mono: 'ui-monospace, monospace', sans: 'sans-serif' };
         renderer = makeRenderer(msg.plate, msg.dyn, { ...msg.cfg, fonts });
-        loop = makeLoop(renderer, { onFrame: () => post(false), now: () => Date.now() + clockOffset });
+        // the 2nd frame is reported at once: the page opens its lens iris on it (the 1st is then on screen)
+        loop = makeLoop(renderer, { onFrame: () => post(renderer.stats().frames === 2), now: () => Date.now() + clockOffset });
         if (pendingEvents) renderer.setEvents(pendingEvents);
         const m0 = pendingMode || { type: msg.mode, at: msg.at };
         if (m0.type === 'run') loop.run(); else if (m0.type === 'still') loop.still(m0.at);
@@ -1102,12 +1189,14 @@ function canUseWorker() {
  * @param {HTMLElement} host  element to build the feed into (emptied)
  * @param {{ camera: object, preset?: string, kind?: 'urban'|'desert', levels?: {done:number,total:number},
  *           labels: { simulated: string, illustrative: string, ppe: Record<string,string>, ir: string, zone: string, timeZone: string },
- *           rtlZone?: boolean, rtlLabels?: boolean, fps?: number, onTick?: (date: Date) => void, worker?: boolean }} opts
+ *           rtlZone?: boolean, rtlLabels?: boolean, fps?: number, onTick?: (date: Date) => void, worker?: boolean,
+ *           onMode?: (stats: object) => void }} opts
  */
 export function createCamFeed(host, opts = {}) {
   const camera = opts.camera || {};
   const labels = opts.labels || {};
-  const fps = clamp(Number(opts.fps) || FPS, 1, MAX_FPS);
+  const wantedFps = clamp(Number(opts.fps) || FPS, 1, MAX_FPS);
+  let fps = wantedFps;
 
   while (host.firstChild) host.removeChild(host.firstChild);
   const frame = document.createElement('div');
@@ -1155,15 +1244,62 @@ export function createCamFeed(host, opts = {}) {
   let pageVisible = document.visibilityState !== 'hidden';
   let stillAt = null;
   let events = [];
+  // resolves once the first frame is on the canvases (the viewer opens its lens iris on it)
+  let readyResolve = null;
+  const ready = new Promise((r) => { readyResolve = r; });
+  const markReady = () => { if (readyResolve) { const r = readyResolve; readyResolve = null; r(); } };
 
   const paintMode = (ir) => { const text = ir ? (labels.ir || 'IR') : ''; if (mode.textContent !== text) mode.textContent = text; };
 
+  /**
+   * Main-thread fallback: same renderer, capped at FALLBACK_FPS on half-resolution canvases. A canvas in the page
+   * costs a full main-thread frame (style, paint, layerize, commit) per picture, so when the browser can, the two
+   * layers are composed into a DETACHED canvas whose captureStream() feeds a muted <video>: frames then reach the
+   * compositor without a document frame. Without captureStream the canvases stay in the page (CSS scales them).
+   */
+  let video = null; let track = null; let outCtx = null; let present = null;
+  const canStream = () => {
+    try {
+      return opts.stream !== false && typeof HTMLCanvasElement.prototype.captureStream === 'function' && typeof MediaStream === 'function'
+        && typeof HTMLVideoElement !== 'undefined' && 'srcObject' in HTMLVideoElement.prototype;
+    } catch { return false; }
+  };
   function startMain() {
     backend = 'main';
-    renderer = makeRenderer(plate, dyn, { ...cfg, fonts: { mono: cssVar('--font-mono', 'monospace'), sans: cssVar('--font-sans', 'sans-serif') } });
+    fps = Math.min(wantedFps, FALLBACK_FPS);
+    const rw = Math.round(W * FALLBACK_RES); const rh = Math.round(H * FALLBACK_RES);
+    for (const c of [plate, dyn]) { c.width = rw; c.height = rh; }
+    frame.classList.add('is-lowres');
+    present = null;
+    if (canStream()) {
+      try {
+        const out = document.createElement('canvas'); out.width = rw; out.height = rh;
+        outCtx = out.getContext('2d', { alpha: false });
+        const stream = out.captureStream(0);
+        track = stream.getVideoTracks()[0] || null;
+        if (outCtx && track && typeof track.requestFrame === 'function') {
+          video = document.createElement('video');
+          video.className = 'cf-video';
+          video.muted = true; video.defaultMuted = true; video.autoplay = true; video.playsInline = true;
+          video.setAttribute('muted', ''); video.setAttribute('playsinline', ''); video.setAttribute('aria-hidden', 'true'); video.setAttribute('tabindex', '-1');
+          video.disablePictureInPicture = true;
+          video.srcObject = stream;
+          // a frame pushed before the element was ready (a still frame) is pushed again once it plays
+          video.addEventListener('playing', () => { try { if (track) track.requestFrame(); } catch { /* ignore */ } }, { once: true });
+          plate.remove(); dyn.remove();
+          frame.insertBefore(video, fx);
+          const played = video.play();
+          if (played && typeof played.catch === 'function') played.catch(() => { /* muted autoplay refused: stays on the last frame */ });
+          present = () => { outCtx.drawImage(plate, 0, 0); outCtx.drawImage(dyn, 0, 0); track.requestFrame(); };
+        } else { track = null; outCtx = null; }
+      } catch { video = null; track = null; outCtx = null; present = null; }
+    }
+    renderer = makeRenderer(plate, dyn, { ...cfg, fps, res: FALLBACK_RES, fonts: { mono: cssVar('--font-mono', 'monospace'), sans: cssVar('--font-sans', 'sans-serif') } });
     renderer.setEvents(events);
-    loop = makeLoop(renderer, { useRaf: true, onFrame: () => paintMode(renderer.stats().ir) });
+    // with the video path no requestAnimationFrame is needed (nothing in the document changes per frame)
+    loop = makeLoop(renderer, { useRaf: !present, onFrame: () => { if (present) { try { present(); } catch { /* ignore */ } } paintMode(renderer.stats().ir); markReady(); } });
   }
+  const notify = () => { if (typeof opts.onMode === 'function') { try { opts.onMode(api.stats()); } catch { /* ignore */ } } };
 
   if (opts.worker !== false && canUseWorker()) {
     try {
@@ -1177,7 +1313,7 @@ export function createCamFeed(host, opts = {}) {
       };
       worker.onmessage = (e) => {
         const msg = e.data || {};
-        if (msg.type === 'stats') { remoteStats = msg.stats; paintMode(Boolean(msg.stats.ir)); }
+        if (msg.type === 'stats') { remoteStats = msg.stats; paintMode(Boolean(msg.stats.ir)); if (msg.stats.frames > 1 || (msg.stats.frames > 0 && !msg.stats.running)) markReady(); }   // the 2nd frame: the 1st is on screen
         else if (msg.type === 'error') fallBack();
       };
       worker.onerror = (e) => { if (e && typeof e.preventDefault === 'function') e.preventDefault(); fallBack(); };
@@ -1194,7 +1330,10 @@ export function createCamFeed(host, opts = {}) {
     const p2 = mkCanvas('cf-plate'); const d2 = mkCanvas('cf-dyn');
     plate.replaceWith(p2); dyn.replaceWith(d2); plate = p2; dyn = d2;
     startMain();
+    const prev = runningState;
+    runningState = 'idle';
     applyMode();
+    if (runningState === prev) notify();
   }
 
   const send = (msg) => { if (worker) { try { worker.postMessage({ ...msg, sentAt: Date.now() }); } catch { /* ignore */ } } };
@@ -1213,6 +1352,7 @@ export function createCamFeed(host, opts = {}) {
     if (next === 'run') doRun();
     else if (next === 'still') doStill();
     else doPause();
+    notify();
   }
 
   function tickClock() {
@@ -1248,7 +1388,7 @@ export function createCamFeed(host, opts = {}) {
     get backend() { return backend; },
     start() { wanted = true; applyMode(); return api; },
     stop() { wanted = false; applyMode(); return api; },
-    still() { wanted = true; doStill(); runningState = 'still'; return api; },
+    still() { wanted = true; doStill(); runningState = 'still'; notify(); return api; },
     setEvents(list) {
       events = (Array.isArray(list) ? list : []).slice(0, 2).map((e) => ({ id: String(e.id || ''), item: String(e.item || '') }));
       if (backend === 'worker') send({ type: 'events', events, redraw: runningState === 'still', at: stillAt });
@@ -1256,14 +1396,21 @@ export function createCamFeed(host, opts = {}) {
       return api;
     },
     isRunning: () => runningState === 'run',
+    /** Promise: the first frame has been drawn. */
+    ready,
+    /** Which drawn worker carries each PPE event (main-thread renderer only; probes and tests). */
+    assignment: () => (backend === 'main' && renderer && typeof renderer.assignment === 'function' ? renderer.assignment() : null),
     stats: () => {
       const st = backend === 'worker' ? remoteStats : (renderer ? renderer.stats() : remoteStats);
-      return { ...st, running: runningState === 'run', mode: runningState === 'still' ? 'still' : (runningState === 'run' ? 'live-sim' : 'paused'), fps, backend };
+      return { ...st, running: runningState === 'run', mode: runningState === 'still' || runningState === 'restill' ? 'still' : (runningState === 'run' ? 'live-sim' : 'paused'), fps, res: backend === 'main' ? FALLBACK_RES : 1, backend, present: backend === 'worker' ? 'offscreen' : (video ? 'video' : 'canvas') };
     },
     destroy() {
       destroyed = true;
+      markReady();
       if (worker) { send({ type: 'destroy' }); try { worker.terminate(); } catch { /* ignore */ } worker = null; }
       if (loop) loop.pause();
+      if (track) { try { track.stop(); } catch { /* ignore */ } track = null; }
+      if (video) { try { video.pause(); video.srcObject = null; } catch { /* ignore */ } }
       clearInterval(clockTimer);
       document.removeEventListener('visibilitychange', onVis);
       if (io) { try { io.disconnect(); } catch { /* ignore */ } io = null; }
