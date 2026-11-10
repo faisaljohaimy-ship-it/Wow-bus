@@ -2713,7 +2713,9 @@ export const store = {
     treatment.evidence.push(item);
     risk.treatment = treatment;
     risk.updatedAt = localISO(store.now());
-    riskHistory(risk, actor, `إضافة دليل معالجة (${item.kind}): ${item.title} — محفوظ على هذا الجهاز فقط`, `Treatment evidence added (${item.kind}) — stored on this device only`);
+    const kindAr = { link: 'رابط', note: 'ملاحظة', file: 'اسم ملف' }[item.kind] || item.kind;
+    const kindEn = { link: 'link', note: 'note', file: 'file name' }[item.kind] || item.kind;
+    riskHistory(risk, actor, `إضافة دليل معالجة (${kindAr}): ${item.title} — محفوظ على هذا الجهاز فقط`, `Treatment evidence added (${kindEn}): ${item.title} — stored on this device only`);
     changed(`platform.aiRisks.${risk.id}`);
     store.pushAudit({ actor, action: 'evidence', target: risk.code, detail: `إضافة دليل (${item.kind}): ${item.title}`, detailEn: `Evidence added (${item.kind}) to ${risk.code}` });
     return { ok: true, evidence: item, risk };

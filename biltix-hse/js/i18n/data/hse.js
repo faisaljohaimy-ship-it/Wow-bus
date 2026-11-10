@@ -2054,6 +2054,8 @@ export default {
     'بلتكس HSE': 'BILTIX (in-house training)',
     'بلتكس (تدريب داخلي)': 'BILTIX (in-house training)',
     'بلتكس للمقاولات': 'BILTIX Contracting',
+    'الإدارة القانونية': 'Legal department',
+    'إدارة المشتريات': 'Procurement department',
     'شركة الواجهة المالية للتطوير': 'Financial Gateway Development Company',
     'شركة الإنشاءات الحديثة': 'Modern Construction Company',
     'الشركة الوطنية للإسكان': 'National Housing Company',

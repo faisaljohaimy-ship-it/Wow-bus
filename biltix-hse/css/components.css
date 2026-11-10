@@ -878,6 +878,7 @@ td.has-row-open { white-space: normal; }
   transition: color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
 }
 .table.is-dense .sort-btn { inline-size: calc(100% + 20px); margin: -5px -10px; padding: 5px 10px; min-block-size: 32px; }
+@media (pointer: coarse) { .table.is-dense .sort-btn, .table .sort-btn { min-block-size: 44px; } } /* touch target, dense tables too */
 .sort-btn:hover { color: var(--ink-1); background: var(--hover); }
 .sort-btn:focus-visible { outline-offset: -2px; border-radius: 4px; }
 .sort-ic { inline-size: 14px; block-size: 14px; opacity: .5; transition: opacity var(--dur-micro) var(--ease-out); }
@@ -2722,7 +2723,8 @@ a.urgent-item:hover, button.urgent-item:hover, .urgent-item.is-clickable:hover {
   .table-wrap { max-block-size: none; }
   .report { padding: var(--space-5) var(--space-4); }
   .report-section-title { font-size: var(--fs-lg); }
-  .table th, .table td { white-space: nowrap; }
+  /* Headers and numeric cells stay on one line; text cells (titles) may wrap so phone tables need less sideways scroll. */
+  .table th, .table td.align-end, .table td.align-right { white-space: nowrap; }
   .table td .stack, .table td .progress-row { min-inline-size: 140px; }
   .tile-value { font-size: var(--fs-xl); }
   .metric-tile { min-block-size: 0; padding: var(--space-4); }
