@@ -451,8 +451,8 @@ function render(container, ctx) {
   /* ════════════════ SET-02 Appearance ════════════════ */
 
   const themeSeg = segmented({
-    options: [{ value: 'dark', label: t('settings.appearance.dark'), icon: svgIcon('moon', 14) }, { value: 'light', label: t('settings.appearance.light'), icon: svgIcon('sun', 14) }],
-    value: settings().theme === 'light' ? 'light' : 'dark',
+    options: [{ value: 'light', label: t('settings.appearance.light'), icon: svgIcon('sun', 14) }, { value: 'dark', label: t('settings.appearance.dark'), icon: svgIcon('moon', 14) }],
+    value: settings().theme === 'dark' ? 'dark' : 'light',
     ariaLabel: t('settings.appearance.theme'),
     onChange: (v) => save({ theme: v }, t(`settings.appearance.themeDone.${v}`)),
   });
@@ -1257,7 +1257,7 @@ function render(container, ctx) {
     langSeg.el.removeAttribute('aria-busy');
     numeralsSeg.set(s.numerals === 'arab' ? 'arab' : 'latn');
     calSeg.set(['gregorian', 'hijri', 'both'].includes(s.calendar) ? s.calendar : 'both');
-    themeSeg.set(s.theme === 'light' ? 'light' : 'dark');
+    themeSeg.set(s.theme === 'dark' ? 'dark' : 'light');
     densitySeg.set(s.appearance && s.appearance.density === 'compact' ? 'compact' : 'comfortable');
     motionSeg.set(motionOf(s));
     motionDesc.textContent = t(`settings.appearance.motionDesc.${motionOf(s)}`);

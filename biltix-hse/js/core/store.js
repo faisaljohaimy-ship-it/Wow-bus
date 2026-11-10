@@ -115,7 +115,10 @@ export const THRESHOLD_GAP = 5;
 const WEIGHT_KEYS = ['contract', 'bom', 'schedule', 'site', 'cost'];
 
 export const DEFAULT_SETTINGS = deepFreeze({
-  theme: 'dark',
+  // Light is the default theme. themeChosen turns true on any theme change through setSettings(); only then
+  // does a saved 'dark' apply, so settings saved before light became the default open in light.
+  theme: 'light',
+  themeChosen: false,
   numerals: 'latn',
   // v3: interface language, appearance, calendar and motion (the shell's pre-paint script reads these).
   lang: 'ar',
@@ -786,7 +789,8 @@ function clampDiagnostics(base, nowDate) {
 export function sanitizeSettings(input, current = DEFAULT_SETTINGS) {
   const cur = isPlainObject(current) ? current : DEFAULT_SETTINGS;
   const merged = deepMerge(clone(DEFAULT_SETTINGS), isPlainObject(input) ? input : {});
-  merged.theme = merged.theme === 'light' ? 'light' : 'dark';
+  merged.themeChosen = merged.themeChosen === true;
+  merged.theme = merged.theme === 'dark' && merged.themeChosen ? 'dark' : 'light';
   merged.numerals = merged.numerals === 'arab' ? 'arab' : 'latn';
   merged.lang = pickEnum(merged.lang, LANGS, 'ar');
   merged.calendar = pickEnum(merged.calendar, CALENDAR_MODES, 'both');
@@ -2297,6 +2301,8 @@ export const store = {
     // bus 'settings:invalid' { field, reason, message, messageEn } tells the UI why. (setWeights /
     // setThresholds return the same reason directly.)
     let input = patch;
+    // Any theme change is an explicit choice: it is kept across reloads (see DEFAULT_SETTINGS.themeChosen).
+    if (Object.prototype.hasOwnProperty.call(patch, 'theme')) input = { ...input, themeChosen: true };
     if (isPlainObject(patch.platform)) {
       const p = { ...patch.platform };
       if (p.weights !== undefined) {
@@ -2311,7 +2317,7 @@ export const store = {
         });
         if (!t.ok) { delete p.alertThreshold; delete p.criticalThreshold; bus.emit('settings:invalid', { field: 'thresholds', ...t }); }
       }
-      input = { ...patch, platform: p };
+      input = { ...input, platform: p };
     }
     // Weights are replaced whole (never deep-merged key by key with stale values).
     const base = isPlainObject(input.platform) && input.platform.weights

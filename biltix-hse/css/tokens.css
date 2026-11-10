@@ -132,9 +132,9 @@
   --font-ar: "IBM Plex Sans Arabic", "Plex Arabic Fallback", "Plex Arabic Fallback Naskh", system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif;
   --font-en: "IBM Plex Sans", "Plex Sans Fallback", "IBM Plex Sans Arabic", "Plex Arabic Fallback Naskh", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-sans: var(--font-ar);
-  /* Plex Mono has no Arabic script: Arabic-Indic digits (numerals = arab), ٪ ٫ ٬, the
-     U+061C mark Intl puts in Arabic-Indic numbers and stray Arabic letters fall to Plex
-     Sans Arabic before any system monospace (before: DejaVu Sans Mono on screen and in PDFs). */
+  /* Plex Mono has no Arabic script: Arabic-Indic digits (numerals = arab), ٪ ٫ ٬ and stray
+     Arabic letters fall to Plex Sans Arabic before any system monospace (before: DejaVu Sans
+     Mono on screen and in PDFs). */
   --font-mono: "IBM Plex Mono", "Plex Mono Fallback", "IBM Plex Sans Arabic", "Plex Arabic Fallback Naskh", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   /* Mixed strings ("5س 12د", "قبل 3 دقائق", "AIR-1042 · المرحلة 2"): Latin/digits in Plex Mono,
      Arabic letters fall to the language's sans face instead of the system monospace. */
@@ -181,6 +181,8 @@
 
   /* Legacy aliases (pre-v3 names stay valid) */
   --radius-card: var(--radius-lg);
+  --edge-w: 1.5px;      /* nickel-orange edge (border width of cards and tiles) */
+  --comet-len: 34px;    /* length of the laser comet, head to end of tail */
   --radius-ctl: var(--radius-md);
   --feed-w: var(--panel-w);
   --ease: var(--ease-out);
@@ -207,7 +209,7 @@
 }
 
 /* --------------------------------------------------------------------------
-   Dark theme (default)
+   Dark theme (light is the default since v3.1; :root without data-theme still reads these)
    -------------------------------------------------------------------------- */
 
 :root, :root[data-theme="dark"] {
@@ -223,6 +225,14 @@
   --brand: #2F6FED;  --brand-ink: #FFFFFF;  --brand-text: #7FA6FF;
   --accent: #19C6E6; --accent-text: #19C6E6; --accent-text-strong: #19C6E6;
   --gold: #D4A017;   /* ornament only — never status */
+  /* Nickel-orange card edges + laser (components.css "Edges"). Ornament only — never status. */
+  --edge-metal: linear-gradient(135deg, #B9560F 0%, #FF8F2E 16%, #FFD2A0 28%, #FF9F45 38%, #C25E12 52%, #FF9433 66%, #FFE0BC 78%, #F07D22 90%, #B9560F 100%);
+  --beam-tail: rgba(255, 196, 130, .45);
+  --beam-core: #FFE7CC;
+  --beam-head: #FFFFFF;
+  --beam-glow: rgba(255, 150, 60, .6);
+  --edge-glow: 0 0 0 1px rgba(255, 143, 46, .07), 0 10px 28px -18px rgba(255, 128, 32, .55);
+  --edge-glow-hover: 0 0 0 1px rgba(255, 143, 46, .14), 0 14px 34px -16px rgba(255, 128, 32, .7);
   --focus: #19C6E6;
   --good: #0CA30C; --warning: #FAB219; --serious: #EC835A; --critical: #D03B3B;   /* marks */
   --good-text: #45D145; --warning-text: #FBBD3C; --serious-text: #F29C78; --critical-text: #F2837B;
@@ -271,6 +281,13 @@
   --brand: #2F6FED; --brand-ink: #FFFFFF; --brand-text: #1F5AD6;
   --accent: #0E93AC; --accent-text: #0A7489;
   --gold: #B8860B;
+  --edge-metal: linear-gradient(135deg, #A8480B 0%, #E8731B 16%, #FFB46A 28%, #F08A2E 38%, #B4500D 52%, #EE7E22 66%, #FFC27F 78%, #D8661A 90%, #A8480B 100%);
+  --beam-tail: rgba(255, 106, 0, .38);
+  --beam-core: #FF5E00;
+  --beam-head: #FFE2C2;
+  --beam-glow: rgba(255, 110, 20, .45);
+  --edge-glow: 0 0 0 1px rgba(232, 115, 27, .05), 0 10px 26px -18px rgba(200, 90, 20, .42);
+  --edge-glow-hover: 0 0 0 1px rgba(232, 115, 27, .12), 0 14px 32px -16px rgba(200, 90, 20, .55);
   --focus: #0A7489;
   --accent-text-strong: #086A7D;   /* accent text on accent tints (5.09:1 on the tint over bg-2) */
   --good: #0CA30C; --warning: #FAB219; --serious: #EC835A; --critical: #D03B3B;

@@ -336,7 +336,7 @@ function calendarMode(s = settings()) {
 
 function applySettings(s = settings()) {
   const root = document.documentElement;
-  const theme = s.theme === 'light' ? 'light' : 'dark';
+  const theme = s.theme === 'dark' ? 'dark' : 'light';
   if (root.getAttribute('data-theme') !== theme) root.setAttribute('data-theme', theme);
 
   const brand = { ...DEFAULT_BRAND, ...(s.brand || {}) };
@@ -2175,6 +2175,9 @@ async function boot() {
   window.biltix = Object.freeze({ store, bus, router, live, sel, fmt, psel, platformLive, i18n, status, motion, ready: true, views: Object.freeze(views.slice()), missingModules: Object.freeze(missingModules.slice()) });
   document.body.classList.remove('is-booting');
   document.body.classList.add('is-ready');
+  // Edge laser (css "Edges"): decoration, loaded after the first render and off the critical path.
+  const startEdges = () => import('./ui/edges.js').then((m) => m.initEdges()).catch((err) => reportError(err, 'edges'));
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(startEdges, { timeout: 1500 }); else setTimeout(startEdges, 500);
 }
 
 boot().catch((err) => reportError(err, 'boot'));

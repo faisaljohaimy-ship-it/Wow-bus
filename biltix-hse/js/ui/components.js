@@ -1738,8 +1738,8 @@ const TOAST_SHOWN_MS = 50;
  * So before a move, every toast that has probably been rendered at its old place loses its live role: one that
  * has been in the document for TOAST_SHOWN_MS (about three frames), or that toast() saw survive a drawn frame
  * (second animation frame). Settled toasts stay visible and their buttons keep working; app.js already does the
- * same for alerts it announces itself. A toast moved straight after it was raised (same task, or before any
- * frame) keeps its role and is announced at its new place. Example: "Register risk" shows its "saved" toast in
+ * same for alerts it announces itself. A toast moved within 50 ms of being raised and before any frame was
+ * drawn (in practice: in the same short task) keeps its role and is announced at its new place. Example: "Register risk" shows its "saved" toast in
  * <body> for 80-240 ms before the risk drawer opens; the toast then moves into the drawer without its role, so
  * it is not announced a second time.
  */
@@ -1852,15 +1852,23 @@ export function toast(message, { tone = 'neutral', timeout = 4500, action = null
   });
   el.addEventListener('focusout', arm);
   el.__toastAt = Date.now();
+  // Keyboard focus inside the docked stack: remember where the focused toast sits in the stack's visible
+  // area, so it can be put back there after the new toast is inserted above it.
+  const docked = stack.classList.contains('is-docked');
+  const focusedToast = docked && stack.contains(document.activeElement) ? document.activeElement.closest('.toast') : null;
+  const focusedAt = focusedToast ? focusedToast.getBoundingClientRect().top - stack.getBoundingClientRect().top : 0;
   stack.insertBefore(el, stack.firstChild);
   while (stack.children.length > 5) {
     const old = stack.lastChild;
     if (old.contains(document.activeElement)) handOffToastFocus(old);
     old.remove();
   }
-  // Docked, the stack scrolls on its own: bring the newest toast (first) into view, unless keyboard focus is
-  // inside the stack. Then the scroll position is left alone so the focused toast does not jump out of view.
-  if (stack.classList.contains('is-docked') && !stack.contains(document.activeElement)) stack.scrollTop = 0;
+  // Docked, the stack scrolls on its own. Without focus inside it, bring the newest toast (first) into view.
+  // With focus inside, scroll by however far the insertion pushed the focused toast, so it stays put.
+  if (docked && focusedToast && focusedToast.isConnected) {
+    const now = focusedToast.getBoundingClientRect().top - stack.getBoundingClientRect().top;
+    stack.scrollTop += now - focusedAt;
+  } else if (docked) stack.scrollTop = 0;
   // The first animation frame runs before the frame that draws the toast; the second runs after it was drawn,
   // so from then on the toast counts as shown (see settleToastRoles()).
   requestAnimationFrame(() => {

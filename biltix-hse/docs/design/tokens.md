@@ -7,6 +7,9 @@ Contract: `docs/specs/v3-precision/CONTRACT.md` §2, §3, §3.1. Component usage
 Data always sits on opaque surfaces. Red / amber / green mean risk state only and always ship
 with an icon and a label. Gold is ornament only (logo, hairlines, the rail-group diamond), never
 status. Dark and light are tuned separately — a light value is never "the dark value inverted".
+**Light is the default theme** (v3.1). Dark applies only when the user chooses it: any theme change
+sets `settings.themeChosen`, and a saved `dark` without that flag (settings saved while dark was the
+default) opens in light. The pre-paint script in `index.html` mirrors `sanitizeSettings()` in `store.js`.
 Every pre-v3 variable name still works (aliases listed at the end).
 
 ---
@@ -227,12 +230,36 @@ tabular figures.
 - **Elevation** `--elev-1` cards (soft, short) · `--elev-2` popovers, menus, toasts · `--elev-3`
   dialogs, drawers, the open activity panel. Don't stack shadows on nested cards (`.card.is-plain`).
 
+### 3.1 Edges — nickel-orange metal and laser (v3.1)
+
+- **Metal.** Cards, stat tiles, metric tiles, domain, integration, connector and kanban cards draw
+  their `--edge-w` (1.5 px) border as `--edge-metal`: a banded nickel-orange gradient, deeper copper
+  in light (it has to hold on white), brighter in dark. Technique: transparent border + two
+  background layers (surface on the padding box, metal on the border box), so it is painted once and
+  never repaints. `--edge-glow` / `--edge-glow-hover` add a warm halo to top-level cards. Nested and
+  plain cards wash the metal 45 % toward their surface; a selected card's brand border replaces it.
+  Ornament only: orange is not a status colour; status keeps its stripe (drawn above the metal),
+  dot, icon and label.
+- **Laser.** A short comet (`--comet-len` 34 px, `--beam-tail` → `--beam-core` → `--beam-head`,
+  `--beam-glow`) travels round the edge of every top-level card and tile at 150 px/s (lap 5–16 s),
+  clockwise in English, counter-clockwise in Arabic, out of phase between neighbours. It shortens
+  through each rounded corner so it never leaves the curve. `js/ui/edges.js` measures each host and
+  runs a Web Animations *transform* animation on its `::after`, which the browser plays on the
+  compositor. Only hosts on screen play (IntersectionObserver); a resize rebuilds the path.
+- **Cost (measured, headless Chromium 1440×900, 5 s idle, main-thread ms per second):** cockpit
+  7.5 without edges → 9.6 with them; integrations (37 cards) 10.1 → 11.3; risk register 13.2 → 7.6
+  (noise). Rejected along the way: an animated conic-gradient angle (`@property`) cost 360–920 ms/s,
+  and a CSS `offset-path` comet 85–260 ms/s, because both re-run style and paint on every frame.
+- **Off:** reduced motion (OS, unless Settings forces motion on, or Settings itself), the Static
+  background, forced colours (system borders instead) and print.
+
 ## 4. Motion
 
 `--dur-micro 160ms` (hover, press, colour fades) · `--dur-main 260ms` (panels, dialogs, drawers,
 toasts) · `--dur-slow 420ms` · `--stagger 32ms` · `--ease-out cubic-bezier(.16,1,.3,1)` ·
 `--ease-in-out cubic-bezier(.65,0,.35,1)`. Movement uses transform/opacity only. The only infinite
-loops are the live dot and the cinematic background; loading spinners exist only while busy.
+loops are the live dot, the cinematic background and the edge laser (§3.1, compositor-only);
+loading spinners exist only while busy.
 `prefers-reduced-motion` and `html[data-motion="reduce"]` collapse every animation (tokens.css);
 `html[data-motion="full"]` opts back in. Route transitions come from `motion.page()` (JS), not CSS.
 

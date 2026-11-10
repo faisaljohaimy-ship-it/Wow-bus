@@ -1879,7 +1879,7 @@ export default {
     '25': { title: '"{course}" course completed by {n2} workers — {site}', detail: 'Simulated training-matrix update from the HR system scenario' },
     '26': {
       title: 'Certificates expiring within {days} days — {site}',
-      detail: 'Supervisors notified to schedule renewals; worker {worker} is on the list',
+      detail: 'Recommended: ask supervisors to schedule renewals; worker {worker} is on the list',
     },
     '27': { title: 'Simulated: training records refreshed from the HR system scenario', detail: '{n2} certificates updated — {site}' },
     '28': { title: 'Worker with an expired mandatory certificate denied entry — {zone}', detail: '{site}; referred to training' },
@@ -1890,7 +1890,7 @@ export default {
     },
     '31': { title: 'Simulated: sync with {integration}', detail: '{n2} illustrative records — demo event' },
     '32': { title: 'Simulated: access-token refresh for the {integration} integration', detail: 'Demo event — illustrative 24-hour validity; there is no real connection' },
-    '33': { title: 'Smart camera: worker without a hard hat detected — {zone}', detail: '{site}; direct supervisor notified' },
+    '33': { title: 'Smart camera: worker without a hard hat detected — {zone}', detail: '{site}; simulated: inform the direct supervisor' },
     '34': { title: 'Smart camera: worker without a reflective vest detected near the internal road — {zone}' },
     '35': { title: 'Smart camera: worker at height without a clipped-on harness — {zone}', detail: '{site}; work stopped immediately' },
     '36': {
@@ -1912,7 +1912,7 @@ export default {
       detail: 'Immediately directed to the air-conditioned rest area — {zone}',
     },
     '42': { title: 'Headcount in {zone} exceeded the permitted limit ({n2})', detail: '{site} — entry temporarily suspended' },
-    '43': { title: 'Entry attempt with an expired badge — {zone}', detail: 'Entry refused and supervisor notified — {site}' },
+    '43': { title: 'Entry attempt with an expired badge — {zone}', detail: 'Simulated: entry refused; inform the supervisor — {site}' },
     '44': { title: 'Routine fire alarm system test — {zone}', detail: 'Control room responded within {n} seconds — {site}' },
   },
   terms: {

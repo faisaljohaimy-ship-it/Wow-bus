@@ -1496,7 +1496,7 @@ dialog.modal.video-dialog, .video-dialog { inline-size: min(1040px, 100%); }
    It is capped at a quarter of the viewport height (240 px at most; a dialog is at most viewport-tall) and
    scrolls on its own, newest toast first. At 390 px tall (landscape phone) that is 97.5 px and the dialog body
    keeps more room than the stack. Below about 375 px the dialog head, tabs and footer alone take ~190 px, so
-   the body can end up smaller than the stack, and a three-line toast can need a scroll to read in full. */
+   the body can end up smaller than the stack; below about 330 px a three-line toast needs a scroll to read in full. */
 dialog > .toast-stack.is-docked {
   position: static;
   inset: auto;
@@ -2817,6 +2817,120 @@ a.urgent-item:hover, button.urgent-item:hover, .urgent-item.is-clickable:hover {
 :root[data-motion="reduce"] .metric-tile:hover,
 :root[data-motion="reduce"] .domain-card:hover,
 :root[data-motion="reduce"] .btn:active { transform: none; }
+
+/* --------------------------------------------------------------------------
+   Edges — nickel-orange metal + laser (v3.1)
+   Metal: cards, stat tiles, metric tiles, domain, integration, connector and kanban cards draw their
+   --edge-w border as a polished nickel-orange band (--edge-metal, banded metallic gradient tuned per
+   theme): the border is transparent and the element paints two background layers, its surface on the
+   padding box and the metal on the border box. Painted once; nothing repaints while it is on screen.
+   Laser: top-level cards and tiles carry a short glowing comet (::after) that travels round the edge
+   along the border's rounded centre line at constant speed, clockwise in English and counter-clockwise
+   in Arabic, neighbours out of phase. js/ui/edges.js builds the path from the measured size and runs it
+   as a compositor transform animation; the card is never restyled or repainted per frame (measured in
+   docs/design/tokens.md §3.1).
+   Off: reduced motion (OS or setting), Static background, print and forced colours (system borders).
+   Nested and plain cards get a softer metal and no comet; kanban cards get metal only.
+   Ornament only: the orange is never a status colour; status keeps its stripe, dot, icon and label,
+   and a selected card's brand border still replaces the metal.
+   -------------------------------------------------------------------------- */
+
+.card, .tile, .metric-tile, .domain-card, .int-card, .kanban-card {
+  --edge-fill: var(--bg-1);
+  border: var(--edge-w) solid transparent;
+  background: linear-gradient(var(--edge-fill), var(--edge-fill)) padding-box, var(--edge-metal) border-box;
+}
+.card:not(.is-flat), .tile, .metric-tile, .domain-card, .int-card { box-shadow: var(--elev-1), var(--edge-glow); }
+/* The base rules colour the border on hover; keep it transparent so the metal shows, and lift the glow. */
+.card.is-clickable:hover, a.card:hover, button.card:hover, .card.is-interactive:hover, .tile.is-clickable:hover,
+a.metric-tile:hover, button.metric-tile:hover, .metric-tile.is-clickable:hover, a.domain-card:hover,
+button.domain-card:hover, .domain-card.is-clickable:hover, .int-card:hover, .kanban-card:hover {
+  border-color: transparent;
+  box-shadow: var(--elev-1), var(--edge-glow-hover);
+}
+.kanban-card:hover { box-shadow: var(--edge-glow); }
+/* Variants that bring their own background layers keep them, above the surface and metal. */
+.card.is-framed {
+  background-image:
+    linear-gradient(var(--bracket), var(--bracket)), linear-gradient(var(--bracket), var(--bracket)),
+    linear-gradient(var(--bracket), var(--bracket)), linear-gradient(var(--bracket), var(--bracket)),
+    linear-gradient(var(--bracket), var(--bracket)), linear-gradient(var(--bracket), var(--bracket)),
+    linear-gradient(var(--bracket), var(--bracket)), linear-gradient(var(--bracket), var(--bracket)),
+    linear-gradient(var(--edge-fill), var(--edge-fill)), var(--edge-metal);
+  background-size: 9px 1px, 1px 9px, 9px 1px, 1px 9px, 9px 1px, 1px 9px, 9px 1px, 1px 9px, auto, auto;
+  background-position:
+    6px 6px, 6px 6px,
+    calc(100% - 6px) 6px, calc(100% - 6px) 6px,
+    6px calc(100% - 6px), 6px calc(100% - 6px),
+    calc(100% - 6px) calc(100% - 6px), calc(100% - 6px) calc(100% - 6px), 0 0, 0 0;
+  background-repeat: no-repeat;
+  background-origin: padding-box, padding-box, padding-box, padding-box, padding-box, padding-box, padding-box, padding-box, padding-box, border-box;
+  background-clip: padding-box, padding-box, padding-box, padding-box, padding-box, padding-box, padding-box, padding-box, padding-box, border-box;
+}
+.card.is-hero {
+  background:
+    radial-gradient(120% 90% at calc(50% - var(--dir) * 50%) 0%, color-mix(in srgb, var(--brand) 9%, transparent), transparent 60%) padding-box,
+    linear-gradient(var(--edge-fill), var(--edge-fill)) padding-box, var(--edge-metal) border-box;
+}
+:root[data-theme="light"] .card.is-hero {
+  background:
+    radial-gradient(120% 90% at calc(50% - var(--dir) * 50%) 0%, color-mix(in srgb, var(--brand) 5%, transparent), transparent 60%) padding-box,
+    linear-gradient(var(--edge-fill), var(--edge-fill)) padding-box, var(--edge-metal) border-box;
+}
+/* Nested and plain cards: the metal is washed 45 % toward the surface, so a card inside a card stays quiet. */
+.card.is-plain, .card.is-plain.is-framed, .card .card, .kanban-card {
+  background:
+    linear-gradient(var(--edge-fill), var(--edge-fill)) padding-box,
+    linear-gradient(color-mix(in srgb, var(--edge-fill) 45%, transparent), color-mix(in srgb, var(--edge-fill) 45%, transparent)) border-box,
+    var(--edge-metal) border-box;
+  border-color: transparent;
+}
+.card.is-plain, .card.is-plain.is-framed { --edge-fill: var(--bg-2); }
+/* These two clip their content; clip at the border box so the comet can run on the metal. */
+.int-card { overflow: clip; overflow-clip-margin: var(--edge-w); }
+
+/* The laser comet: shape and glow here; js/ui/edges.js measures each host and moves the comet round its
+   edge with a compositor transform animation, then sets data-edge="lit". Without that module there is no comet. */
+.card:not(.is-plain)::after, .tile::after, .metric-tile::after, .domain-card::after, .int-card::after, .connector-card::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  z-index: 3;
+  inline-size: var(--comet-len);
+  block-size: 2.5px;
+  margin-block-start: -1.25px;
+  border-radius: 2px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--beam-tail) 34%, var(--beam-core) 80%, var(--beam-head));
+  box-shadow: 0 0 7px 1px var(--beam-glow);
+  transform-origin: 100% 50%;
+  opacity: 0;
+  will-change: transform;
+}
+[data-edge="lit"]::after { opacity: 1; }
+:is(.card:not(.is-plain), .tile, .metric-tile, .domain-card, .int-card, .connector-card)[data-edge="lit"]:hover::after { box-shadow: 0 0 10px 2px var(--beam-glow); }
+.card .card::after { content: none; }
+
+/* Status stripes stay above the metal. */
+.tile[class*="tone-"]::before, .metric-tile::before, .domain-card::before, .int-card::before,
+.connector-card::before, .kanban-card[class*="tone-"]::before { z-index: 2; }
+
+/* Laser off: Static background, motion reduced by the setting or (unless forced on) by the OS. */
+:root[data-bg="static"] :is(.card, .tile, .metric-tile, .domain-card, .int-card, .connector-card)::after,
+:root[data-motion="reduce"] :is(.card, .tile, .metric-tile, .domain-card, .int-card, .connector-card)::after,
+:root[data-motion="reduced"] :is(.card, .tile, .metric-tile, .domain-card, .int-card, .connector-card)::after { content: none; }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) :is(.card, .tile, .metric-tile, .domain-card, .int-card, .connector-card)::after { content: none; }
+}
+@media (forced-colors: active) {
+  .card, .tile, .metric-tile, .domain-card, .int-card, .connector-card, .kanban-card { border-color: CanvasText; }
+  :is(.card, .tile, .metric-tile, .domain-card, .int-card, .connector-card)::after { content: none; }
+}
+@media print {
+  .card, .tile, .metric-tile, .domain-card, .int-card, .connector-card, .kanban-card { border-color: #C5D2E1; box-shadow: none; }
+  :is(.card, .tile, .metric-tile, .domain-card, .int-card, .connector-card)::after { content: none; }
+}
 
 /* Forced colours */
 @media (forced-colors: active) {

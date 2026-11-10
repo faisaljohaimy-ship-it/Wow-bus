@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- BILTIX Risk AI / بلتكس Risk AI — AI risk management platform. Static app shell: plain ES modules, no build step. -->
-<html lang="ar" dir="rtl" data-theme="dark" data-input="pointer" data-bg="subtle" data-density="comfortable">
+<html lang="ar" dir="rtl" data-theme="light" data-input="pointer" data-bg="subtle" data-density="comfortable">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -10,7 +10,7 @@
   <meta name="color-scheme" content="dark light">
   <meta name="theme-color" content="#080F1B" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#F4F7FB" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#080F1B">
+  <meta name="theme-color" content="#F4F7FB">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="format-detection" content="telephone=no">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
@@ -40,7 +40,9 @@
       } catch (e) { /* old browser: keep the saved language */ }
       root.setAttribute('lang', lang);
       root.setAttribute('dir', lang === 'en' ? 'ltr' : 'rtl');
-      var theme = s.theme === 'light' ? 'light' : 'dark';
+      // Light is the default theme. Dark applies only when the user chose it (settings.themeChosen, set by any
+      // theme change); older saved settings without that flag open in light. Mirrors sanitizeSettings() in store.js.
+      var theme = s.theme === 'dark' && s.themeChosen === true ? 'dark' : 'light';
       root.setAttribute('data-theme', theme);
       root.setAttribute('data-numerals', s.numerals === 'arab' ? 'arab' : 'latn');
       // settings.calendar → html[data-calendar]: css/base.css hides the clock date line that boot will not fill.

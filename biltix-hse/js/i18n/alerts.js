@@ -16,7 +16,7 @@ export default {
       last24: 'تنبيهات آخر {h} ساعة',
       last24Hint: 'كل الحالات',
       ack: 'متوسط زمن التأكيد',
-      ackHint: 'من الإرسال حتى التأكيد',
+      ackHint: 'من التسجيل حتى التأكيد',
       ackNone: 'لا توجد تنبيهات مؤكدة بعد',
     },
     queue: {
@@ -119,7 +119,7 @@ export default {
       last24: 'Alerts in the last {h} hours',
       last24Hint: 'All states',
       ack: 'Mean time to acknowledge',
-      ackHint: 'From sending to acknowledgement',
+      ackHint: 'From raising to acknowledgement',
       ackNone: 'No acknowledged alerts yet',
     },
     queue: {

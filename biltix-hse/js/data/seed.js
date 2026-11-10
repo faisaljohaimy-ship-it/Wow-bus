@@ -2639,7 +2639,7 @@ const feedTemplates = [
   { type: 'inspection', tone: 'accent',  sourceId: 'biltix-pm',  title: 'بدء {inspectionType} في {zone}', detail: 'المفتش {inspector}؛ قائمة تحقق من {checklist} بنداً — {site}' },
   // --- training ---
   { type: 'training', tone: 'accent',  sourceId: 'hrms', title: 'اكتمال دورة «{course}» لـ {n2} عاملاً — {site}', detail: 'تحديث محاكى لمصفوفة التدريب من سيناريو نظام الموارد البشرية' },
-  { type: 'training', tone: 'warning', sourceId: 'hrms', title: 'شهادات تنتهي خلال {days} يوماً — {site}', detail: 'إشعار المشرفين بجدولة التجديد؛ العامل {worker} ضمن القائمة' },
+  { type: 'training', tone: 'warning', sourceId: 'hrms', title: 'شهادات تنتهي خلال {days} يوماً — {site}', detail: 'يُوصى بإبلاغ المشرفين لجدولة التجديد؛ العامل {worker} ضمن القائمة' },
   { type: 'training', tone: 'good',    sourceId: 'hrms', title: 'محاكاة: تحديث سجل التدريب من سيناريو نظام الموارد البشرية', detail: '{n2} شهادة محدثة — {site}' },
   { type: 'training', tone: 'warning', sourceId: 'access-control', title: 'منع دخول عامل بشهادة إلزامية منتهية — {zone}', detail: '{site}؛ إحالة إلى التدريب' },
   // --- integration ---
@@ -2648,7 +2648,7 @@ const feedTemplates = [
   { type: 'integration', tone: 'accent',  sourceId: 'biltix-pm', title: 'محاكاة: مزامنة مع {integration}', detail: '{n2} سجلاً افتراضياً — حدث تجريبي' },
   { type: 'integration', tone: 'accent',  sourceId: 'biltix-pm', title: 'محاكاة: تجديد رمز الوصول للتكامل {integration}', detail: 'حدث تجريبي — صلاحية افتراضية 24 ساعة؛ لا يوجد اتصال فعلي' },
   // --- ppe ---
-  { type: 'ppe', tone: 'warning', sourceId: 'cctv-ai', weight: 2, title: 'كاميرا ذكية: رصد عامل بدون خوذة — {zone}', detail: '{site}؛ إشعار المشرف المباشر' },
+  { type: 'ppe', tone: 'warning', sourceId: 'cctv-ai', weight: 2, title: 'كاميرا ذكية: رصد عامل بدون خوذة — {zone}', detail: '{site}؛ محاكاة: يُوصى بإبلاغ المشرف المباشر' },
   { type: 'ppe', tone: 'warning', sourceId: 'cctv-ai', title: 'كاميرا ذكية: رصد عامل بدون سترة عاكسة قرب الطريق الداخلي — {zone}', detail: '{site}' },
   { type: 'ppe', tone: 'serious', sourceId: 'cctv-ai', title: 'كاميرا ذكية: عامل على ارتفاع دون حزام أمان مربوط — {zone}', detail: '{site}؛ إيقاف العمل فوراً' },
   { type: 'ppe', tone: 'good',    sourceId: 'cctv-ai', weight: 2, title: 'كاميرا ذكية: التزام كامل بمعدات الوقاية خلال آخر ساعة — {zone}', detail: 'فحص {n2} عاملاً دون مخالفات — {site}' },
@@ -2660,7 +2660,7 @@ const feedTemplates = [
   // --- alert ---
   { type: 'alert', tone: 'serious', sourceId: 'wearables',      title: 'جهاز قابل للارتداء: تنبيه إجهاد حراري للعامل {worker}', detail: 'توجيه فوري إلى منطقة الراحة المكيفة — {zone}' },
   { type: 'alert', tone: 'serious', sourceId: 'access-control', title: 'عدد الأشخاص في {zone} تجاوز الحد المسموح ({n2})', detail: '{site} — إيقاف الدخول مؤقتاً' },
-  { type: 'alert', tone: 'warning', sourceId: 'access-control', title: 'محاولة دخول بشارة منتهية الصلاحية — {zone}', detail: 'رُفض الدخول وتم إشعار المشرف — {site}' },
+  { type: 'alert', tone: 'warning', sourceId: 'access-control', title: 'محاولة دخول بشارة منتهية الصلاحية — {zone}', detail: 'محاكاة: رُفض الدخول؛ يُوصى بإبلاغ المشرف — {site}' },
   { type: 'alert', tone: 'accent',  sourceId: 'iot-gateway',    title: 'اختبار دوري لنظام إنذار الحريق — {zone}', detail: 'استجابة غرفة التحكم خلال {n} ثوانٍ — {site}' },
 ];
 

@@ -909,3 +909,17 @@
   .flow-packet, .pipeline-connector-dot, .pipeline-connector::after, .score-pill { display: none !important; }
   .cat-tile, .connector-card, .recommendation, .evidence, .pipeline-layer { box-shadow: none; break-inside: avoid; }
 }
+
+/* Edges (components.css "Edges"): connector cards are declared here, after components.css, so the
+   nickel-orange metal border is repeated here; the comet rules live in components.css. */
+.connector-card {
+  --edge-fill: var(--bg-1);
+  border: var(--edge-w) solid transparent;
+  background: linear-gradient(var(--edge-fill), var(--edge-fill)) padding-box, var(--edge-metal) border-box;
+  box-shadow: var(--elev-1), var(--edge-glow);
+  overflow: clip;
+  overflow-clip-margin: var(--edge-w);
+}
+.connector-card:hover { border-color: transparent; box-shadow: var(--elev-1), var(--edge-glow-hover); }
+@media (forced-colors: active) { .connector-card { border-color: CanvasText; } }
+@media print { .connector-card { border-color: #C5D2E1; box-shadow: none; } }
