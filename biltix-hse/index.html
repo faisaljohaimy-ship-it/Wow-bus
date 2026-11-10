@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<!-- بلتكس Risk AI — منصة إدارة المخاطر بالذكاء الاصطناعي (Biltix Risk AI). Static app shell: plain ES modules, no build step. -->
+<html lang="ar" dir="rtl" data-theme="dark" data-input="pointer">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>بلتكس Risk AI — منصة إدارة المخاطر بالذكاء الاصطناعي</title>
+  <meta name="description" content="منصة بلتكس لإدارة المخاطر بالذكاء الاصطناعي: قمرة قيادة موحدة لخمسة مجالات — العقود، المواد والتوريد، الجدول الزمني، الموقع والسلامة، والتكلفة — مع تصنيف فوري (أحمر/أصفر/أخضر)، تفسير واضح لكل مخاطرة، تنبيهات وتصعيد، ومهام معالجة مُتتبعة تُكتب عكسياً إلى منصة بلتكس لإدارة المشاريع. يضم ركن السلامة والصحة المهنية الكامل (رادارات حية، الحوادث، تصاريح العمل، التفتيش، التدريب، ISO 45001).">
+  <meta name="application-name" content="بلتكس Risk AI">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#070D18" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#F2F5FA" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#070D18">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="assets/manifest.webmanifest">
+  <script>
+    /* Pre-paint theme: read persisted settings so the first frame uses the right theme (no flash). */
+    (function () {
+      try {
+        var raw = localStorage.getItem('biltix-hse:v1');
+        var theme = 'dark';
+        if (raw) {
+          var saved = JSON.parse(raw);
+          var t = saved && saved.settings && saved.settings.theme;
+          if (t === 'light' || t === 'dark') theme = t;
+          var n = saved && saved.settings && saved.settings.numerals;
+          if (n === 'arab' || n === 'latn') document.documentElement.setAttribute('data-numerals', n);
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+        var meta = document.querySelector('meta[name="theme-color"]:not([media])');
+        if (meta) meta.setAttribute('content', theme === 'light' ? '#F2F5FA' : '#070D18');
+      } catch (e) { /* storage unavailable: keep the default dark theme */ }
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/charts.css">
+  <link rel="stylesheet" href="css/platform.css">
+  <link rel="stylesheet" href="css/print.css" media="print">
+  <!-- Module preloads: the core graph, the shared UI libraries, both seeds and the home view (other views load on first navigation). -->
+  <link rel="modulepreload" href="js/app.js">
+  <link rel="modulepreload" href="js/core/bus.js">
+  <link rel="modulepreload" href="js/core/fmt.js">
+  <link rel="modulepreload" href="js/core/store.js">
+  <link rel="modulepreload" href="js/core/selectors.js">
+  <link rel="modulepreload" href="js/core/router.js">
+  <link rel="modulepreload" href="js/core/platform-selectors.js">
+  <link rel="modulepreload" href="js/views/index.js">
+  <link rel="modulepreload" href="js/ui/components.js">
+  <link rel="modulepreload" href="js/ui/charts.js">
+  <link rel="modulepreload" href="js/ui/radar.js">
+  <link rel="modulepreload" href="js/ui/art.js">
+  <link rel="modulepreload" href="js/data/seed.js">
+  <link rel="modulepreload" href="js/data/platform-seed.js">
+  <link rel="modulepreload" href="js/views/cockpit.js">
+</head>
+<body class="app" data-view="cockpit">
+  <a class="skip-link" href="#main">تخطي إلى المحتوى</a>
+
+  <div class="backdrop" id="backdrop" aria-hidden="true"></div>
+
+  <header class="appbar" id="appbar" role="banner">
+    <div class="appbar-start">
+      <button type="button" class="rail-toggle btn btn-ghost btn-icon" id="railToggle" aria-label="طيّ شريط التنقل" aria-expanded="true" aria-controls="rail">
+        <span class="rail-toggle-bars" aria-hidden="true"><i></i><i></i><i></i></span>
+      </button>
+      <a class="brand" href="#/cockpit" aria-label="بلتكس Risk AI — قمرة قيادة المخاطر (الرئيسية)">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-text">
+          <span class="brand-name">بلتكس Risk AI</span>
+          <span class="brand-tag">قمرة قيادة المخاطر — خمسة مجالات، تصنيف فوري، معالجة مُتتبعة</span>
+        </span>
+      </a>
+    </div>
+
+    <div class="appbar-center">
+      <div class="clock" id="clock" role="group" aria-label="الوقت والتاريخ — توقيت الرياض">
+        <time class="clock-time mono" id="clockTime" aria-live="off">--:--:--</time>
+        <span class="clock-dates">
+          <span class="clock-date" id="clockDate"></span>
+          <span class="clock-sep" aria-hidden="true">·</span>
+          <span class="clock-hijri" id="clockHijri"></span>
+        </span>
+      </div>
+      <button type="button" class="cmdk-btn" id="cmdkBtn" aria-haspopup="dialog" aria-controls="cmdk" aria-expanded="false">
+        <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+        <span class="cmdk-btn-label">بحث…</span>
+        <kbd class="cmdk-kbd mono" aria-hidden="true">Ctrl+K</kbd>
+      </button>
+    </div>
+
+    <div class="appbar-end">
+      <button type="button" class="pill score-pill" id="scorePill" aria-label="الدرجة الموحدة للمخاطر — فتح قمرة القيادة" title="الدرجة الموحدة — فتح قمرة القيادة" hidden>
+        <span class="rating-dot" id="scoreDot" aria-hidden="true"></span>
+        <span class="pill-value mono" id="scoreValue">—</span>
+        <span class="score-pill-delta mono" id="scoreDelta" hidden></span>
+        <span class="pill-label" id="scoreLabel">الدرجة الموحدة</span>
+      </button>
+      <button type="button" class="pill integrations-pill" id="integrationsPill" aria-label="حالة التكاملات والموصلات" title="التكاملات والموصلات المتصلة">
+        <span class="live-dot tone-accent" aria-hidden="true"></span>
+        <span class="pill-value mono" id="integrationsCount">—</span>
+        <span class="pill-label">متصل</span>
+      </button>
+      <button type="button" class="btn btn-ghost btn-icon bell-btn" id="bellBtn" aria-label="التنبيهات" aria-haspopup="dialog">
+        <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"></path><path d="M10 20a2 2 0 0 0 4 0"></path></svg>
+        <span class="bell-count mono" id="bellCount" hidden>0</span>
+      </button>
+      <button type="button" class="btn btn-ghost btn-icon theme-btn" id="themeBtn" aria-label="تبديل السمة" aria-pressed="false" title="تبديل السمة (داكن / فاتح)">
+        <svg class="icon theme-icon-dark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"></path></svg>
+        <svg class="icon theme-icon-light" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+      </button>
+      <button type="button" class="user-chip" id="userChip" aria-label="حساب المستخدم: م. فيصل الحربي — مدير المخاطر والسلامة">
+        <span class="user-avatar" aria-hidden="true">ف</span>
+        <span class="user-text">
+          <span class="user-name">م. فيصل الحربي</span>
+          <span class="user-role">مدير المخاطر والسلامة</span>
+        </span>
+      </button>
+    </div>
+  </header>
+
+  <div class="alert-banner" id="alertBanner" role="alert" hidden></div>
+
+  <nav class="rail" id="rail" aria-label="التنقل الرئيسي">
+    <ul class="rail-list" id="railList" role="list"></ul>
+    <div class="rail-foot">
+      <a class="rail-site mono" href="https://biltix.sa" target="_blank" rel="noopener noreferrer">biltix.sa</a>
+      <span class="rail-version mono" id="railVersion">v2.0.0</span>
+    </div>
+  </nav>
+
+  <div class="filters" id="filters" role="region" aria-label="عوامل التصفية العامة">
+    <div class="filters-group">
+      <label class="filters-label" for="siteSelect">المشروع</label>
+      <select class="field-control filters-site" id="siteSelect" name="siteId" aria-label="اختيار المشروع">
+        <option value="all">جميع المشاريع</option>
+      </select>
+    </div>
+    <div class="filters-group">
+      <span class="filters-label" id="rangeLabel">الفترة</span>
+      <div class="filters-range" id="rangeSeg" aria-labelledby="rangeLabel"></div>
+    </div>
+    <div class="filters-group filters-search">
+      <label class="sr-only" for="searchInput">بحث في المخاطر الذكية والعقود والمهام والحوادث والتصاريح</label>
+      <input class="field-control" id="searchInput" name="search" type="search" placeholder="ابحث بالرمز أو العنوان…" title="ابحث بالرمز أو العنوان — مثال: AIR-1042 أو CT-2026-014 أو MT-0231 أو R-1001" autocomplete="off" spellcheck="false" enterkeyhint="search">
+    </div>
+    <div class="filters-group filters-feed">
+      <button type="button" class="btn btn-outline btn-sm feed-toggle" id="feedToggle" aria-pressed="false" aria-controls="feed">
+        <span class="live-dot tone-accent" aria-hidden="true"></span>
+        <span class="feed-toggle-label">إيقاف البث</span>
+      </button>
+      <button type="button" class="btn btn-ghost btn-icon feed-open" id="feedOpen" aria-label="فتح البث الحي" aria-controls="feed" aria-expanded="false">
+        <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h10M4 18h7"></path><circle cx="18" cy="17" r="3"></circle></svg>
+      </button>
+    </div>
+  </div>
+
+  <main id="main" class="main" tabindex="-1"></main>
+
+  <aside class="feed" id="feed" aria-label="البث الحي">
+    <header class="feed-head">
+      <span class="live-dot tone-accent" id="feedLive" aria-hidden="true"></span>
+      <h2 class="feed-title">البث الحي</h2>
+      <span class="feed-count mono" id="feedCount"><span class="sr-only">عدد الأحداث: </span><span id="feedCountValue">0</span></span>
+      <button type="button" class="btn btn-ghost btn-icon feed-close" id="feedClose" aria-label="إغلاق البث الحي">
+        <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+      </button>
+    </header>
+    <!-- The feed is a log, not a live region: ~20 events/min must never be announced. Critical alerts go through #liveAnnouncer. -->
+    <ul class="feed-list" id="feedList" role="log" aria-live="off" aria-label="سجل أحداث البث الحي"></ul>
+    <footer class="feed-foot">
+      <span class="feed-status" id="feedStatus">متصل بالأنظمة الحية</span>
+      <button type="button" class="btn btn-ghost btn-sm" id="feedAll">عرض الكل</button>
+    </footer>
+  </aside>
+
+  <nav class="tabbar" id="tabbar" aria-label="التنقل السريع"></nav>
+
+  <!-- Single assertive live region: app.js announces each critical / serious alert here exactly once. -->
+  <div class="sr-only" id="liveAnnouncer" aria-live="assertive" aria-atomic="true"></div>
+  <!-- No aria-live on the stack itself: each toast carries its own role (status / alert). -->
+  <div class="toast-stack" id="toasts"></div>
+  <div id="modals"></div>
+  <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+
+  <div class="cmdk" id="cmdk" hidden>
+    <div class="cmdk-backdrop" data-cmdk-close></div>
+    <div class="cmdk-panel" role="dialog" aria-modal="true" aria-label="لوحة الأوامر">
+      <div class="cmdk-search">
+        <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+        <label class="sr-only" for="cmdkInput">ابحث عن صفحة أو إجراء أو رمز</label>
+        <input class="cmdk-input" id="cmdkInput" type="text" placeholder="انتقل إلى قسم، نفّذ إجراءً، أو ابحث برمز مثل AIR-1042 أو CT-2026-014…" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="cmdkList" aria-autocomplete="list" aria-activedescendant="">
+        <kbd class="cmdk-kbd mono" aria-hidden="true">Esc</kbd>
+      </div>
+      <ul class="cmdk-list" id="cmdkList" role="listbox" aria-label="النتائج"></ul>
+      <footer class="cmdk-foot" aria-hidden="true">
+        <span><kbd class="mono">↑</kbd><kbd class="mono">↓</kbd> تنقّل</span>
+        <span><kbd class="mono">Enter</kbd> تنفيذ</span>
+        <span><kbd class="mono">Esc</kbd> إغلاق</span>
+      </footer>
+    </div>
+  </div>
+
+  <noscript>
+    <div class="noscript" dir="rtl">
+      <h1>بلتكس Risk AI</h1>
+      <p>تتطلب منصة إدارة المخاطر تفعيل JavaScript في المتصفح لعرض قمرة القيادة والرادارات الحية والمؤشرات. يرجى تفعيل JavaScript ثم إعادة تحميل الصفحة.</p>
+    </div>
+  </noscript>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

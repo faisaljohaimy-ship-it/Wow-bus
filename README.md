@@ -72,3 +72,11 @@ The dev server runs on http://localhost:3000 by default. Vite will generate `src
 - `src/router.tsx` — router factory wiring TanStack Query into route context
 - `src/client.tsx` / `src/ssr.tsx` — TanStack Start entry points
 - `src/styles.css` — Tailwind + design tokens (shadcn-style HSL variables)
+
+---
+
+## الجزء الثالث: بلتكس HSE — نظام إدارة مخاطر السلامة والصحة المهنية | Biltix HSE
+
+مجلد `biltix-hse/` يحتوي نظام إدارة مخاطر السلامة والصحة المهنية لشركة بلتكس: لوحة قيادة هندسية عربية (RTL) برادارات متحركة باستمرار، سجل مخاطر، حوادث، تصاريح عمل، تفتيش، تدريب، امتثال ISO 45001، ومركز تكاملات قابل للتهيئة. موقع ثابت بالكامل بدون خطوة بناء — جذر النشر على Vercel هو `biltix-hse/`.
+
+الرابط الحي: https://biltix-risk-ai.vercel.app — التفاصيل في `biltix-hse/README.md` والعقد البرمجي في `biltix-hse/docs/ARCHITECTURE.md`.
