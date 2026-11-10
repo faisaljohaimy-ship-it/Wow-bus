@@ -10,9 +10,9 @@ import { enter, prog } from '../lib/anim';
 import { C, EASE, STAGGER } from '../theme';
 
 const S = DATA.story;
-const EFFORT_EN: Record<string, string> = { 'عالٍ': 'High', 'متوسط': 'Medium', 'منخفض': 'Low' };
 const ratingOf = (score: number) => (score >= 70 ? 'red' : score >= 40 ? 'yellow' : 'green'); // B2 thresholds
 const PRESS = 74; // frame the reviewer accepts
+const TARGET_LABEL = `${S.recommendation.targetApprox ? '~' : ''}${S.recommendation.targetScore}`;
 
 export const Approve: React.FC<SceneProps> = ({ lang, frames }) => {
   const f = useCurrentFrame();
@@ -45,8 +45,8 @@ export const Approve: React.FC<SceneProps> = ({ lang, frames }) => {
       rtl={rtl}
       cam={[
         { f: 0, s: 1.0, x: 0, y: 0 },
-        { f: 64, s: 1.03, x: 30, y: -14 },
-        { f: frames + 15, s: 1.045, x: -46, y: 0 },
+        { f: 64, s: 1.025, x: 22, y: -8 },
+        { f: frames + 15, s: 1.04, x: -26, y: 0 },
       ]}
     >
       {/* ── recommendation ── */}
@@ -60,19 +60,23 @@ export const Approve: React.FC<SceneProps> = ({ lang, frames }) => {
           {ar ? S.recommendation.actionAr : S.recommendation.actionEn}
         </div>
         <div style={{ height: 1, background: C.border, margin: '30px 0 24px' }} />
-        <div style={{ display: 'flex', gap: 56, alignItems: 'center', ...enter(f, 14, 20, 10) }}>
+        <div style={{ display: 'flex', gap: 56, alignItems: 'flex-start', ...enter(f, 14, 20, 10) }}>
           <div>
             <div style={{ fontSize: 19, color: C.ink3, marginBottom: 10 }}>{t.impact}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
               <ScoreChip score={S.score} rating={S.rating} label={rl[S.rating]} size={26} />
               <DirArrow rtl={rtl} size={30} />
-              <ScoreChip score={S.recommendation.targetScore} rating={ratingOf(S.recommendation.targetScore)} label={rl[ratingOf(S.recommendation.targetScore)]} size={26} dashed />
+              <ScoreChip score={TARGET_LABEL} rating={ratingOf(S.recommendation.targetScore)} label={rl[ratingOf(S.recommendation.targetScore)]} size={26} dashed />
             </div>
           </div>
           <div>
             <div style={{ fontSize: 19, color: C.ink3, marginBottom: 10 }}>{t.effort}</div>
-            <div style={{ fontSize: 26, fontWeight: 600 }}>{ar ? S.recommendation.effortAr : EFFORT_EN[S.recommendation.effortAr] || S.recommendation.effortAr}</div>
+            <div style={{ fontSize: 26, fontWeight: 600, lineHeight: '56px' }}>{ar ? S.recommendation.effortAr : S.recommendation.effortEn}</div>
           </div>
+        </div>
+        <div style={{ marginTop: 26, maxWidth: 900, ...enter(f, 18, 20, 10) }}>
+          <div style={{ fontSize: 19, color: C.ink3, marginBottom: 6 }}>{t.rationale}</div>
+          <div style={{ fontSize: 23, lineHeight: 1.5, color: C.ink2 }}>{ar ? S.recommendation.rationaleAr : S.recommendation.rationaleEn}</div>
         </div>
 
         {/* decision buttons */}
@@ -204,6 +208,16 @@ export const Approve: React.FC<SceneProps> = ({ lang, frames }) => {
               </div>
             );
           })}
+        </div>
+        <div style={{ position: 'absolute', bottom: 34, insetInlineStart: 40, insetInlineEnd: 40, ...enter(f, 30, 20, 8) }}>
+          <div style={{ fontSize: 18, color: C.ink3, marginBottom: 10 }}>{t.stakeholders}</div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {S.stakeholders.map((st) => (
+              <Pill key={st.id} color={C.border} fill={false} size={18}>
+                {ar ? st.ar : st.en}
+              </Pill>
+            ))}
+          </div>
         </div>
       </Card>
     </SceneFrame>

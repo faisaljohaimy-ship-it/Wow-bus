@@ -81,7 +81,14 @@ export const Mitigate: React.FC<SceneProps> = ({ lang, frames }) => {
                     justifyContent: 'center',
                   }}
                 >
-                  {c.done ? <Check size={22} p={p} color="#FFFFFF" /> : <span style={{ width: 10, height: 10, borderRadius: 999, border: `2px solid ${C.accent}`, borderInlineEndColor: 'transparent' }} />}
+                  {c.done ? (
+                    <Check size={22} p={p} color="#FFFFFF" />
+                  ) : (
+                    <svg width={16} height={16} viewBox="0 0 16 16">
+                      <circle cx={8} cy={8} r={6} fill="none" stroke={C.border} strokeWidth={2} />
+                      <path d="M8 2 A6 6 0 0 1 14 8" fill="none" stroke={C.accent} strokeWidth={2} strokeLinecap="round" />
+                    </svg>
+                  )}
                 </span>
                 <span style={{ fontSize: 22, color: c.done ? C.ink : C.ink2, flex: 1 }}>{ar ? c.ar : c.en}</span>
                 <span style={{ fontSize: 17, color: c.done ? C.ink2 : C.accent }}>{c.done ? t.done : t.inProgress}</span>
@@ -93,7 +100,17 @@ export const Mitigate: React.FC<SceneProps> = ({ lang, frames }) => {
 
       {/* ── evacuation zone (control #1), schematic ── */}
       <Card style={{ top: 236, insetInlineStart: 1160, width: 664, height: 404, padding: '26px 32px', ...enter(f, 8, 24, 14) }}>
-        <Eyebrow>{ar ? S.controls[0].ar : S.controls[0].en}</Eyebrow>
+        <Eyebrow>{t.zone}</Eyebrow>
+        <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+          {S.controls
+            .filter((c) => c.done)
+            .map((c, i) => (
+              <Pill key={c.en} color={C.accent} size={18} style={enter(f, 20 + i * STAGGER * 4, 16, 6)}>
+                <Check size={16} p={prog(f, 26 + i * STAGGER * 4, 14)} color={C.accent} />
+                {ar ? c.ar : c.en}
+              </Pill>
+            ))}
+        </div>
         <div style={{ position: 'absolute', insetInlineStart: 32, bottom: 22 }}>
           <Section
             w={600}
@@ -104,8 +121,8 @@ export const Mitigate: React.FC<SceneProps> = ({ lang, frames }) => {
             pxPerM={10}
             workers={F.workers}
             excavators={F.excavators}
-            crewX={152}
-            crewCols={7}
+            crewX={150}
+            crewCols={8}
             crewShift={prog(f, 34, 40, EASE.inOut) * (F.evacuateM * 10 + 10)}
             zoneM={F.evacuateM}
             zoneP={prog(f, 22, 30, EASE.inOut)}

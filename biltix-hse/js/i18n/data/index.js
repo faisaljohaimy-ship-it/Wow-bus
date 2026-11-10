@@ -6,8 +6,10 @@
  */
 import d0 from './hse.js';
 import d1 from './platform.js';
+import d2 from './platform-domains.js';
+import d3 from './platform-risks.js';
 
-export const parts = [d0, d1];
+export const parts = [d0, d1, d2, d3];
 
 const merged = { terms: {} };
 for (const part of parts) {

@@ -16,7 +16,7 @@
       "site": 0.2,
       "cost": 0.15
     },
-    "note": "Demo data — بيانات توضيحية. aiRisks carry no likelihood/impact fields: severityDistribution is derived from scores; the 5×5 heatmap is the HSE register (likelihood × severity)."
+    "note": "Demo data — بيانات توضيحية. Heatmap = open AI risks by likelihood × impact (score = L × I × 4)."
   },
   "product": {
     "nameAr": "بلتكس — منصة إدارة المخاطر بالذكاء الاصطناعي",
@@ -29,7 +29,7 @@
     "labelAr": "أحمر",
     "labelEn": "Red",
     "hintAr": "حرج — تدخل فوري",
-    "hintEn": "Critical — act now",
+    "hintEn": "Critical — immediate action",
     "delta": 6,
     "trend": [
       57,
@@ -62,7 +62,7 @@
     {
       "id": "bom",
       "labelAr": "المواد والتوريد",
-      "labelEn": "Materials & supply",
+      "labelEn": "Materials and procurement",
       "score": 70,
       "rating": "red",
       "weight": 0.2,
@@ -86,7 +86,7 @@
     {
       "id": "site",
       "labelAr": "الموقع والسلامة",
-      "labelEn": "Site & safety",
+      "labelEn": "Site and safety",
       "score": 83,
       "rating": "red",
       "weight": 0.2,
@@ -175,238 +175,208 @@
     }
   ],
   "heatmap": {
-    "source": "hse-register",
-    "total": 43,
+    "source": "ai-risks",
+    "total": 58,
     "cells": [
       {
         "likelihood": 1,
-        "severity": 1,
-        "count": 1,
-        "tierAr": "منخفض",
-        "tierEn": "Low",
-        "tone": "good"
-      },
-      {
-        "likelihood": 2,
-        "severity": 1,
-        "count": 1,
-        "tierAr": "منخفض",
-        "tierEn": "Low",
-        "tone": "good"
-      },
-      {
-        "likelihood": 3,
-        "severity": 1,
-        "count": 1,
-        "tierAr": "منخفض",
-        "tierEn": "Low",
-        "tone": "good"
-      },
-      {
-        "likelihood": 4,
-        "severity": 1,
+        "impact": 1,
         "count": 0,
-        "tierAr": "منخفض",
-        "tierEn": "Low",
+        "score": 4,
+        "rating": "green",
         "tone": "good"
       },
       {
-        "likelihood": 5,
-        "severity": 1,
-        "count": 1,
-        "tierAr": "متوسط",
-        "tierEn": "Medium",
-        "tone": "warning"
-      },
-      {
-        "likelihood": 1,
-        "severity": 2,
+        "likelihood": 2,
+        "impact": 1,
         "count": 0,
-        "tierAr": "منخفض",
-        "tierEn": "Low",
-        "tone": "good"
-      },
-      {
-        "likelihood": 2,
-        "severity": 2,
-        "count": 1,
-        "tierAr": "منخفض",
-        "tierEn": "Low",
+        "score": 8,
+        "rating": "green",
         "tone": "good"
       },
       {
         "likelihood": 3,
-        "severity": 2,
-        "count": 2,
-        "tierAr": "متوسط",
-        "tierEn": "Medium",
-        "tone": "warning"
+        "impact": 1,
+        "count": 0,
+        "score": 12,
+        "rating": "green",
+        "tone": "good"
       },
       {
         "likelihood": 4,
-        "severity": 2,
-        "count": 2,
-        "tierAr": "متوسط",
-        "tierEn": "Medium",
-        "tone": "warning"
+        "impact": 1,
+        "count": 0,
+        "score": 16,
+        "rating": "green",
+        "tone": "good"
       },
       {
         "likelihood": 5,
-        "severity": 2,
-        "count": 2,
-        "tierAr": "عالٍ",
-        "tierEn": "High",
-        "tone": "serious"
+        "impact": 1,
+        "count": 0,
+        "score": 20,
+        "rating": "green",
+        "tone": "good"
       },
       {
         "likelihood": 1,
-        "severity": 3,
-        "count": 1,
-        "tierAr": "منخفض",
-        "tierEn": "Low",
+        "impact": 2,
+        "count": 0,
+        "score": 8,
+        "rating": "green",
         "tone": "good"
       },
       {
         "likelihood": 2,
-        "severity": 3,
-        "count": 2,
-        "tierAr": "متوسط",
-        "tierEn": "Medium",
-        "tone": "warning"
+        "impact": 2,
+        "count": 1,
+        "score": 16,
+        "rating": "green",
+        "tone": "good"
       },
       {
         "likelihood": 3,
-        "severity": 3,
-        "count": 3,
-        "tierAr": "متوسط",
-        "tierEn": "Medium",
-        "tone": "warning"
+        "impact": 2,
+        "count": 1,
+        "score": 24,
+        "rating": "green",
+        "tone": "good"
       },
       {
         "likelihood": 4,
-        "severity": 3,
-        "count": 3,
-        "tierAr": "عالٍ",
-        "tierEn": "High",
-        "tone": "serious"
+        "impact": 2,
+        "count": 2,
+        "score": 32,
+        "rating": "green",
+        "tone": "good"
       },
       {
         "likelihood": 5,
-        "severity": 3,
-        "count": 2,
-        "tierAr": "عالٍ",
-        "tierEn": "High",
-        "tone": "serious"
+        "impact": 2,
+        "count": 1,
+        "score": 40,
+        "rating": "yellow",
+        "tone": "warning"
       },
       {
         "likelihood": 1,
-        "severity": 4,
-        "count": 1,
-        "tierAr": "منخفض",
-        "tierEn": "Low",
+        "impact": 3,
+        "count": 0,
+        "score": 12,
+        "rating": "green",
         "tone": "good"
       },
       {
         "likelihood": 2,
-        "severity": 4,
-        "count": 3,
-        "tierAr": "متوسط",
-        "tierEn": "Medium",
-        "tone": "warning"
+        "impact": 3,
+        "count": 2,
+        "score": 24,
+        "rating": "green",
+        "tone": "good"
       },
       {
         "likelihood": 3,
-        "severity": 4,
-        "count": 3,
-        "tierAr": "عالٍ",
-        "tierEn": "High",
-        "tone": "serious"
+        "impact": 3,
+        "count": 2,
+        "score": 36,
+        "rating": "green",
+        "tone": "good"
       },
       {
         "likelihood": 4,
-        "severity": 4,
-        "count": 2,
-        "tierAr": "حرج",
-        "tierEn": "Critical",
-        "tone": "critical"
-      },
-      {
-        "likelihood": 5,
-        "severity": 4,
-        "count": 1,
-        "tierAr": "حرج",
-        "tierEn": "Critical",
-        "tone": "critical"
-      },
-      {
-        "likelihood": 1,
-        "severity": 5,
+        "impact": 3,
         "count": 4,
-        "tierAr": "متوسط",
-        "tierEn": "Medium",
+        "score": 48,
+        "rating": "yellow",
         "tone": "warning"
       },
       {
-        "likelihood": 2,
-        "severity": 5,
+        "likelihood": 5,
+        "impact": 3,
         "count": 2,
-        "tierAr": "عالٍ",
-        "tierEn": "High",
-        "tone": "serious"
+        "score": 60,
+        "rating": "yellow",
+        "tone": "warning"
+      },
+      {
+        "likelihood": 1,
+        "impact": 4,
+        "count": 0,
+        "score": 16,
+        "rating": "green",
+        "tone": "good"
+      },
+      {
+        "likelihood": 2,
+        "impact": 4,
+        "count": 2,
+        "score": 32,
+        "rating": "green",
+        "tone": "good"
       },
       {
         "likelihood": 3,
-        "severity": 5,
-        "count": 2,
-        "tierAr": "عالٍ",
-        "tierEn": "High",
-        "tone": "serious"
+        "impact": 4,
+        "count": 1,
+        "score": 48,
+        "rating": "yellow",
+        "tone": "warning"
       },
       {
         "likelihood": 4,
-        "severity": 5,
-        "count": 2,
-        "tierAr": "حرج",
-        "tierEn": "Critical",
+        "impact": 4,
+        "count": 13,
+        "score": 64,
+        "rating": "yellow",
+        "tone": "warning"
+      },
+      {
+        "likelihood": 5,
+        "impact": 4,
+        "count": 9,
+        "score": 80,
+        "rating": "red",
+        "tone": "critical"
+      },
+      {
+        "likelihood": 1,
+        "impact": 5,
+        "count": 0,
+        "score": 20,
+        "rating": "green",
+        "tone": "good"
+      },
+      {
+        "likelihood": 2,
+        "impact": 5,
+        "count": 0,
+        "score": 40,
+        "rating": "yellow",
+        "tone": "warning"
+      },
+      {
+        "likelihood": 3,
+        "impact": 5,
+        "count": 4,
+        "score": 60,
+        "rating": "yellow",
+        "tone": "warning"
+      },
+      {
+        "likelihood": 4,
+        "impact": 5,
+        "count": 9,
+        "score": 80,
+        "rating": "red",
         "tone": "critical"
       },
       {
         "likelihood": 5,
-        "severity": 5,
-        "count": 1,
-        "tierAr": "حرج",
-        "tierEn": "Critical",
+        "impact": 5,
+        "count": 5,
+        "score": 100,
+        "rating": "red",
         "tone": "critical"
-      }
-    ],
-    "tiers": [
-      {
-        "name": "منخفض",
-        "min": 1,
-        "max": 4,
-        "tone": "good",
-        "nameEn": "Low"
-      },
-      {
-        "name": "متوسط",
-        "min": 5,
-        "max": 9,
-        "tone": "warning",
-        "nameEn": "Medium"
-      },
-      {
-        "name": "عالٍ",
-        "min": 10,
-        "max": 15,
-        "tone": "serious",
-        "nameEn": "High"
-      },
-      {
-        "name": "حرج",
-        "min": 16,
-        "max": 25,
-        "tone": "critical",
-        "nameEn": "Critical"
       }
     ]
   },
@@ -429,7 +399,7 @@
       {
         "id": "VS13",
         "nameAr": "بوابة الحساسات (MQTT)",
-        "nameEn": "بوابة الحساسات (MQTT)",
+        "nameEn": "Sensor gateway (MQTT)",
         "recordsIn": 86400,
         "passed": 86090,
         "passRatePct": 99.6,
@@ -456,7 +426,7 @@
       {
         "id": "VS2",
         "nameAr": "Biltix — BoQ/BoM",
-        "nameEn": "Biltix · BoQ / BoM",
+        "nameEn": "BILTIX — BoQ/BoM",
         "recordsIn": 18620,
         "passed": 18090,
         "passRatePct": 97.2,
@@ -474,7 +444,7 @@
       {
         "id": "VS5",
         "nameAr": "Biltix — التكلفة والميزانية",
-        "nameEn": "Biltix · Cost & budget",
+        "nameEn": "BILTIX — Cost and budget",
         "recordsIn": 9870,
         "passed": 9606,
         "passRatePct": 97.3,
@@ -483,7 +453,7 @@
       {
         "id": "VS3",
         "nameAr": "Biltix — الجدول الزمني",
-        "nameEn": "Biltix · Schedule",
+        "nameEn": "BILTIX — Schedule",
         "recordsIn": 6410,
         "passed": 6280,
         "passRatePct": 98,
@@ -492,7 +462,7 @@
       {
         "id": "VS6",
         "nameAr": "Biltix — الصور",
-        "nameEn": "Biltix · Photos",
+        "nameEn": "BILTIX — Images",
         "recordsIn": 4120,
         "passed": 3576,
         "passRatePct": 86.8,
@@ -501,7 +471,7 @@
       {
         "id": "VS4",
         "nameAr": "Biltix — تقارير الموقع",
-        "nameEn": "Biltix · Site reports",
+        "nameEn": "BILTIX — Site reports",
         "recordsIn": 2980,
         "passed": 2872,
         "passRatePct": 96.4,
@@ -510,7 +480,7 @@
       {
         "id": "VS1",
         "nameAr": "Biltix — العقود",
-        "nameEn": "Biltix · Contracts",
+        "nameEn": "BILTIX — Contracts",
         "recordsIn": 1240,
         "passed": 1220,
         "passRatePct": 98.4,
@@ -519,7 +489,7 @@
       {
         "id": "VS12",
         "nameAr": "المركز الوطني للأرصاد",
-        "nameEn": "National weather centre",
+        "nameEn": "National Center for Meteorology",
         "recordsIn": 1008,
         "passed": 972,
         "passRatePct": 96.4,
@@ -537,7 +507,7 @@
       {
         "id": "VS11",
         "nameAr": "أسعار الصرف (ساما)",
-        "nameEn": "FX rates (SAMA)",
+        "nameEn": "Exchange rates (SAMA)",
         "recordsIn": 36,
         "passed": 36,
         "passRatePct": 100,
@@ -603,11 +573,13 @@
     "ratingLabelAr": "أحمر",
     "ratingLabelEn": "Red",
     "hintAr": "حرج — تدخل فوري",
-    "hintEn": "Critical — act now",
+    "hintEn": "Critical — immediate action",
     "confidencePct": 90,
+    "likelihood": 5,
+    "impact": 5,
     "category": "site",
     "categoryAr": "الموقع والسلامة",
-    "categoryEn": "Site & safety",
+    "categoryEn": "Site and safety",
     "typeAr": "سلامة",
     "typeEn": "Safety",
     "site": {
@@ -617,7 +589,7 @@
     "pipeline": {
       "id": "site-ai",
       "nameAr": "ذكاء الموقع (الصور والتقارير)",
-      "nameEn": "Site Image & Report AI",
+      "nameEn": "Site intelligence (images and reports)",
       "version": "v2.0.4",
       "precision": 0.88,
       "recall": 0.81
@@ -693,6 +665,8 @@
       "actionAr": "إخلاء فوري لمنطقة 25 م أسفل الوجه الشمالي، وإيقاف التفجير ضمن 100 م، وتنفيذ تخفيف للمنحدر (Benching) وتثبيت بمسامير صخرية بتصميم المهندس الجيوتقني خلال 10 أيام، مع رصد يومي.",
       "actionEn": "Evacuate 25 m below the north face, stop blasting within 100 m, bench and rock-bolt the slope within 10 days.",
       "effortAr": "عالٍ",
+      "effortEn": "High",
+      "targetApprox": true,
       "rationaleAr": "معدل الإزاحة المتسارع مؤشر انهيار وشيك؛ الإخلاء يزيل التعرض البشري فوراً والتثبيت يعالج السبب.",
       "rationaleEn": "Accelerating displacement signals imminent failure; evacuation removes the exposure now, stabilisation treats the cause.",
       "impactAr": "خفض الدرجة إلى ~30",
@@ -772,6 +746,7 @@
       "ownerEn": "Eng. Turki Al-Mutairi",
       "dueDate": "2026-11-10",
       "statusAr": "قيد التنفيذ",
+      "statusEn": "In progress",
       "source": "ai-accepted",
       "createdAt": "2026-11-08T06:10:00+03:00",
       "writeback": {

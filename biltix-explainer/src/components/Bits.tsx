@@ -31,7 +31,7 @@ export const Person: React.FC<{ size: number; color?: string }> = ({ size, color
 );
 
 /** Score chip: number + rating word, colour never alone. */
-export const ScoreChip: React.FC<{ score: number; rating: string; label: string; size?: number; dashed?: boolean }> = ({ score, rating, label, size = 26, dashed }) => {
+export const ScoreChip: React.FC<{ score: number | string; rating: string; label: string; size?: number; dashed?: boolean }> = ({ score, rating, label, size = 26, dashed }) => {
   const tone = TONE[RATING_TONE[rating]];
   return (
     <span

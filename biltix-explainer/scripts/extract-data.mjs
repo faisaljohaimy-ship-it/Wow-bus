@@ -39,6 +39,15 @@ const seedMod = await mod('js/data/seed.js');
 const { psel } = await mod('js/core/platform-selectors.js');
 const { sel, TIERS } = await mod('js/core/selectors.js');
 
+// The app's own English enum labels (js/i18n/enums.js), when present.
+let EN_ENUM = {};
+try {
+  EN_ENUM = (await mod('js/i18n/enums.js')).default.en.enum || {};
+} catch {
+  console.warn('extract-data: js/i18n/enums.js not found — using built-in English labels');
+}
+const enLabel = (ns, key, fallback) => (EN_ENUM[ns] && EN_ENUM[ns][key]) || fallback;
+
 const platformSeed = platformMod.default;
 const seed = seedMod.default;
 const { PLATFORM_ANCHOR_DATE, PLATFORM_CATEGORIES, PIPELINE_META } = platformMod;
@@ -67,18 +76,24 @@ const num = (re, text, label) => {
 };
 
 /* ── English labels for enum-like values (copy, not data) ── */
-const CATEGORY_EN = { contract: 'Contracts', bom: 'Materials & supply', schedule: 'Schedule', site: 'Site & safety', cost: 'Cost' };
-const RATING_EN = {
-  red: { label: 'Red', hint: 'Critical — act now' },
-  yellow: { label: 'Yellow', hint: 'High — monitor' },
-  green: { label: 'Green', hint: 'Within tolerance' },
-};
+const CATEGORY_EN = Object.fromEntries(
+  Object.entries({ contract: 'Contracts', bom: 'Materials and procurement', schedule: 'Schedule', site: 'Site and safety', cost: 'Cost' }).map(([k, v]) => [k, enLabel('aiCategory', k, v)]),
+);
+const RATING_EN = Object.fromEntries(
+  Object.entries({ red: ['Red', 'Critical — immediate action'], yellow: ['Yellow', 'High — monitor'], green: ['Green', 'Within tolerance'] }).map(([k, [l, h]]) => [
+    k,
+    { label: enLabel('rating', k, l), hint: enLabel('ratingHint', k, h) },
+  ]),
+);
 const TIER_EN = { 'منخفض': 'Low', 'متوسط': 'Medium', 'عالٍ': 'High', 'حرج': 'Critical' };
+// Validation-source names not covered by the app's sourceSystem enum.
 const SOURCE_EN = {
-  VS1: 'Biltix · Contracts', VS2: 'Biltix · BoQ / BoM', VS3: 'Biltix · Schedule', VS4: 'Biltix · Site reports',
-  VS5: 'Biltix · Cost & budget', VS6: 'Biltix · Photos', VS7: 'Primavera P6 EPPM', VS8: 'Autodesk APS (BIM)',
-  VS9: 'Oracle ERP', VS10: 'Commodity indices', VS11: 'FX rates (SAMA)', VS12: 'National weather centre',
+  VS1: 'BILTIX — Contracts', VS2: 'BILTIX — BoQ / BoM', VS3: 'BILTIX — Schedule', VS4: 'BILTIX — Site reports',
+  VS5: 'BILTIX — Cost and budget', VS6: 'BILTIX — Photos', VS7: 'Primavera P6 EPPM', VS8: 'Autodesk APS (BIM)',
+  VS9: 'Oracle ERP', VS10: 'Commodity indices', VS11: 'Exchange rates (SAMA)', VS12: 'National Center for Meteorology',
+  VS13: 'Sensor gateway (MQTT)',
 };
+const sourceEn = (s) => enLabel('sourceSystem', s.name, SOURCE_EN[s.id]) || fail(`no English name for validation source ${s.id} ${s.name}`);
 const PERSON_EN = {
   'م. تركي المطيري': 'Eng. Turki Al-Mutairi',
   'م. ريم السبيعي': 'Eng. Reem Al-Subaie',
@@ -86,7 +101,9 @@ const PERSON_EN = {
   'م. سارة القحطاني': 'Eng. Sara Al-Qahtani',
   'النظام': 'System',
 };
-const STAKEHOLDER_EN = { PM: 'Project manager', Legal: 'Legal', Procurement: 'Procurement', Site: 'Site', Finance: 'Finance', PMO: 'PMO' };
+const STAKEHOLDER_EN = Object.fromEntries(
+  Object.entries({ PM: 'Project manager', Legal: 'Legal', Procurement: 'Procurement', Site: 'Site', Finance: 'Finance', PMO: 'PMO' }).map(([k, v]) => [k, enLabel('stakeholderRole', k, v)]),
+);
 const ROLE_AR = { hse: 'مسؤول السلامة', pm: 'مدير المشروع' };
 const ROLE_EN = { hse: 'HSE lead', pm: 'Project manager' };
 
@@ -110,34 +127,50 @@ const ratingDistribution = psel.ratingDistribution(state, state.filters, NOW).ma
 const openRisks = psel.openAiRisks(state, state.filters, NOW);
 
 /* ── 2. heatmap / severity ──
- * The AI risks (platform aiRisks) carry a single 0–100 `score` and NO
- * likelihood/impact fields, so a likelihood × impact grid cannot honestly be
- * derived from them. Instead:
- *   (a) severityDistribution — open AI risks bucketed into five score bands
- *       (0–19, 20–39, 40–59, 60–79, 80–100) — derived from scores, as noted;
- *   (b) heatmap — the platform's HSE risk register (Part A, seed.js `risks`)
- *       DOES carry likelihood (1–5) and severity (1–5); the 5×5 matrix comes
- *       from the app's own selector sel.riskMatrix (open risks only) and the
- *       cell tiers from the app's TIERS table (score = likelihood × severity).
+ * v3 data: every AI risk carries likelihood (1–5) and impact (1–5) and its
+ * score is derived as likelihood × impact × 4 (platform-seed.js liScore). The
+ * 5×5 heatmap is therefore counted directly from the OPEN AI risks (same
+ * filter as the consolidated score), each cell coloured by the platform
+ * rating of its derived score (red ≥ 70, yellow 40–69, green < 40).
+ *
+ * Fallback (older datasets whose aiRisks have only a 0–100 score): the AI
+ * risks cannot honestly be placed on a likelihood × impact grid, so we emit
+ * severityDistribution (score bands) and draw the HSE register's own
+ * likelihood × severity matrix (sel.riskMatrix + TIERS) instead.
  */
-const hasLI = platformSeed.aiRisks.some((r) => r && r.likelihood != null && (r.impact != null || r.severity != null));
-if (hasLI) console.warn('extract-data: aiRisks now carry likelihood/impact — consider deriving the heatmap from them.');
-// Bands are aligned with the B2 rating thresholds (green < 40 ≤ yellow < 70 ≤ red)
-// so every band carries exactly one rating.
+const hasLI = openRisks.length > 0 && openRisks.every((r) => Number.isFinite(Number(r.likelihood)) && Number.isFinite(Number(r.impact)));
+// Bands aligned with the B2 rating thresholds (green < 40 ≤ yellow < 70 ≤ red): one rating per band.
 const BANDS = [[0, 19], [20, 39], [40, 54], [55, 69], [70, 84], [85, 100]];
 const severityDistribution = BANDS.map(([lo, hi]) => ({
   band: `${lo}–${hi}`, lo, hi, rating: psel.rating(lo), value: openRisks.filter((r) => r.score >= lo && r.score <= hi).length,
 }));
-const matrix = sel.riskMatrix(state, { siteId: 'all', range: 3650, search: '' }, NOW); // counts[severity-1][likelihood-1]
-const tierOf = (score) => TIERS.find((t) => score >= t.min && score <= t.max) || TIERS[0];
+const RATING_TONE = { red: 'critical', yellow: 'warning', green: 'good' };
 const heatmapCells = [];
-for (let s = 1; s <= 5; s += 1) {
-  for (let l = 1; l <= 5; l += 1) {
-    const t = tierOf(l * s);
-    heatmapCells.push({ likelihood: l, severity: s, count: matrix[s - 1][l - 1], tierAr: t.name, tierEn: TIER_EN[t.name], tone: t.tone });
+let heatmap;
+if (hasLI) {
+  const scoreOf = platformMod.liScore || ((l, i) => l * i * 4);
+  for (let i = 1; i <= 5; i += 1) {
+    for (let l = 1; l <= 5; l += 1) {
+      const cellScore = scoreOf(l, i);
+      const rating = psel.rating(cellScore);
+      heatmapCells.push({ likelihood: l, impact: i, count: openRisks.filter((r) => Number(r.likelihood) === l && Number(r.impact) === i).length, score: cellScore, rating, tone: RATING_TONE[rating] });
+    }
   }
+  const mismatch = openRisks.filter((r) => scoreOf(Number(r.likelihood), Number(r.impact)) !== r.score);
+  if (mismatch.length) fail(`score ≠ likelihood × impact × 4 for ${mismatch.map((r) => r.code).join(', ')}`);
+  heatmap = { source: 'ai-risks', total: heatmapCells.reduce((a, c) => a + c.count, 0), cells: heatmapCells };
+} else {
+  const matrix = sel.riskMatrix(state, { siteId: 'all', range: 3650, search: '' }, NOW); // counts[severity-1][likelihood-1]
+  const tierOf = (score) => TIERS.find((t) => score >= t.min && score <= t.max) || TIERS[0];
+  for (let i = 1; i <= 5; i += 1) {
+    for (let l = 1; l <= 5; l += 1) {
+      const t = tierOf(l * i);
+      heatmapCells.push({ likelihood: l, impact: i, count: matrix[i - 1][l - 1], score: l * i, rating: null, tone: t.tone, tierAr: t.name, tierEn: TIER_EN[t.name] });
+    }
+  }
+  heatmap = { source: 'hse-register', total: heatmapCells.reduce((a, c) => a + c.count, 0), cells: heatmapCells, tiers: TIERS.map((t) => ({ ...t, nameEn: TIER_EN[t.name] })) };
 }
-const heatmapTotal = heatmapCells.reduce((a, c) => a + c.count, 0);
+if (heatmap.source === 'ai-risks' && heatmap.total !== openRisks.length) fail('heatmap does not account for every open AI risk');
 
 /* ── 3. validation summary ── */
 const v = psel.validationSummary(state);
@@ -159,7 +192,7 @@ const validation = {
   bySource: v.bySource
     .slice()
     .sort((a, b) => b.recordsIn - a.recordsIn)
-    .map((s) => ({ id: s.id, nameAr: s.name, nameEn: SOURCE_EN[s.id] || s.name, recordsIn: s.recordsIn, passed: s.passed, passRatePct: s.passRatePct, tone: s.tone })),
+    .map((s) => ({ id: s.id, nameAr: s.name, nameEn: sourceEn(s), recordsIn: s.recordsIn, passed: s.passed, passRatePct: s.passRatePct, tone: s.tone })),
 };
 if (validation.passed + validation.rejected + validation.deduplicated !== validation.recordsIn) fail('validation totals do not add up');
 
@@ -293,13 +326,15 @@ const story = {
   hintAr: psel.ratingHint(detail.rating),
   hintEn: RATING_EN[detail.rating].hint,
   confidencePct: Math.round(risk.confidence * 100),
+  likelihood: risk.likelihood ?? null,
+  impact: risk.impact ?? null,
   category: risk.category,
   categoryAr: detail.categoryLabel,
   categoryEn: CATEGORY_EN[risk.category],
   typeAr: detail.typeLabel,
   typeEn: risk.type,
   site: { id: site.id, code: site.code },
-  pipeline: { id: risk.pipeline, nameAr: PIPELINE_META[risk.pipeline].nameAr, nameEn: pipeline.name, version: risk.modelVersion, precision: pipeline.precision, recall: pipeline.recall },
+  pipeline: { id: risk.pipeline, nameAr: PIPELINE_META[risk.pipeline].nameAr, nameEn: enLabel('pipeline', risk.pipeline, pipeline.name), version: risk.modelVersion, precision: pipeline.precision, recall: pipeline.recall },
   titleAr: risk.title,
   titleShortAr: risk.title.split(' — ')[0],
   titleEn: en.title,
@@ -312,7 +347,7 @@ const story = {
     sensorRef: facts.sensorRef,
     imageRef: facts.imageRef,
     sourceAr: risk.evidence.sourceSystem,
-    sourceEn: en.evidenceSource,
+    sourceEn: enLabel('sourceSystem', risk.evidence.sourceSystem, en.evidenceSource),
     excerptAr: risk.evidence.excerpt,
     excerptEn: en.evidenceExcerpt,
   },
@@ -322,6 +357,8 @@ const story = {
     actionAr: risk.recommendation.action,
     actionEn: en.recommendation,
     effortAr: risk.recommendation.effort,
+    effortEn: enLabel('effort', risk.recommendation.effort, risk.recommendation.effort),
+    targetApprox: /~/.test(risk.recommendation.impact),
     rationaleAr: risk.recommendation.rationale,
     rationaleEn: en.rationale,
     impactAr: risk.recommendation.impact,
@@ -351,6 +388,7 @@ const story = {
     ownerEn: enPerson(task.owner),
     dueDate: task.dueDate,
     statusAr: task.status,
+    statusEn: enLabel('taskStatus', task.status, task.status),
     source: task.source,
     createdAt: task.createdAt,
     writeback: task.writeback,
@@ -373,7 +411,9 @@ const out = {
     now: NOW.toISOString(),
     filters: state.filters,
     weights: cons.weights,
-    note: 'Demo data — بيانات توضيحية. aiRisks carry no likelihood/impact fields: severityDistribution is derived from scores; the 5×5 heatmap is the HSE register (likelihood × severity).',
+    note: hasLI
+      ? 'Demo data — بيانات توضيحية. Heatmap = open AI risks by likelihood × impact (score = L × I × 4).'
+      : 'Demo data — بيانات توضيحية. aiRisks carry no likelihood/impact fields: severityDistribution is derived from scores; the 5×5 heatmap is the HSE register (likelihood × severity).',
   },
   product: { nameAr: platformSeed.product.name, nameEn: platformSeed.product.nameEn, brandShort: platformSeed.product.brandShort },
   consolidated: {
@@ -385,7 +425,7 @@ const out = {
   openAiRisks: openRisks.length,
   totalAiRisks: platformSeed.aiRisks.length,
   severityDistribution,
-  heatmap: { source: 'hse-register', total: heatmapTotal, cells: heatmapCells, tiers: TIERS.map((t) => ({ ...t, nameEn: TIER_EN[t.name] })) },
+  heatmap,
   validation,
   flow,
   story,
@@ -396,5 +436,5 @@ writeFileSync(OUT, `${JSON.stringify(out, null, 2)}\n`);
 console.log(`extract-data: wrote ${OUT}`);
 console.log(`  consolidated ${cons.score} (${cons.rating}) · categories ${categories.map((c) => `${c.id}:${c.score}`).join(' ')}`);
 console.log(`  ratings ${ratingDistribution.map((r) => `${r.rating}:${r.value}`).join(' ')} · open ${openRisks.length}/${platformSeed.aiRisks.length}`);
-console.log(`  heatmap total ${heatmapTotal} · validation ${validation.recordsIn} in / ${validation.passed} passed (${validation.passRatePct}%)`);
+console.log(`  heatmap ${heatmap.source} total ${heatmap.total} · validation ${validation.recordsIn} in / ${validation.passed} passed (${validation.passRatePct}%)`);
 console.log(`  story ${story.code} score ${story.score} · task ${story.task.code} · timeline ${timeline.length} events`);

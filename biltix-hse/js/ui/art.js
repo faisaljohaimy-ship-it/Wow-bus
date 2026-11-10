@@ -1,29 +1,36 @@
 /**
- * Biltix HSE — architectural SVG art & icon set (js/ui/art.js)
+ * BILTIX Risk AI — architectural SVG art & icon set (js/ui/art.js)
  *
- * Owner: ART. Contract: docs/ARCHITECTURE.md §1, §2 (visual DNA), §11.
+ * Owner: A-UI (v3). Contract: docs/ARCHITECTURE.md §1/§2, docs/specs/v3-precision/CONTRACT.md §3/§3.1.
  *
  * Exports (also bundled on `art`):
  *   icon(name, size = 18, opts)   → <svg> 24×24 line glyph, stroke currentColor 1.75, round joins.
  *                                    Unknown names fall back to a neutral circle glyph. Never throws.
- *   logoMark(size = 36)           → hexagon frame (gold) + isometric stepped structure (brand) + accent shield notch.
- *   logoLockup()                  → mark + "بلتكس HSE" + small mono "BILTIX HSE".
- *   backdrop()                    → full-bleed decorative <svg>: isometric block cluster (bottom inline-end, 6 %),
- *                                    mashrabiya lattice band (top, 4 %), three blueprint construction lines with
- *                                    dimension ticks, one slow drifting radial glow (CSS keyframes inside the svg,
- *                                    disabled under prefers-reduced-motion / html[data-motion="reduce"]).
+ *                                    opts: { label, class, mirror } — see "Direction" below.
+ *   logoMark(size = 36)           → BILTIX mark: gold hexagon frame, isometric block (brand), accent shield notch.
+ *                                    Drawn on a 32-unit grid without hairlines so it stays crisp at 24–40 px.
+ *   logoLockup()                  → mark + localized product name ("بلتكس Risk AI" / "BILTIX Risk AI") + mono tag.
+ *   emblem(size = 56)             → line-only BILTIX emblem (currentColor) for the background identity detail.
+ *   backdrop()                    → CONTRACT §3.1 structure: <div class="bg-layers" aria-hidden="true"> with
+ *                                    .bg-ambient, .bg-grid and .bg-mark (emblem + mono datum caption). All visuals
+ *                                    come from CSS per html[data-bg] mode; the layers pause (class .is-paused)
+ *                                    while the document is hidden.
  *   isoCube(size, tone)           → isometric cube with three shaded faces; tone → CSS variable.
  *   mashrabiyaTile(size)          → one eight-point-star lattice tile.
  *   sectorGlyph(categoryId)       → icon name for a hazard category id (seed.CATEGORIES icons).
  *
  * Rules honoured here:
- *   - Plain ES module, no dependencies, side-effect free on import (no DOM access until a function is called).
+ *   - Plain ES module, side-effect free on import (no DOM access until a function is called). The only
+ *     import is the UI i18n bridge (logo label / product name).
  *   - Every node is built with createElementNS + setAttribute; innerHTML is never used.
  *   - No hard-coded colours: everything is `currentColor` or a `var(--token)` from css/tokens.css.
- *   - The UI is RTL-only: directional glyphs (chevrons, arrows, folder tabs, speaker, wind, external link…)
- *     are drawn for right-to-left reading. `chevron-start` points right, `chevron-end` points left.
+ *   - Direction: glyphs with a reading direction (chevron-/arrow-start|end, export/import, external link,
+ *     list bullets, speaker, wind, feed, near-miss arrow, folder tab) are drawn for RTL and mirrored
+ *     automatically when the document is LTR. Physical names (chevron-right, arrow-left…) and time-based
+ *     glyphs (trend-up/down: time flows left→right in both languages) never mirror. opts.mirror forces it.
  *   - Vendor connectors use generic symbols (hash, bubble, servers, grid…), never a trademarked logo.
  */
+import { t, isRtl } from './i18n-bridge.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
@@ -329,6 +336,7 @@ const ICONS = {
   'dot': [D(12, 12, 3.2)],
   'rect': [R(5, 8.5, 14, 7, 2)],
   'hazard': [D(12, 12, 2.2), C(12, 12, 5.5), C(12, 12, 9, { opacity: 0.45 })],
+  'cloud-off': ['M7 19h10.5a4 4 0 0 0 1.8-.43', 'M20.9 15.2a4 4 0 0 0-2.8-4.15A6.5 6.5 0 0 0 9.4 6.4', 'M6.3 8.9a6.5 6.5 0 0 0-.6 3.7A3.3 3.3 0 0 0 7 19', 'M3 3l18 18'],
   'sparkles': ['M11 3.5l1.9 5.1 5.1 1.9-5.1 1.9L11 17.5l-1.9-5.1L4 10.5l5.1-1.9L11 3.5z', 'M18.5 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z', 'M5.5 16.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6.6-1.4z'],
   'circle': [C(12, 12, 8.5), D(12, 12, 1.6)],
 };
@@ -353,7 +361,17 @@ const ALIASES = {
   'hrms': 'hr', 'erp-sap': 'erp', 'email-smtp': 'mail', 'sms-twilio': 'sms', 'webhooks': 'webhook', 'google-sheets': 'sheets', 'power-bi': 'powerbi',
   'sheet': 'sheets', 'thermo': 'temperature', 'worker': 'dot', 'vehicle': 'rect', 'hazards': 'hazard', 'box': 'package', 'paper-plane': 'send', 'braces': 'json',
   'sparkle': 'sparkles', 'ai': 'sparkles', 'magic': 'sparkles', 'roadmap': 'map-pin', 'milestone': 'badge-check',
+  'offline': 'cloud-off', 'wifi-off': 'cloud-off', 'not-connected': 'plug', 'demo': 'flask', 'stale': 'clock',
 };
+
+/** Canonical glyphs drawn for RTL reading; mirrored when the document is LTR. */
+const DIRECTIONAL = new Set(['chevron-start', 'chevron-end', 'arrow-start', 'arrow-end', 'export', 'import', 'external', 'list', 'speaker', 'wind', 'feed', 'nearmiss', 'dms']);
+/** Requested names that denote a physical direction: never mirrored. */
+const PHYSICAL = new Set(['chevron-right', 'chevron-left', 'arrow-right', 'arrow-left']);
+
+function documentIsRtl() {
+  try { return isRtl(); } catch { return true; }
+}
 
 const FALLBACK = ICONS.circle;
 
@@ -389,6 +407,8 @@ function renderOp(svg, op) {
 export function icon(name, size = 18, opts = {}) {
   const key = resolveName(name);
   const def = key ? ICONS[key] : FALLBACK;
+  const forced = opts && typeof opts === 'object' && typeof opts.mirror === 'boolean' ? opts.mirror : null;
+  const mirror = forced !== null ? forced : (key !== null && DIRECTIONAL.has(key) && !PHYSICAL.has(normalizeName(name)) && !documentIsRtl());
   const px = sizeOf(size, 18);
   const label = typeof opts === 'string' ? opts : (opts && typeof opts.label === 'string' ? opts.label : '');
   const svg = el('svg', {
@@ -405,7 +425,14 @@ export function icon(name, size = 18, opts = {}) {
   } else {
     svg.setAttribute('aria-hidden', 'true');
   }
-  for (const op of def) renderOp(svg, op);
+  if (mirror) {
+    const g = el('g', { transform: 'matrix(-1 0 0 1 24 0)' });
+    for (const op of def) renderOp(g, op);
+    svg.appendChild(g);
+    svg.setAttribute('data-mirrored', 'true');
+  } else {
+    for (const op of def) renderOp(svg, op);
+  }
   return svg;
 }
 
@@ -419,46 +446,69 @@ export function iconNames() { return Object.keys(ICONS); }
 /* Logo mark & lockup                                                  */
 /* ------------------------------------------------------------------ */
 
-const LOGO_HEX = hexagonPath(24, 24, 21);
-const SHIELD_NOTCH = 'M0-4.8l4 1.7v2.9c0 2.7-1.7 4.8-4 5.6-2.3-.8-4-2.9-4-5.6v-2.9z';
+/* Mark geometry on a 32-unit grid: pointy-top hexagon (r 14.5) around an isometric block whose vertical
+   edges sit on whole units (x 9 / 16 / 23), so the silhouette stays sharp at 24, 32 and 40 px. */
+const MARK_HEX = 'M16 1.5L28.56 8.75V23.25L16 30.5L3.44 23.25V8.75Z';
+const MARK_TOP = 'M16 7.5L23 11.5L16 15.5L9 11.5Z';
+const MARK_LEFT = 'M9 11.5L16 15.5V24.5L9 20.5Z';
+const MARK_RIGHT = 'M16 15.5L23 11.5V20.5L16 24.5Z';
+/* Step: a lower wing cut into the right face reads as a stepped structure without hairlines. */
+const MARK_STEP = 'M19.5 18.5L23 16.5V20.5L19.5 22.5Z';
+const MARK_SHIELD = 'M0-4l3.4 1.4v2.4c0 2.3-1.4 4-3.4 4.7-2-.7-3.4-2.4-3.4-4.7v-2.4z';
 
 /**
- * Biltix HSE emblem: a hexagon frame (1.5 px, --gold) around an isometric stepped structure
- * (two stacked blocks in --brand with lit top faces) and a small --accent shield notch cut into
- * the lower inline-start edge of the frame. Crisp from 24 px to 96 px.
+ * BILTIX mark: a gold hexagon frame (1.5 px at any size) around an isometric block in --brand (lit top,
+ * shaded right face with a stepped wing) and an --accent shield notch on the lower inline-end corner.
+ * No sub-pixel strokes, so it renders crisply from 24 px to 40 px (and scales up cleanly).
  */
 export function logoMark(size = 36) {
   const px = sizeOf(size, 36);
-  const svg = el('svg', { xmlns: SVG_NS, viewBox: '0 0 48 48', width: px, height: px, role: 'img', 'aria-label': 'شعار بلتكس HSE', focusable: 'false' });
+  const label = t('ui.brand.logo');
+  const svg = el('svg', { xmlns: SVG_NS, viewBox: '0 0 32 32', width: px, height: px, role: 'img', 'aria-label': label, focusable: 'false', 'shape-rendering': 'geometricPrecision' });
   svg.classList.add('logo-mark');
-  const title = el('title'); title.textContent = 'بلتكس HSE'; svg.appendChild(title);
+  const title = el('title'); title.textContent = t('ui.brand.name'); svg.appendChild(title);
 
-  // frame: translucent plate + gold hexagon (non-scaling stroke keeps 1.5 px at every size)
+  // frame: solid plate + gold hexagon (non-scaling stroke keeps 1.5 px at every size)
   const frame = el('g', { class: 'logo-mark-frame', style: { color: 'var(--gold)' } });
-  frame.appendChild(el('path', { d: LOGO_HEX, fill: 'var(--bg-1)', 'fill-opacity': '0.55' }));
-  frame.appendChild(el('path', { d: LOGO_HEX, fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5', 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' }));
+  frame.appendChild(el('path', { d: MARK_HEX, fill: 'var(--bg-1)' }));
+  frame.appendChild(el('path', { d: MARK_HEX, fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5', 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' }));
   svg.appendChild(frame);
 
-  // structure: base wing + tower, lit from the top-left
-  const blocks = el('g', { class: 'logo-mark-blocks', style: { color: 'var(--brand-ink)' } });
-  const shading = { fill: 'var(--brand)', light: 'currentColor', shade: 'var(--bg-0)', lightTop: 0.46, lightRight: 0.14, shadeLeft: 0.34 };
-  appendIsoBlock(blocks, 24, 18, 11, 11, 7, shading);
-  appendIsoBlock(blocks, 24 + 4 * ISO_UX, 18 + 4 * ISO_UY - 8, 7, 7, 8, shading);
-  // crisp ridge along the two top-face front edges
-  blocks.appendChild(el('path', { d: 'M14.47 23.5L24 29l3.46-2M21.4 15.5l6.06 3.5 6.07-3.5', fill: 'none', stroke: 'currentColor', 'stroke-width': '0.6', 'stroke-opacity': '0.55', 'stroke-linejoin': 'round' }));
-  svg.appendChild(blocks);
+  // block: three faces of one hue (brand) lit from the top
+  const block = el('g', { class: 'logo-mark-blocks' });
+  block.appendChild(el('path', { d: MARK_LEFT, fill: 'var(--brand)' }));
+  block.appendChild(el('path', { d: MARK_RIGHT, fill: 'var(--brand)' }));
+  block.appendChild(el('path', { d: MARK_RIGHT, fill: 'var(--bg-0)', 'fill-opacity': '0.38' }));
+  block.appendChild(el('path', { d: MARK_TOP, fill: 'var(--brand)' }));
+  block.appendChild(el('path', { d: MARK_TOP, fill: 'var(--brand-ink)', 'fill-opacity': '0.42' }));
+  block.appendChild(el('path', { d: MARK_STEP, fill: 'var(--bg-0)', 'fill-opacity': '0.55' }));
+  svg.appendChild(block);
 
-  // shield notch: a bg-coloured halo cuts the frame, the accent shield sits in the gap
-  const notch = el('g', { class: 'logo-mark-notch', transform: 'translate(37.2 36.2)' });
-  notch.appendChild(el('path', { d: SHIELD_NOTCH, fill: 'var(--bg-0)', stroke: 'var(--bg-0)', 'stroke-width': '3.2', 'stroke-linejoin': 'round' }));
-  notch.appendChild(el('path', { d: SHIELD_NOTCH, fill: 'var(--accent)' }));
-  notch.appendChild(el('path', { d: 'M-1.9-.2l1.3 1.3L2-1.6', fill: 'none', stroke: 'var(--bg-0)', 'stroke-width': '1.1', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+  // shield notch: a page-coloured halo cuts the frame, the accent shield sits in the gap
+  const notch = el('g', { class: 'logo-mark-notch', transform: 'translate(25.2 24.6)' });
+  notch.appendChild(el('path', { d: MARK_SHIELD, fill: 'var(--bg-0)', stroke: 'var(--bg-0)', 'stroke-width': '2.6', 'stroke-linejoin': 'round' }));
+  notch.appendChild(el('path', { d: MARK_SHIELD, fill: 'var(--accent)' }));
   svg.appendChild(notch);
   return svg;
 }
 
 /**
- * Logo lockup: mark + Arabic product name + small Latin mono tag. Returns an inline-flex <span>.
+ * Line-only emblem (currentColor, 1 px non-scaling strokes): hexagon, isometric block edges and four
+ * survey ticks. Used as the quiet identity detail of the page background (CSS sets colour/opacity).
+ */
+export function emblem(size = 56) {
+  const px = sizeOf(size, 56);
+  const svg = el('svg', { xmlns: SVG_NS, viewBox: '0 0 32 32', width: px, height: px, 'aria-hidden': 'true', focusable: 'false', fill: 'none', stroke: 'currentColor', 'stroke-width': '1', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' });
+  svg.classList.add('bg-emblem');
+  const ns = { 'vector-effect': 'non-scaling-stroke' };
+  svg.appendChild(el('path', { d: MARK_HEX, ...ns }));
+  svg.appendChild(el('path', { d: 'M16 7.5L23 11.5L16 15.5L9 11.5Z M9 11.5V20.5L16 24.5L23 20.5V11.5 M16 15.5V24.5', ...ns }));
+  svg.appendChild(el('path', { d: 'M16 0V-1.5 M16 32V33.5 M0 16H1.6 M32 16H30.4', ...ns, opacity: '0.7' }));
+  return svg;
+}
+
+/**
+ * Logo lockup: mark + localized product name + small Latin mono tag. Returns an inline-flex <span>.
  */
 export function logoLockup({ size = 36 } = {}) {
   const wrap = document.createElement('span');
@@ -472,14 +522,14 @@ export function logoLockup({ size = 36 } = {}) {
 
   const name = document.createElement('strong');
   name.className = 'logo-lockup-name';
-  name.textContent = 'بلتكس HSE';
+  name.textContent = t('ui.brand.name');
   Object.assign(name.style, { fontWeight: '700', fontSize: 'var(--fs-lg)', letterSpacing: '-0.01em', whiteSpace: 'nowrap' });
 
   const mono = document.createElement('span');
   mono.className = 'logo-lockup-mono mono';
   mono.setAttribute('dir', 'ltr');
   mono.setAttribute('aria-hidden', 'true');
-  mono.textContent = 'BILTIX HSE';
+  mono.textContent = 'BILTIX · RISK AI';
   Object.assign(mono.style, { fontFamily: 'var(--font-mono)', fontSize: '10px', letterSpacing: '0.16em', color: 'var(--ink-3)', textAlign: 'start', whiteSpace: 'nowrap' });
 
   text.appendChild(name);

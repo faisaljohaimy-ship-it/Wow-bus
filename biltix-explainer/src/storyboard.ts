@@ -44,11 +44,14 @@ export const STEPS: Record<Lang, string[]> = {
   en: ['Data source', 'Validation', 'Risk analysis', 'Explanation', 'Human approval', 'Mitigation', 'Verified closure'],
 };
 
-/** One caption per scene, ≤ 9 words each. */
+/**
+ * One caption per scene, ≤ 9 words each. `{sources}` is filled from
+ * data.json (validation.sources) by fillCaption(), in the video and the VTT.
+ */
 export const CAPTIONS: Record<Lang, Record<SceneId, string>> = {
   ar: {
     intro: 'من البيانات الخام إلى إغلاق موثّق',
-    source: '12 مصدراً تغذّي المنصة بالبيانات يومياً',
+    source: '{sources} مصدراً تغذّي المنصة بالبيانات يومياً',
     validate: 'كل سجل يُتحقَّق منه قبل التحليل',
     analyze: 'الذكاء الاصطناعي يقيّم المخاطر عبر خمس فئات',
     explain: 'كل درجة مدعومة بتفسير ودليل من المصدر',
@@ -59,7 +62,7 @@ export const CAPTIONS: Record<Lang, Record<SceneId, string>> = {
   },
   en: {
     intro: 'From raw data to verified closure',
-    source: 'Twelve sources feed the platform every day',
+    source: '{sources} sources feed the platform every day',
     validate: 'Every record is validated before analysis',
     analyze: 'AI scores risk across five categories',
     explain: 'Every score is explained, with source evidence',
@@ -69,6 +72,10 @@ export const CAPTIONS: Record<Lang, Record<SceneId, string>> = {
     outro: 'Evidence-backed decisions, with humans in control',
   },
 };
+
+export function fillCaption(text: string, vars: { sources: number }): string {
+  return text.replace('{sources}', String(vars.sources));
+}
 
 /** Caption fade length (frames). */
 export const CAPTION_FADE = 8;

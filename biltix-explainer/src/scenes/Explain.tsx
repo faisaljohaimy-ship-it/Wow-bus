@@ -35,9 +35,9 @@ export const Explain: React.FC<SceneProps> = ({ lang, frames }) => {
       rtl={rtl}
       cam={[
         { f: 0, s: 1.0, x: 0, y: 0 },
-        { f: 40, s: 1.02, x: 34, y: 6 },
-        { f: 92, s: 1.025, x: 20, y: 4 },
-        { f: frames + 15, s: 1.055, x: -78, y: 4 },
+        { f: 40, s: 1.02, x: 26, y: 4 },
+        { f: 92, s: 1.022, x: 18, y: 2 },
+        { f: frames + 15, s: 1.045, x: -30, y: 4 },
       ]}
     >
       {/* ── risk card ── */}
@@ -68,8 +68,34 @@ export const Explain: React.FC<SceneProps> = ({ lang, frames }) => {
             </Num>
           </span>
         </div>
-        <div style={{ marginTop: 18, fontSize: 20.5, lineHeight: 1.6, color: C.ink2, maxWidth: 828, ...enter(f, 10, 22, 10) }}>
+        {S.likelihood != null && S.impact != null && (
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 14, fontSize: 19, color: C.ink2, ...enter(f, 6, 20, 8) }}>
+            <span>{ar ? 'الاحتمالية' : 'Likelihood'}</span>
+            <Num size={22} weight={600}>{S.likelihood}</Num>
+            <span style={{ color: C.ink3 }}>×</span>
+            <span>{ar ? 'الأثر' : 'impact'}</span>
+            <Num size={22} weight={600}>{S.impact}</Num>
+            <span style={{ color: C.ink3 }}>×</span>
+            <Num size={22} weight={600}>4</Num>
+            <span style={{ color: C.ink3 }}>=</span>
+            <Num size={22} weight={600} color={tone}>{S.score}</Num>
+          </div>
+        )}
+        <div style={{ marginTop: 14, fontSize: 20.5, lineHeight: 1.6, color: C.ink2, maxWidth: 828, ...enter(f, 10, 22, 10) }}>
           {ar ? S.explanationAr : S.explanationEn}
+        </div>
+        {/* detection facts */}
+        <div style={{ position: 'absolute', insetInlineStart: 36, insetInlineEnd: 36, bottom: 26, display: 'flex', gap: 44, paddingTop: 16, borderTop: `1px solid ${C.border}`, ...enter(f, 16, 20, 8) }}>
+          {[
+            [t.detected, <Num key="d" size={20} color={C.ink} mono>{`${S.detectedAt.slice(0, 10)} ${S.detectedAt.slice(11, 16)}`}</Num>],
+            [t.precision, <Num key="p" size={20} color={C.ink} mono>{S.pipeline.precision.toFixed(2)}</Num>],
+            [t.recall, <Num key="r" size={20} color={C.ink} mono>{S.pipeline.recall.toFixed(2)}</Num>],
+          ].map(([k, v], i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+              <span style={{ fontSize: 17, color: C.ink3 }}>{k}</span>
+              {v}
+            </div>
+          ))}
         </div>
         {/* score ring */}
         <div style={{ position: 'absolute', top: 24, insetInlineEnd: 30, width: 120, height: 120 }}>
@@ -162,12 +188,24 @@ export const Explain: React.FC<SceneProps> = ({ lang, frames }) => {
                 {F.limitMm} {t.mm}
               </Num>
             </div>
-            {/* value label at the bar end */}
-            <div style={{ position: 'absolute', top: 18, insetInlineStart: xs(F.weeklyMm) * barP + 12, height: 28, display: 'flex', alignItems: 'center', gap: 6, opacity: barP, whiteSpace: 'nowrap' }}>
-              <Num size={24} weight={600}>
-                {Math.round(F.weeklyMm * barP)}
+            {/* value label, inside the bar end */}
+            <div
+              style={{
+                position: 'absolute',
+                top: 18,
+                insetInlineEnd: chartW - xs(F.weeklyMm) * barP + 14,
+                height: 28,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                opacity: prog(f, 76, 14),
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <Num size={22} weight={600} color="#FFFFFF">
+                {F.weeklyMm}
               </Num>
-              <span style={{ fontSize: 16, color: C.ink2 }}>{t.mmWeek}</span>
+              <span style={{ fontSize: 16, color: '#FFE9E9' }}>{t.mmWeek}</span>
             </div>
             {/* axis */}
             {Array.from({ length: scaleMax / 4 + 1 }, (_, i) => i * 4).map((v) => (

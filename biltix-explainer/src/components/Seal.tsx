@@ -21,7 +21,6 @@ export const Seal: React.FC<{ size: number; ring: number; ticks: number; text: n
   const rText = c - 44;
   const rDisc = c - 66;
   const circ = 2 * Math.PI * rOuter;
-  const textCirc = 2 * Math.PI * rText;
   const N = 72;
   return (
     <div style={{ position: 'relative', width: size, height: size }}>
@@ -39,7 +38,6 @@ export const Seal: React.FC<{ size: number; ring: number; ticks: number; text: n
             <stop offset="0%" stopColor="#1C2E48" />
             <stop offset="100%" stopColor={C.surface} />
           </radialGradient>
-          <path id="seal-text" d={`M ${c} ${c - rText} a ${rText} ${rText} 0 1 1 -0.01 0`} />
         </defs>
         <circle
           cx={c}
@@ -71,11 +69,28 @@ export const Seal: React.FC<{ size: number; ring: number; ticks: number; text: n
             />
           );
         })}
-        <text fill={C.ink2} fontFamily={FONT.mono} fontSize={14} letterSpacing={3} opacity={text}>
-          <textPath href="#seal-text" textLength={textCirc - 6} lengthAdjust="spacing">
-            {micro}
-          </textPath>
-        </text>
+        {/* micro-text ring: one glyph per evenly spaced angle (monospace, Latin only) */}
+        <g opacity={text}>
+          {Array.from(micro).map((ch, i, all) => {
+            const deg = (i / all.length) * 360;
+            return (
+              <text
+                key={i}
+                x={c}
+                y={c - rText}
+                fill={C.ink2}
+                fontFamily={FONT.mono}
+                fontSize={14}
+                fontWeight={500}
+                textAnchor="middle"
+                dominantBaseline="central"
+                transform={`rotate(${deg} ${c} ${c})`}
+              >
+                {ch}
+              </text>
+            );
+          })}
+        </g>
         <circle cx={c} cy={c} r={rDisc} fill="url(#seal-disc)" stroke={C.primary} strokeWidth={2} opacity={Math.min(1, ring * 1.4)} />
         <circle cx={c} cy={c} r={rDisc - 10} fill="none" stroke={C.border} strokeWidth={1} opacity={Math.min(1, ring * 1.4)} />
       </svg>

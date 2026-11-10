@@ -41,7 +41,7 @@ export const Source: React.FC<SceneProps> = ({ lang, frames }) => {
       cam={[
         { f: 0, s: 1.0, x: 0, y: 0 },
         { f: 40, s: 1.005, x: 0, y: 0 },
-        { f: frames + 15, s: 1.045, x: -40, y: 6 },
+        { f: frames + 15, s: 1.04, x: -26, y: 4 },
       ]}
     >
       {/* sources card */}

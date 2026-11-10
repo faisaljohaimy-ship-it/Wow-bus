@@ -42,10 +42,16 @@ export type CamKey = { f: number; s: number; x: number; y: number };
  * `rtlMirror` is applied by the caller).
  */
 export function camera(frame: number, k: CamKey[], ease: EaseFn = EASE.inOut): CSSProperties {
-  const s = keys(frame, k.map((c) => [c.f, c.s] as [number, number]), ease);
-  const x = keys(frame, k.map((c) => [c.f, c.x] as [number, number]), ease);
-  const y = keys(frame, k.map((c) => [c.f, c.y] as [number, number]), ease);
-  return { transform: `translate(${x}px, ${y}px) scale(${Math.min(1.06, Math.max(1, s))})`, transformOrigin: '50% 50%' };
+  const s = Math.min(1.06, Math.max(1, keys(frame, k.map((c) => [c.f, c.s] as [number, number]), ease)));
+  const xRaw = keys(frame, k.map((c) => [c.f, c.x] as [number, number]), ease);
+  const yRaw = keys(frame, k.map((c) => [c.f, c.y] as [number, number]), ease);
+  // Safe framing: the 1728 px content block never gets closer than 24 px to the
+  // frame edge, and vertical drift stays within ±10 px (clear of the caption band).
+  const maxX = Math.max(0, (1920 - 1728 * s) / 2 - 24);
+  // soft limit (tanh) so a limited pan still eases instead of stopping dead
+  const x = maxX > 0 ? maxX * Math.tanh(xRaw / maxX) : 0;
+  const y = 10 * Math.tanh(yRaw / 10);
+  return { transform: `translate(${x}px, ${y}px) scale(${s})`, transformOrigin: '50% 50%' };
 }
 
 /** Count-up value. */

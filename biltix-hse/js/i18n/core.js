@@ -438,7 +438,7 @@ export const core = {
       title: 'Consolidated score {score}/100 · {rating}{delta} — open the risk cockpit',
       delta: ', change vs previous period {delta}',
     },
-    rating: { red: 'Red', yellow: 'Amber', green: 'Green' },
+    rating: { red: 'Red', yellow: 'Yellow', green: 'Green' },
     alerts: {
       bell: 'Alerts',
       bellUnread: { one: 'Alerts — {count} unread', other: 'Alerts — {count} unread' },

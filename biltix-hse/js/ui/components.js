@@ -776,11 +776,81 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     pager.hidden = false;
     const from = page * size + 1;
     const to = Math.min(total, (page + 1) * size);
-    const prev = button('', { variant: 'ghost', size: 'sm', icon: glyph('chevronStart', 16), onClick: () => { page = Math.max(0, page - 1); renderBody(); }, attrs: { 'aria-label': 'الصفحة السابقة', disabled: page === 0 } });
-    const next = button('', { variant: 'ghost', size: 'sm', icon: glyph('chevronEnd', 16), onClick: () => { page = Math.min(pages - 1, page + 1); renderBody(); }, attrs: { 'aria-label': 'الصفحة التالية', disabled: page >= pages - 1 } });
-    const info = h('span', { class: 'pager-info', 'aria-live': 'polite' }, `${fmt.num(from)}–${fmt.num(to)} من ${fmt.num(total)}`);
-    const pageLabel = h('span', { class: 'pager-page' }, `صفحة ${fmt.num(page + 1)} من ${fmt.num(pages)}`);
+    const prev = button('', { variant: 'ghost', size: 'sm', icon: glyph('chevronStart', 16), onClick: () => { page = Math.max(0, page - 1); renderBody(); }, attrs: { 'aria-label': t('ui.table.prev'), disabled: page === 0, class: 'pager-prev' } });
+    const next = button('', { variant: 'ghost', size: 'sm', icon: glyph('chevronEnd', 16), onClick: () => { page = Math.min(pages - 1, page + 1); renderBody(); }, attrs: { 'aria-label': t('ui.table.next'), disabled: page >= pages - 1, class: 'pager-next' } });
+    const info = h('span', { class: 'pager-info', 'aria-live': 'polite' }, t('ui.table.range', { from: fmt.num(from), to: fmt.num(to), total: fmt.num(total) }));
+    const pageLabel = h('span', { class: 'pager-page' }, t('ui.table.page', { page: fmt.num(page + 1), pages: fmt.num(pages) }));
     pager.append(prev, info, pageLabel, next);
+  }
+
+  /* ---- state / preserve helpers ---- */
+  const keyOf = (row) => (row && row[rowKey] !== undefined && row[rowKey] !== null ? String(row[rowKey]) : '');
+  const signature = (row) => { try { return JSON.stringify(row); } catch { return String(Math.random()); } };
+  /** Nearest scrolling ancestor (the page scroller on phones, main on desktop). */
+  function scrollParent() {
+    let n = wrap.parentElement;
+    while (n && n !== document.body && n !== document.documentElement) {
+      const cs = getComputedStyle(n);
+      if (/(auto|scroll|overlay)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight) return n;
+      n = n.parentElement;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+  function captureFocus() {
+    const active = document.activeElement;
+    if (!active || !tbody.contains(active)) return null;
+    const tr = active.closest('tr');
+    const td = active.closest('td');
+    return tr ? { key: tr.getAttribute('data-key'), col: td ? Array.from(tr.children).indexOf(td) : 0 } : null;
+  }
+  function restoreFocus(f) {
+    if (!f || f.key === null) return;
+    const esc = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(f.key) : f.key.replace(/["\\]/g, '\\$&');
+    const tr = tbody.querySelector(`tr[data-key="${esc}"]`);
+    if (!tr) return;
+    const td = tr.children[f.col] || tr.children[0];
+    const target = (td && td.querySelector(INTERACTIVE)) || tr.querySelector(INTERACTIVE);
+    if (target) { try { target.focus({ preventScroll: true }); } catch { target.focus(); } }
+  }
+  function getState() {
+    return { sortKey, sortDir, page, pageSize: size, scrollTop: wrap.scrollTop, scrollLeft: wrap.scrollLeft };
+  }
+  function setState(s = {}) {
+    if (!s || typeof s !== 'object') return;
+    if ('sortKey' in s) sortKey = s.sortKey || null;
+    if (s.sortDir === 'asc' || s.sortDir === 'desc') sortDir = s.sortDir;
+    if (Number.isFinite(Number(s.pageSize)) && s.pageSize !== null && !autoFit) size = Math.max(0, Number(s.pageSize) | 0);
+    if (Number.isFinite(Number(s.page))) page = Math.max(0, Number(s.page) | 0);
+    paintHead();
+    renderBody();
+    if (Number.isFinite(s.scrollTop)) wrap.scrollTop = s.scrollTop;
+    if (Number.isFinite(s.scrollLeft)) wrap.scrollLeft = s.scrollLeft;
+    updateScrollEdges();
+  }
+  function update(nextRows, { preserve = false, resetPage = false, flash = false } = {}) {
+    const before = flash ? new Map(data.map((r) => [keyOf(r), signature(r)])) : null;
+    let saved = null;
+    if (preserve) {
+      const sp = scrollParent();
+      saved = { top: wrap.scrollTop, left: wrap.scrollLeft, sp, spTop: sp ? sp.scrollTop : 0, focus: captureFocus() };
+    }
+    data = Array.isArray(nextRows) ? nextRows.slice() : [];
+    if (resetPage) page = 0;
+    renderBody();
+    if (saved) {
+      wrap.scrollTop = saved.top;
+      wrap.scrollLeft = saved.left;
+      if (saved.sp && saved.sp.scrollTop !== saved.spTop) saved.sp.scrollTop = saved.spTop;
+      restoreFocus(saved.focus);
+      updateScrollEdges();
+    }
+    if (before) {
+      tbody.querySelectorAll('tr[data-key]').forEach((tr) => {
+        const k = tr.getAttribute('data-key');
+        const row = data.find((r) => keyOf(r) === k);
+        if (row && before.get(k) !== signature(row)) motion.flash(tr);
+      });
+    }
   }
 
   function toggleSort(key) {
@@ -847,7 +917,9 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
   return {
     el: wrap,
     table,
-    update(nextRows) { data = Array.isArray(nextRows) ? nextRows.slice() : []; renderBody(); },
+    update,
+    getState,
+    setState,
     setSort(key, dir = 'asc') { sortKey = key; sortDir = dir === 'desc' ? 'desc' : 'asc'; page = 0; paintHead(); renderBody(); },
     setPage(p) { page = Math.max(0, p | 0); renderBody(); },
     setPageSize(n) { size = Math.max(0, Number(n) | 0); page = 0; renderBody(); },
@@ -937,6 +1009,312 @@ export function emptyState({ icon = null, title = '', text = '', action = null }
   return el;
 }
 
+/* ------------------------------------------------------------------ */
+/* Data states: loading, error, offline, skeleton (spec AC-12)          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Placeholder lines for content that is still loading (decorative: aria-hidden). CSS (.skeleton,
+ * .skeleton-line) draws the shimmer and drops it under reduced motion.
+ * @param {number} lines
+ * @param {{widths?: string[], className?: string}} [opts]
+ */
+export function skeleton(lines = 3, { widths = null, className = '' } = {}) {
+  const n = Math.max(1, Math.min(24, Number(lines) | 0 || 3));
+  const pattern = ['100%', '92%', '78%', '86%', '64%', '96%'];
+  const el = h('div', { class: ['skeleton', className || null], 'aria-hidden': 'true' });
+  for (let i = 0; i < n; i += 1) {
+    const w = Array.isArray(widths) && widths[i] ? widths[i] : pattern[i % pattern.length];
+    el.appendChild(h('span', { class: 'skeleton-line', style: { inlineSize: w } }));
+  }
+  return el;
+}
+
+function stateShell(kind, { role, icon, title, text, live = null }) {
+  const el = h('div', { class: ['state', `state-${kind}`], role, 'aria-live': live || undefined });
+  if (icon) el.appendChild(h('div', { class: 'state-icon', 'aria-hidden': 'true' }, icon));
+  const copy = h('div', { class: 'state-copy' });
+  if (title) copy.appendChild(h('p', { class: 'state-title' }, String(title)));
+  if (text) copy.appendChild(h('p', { class: 'state-text' }, String(text)));
+  el.appendChild(copy);
+  return el;
+}
+
+/**
+ * Loading state. With `onCancel` a cancel button is offered (long imports / network calls); the
+ * callback runs once and the state then reads "Cancelled" until the caller replaces it.
+ * @param {{title?:string, text?:string, lines?:number, onCancel?:Function, inline?:boolean}} [opts]
+ */
+export function loadingState({ title = null, text = null, lines = 0, onCancel = null, inline = false } = {}) {
+  const spinner = h('span', { class: 'state-spinner' });
+  const el = stateShell('loading', { role: 'status', icon: spinner, title: title || t('ui.state.loading'), text: text === null ? (inline ? '' : t('ui.state.loadingText')) : text, live: 'polite' });
+  el.setAttribute('aria-busy', 'true');
+  if (inline) el.classList.add('is-inline');
+  if (lines > 0) el.appendChild(skeleton(lines));
+  if (typeof onCancel === 'function') {
+    const btn = button(t('ui.cancel'), {
+      variant: 'ghost', size: 'sm', icon: glyph('close', 15),
+      onClick: () => {
+        btn.disabled = true;
+        el.removeAttribute('aria-busy');
+        el.classList.add('is-cancelled');
+        const titleEl = el.querySelector('.state-title');
+        if (titleEl) titleEl.textContent = t('ui.state.cancelled');
+        try { onCancel(); } catch { /* the caller owns the cancellation */ }
+      },
+      attrs: { class: 'state-action' },
+    });
+    el.appendChild(h('div', { class: 'state-actions' }, btn));
+  }
+  return el;
+}
+
+/**
+ * Error state with an optional retry. `retry` may return a promise: the button shows a busy state
+ * until it settles (the caller then replaces the state). Messages never claim success.
+ * @param {{title?:string, text?:string, retry?:Function, retryLabel?:string, detail?:string}} [opts]
+ */
+export function errorState({ title = null, text = null, retry = null, retryLabel = null, detail = null } = {}) {
+  const el = stateShell('error', { role: 'alert', icon: glyph('critical', 28), title: title || t('ui.state.errorTitle'), text: text || t('ui.state.errorText') });
+  if (detail) {
+    const d = h('p', { class: 'state-detail mono', dir: 'auto' }, String(detail));
+    el.querySelector('.state-copy').appendChild(d);
+  }
+  if (typeof retry === 'function') {
+    const label = retryLabel || t('ui.state.retry');
+    const btn = button(label, {
+      variant: 'outline', size: 'sm', icon: 'refresh',
+      onClick: () => {
+        let result;
+        try { result = retry(); } catch { result = null; }
+        if (result && typeof result.then === 'function') {
+          btn.disabled = true;
+          btn.setAttribute('aria-busy', 'true');
+          const lab = btn.querySelector('.btn-label');
+          if (lab) lab.textContent = t('ui.state.retrying');
+          const restore = () => { btn.disabled = false; btn.removeAttribute('aria-busy'); if (lab) lab.textContent = label; };
+          result.then(restore, restore);
+        }
+      },
+      attrs: { class: 'state-action' },
+    });
+    el.appendChild(h('div', { class: 'state-actions' }, btn));
+  }
+  return el;
+}
+
+/**
+ * Offline state for content that needs the network. Retries automatically once the browser reports
+ * it is back online (when `retry` is given), and offers a manual retry.
+ * @param {{title?:string, text?:string, retry?:Function}} [opts]
+ */
+export function offlineState({ title = null, text = null, retry = null } = {}) {
+  const el = stateShell('offline', { role: 'status', icon: svgIcon('cloud-off', 28), title: title || t('ui.state.offlineTitle'), text: text || t('ui.state.offlineText'), live: 'polite' });
+  if (typeof retry === 'function') {
+    el.appendChild(h('div', { class: 'state-actions' }, button(t('ui.state.retry'), { variant: 'outline', size: 'sm', icon: 'refresh', onClick: () => { try { retry(); } catch { /* caller handles */ } }, attrs: { class: 'state-action' } })));
+    const onOnline = () => {
+      window.removeEventListener('online', onOnline);
+      if (el.isConnected) { try { retry(); } catch { /* caller handles */ } }
+    };
+    window.addEventListener('online', onOnline);
+  }
+  return el;
+}
+
+/* ------------------------------------------------------------------ */
+/* Filter bar (CONTRACT §7)                                            */
+/* ------------------------------------------------------------------ */
+
+const sameValue = (a, b) => {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    const x = Array.isArray(a) ? a.map(String).sort() : [];
+    const y = Array.isArray(b) ? b.map(String).sort() : [];
+    return x.length === y.length && x.every((v, i) => v === y[i]);
+  }
+  return String(a ?? '') === String(b ?? '');
+};
+
+/**
+ * One organised row of filters above the content it filters.
+ *   filters: [{ id, type: 'chips'|'select'|'segmented'|'search', label, options: [{ value, label, count?, icon?, tone? }],
+ *              defaultValue?, placeholder?, allOption? (select: prepend "All", default true), allValue? ('all'),
+ *              allChip? (chips: leading "All" chip, default true), hideLabel? }]
+ *   chips are multi-select (value = array, [] = all); select / segmented hold one value; search holds text.
+ *   value: initial values { [id]: value }; onChange(values, { id, reset }); onReset().
+ * Returns { el, set(values, { emit }), get(), reset(), activeCount() }. Shows the active-filter count
+ * (polite live region) and a reset button that is enabled only while something is filtered.
+ */
+export function filterBar({ filters = [], value = {}, onChange = null, onReset = null, label = null, className = '' } = {}) {
+  const defs = (Array.isArray(filters) ? filters : []).filter((f) => f && f.id !== undefined && f.id !== null);
+  const el = h('div', { class: ['filter-bar', className || null], role: 'group', 'aria-label': label || t('ui.filter.label') });
+  const fields = h('div', { class: 'filter-bar-fields' });
+  const meta = h('div', { class: 'filter-bar-meta' });
+  const countEl = h('span', { class: 'filter-bar-count', 'aria-live': 'polite' });
+  const resetBtn = button(t('ui.filter.reset'), { variant: 'ghost', size: 'sm', icon: 'refresh', onClick: () => reset(), attrs: { class: 'filter-bar-reset', 'aria-label': t('ui.filter.resetAria') } });
+  meta.append(countEl, resetBtn);
+  el.append(fields, meta);
+
+  const state = {};
+  const slots = new Map();
+  const optionsOf = (f) => (Array.isArray(f.options) ? f.options : []).map((o) => (o && typeof o === 'object' ? o : { value: o, label: String(o) }));
+  const defaultOf = (f) => {
+    if (f.defaultValue !== undefined) return Array.isArray(f.defaultValue) ? f.defaultValue.slice() : f.defaultValue;
+    if (f.type === 'chips') return [];
+    if (f.type === 'search') return '';
+    if (f.type === 'select') return f.allOption === false ? (optionsOf(f)[0] ? optionsOf(f)[0].value : '') : (f.allValue ?? 'all');
+    const first = optionsOf(f)[0];
+    return first ? first.value : '';
+  };
+
+  function emit(id, extra = {}) {
+    paintMeta();
+    if (typeof onChange === 'function') { try { onChange(get(), { id, ...extra }); } catch { /* views own their errors */ } }
+  }
+
+  defs.forEach((f) => {
+    const id = String(f.id);
+    const type = ['chips', 'select', 'segmented', 'search'].includes(f.type) ? f.type : 'select';
+    const fieldId = uid(`flt-${id.replace(/[^\w-]/g, '')}`);
+    const labelId = `${fieldId}-label`;
+    const wrap = h('div', { class: ['filter', `filter-${type}`], 'data-filter': id });
+    const labelText = String(f.label ?? '');
+    const showLabel = labelText && !f.hideLabel && type !== 'search';
+    if (showLabel) wrap.appendChild(h(type === 'select' ? 'label' : 'span', { class: 'filter-label', id: labelId, for: type === 'select' ? fieldId : undefined }, labelText));
+    state[id] = value && value[id] !== undefined ? (Array.isArray(value[id]) ? value[id].slice() : value[id]) : defaultOf(f);
+    let slot;
+
+    if (type === 'chips') {
+      const group = h('div', { class: 'chip-group', role: 'group', 'aria-labelledby': showLabel ? labelId : undefined, 'aria-label': showLabel ? undefined : labelText || undefined });
+      const chips = new Map();
+      const paint = () => {
+        const sel0 = Array.isArray(state[id]) ? state[id].map(String) : [];
+        for (const [v, b] of chips) {
+          const on = v === '__all__' ? sel0.length === 0 : sel0.includes(v);
+          b.setAttribute('aria-pressed', on ? 'true' : 'false');
+          b.classList.toggle('is-active', on);
+        }
+      };
+      const addChip = (v, text, extra = {}) => {
+        const b = h('button', { type: 'button', class: ['chip', extra.tone ? `tone-${toneOf(extra.tone)}` : null], 'aria-pressed': 'false', 'data-value': v });
+        const ic = iconNode(extra.icon, 14); if (ic) b.appendChild(ic);
+        b.appendChild(h('span', { class: 'chip-label' }, String(text)));
+        if (extra.count !== undefined && extra.count !== null) b.appendChild(h('span', { class: 'chip-count' }, typeof extra.count === 'number' ? fmt.num(extra.count) : String(extra.count)));
+        b.addEventListener('click', () => {
+          if (v === '__all__') state[id] = [];
+          else {
+            const cur = new Set((Array.isArray(state[id]) ? state[id] : []).map(String));
+            if (cur.has(v)) cur.delete(v); else cur.add(v);
+            const original = optionsOf(f).map((o) => o.value);
+            state[id] = original.filter((ov) => cur.has(String(ov)));
+          }
+          paint();
+          emit(id);
+        });
+        chips.set(v, b);
+        group.appendChild(b);
+      };
+      if (f.allChip !== false) addChip('__all__', t('ui.filter.all'));
+      optionsOf(f).forEach((o) => addChip(String(o.value), o.label ?? o.value, o));
+      wrap.appendChild(group);
+      slot = { paint };
+    } else if (type === 'select') {
+      const control = h('select', { id: fieldId, class: ['field-control', 'filter-select'], 'aria-label': showLabel ? undefined : labelText || undefined });
+      const opts = optionsOf(f);
+      if (f.allOption !== false) control.appendChild(h('option', { value: String(f.allValue ?? 'all') }, t('ui.filter.all')));
+      opts.forEach((o) => control.appendChild(h('option', { value: String(o.value) }, String(o.label ?? o.value))));
+      const paint = () => { control.value = String(state[id] ?? ''); };
+      control.addEventListener('change', () => {
+        const match = opts.find((o) => String(o.value) === control.value);
+        state[id] = match ? match.value : control.value;
+        emit(id);
+      });
+      wrap.appendChild(control);
+      slot = { paint };
+    } else if (type === 'segmented') {
+      const seg = segmented({
+        options: optionsOf(f).map((o) => ({ value: o.value, label: o.label ?? o.value, icon: o.icon })),
+        value: state[id], ariaLabel: labelText,
+        onChange: (v) => { state[id] = v; emit(id); },
+      });
+      seg.el.classList.add('seg-sm');
+      if (showLabel) { seg.el.removeAttribute('aria-label'); seg.el.setAttribute('aria-labelledby', labelId); }
+      wrap.appendChild(seg.el);
+      slot = { paint: () => seg.set(state[id]) };
+    } else {
+      const box = h('div', { class: 'filter-search' });
+      box.appendChild(svgIcon('search', 16));
+      const input = h('input', { id: fieldId, type: 'search', class: ['field-control', 'filter-search-input'], 'aria-label': labelText || t('ui.filter.search'), placeholder: f.placeholder || labelText || t('ui.filter.search'), autocomplete: 'off', spellcheck: 'false', enterkeyhint: 'search' });
+      let timer = 0;
+      const commit = () => { clearTimeout(timer); timer = 0; if (state[id] !== input.value) { state[id] = input.value; emit(id); } };
+      input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(commit, 180); });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        else if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); input.value = ''; commit(); }
+      });
+      input.addEventListener('search', commit);
+      box.appendChild(input);
+      wrap.appendChild(box);
+      slot = { paint: () => { if (input.value !== String(state[id] ?? '')) input.value = String(state[id] ?? ''); } };
+    }
+    slot.def = f;
+    slot.wrap = wrap;
+    slots.set(id, slot);
+    fields.appendChild(wrap);
+  });
+
+  function activeCount() {
+    let n = 0;
+    for (const [id, slot] of slots) {
+      const v = state[id];
+      const d = defaultOf(slot.def);
+      if (slot.def.type === 'chips' ? (Array.isArray(v) && v.length > 0 && !sameValue(v, d)) : !sameValue(typeof v === 'string' ? v.trim() : v, d)) n += 1;
+    }
+    return n;
+  }
+  function paintMeta() {
+    const n = activeCount();
+    countEl.textContent = n ? tn('ui.filter.active', n) : '';
+    countEl.hidden = n === 0;
+    resetBtn.disabled = n === 0;
+    el.classList.toggle('has-active', n > 0);
+    el.dataset.active = String(n);
+    for (const [id, slot] of slots) {
+      const d = defaultOf(slot.def);
+      const v = state[id];
+      slot.wrap.classList.toggle('is-active', slot.def.type === 'chips' ? Array.isArray(v) && v.length > 0 : !sameValue(v, d));
+    }
+  }
+  function get() {
+    const out = {};
+    for (const id of slots.keys()) out[id] = Array.isArray(state[id]) ? state[id].slice() : state[id];
+    return out;
+  }
+  function set(values = {}, { emit: fire = false } = {}) {
+    if (!values || typeof values !== 'object') return api;
+    for (const [id, slot] of slots) {
+      if (values[id] === undefined) continue;
+      state[id] = Array.isArray(values[id]) ? values[id].slice() : values[id];
+      slot.paint();
+    }
+    paintMeta();
+    if (fire && typeof onChange === 'function') { try { onChange(get(), { id: null }); } catch { /* noop */ } }
+    return api;
+  }
+  function reset() {
+    for (const [id, slot] of slots) { state[id] = defaultOf(slot.def); slot.paint(); }
+    if (typeof onReset === 'function') { try { onReset(); } catch { /* noop */ } }
+    emit(null, { reset: true });
+    const first = fields.querySelector('button,select,input');
+    if (first && document.activeElement === resetBtn) { try { first.focus({ preventScroll: true }); } catch { first.focus(); } }
+    return api;
+  }
+
+  for (const slot of slots.values()) slot.paint();
+  paintMeta();
+  const api = { el, set, get, reset, activeCount };
+  return api;
+}
+
 export function progress({ value = 0, max = 100, tone = null, label = '' } = {}) {
   const v = Math.max(0, Math.min(max, Number(value) || 0));
   const pct = max > 0 ? (v / max) * 100 : 0;
@@ -983,26 +1361,111 @@ function focusables(root) {
   return Array.from(root.querySelectorAll(FOCUSABLE)).filter((n) => (!n.hasAttribute('hidden') && n.getClientRects().length > 0) || n === document.activeElement);
 }
 
-/** Shared overlay behaviour: focus trap, Esc closes, backdrop click closes, focus restore, inert shell. */
-function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', onClose = null, labelledBy = null }) {
+/** Last active tab per drawer kind (CONTRACT §7: "remembers the last tab per kind"). In-memory only. */
+const lastDrawerTab = new Map();
+
+/**
+ * Shared overlay behaviour: focus trap, Esc closes, backdrop click closes, focus restore (without
+ * scrolling the page), inert shell. Drawers slide with motion.drawer() when motion is enabled and may
+ * carry ARIA tabs (`tabs`), rendered lazily, with per-tab scroll memory while the drawer is open.
+ */
+function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', onClose = null, tabs = null, activeTab = null, tabsKind = null, returnFocus = null, className = '' }) {
   const isModal = kind === 'modal';
   const backdrop = h('div', { class: isModal ? 'modal-backdrop' : 'drawer-backdrop', role: 'presentation', 'data-size': size });
   const titleId = uid(`${kind}-title`);
-  const dialog = h('dialog', { class: [kind, `is-${size}`], 'aria-labelledby': title ? titleId : undefined, 'aria-modal': 'true' });
+  const dialog = h('dialog', { class: [kind, `is-${size}`, className || null], 'aria-labelledby': title ? titleId : undefined, 'aria-modal': 'true' });
   backdrop.appendChild(dialog);
 
   const head = h('header', { class: `${kind}-head` });
   const headText = h('div', { class: `${kind}-titles` });
-  if (title) headText.appendChild(h('h2', { class: `${kind}-title`, id: titleId }, String(title)));
-  if (subtitle) headText.appendChild(h('p', { class: `${kind}-sub` }, String(subtitle)));
+  const titleEl = title ? h('h2', { class: `${kind}-title`, id: titleId }, String(title)) : null;
+  const subEl = subtitle ? h('p', { class: `${kind}-sub` }, String(subtitle)) : null;
+  if (titleEl) headText.appendChild(titleEl);
+  if (subEl) headText.appendChild(subEl);
   head.appendChild(headText);
-  const closeBtn = button('', { variant: 'ghost', size: 'sm', icon: glyph('close', 18), onClick: () => api.close('close'), attrs: { 'aria-label': 'إغلاق', class: `${kind}-close` } });
+  const closeBtn = button('', { variant: 'ghost', size: 'sm', icon: glyph('close', 18), onClick: () => api.close('close'), attrs: { 'aria-label': t('ui.close'), class: `${kind}-close` } });
   head.appendChild(closeBtn);
   dialog.appendChild(head);
 
   const bodyEl = h('div', { class: `${kind}-body` });
+
+  /* ---- tabs (drawer only) ---- */
+  const tabItems = !isModal && Array.isArray(tabs) ? tabs.filter((tb) => tb && tb.id !== undefined && tb.id !== null) : [];
+  const tabMap = new Map();
+  let currentTab = null;
+  const tabScroll = new Map();
+  let tabList = null;
+  if (tabItems.length) {
+    dialog.classList.add('has-tabs');
+    tabList = h('div', { class: 'drawer-tabs', role: 'tablist', 'aria-label': title ? String(title) : t('ui.drawer.tabs') });
+    tabItems.forEach((item) => {
+      const id = String(item.id);
+      const tabId = uid('dtab');
+      const panelId = uid('dpanel');
+      const tab = h('button', {
+        type: 'button', class: 'drawer-tab', role: 'tab', id: tabId, 'aria-controls': panelId,
+        'aria-selected': 'false', tabindex: '-1', 'data-tab': id, onClick: () => setTab(id, { focus: false }),
+      });
+      const ic = iconNode(item.icon, 15); if (ic) tab.appendChild(ic);
+      tab.appendChild(h('span', { class: 'drawer-tab-label' }, String(item.label ?? id)));
+      if (item.count !== undefined && item.count !== null && item.count !== '') {
+        tab.appendChild(h('span', { class: 'drawer-tab-count' }, typeof item.count === 'number' ? fmt.num(item.count) : String(item.count)));
+      }
+      const panel = h('div', { class: 'drawer-panel', role: 'tabpanel', id: panelId, 'aria-labelledby': tabId, hidden: true, tabindex: '0', 'data-tab': id });
+      tabMap.set(id, { tab, panel, item, rendered: false });
+      tabList.appendChild(tab);
+    });
+    tabList.addEventListener('keydown', (e) => {
+      const keys = inlineKeys();
+      if (![keys.next, keys.prev, 'Home', 'End'].includes(e.key)) return;
+      const ids = Array.from(tabMap.keys());
+      let idx = ids.indexOf(currentTab);
+      if (e.key === keys.next) idx = (idx + 1) % ids.length;
+      else if (e.key === keys.prev) idx = (idx - 1 + ids.length) % ids.length;
+      else if (e.key === 'Home') idx = 0;
+      else idx = ids.length - 1;
+      e.preventDefault();
+      setTab(ids[idx], { focus: true });
+    });
+    dialog.appendChild(tabList);
+  }
+
   appendChild(bodyEl, resolveBody(body, bodyEl));
+  tabMap.forEach(({ panel }) => bodyEl.appendChild(panel));
   dialog.appendChild(bodyEl);
+
+  function renderPanel(id, force = false) {
+    const slot = tabMap.get(id);
+    if (!slot || (slot.rendered && !force)) return;
+    slot.rendered = true;
+    clear(slot.panel);
+    let content = null;
+    try { content = typeof slot.item.render === 'function' ? slot.item.render(slot.panel, api) : slot.item.body ?? null; } catch (err) {
+      content = errorState({ text: err && err.message ? String(err.message) : undefined });
+    }
+    appendChild(slot.panel, content);
+  }
+
+  function setTab(id, { focus = false } = {}) {
+    const key = id === null || id === undefined ? null : String(id);
+    if (!tabMap.has(key)) return api;
+    if (currentTab !== null && currentTab !== key) tabScroll.set(currentTab, bodyEl.scrollTop);
+    const changed = currentTab !== key;
+    currentTab = key;
+    for (const [tid, slot] of tabMap) {
+      const on = tid === key;
+      slot.tab.setAttribute('aria-selected', on ? 'true' : 'false');
+      slot.tab.tabIndex = on ? 0 : -1;
+      slot.tab.classList.toggle('is-active', on);
+      slot.panel.hidden = !on;
+    }
+    renderPanel(key);
+    if (changed) bodyEl.scrollTop = tabScroll.get(key) || 0;
+    if (tabsKind) lastDrawerTab.set(String(tabsKind), key);
+    if (focus) tabMap.get(key).tab.focus();
+    if (changed && typeof api.onTabChange === 'function') { try { api.onTabChange(key); } catch { /* never break the drawer */ } }
+    return api;
+  }
 
   let foot = null;
   if (actions && actions.length) {
@@ -1033,6 +1496,7 @@ function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', 
 
   let previouslyFocused = null;
   let isOpen = false;
+  let closing = false;
   const inerted = [];
 
   function onKeydown(e) {
@@ -1054,7 +1518,7 @@ function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', 
     foot,
     isOpen: () => isOpen,
     open() {
-      if (isOpen) return api;
+      if (isOpen || closing) return api;
       isOpen = true;
       previouslyFocused = document.activeElement;
       overlayHost().appendChild(backdrop);
@@ -1068,47 +1532,104 @@ function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', 
       backdrop.addEventListener('keydown', onKeydown);
       backdrop.addEventListener('click', onBackdropClick);
       dialog.addEventListener('cancel', onCancel);
+      // Drawers: Motion drives the panel (CSS transition suspended for the run); modals keep their CSS transition.
+      if (!isModal) motion.drawer(dialog, true);
       requestAnimationFrame(() => {
         backdrop.classList.add('is-open');
-        const list = focusables(dialog).filter((n) => !n.classList.contains(`${kind}-close`));
-        (list[0] || closeBtn).focus();
+        const list = focusables(dialog).filter((n) => !n.classList.contains(`${kind}-close`) && !n.classList.contains('drawer-tab') && !n.classList.contains('drawer-panel'));
+        const selectedTab = currentTab !== null && tabMap.get(currentTab) ? tabMap.get(currentTab).tab : null;
+        const target = list[0] || selectedTab || closeBtn;
+        try { target.focus({ preventScroll: true }); } catch { target.focus(); }
       });
       return api;
     },
     close(reason = 'close') {
-      if (!isOpen) return api;
+      if (!isOpen || closing) return api;
       isOpen = false;
+      closing = true;
       backdrop.removeEventListener('keydown', onKeydown);
       backdrop.removeEventListener('click', onBackdropClick);
       dialog.removeEventListener('cancel', onCancel);
       inerted.splice(0).forEach((n) => { n.inert = false; });
       document.body.classList.remove(`has-${kind}`);
+      const animated = !isModal && motion.enabled();
+      const slide = animated ? motion.drawer(dialog, false) : null;
       backdrop.classList.remove('is-open');
       backdrop.classList.add('is-closing');
       const finish = () => {
+        closing = false;
         try { dialog.close(); } catch { dialog.removeAttribute('open'); }
         backdrop.remove();
-        if (previouslyFocused && typeof previouslyFocused.focus === 'function' && document.contains(previouslyFocused)) previouslyFocused.focus();
+        backdrop.classList.remove('is-closing');
+        const back = returnFocus && returnFocus.isConnected ? returnFocus : previouslyFocused;
+        if (back && typeof back.focus === 'function' && document.contains(back)) {
+          try { back.focus({ preventScroll: true }); } catch { back.focus(); }
+        }
         if (typeof onClose === 'function') onClose(reason);
       };
-      if (reducedMotion()) finish(); else setTimeout(finish, 200);
+      if (slide) slide.then(finish);
+      else if (reducedMotion()) finish();
+      else setTimeout(finish, 200);
       return api;
     },
-    setTitle(text) { const t = dialog.querySelector(`.${kind}-title`); if (t) t.textContent = String(text); },
+    setTitle(text) { if (titleEl) titleEl.textContent = String(text); },
+    setSubtitle(text) { if (subEl) subEl.textContent = String(text); },
+    setTab,
+    /** Re-render one tab panel (or the active one) after its data changed; keeps the panel's scroll. */
+    refreshTab(id = currentTab) {
+      const key = id === null || id === undefined ? null : String(id);
+      if (!tabMap.has(key)) return api;
+      const keep = key === currentTab ? bodyEl.scrollTop : null;
+      if (key === currentTab) { renderPanel(key, true); if (keep !== null) bodyEl.scrollTop = keep; } else tabMap.get(key).rendered = false;
+      return api;
+    },
+    /** Update a tab's count chip (e.g. evidence items). */
+    setTabCount(id, count) {
+      const slot = tabMap.get(String(id));
+      if (!slot) return api;
+      let chip = slot.tab.querySelector('.drawer-tab-count');
+      if (count === null || count === undefined || count === '') { if (chip) chip.remove(); return api; }
+      if (!chip) { chip = h('span', { class: 'drawer-tab-count' }); slot.tab.appendChild(chip); }
+      chip.textContent = typeof count === 'number' ? fmt.num(count) : String(count);
+      return api;
+    },
+    panel(id) { const slot = tabMap.get(String(id)); return slot ? slot.panel : null; },
+    get activeTab() { return currentTab; },
+    onTabChange: null,
   };
+
+  // Initial tab: explicit activeTab → remembered for this kind → first (after `api` exists: render(panel, api)).
+  if (tabMap.size) {
+    const remembered = tabsKind ? lastDrawerTab.get(String(tabsKind)) : null;
+    const first = tabMap.keys().next().value;
+    const initial = [activeTab, remembered, first].map((v) => (v === null || v === undefined ? null : String(v))).find((v) => v !== null && tabMap.has(v));
+    setTab(initial);
+  }
   return api;
 }
 
-export function modal({ title = '', subtitle = '', body = null, actions = [], size = 'md', onClose = null } = {}) {
-  return overlay({ kind: 'modal', title, subtitle, body, actions, size: size === 'lg' ? 'lg' : (size === 'sm' ? 'sm' : 'md'), onClose });
+export function modal({ title = '', subtitle = '', body = null, actions = [], size = 'md', onClose = null, returnFocus = null } = {}) {
+  return overlay({ kind: 'modal', title, subtitle, body, actions, size: size === 'lg' ? 'lg' : (size === 'sm' ? 'sm' : 'md'), onClose, returnFocus });
 }
 
-export function drawer({ title = '', subtitle = '', body = null, actions = [], size = 'md', onClose = null } = {}) {
-  return overlay({ kind: 'drawer', title, subtitle, body, actions, size: size === 'lg' ? 'lg' : 'md', onClose });
+/**
+ * Side drawer (inline-end edge). CONTRACT §7:
+ *   drawer({ title, subtitle, tabs: [{ id, label, render(panel, api), icon?, count? }], activeTab, actions,
+ *            size: 'md'|'lg', onClose(reason), returnFocus, kind, body, onTabChange })
+ *   → { open, close, el, body, setTab(id), refreshTab(id), setTabCount(id, n), panel(id), activeTab, setTitle, setSubtitle }
+ * `kind` (e.g. 'airisk') remembers the last tab across drawers of that kind; an explicit activeTab wins.
+ * `body` (optional) renders above the tab panels. Focus returns to `returnFocus` (default: the element
+ * focused before opening) without scrolling, so closing keeps the reader's place.
+ */
+export function drawer({ title = '', subtitle = '', body = null, tabs = null, activeTab = null, actions = [], size = 'md', onClose = null, returnFocus = null, kind = null, onTabChange = null, className = '' } = {}) {
+  const api = overlay({ kind: 'drawer', title, subtitle, body, tabs, activeTab, tabsKind: kind, actions, size: size === 'lg' ? 'lg' : 'md', onClose, returnFocus, className });
+  if (typeof onTabChange === 'function') api.onTabChange = onTabChange;
+  return api;
 }
 
 /** Lightweight anchored menu (used by kanban "نقل إلى" and available for views). */
-export function menu(anchor, items = [], { ariaLabel = 'قائمة' } = {}) {
+export function menu(anchor, items = [], { ariaLabel = null } = {}) {
+  if (!ariaLabel) ariaLabel = t('ui.menu.label');
   const existing = document.querySelector('.menu.is-open');
   if (existing && existing.__close) existing.__close();
   const el = h('div', { class: 'menu is-open', role: 'menu', 'aria-label': ariaLabel });
@@ -1187,10 +1708,10 @@ function toastStack() {
 }
 
 export function toast(message, { tone = 'neutral', timeout = 4500, action = null, title = '' } = {}) {
-  const t = toneOf(tone);
+  const tone0 = toneOf(tone);
   const stack = toastStack();
-  const el = h('div', { class: ['toast', `tone-${t}`], role: t === 'critical' || t === 'serious' ? 'alert' : 'status', 'data-tone': t });
-  const ic = glyph(t, 18); ic.classList.add('toast-icon');
+  const el = h('div', { class: ['toast', `tone-${tone0}`], role: tone0 === 'critical' || tone0 === 'serious' ? 'alert' : 'status', 'data-tone': tone0 });
+  const ic = glyph(tone0, 18); ic.classList.add('toast-icon');
   el.appendChild(ic);
   const text = h('div', { class: 'toast-text' });
   if (title) text.appendChild(h('strong', { class: 'toast-title' }, String(title)));
@@ -1206,7 +1727,7 @@ export function toast(message, { tone = 'neutral', timeout = 4500, action = null
   if (action && action.label) {
     el.appendChild(button(action.label, { variant: 'ghost', size: 'sm', onClick: () => { if (typeof action.onClick === 'function') action.onClick(); dismiss(); }, attrs: { class: 'toast-action' } }));
   }
-  el.appendChild(button('', { variant: 'ghost', size: 'sm', icon: glyph('close', 16), onClick: dismiss, attrs: { 'aria-label': 'إغلاق التنبيه', class: 'toast-close' } }));
+  el.appendChild(button('', { variant: 'ghost', size: 'sm', icon: glyph('close', 16), onClick: dismiss, attrs: { 'aria-label': t('ui.closeToast'), class: 'toast-close' } }));
   const arm = () => { if (timeout > 0) timer = setTimeout(dismiss, timeout); };
   el.addEventListener('pointerenter', () => { if (timer) { clearTimeout(timer); timer = null; } });
   el.addEventListener('pointerleave', arm);
@@ -1223,7 +1744,6 @@ export function toast(message, { tone = 'neutral', timeout = 4500, action = null
 /* Kanban                                                              */
 /* ------------------------------------------------------------------ */
 
-const KANBAN_HINT = 'استخدم السهم الأيسر أو الأيمن للنقل بين الأعمدة';
 const cssEscape = (v) => (typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(String(v)) : String(v).replace(/["\\]/g, '\\$&'));
 
 /** Accessible name for a card: explicit code/title fields, else code + title read from the rendered content. */
@@ -1246,7 +1766,7 @@ function kanbanCardName(item, card) {
     const text = pick(Array.from(card.childNodes).filter((n) => !(n.classList && n.classList.contains('kanban-card-bar'))).map((n) => n.textContent || '').join(' '));
     if (text) parts.push(text.length > 90 ? `${text.slice(0, 88).trimEnd()}…` : text);
   }
-  return parts.join(' — ') || `بطاقة ${pick(item.id)}`;
+  return parts.join(' — ') || t('ui.kanban.card', { id: pick(item.id) });
 }
 
 /**
@@ -1257,10 +1777,11 @@ function kanbanCardName(item, card) {
  * After a keyboard move the moved card is re-focused once the board re-renders. The scroller toggles
  * is-overflowing / is-scroll-start / is-scroll-end (V21).
  */
-export function kanban({ columns = [], items = [], onMove = null, headingLevel = null, ariaLabel = 'لوحة المراحل' } = {}) {
+export function kanban({ columns = [], items = [], onMove = null, headingLevel = null, ariaLabel = null } = {}) {
+  if (!ariaLabel) ariaLabel = t('ui.kanban.label');
   const hintId = uid('kanban-hint');
   const el = h('div', { class: 'kanban', role: 'group', 'aria-label': ariaLabel, 'aria-describedby': hintId, dataset: { columns: columns.length } });
-  const hint = h('p', { class: 'sr-only', id: hintId }, KANBAN_HINT);
+  const hint = h('p', { class: 'sr-only', id: hintId }, isRtl() ? t('ui.kanban.hintRtl') : t('ui.kanban.hintLtr'));
   // The board is the scroll container: it must also contain the absolutely positioned sr-only texts
   // (hint, count labels), or their static position can widen the page in RTL.
   el.style.position = 'relative';
@@ -1291,7 +1812,7 @@ export function kanban({ columns = [], items = [], onMove = null, headingLevel =
     const title = h(`h${level}`, { class: 'kanban-col-title', id: titleId }, String(col.label));
     head.appendChild(title);
     const countNum = h('span', { class: 'kanban-count-num' }, '0');
-    const count = h('span', { class: 'kanban-count' }, h('span', { class: 'sr-only' }, 'عدد البطاقات: '), countNum);
+    const count = h('span', { class: 'kanban-count' }, h('span', { class: 'sr-only' }, t('ui.kanban.count')), countNum);
     head.appendChild(count);
     const cards = h('div', { class: 'kanban-cards', 'data-column': String(col.id) });
     colEl.append(head, cards);
@@ -1324,13 +1845,13 @@ export function kanban({ columns = [], items = [], onMove = null, headingLevel =
   }
 
   function cardFor(item) {
-    const card = h('article', { class: 'kanban-card', draggable: true, 'data-id': String(item.id), tabindex: '0', 'aria-roledescription': 'بطاقة قابلة للنقل', 'aria-describedby': hintId });
+    const card = h('article', { class: 'kanban-card', draggable: true, 'data-id': String(item.id), tabindex: '0', 'aria-roledescription': t('ui.kanban.cardRole'), 'aria-describedby': hintId });
     const bar = h('div', { class: 'kanban-card-bar' });
     const grip = glyph('grip', 14); grip.classList.add('kanban-grip');
     bar.appendChild(grip);
     const others = columns.filter((c) => String(c.id) !== String(item.columnId));
-    const moveBtn = button('', { variant: 'ghost', size: 'sm', icon: glyph('move', 15), attrs: { 'aria-label': 'نقل إلى', 'aria-haspopup': 'menu', 'aria-expanded': 'false', class: 'kanban-move' },
-      onClick: (e) => { e.stopPropagation(); menu(moveBtn, others.map((c) => ({ label: `نقل إلى: ${c.label}`, tone: c.tone || null, onClick: () => move(item.id, c.id, { viaKeyboard: true }) })), { ariaLabel: 'نقل إلى' }); } });
+    const moveBtn = button('', { variant: 'ghost', size: 'sm', icon: glyph('move', 15), attrs: { 'aria-label': t('ui.kanban.moveTo'), 'aria-haspopup': 'menu', 'aria-expanded': 'false', class: 'kanban-move' },
+      onClick: (e) => { e.stopPropagation(); menu(moveBtn, others.map((c) => ({ label: t('ui.kanban.moveToCol', { column: c.label }), tone: c.tone || null, onClick: () => move(item.id, c.id, { viaKeyboard: true }) })), { ariaLabel: t('ui.kanban.moveTo') }); } });
     bar.appendChild(moveBtn);
     card.appendChild(bar);
     let content = null;
@@ -1347,9 +1868,10 @@ export function kanban({ columns = [], items = [], onMove = null, headingLevel =
     card.addEventListener('keydown', (e) => {
       if (e.target !== card) return;
       const idx = columns.findIndex((c) => String(c.id) === String(item.columnId));
-      // RTL: ArrowLeft advances to the next column, ArrowRight goes back.
-      if (e.key === 'ArrowLeft' && idx < columns.length - 1) { e.preventDefault(); move(item.id, columns[idx + 1].id, { viaKeyboard: true }); }
-      else if (e.key === 'ArrowRight' && idx > 0) { e.preventDefault(); move(item.id, columns[idx - 1].id, { viaKeyboard: true }); }
+      // The next column lies in the reading direction (ArrowLeft in RTL, ArrowRight in LTR).
+      const dirKeys = inlineKeys();
+      if (e.key === dirKeys.next && idx < columns.length - 1) { e.preventDefault(); move(item.id, columns[idx + 1].id, { viaKeyboard: true }); }
+      else if (e.key === dirKeys.prev && idx > 0) { e.preventDefault(); move(item.id, columns[idx - 1].id, { viaKeyboard: true }); }
       else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); moveBtn.click(); }
     });
     return card;
@@ -1368,7 +1890,7 @@ export function kanban({ columns = [], items = [], onMove = null, headingLevel =
       const n = counts.get(slot) || 0;
       slot.countNum.textContent = fmt.num(n);
       slot.colEl.classList.toggle('is-empty', n === 0);
-      if (n === 0) slot.cards.appendChild(h('p', { class: 'kanban-empty' }, 'لا توجد بطاقات'));
+      if (n === 0) slot.cards.appendChild(h('p', { class: 'kanban-empty' }, t('ui.kanban.empty')));
     }
     if (pendingFocusId !== null) {
       const target = el.querySelector(`.kanban-card[data-id="${cssEscape(pendingFocusId)}"]`);
@@ -1455,7 +1977,8 @@ function removeTicker(fn) {
   syncTicker();
 }
 
-export function countdown(targetIso, { onExpire = null, warnMinutes = 60, expiredText = 'منتهٍ' } = {}) {
+export function countdown(targetIso, { onExpire = null, warnMinutes = 60, expiredText = null } = {}) {
+  if (!expiredText) expiredText = t('ui.countdown.expired');
   const target = new Date(targetIso).getTime();
   const el = h('span', { class: 'countdown', role: 'timer', 'data-target': String(targetIso) });
   const ic = glyph('clock', 13); ic.classList.add('countdown-icon');
@@ -1476,7 +1999,7 @@ export function countdown(targetIso, { onExpire = null, warnMinutes = 60, expire
     if (remaining <= 0) {
       el.classList.add('is-expired'); el.classList.remove('is-warning');
       text.textContent = expiredText;
-      el.setAttribute('aria-label', `الوقت المتبقي: ${expiredText}`);
+      el.setAttribute('aria-label', t('ui.countdown.remaining', { time: expiredText }));
       stop();
       if (!fired) { fired = true; if (typeof onExpire === 'function') onExpire(); }
       return;
@@ -1484,7 +2007,7 @@ export function countdown(targetIso, { onExpire = null, warnMinutes = 60, expire
     el.classList.toggle('is-warning', remaining < warnMinutes * 60 * 1000);
     const d = fmt.duration(remaining);
     text.textContent = d;
-    el.setAttribute('aria-label', `الوقت المتبقي: ${d}`);
+    el.setAttribute('aria-label', t('ui.countdown.remaining', { time: d }));
   };
   tick();
   if (!el.classList.contains('is-expired') && Number.isFinite(target)) { registered = true; addTicker(tick); }
@@ -1498,6 +2021,6 @@ export function countdown(targetIso, { onExpire = null, warnMinutes = 60, expire
 export const components = {
   h, clear, glyph, svgIcon, card, statTile, badge, tierBadge, button, segmented, tabs, dataTable,
   modal, drawer, menu, toast, kanban, formField, readForm, emptyState, progress, countdown, liveDot, kv, reducedMotion,
-  parseDelta,
+  parseDelta, statusBadge, filterBar, loadingState, errorState, offlineState, skeleton, motion,
 };
 export default components;

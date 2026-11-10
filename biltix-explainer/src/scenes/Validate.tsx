@@ -53,7 +53,7 @@ export const Validate: React.FC<SceneProps> = ({ lang, frames }) => {
       cam={[
         { f: 0, s: 1.0, x: 0, y: 0 },
         { f: 50, s: 1.01, x: 0, y: 0 },
-        { f: frames + 15, s: 1.04, x: -34, y: 10 },
+        { f: frames + 15, s: 1.035, x: -24, y: 6 },
       ]}
     >
       <Card style={{ top: 236, insetInlineStart: 96, width: 1728, height: 362, padding: '30px 36px' }}>

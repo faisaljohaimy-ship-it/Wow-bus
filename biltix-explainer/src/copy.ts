@@ -4,16 +4,24 @@
  */
 import type { Lang } from './storyboard';
 
+/** Arabic count phrase: 1 / 2 (dual) / 3–10 (plural) / 11+ (accusative singular). */
+export function arCount(n: number, one: string, two: string, few: string, many: string): string {
+  if (n === 1) return one;
+  if (n === 2) return two;
+  if (n >= 3 && n <= 10) return `${n} ${few}`;
+  return `${n} ${many}`;
+}
+
 export type Copy = {
   brandSub: string;
   demo: string;
   source: { eyebrow: string; title: (n: number) => string; sub: string; records: string; hub: string; lastBatch: string; more: (n: number) => string; recordsUnit: string };
   validate: { eyebrow: string; title: string; sub: (rules: number, hits: string) => string; recordsIn: string; passed: string; dedup: string; rejected: string; passRate: string; completeness: string; consistency: string; quarantine: string; quarantineOf: (n: number) => string; scan: string };
-  analyze: { eyebrow: string; gaugeTitle: string; gaugeSub: (open: number) => string; categories: string; weight: string; distribution: (open: number) => string; heatTitle: string; heatSub: (n: number) => string; likelihood: string; severity: string; likelihoodLabels: string[]; severityLabels: string[]; tiers: Record<string, string> };
+  analyze: { eyebrow: string; gaugeTitle: string; gaugeSub: (open: number) => string; categories: string; weight: string; distribution: (open: number) => string; heatTitle: string; heatSub: (n: number) => string; likelihood: string; severity: string; formula: string; likelihoodLabels: string[]; severityLabels: string[]; tiers: Record<string, string> };
   rating: Record<string, string>;
-  explain: { eyebrow: string; why: string; modelWeight: string; evidence: string; weeklyRate: string; limit: string; cumulative: string; schematic: string; crack: string; crest: string; pit: string; below: string; movement: string; confidence: string; mmWeek: string; mm: string; m: string };
-  approve: { eyebrow: string; recTitle: string; impact: string; effort: string; accept: string; edit: string; dismiss: string; accepted: string; reviewer: string; human: string; detected: string; escalated: string; acknowledged: string; decided: string; min: (n: number) => string };
-  mitigate: { eyebrow: string; status: string; source: string; owner: string; due: string; risk: string; criticalPath: string; yes: string; schedule: string; cost: string; controls: string; done: string; inProgress: string; writeback: string; synced: string; days: (n: number) => string; sar: (n: number) => string };
+  explain: { detected: string; precision: string; recall: string; formula: (l: number, i: number, sc: number) => string; eyebrow: string; why: string; modelWeight: string; evidence: string; weeklyRate: string; limit: string; cumulative: string; schematic: string; crack: string; crest: string; pit: string; below: string; movement: string; confidence: string; mmWeek: string; mm: string; m: string };
+  approve: { rationale: string; stakeholders: string; eyebrow: string; recTitle: string; impact: string; effort: string; accept: string; edit: string; dismiss: string; accepted: string; reviewer: string; human: string; detected: string; escalated: string; acknowledged: string; decided: string; min: (n: number) => string };
+  mitigate: { zone: string; eyebrow: string; status: string; source: string; owner: string; due: string; risk: string; criticalPath: string; yes: string; schedule: string; cost: string; controls: string; done: string; inProgress: string; writeback: string; synced: string; days: (n: number) => string; sar: (n: number) => string };
   close: { eyebrow: string; title: string; verified: string; closure: string; illustrative: string; residual: string; target: string };
 };
 
@@ -53,10 +61,11 @@ export const COPY: Record<Lang, Copy> = {
       categories: 'درجات الفئات',
       weight: 'الوزن',
       distribution: (open) => `${open} مخاطرة مفتوحة حسب التصنيف`,
-      heatTitle: 'مصفوفة سجل السلامة',
-      heatSub: (n) => `الاحتمالية × الشدة · ${n} مخاطرة مفتوحة`,
+      heatTitle: 'مصفوفة المخاطر الذكية',
+      heatSub: (n) => `الاحتمالية × الأثر · ${n} مخاطرة مفتوحة`,
       likelihood: 'الاحتمالية',
-      severity: 'الشدة',
+      severity: 'الأثر',
+      formula: 'الدرجة = الاحتمالية × الأثر × 4',
       likelihoodLabels: ['نادر', 'غير محتمل', 'محتمل', 'مرجّح', 'شبه مؤكد'],
       severityLabels: ['طفيف', 'بسيط', 'متوسط', 'جسيم', 'كارثي'],
       tiers: { good: 'منخفض', warning: 'متوسط', serious: 'عالٍ', critical: 'حرج' },
@@ -77,6 +86,10 @@ export const COPY: Record<Lang, Copy> = {
       below: 'أسفل المنحدر',
       movement: 'اتجاه الحركة',
       confidence: 'الثقة',
+      detected: 'الاكتشاف',
+      precision: 'دقة النموذج',
+      recall: 'الاستدعاء',
+      formula: (l: number, i: number, sc: number) => `الاحتمالية ${l} × الأثر ${i} × 4 = ${sc}`,
       mmWeek: 'مم/أسبوع',
       mm: 'مم',
       m: 'م',
@@ -96,10 +109,13 @@ export const COPY: Record<Lang, Copy> = {
       escalated: 'تصعيد فوري',
       acknowledged: 'تأكيد الاستلام',
       decided: 'القرار',
-      min: (n) => `بعد ${n} دقيقة`,
+      rationale: 'الأساس المنطقي',
+      stakeholders: 'أصحاب المصلحة المُبلَّغون',
+      min: (n) => `بعد ${arCount(n, 'دقيقة واحدة', 'دقيقتين', 'دقائق', 'دقيقة')}`,
     },
     mitigate: {
       eyebrow: 'المعالجة',
+      zone: 'منطقة الاستبعاد',
       status: 'قيد التنفيذ',
       source: 'من توصية مقبولة',
       owner: 'المسؤول',
@@ -114,7 +130,7 @@ export const COPY: Record<Lang, Copy> = {
       inProgress: 'جارٍ',
       writeback: 'كتابة عكسية',
       synced: 'متزامن',
-      days: (n) => `${n} أيام`,
+      days: (n) => arCount(n, 'يوم واحد', 'يومان', 'أيام', 'يوماً'),
       sar: (n) => `${(n / 1_000_000).toFixed(1)} مليون ريال`,
     },
     close: {
@@ -162,12 +178,13 @@ export const COPY: Record<Lang, Copy> = {
       categories: 'Category scores',
       weight: 'Weight',
       distribution: (open) => `${open} open AI risks by rating`,
-      heatTitle: 'Safety register matrix',
-      heatSub: (n) => `Likelihood × severity · ${n} open risks`,
+      heatTitle: 'AI risk matrix',
+      heatSub: (n) => `Likelihood × impact · ${n} open risks`,
       likelihood: 'Likelihood',
-      severity: 'Severity',
+      severity: 'Impact',
+      formula: 'Score = likelihood × impact × 4',
       likelihoodLabels: ['Rare', 'Unlikely', 'Possible', 'Likely', 'Almost certain'],
-      severityLabels: ['Minor', 'Low', 'Moderate', 'Major', 'Catastrophic'],
+      severityLabels: ['Minor', 'Low', 'Moderate', 'Major', 'Severe'],
       tiers: { good: 'Low', warning: 'Medium', serious: 'High', critical: 'Critical' },
     },
     rating: { red: 'Red', yellow: 'Yellow', green: 'Green' },
@@ -186,6 +203,10 @@ export const COPY: Record<Lang, Copy> = {
       below: 'Below the slope',
       movement: 'Movement',
       confidence: 'Confidence',
+      detected: 'Detected',
+      precision: 'Model precision',
+      recall: 'Recall',
+      formula: (l: number, i: number, sc: number) => `Likelihood ${l} × impact ${i} × 4 = ${sc}`,
       mmWeek: 'mm/week',
       mm: 'mm',
       m: 'm',
@@ -206,9 +227,12 @@ export const COPY: Record<Lang, Copy> = {
       acknowledged: 'Acknowledged',
       decided: 'Decision',
       min: (n) => `+${n} min`,
+      rationale: 'Rationale',
+      stakeholders: 'Notified stakeholders',
     },
     mitigate: {
       eyebrow: 'Mitigation',
+      zone: 'Exclusion zone',
       status: 'In progress',
       source: 'From accepted recommendation',
       owner: 'Owner',

@@ -6,7 +6,8 @@ import React from 'react';
 import { AbsoluteFill, useCurrentFrame } from 'remotion';
 import { COPY } from '../copy';
 import { prog } from '../lib/anim';
-import { CAPTION_FADE, CAPTIONS, captionCues, SCENES, STEPS, type Lang } from '../storyboard';
+import { DATA } from '../data';
+import { CAPTION_FADE, CAPTIONS, captionCues, fillCaption, SCENES, STEPS, type Lang } from '../storyboard';
 import { C, EASE, FONT } from '../theme';
 import { Emblem } from './Emblem';
 
@@ -302,7 +303,7 @@ export const CaptionBand: React.FC<{ lang: Lang }> = ({ lang }) => {
           whiteSpace: 'nowrap',
         }}
       >
-        {CAPTIONS[lang][cue.id]}
+        {fillCaption(CAPTIONS[lang][cue.id], { sources: DATA.validation.sources })}
       </div>
     </div>
   );

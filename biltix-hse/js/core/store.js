@@ -46,6 +46,10 @@
 import seed, { RISK_STATUS, CONTROL_TYPES, INCIDENT_TYPES, INCIDENT_STATUS, PERMIT_TYPES, PERMIT_STATUS, INSPECTION_STATUS, INSPECTION_TYPES, INTEGRATION_STATUS } from '../data/seed.js';
 import { bus } from './bus.js';
 import { sel } from './selectors.js';
+import {
+  en as enOf, siteEnById, personEn, PERMIT_TYPE_EN, INCIDENT_TYPE_EN, RISK_TIER_EN, AI_STATUS_EN, TASK_STATUS_EN,
+  RATING_EN, PIPELINE_EN, CHANNEL_EN,
+} from '../data/vocab-en.js';
 
 /**
  * Part B — platform seed (ARCHITECTURE.md §B3/§B5). Loaded through an awaited dynamic
@@ -54,10 +58,13 @@ import { sel } from './selectors.js';
  * application down with it (the HSE pillar must keep booting on its own).
  */
 let platformSeed = null;
+/** v3 helper from platform-seed.js: input-data quality of a source system (one definition). */
+let deriveDataQuality = null;
 try {
   const mod = await import('../data/platform-seed.js');
   platformSeed = (mod && (mod.default || mod.platformSeed)) || null;
   if (!isPlainObject(platformSeed)) platformSeed = null;
+  if (mod && typeof mod.deriveDataQuality === 'function') deriveDataQuality = mod.deriveDataQuality;
 } catch (error) {
   console.warn('[biltix] platform-seed.js غير متاح بعد — تعمل المنصة بمجموعات فارغة.', error && error.message ? error.message : error);
 }
@@ -85,16 +92,32 @@ const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
 const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const DATA_SOURCE_TYPES = ['simulation', 'json', 'sheets', 'supabase'];
-const MOTION_MODES = ['auto', 'reduce', 'full'];
+export const MOTION_MODES = Object.freeze(['auto', 'reduce', 'full']);
+/** v3 settings enums (CONTRACT §8). */
+export const LANGS = Object.freeze(['ar', 'en']);
+export const BACKGROUND_MODES = Object.freeze(['static', 'subtle', 'cinematic']);
+export const DENSITY_MODES = Object.freeze(['comfortable', 'compact']);
+export const CALENDAR_MODES = Object.freeze(['gregorian', 'hijri', 'both']);
+/** Weights must sum to 1 within this tolerance (CONTRACT §8). */
+export const WEIGHT_TOLERANCE = 0.001;
+/** The critical threshold must sit at least this far above the alert threshold. */
+export const THRESHOLD_GAP = 5;
+const WEIGHT_KEYS = ['contract', 'bom', 'schedule', 'site', 'cost'];
 
 export const DEFAULT_SETTINGS = deepFreeze({
   theme: 'dark',
   numerals: 'latn',
+  // v3: interface language, appearance, calendar and motion (the shell's pre-paint script reads these).
+  lang: 'ar',
+  appearance: { background: 'subtle', density: 'comfortable' },
+  calendar: 'both',
+  motion: 'auto',
   // '' for primary/accent means "use the theme tokens" (css/tokens.css); a hex overrides both themes.
   brand: { primary: '', accent: '', companyName: 'بلتكس', logoUrl: '' },
   sound: false,
   feedPaused: false,
-  dataSource: { type: 'simulation', url: '', apiKey: '', table: '' },
+  // lastSuccessAt / lastErrorAt / lastError: outcome of the last REAL test or import (status.js → Live / Stale / Error).
+  dataSource: { type: 'simulation', url: '', apiKey: '', table: '', lastSuccessAt: null, lastErrorAt: null, lastError: null },
   alertWebhook: '',
   // Part B (§B5): classification weights, alert thresholds, escalation channels, roadmap payment split.
   platform: {
@@ -115,7 +138,14 @@ export const AI_RISK_STATUS = ['مكتشف', 'تنبيه', 'مهمة مُسند�
 export const TASK_STATUS = ['جديدة', 'قيد التنفيذ', 'متأخرة', 'مغلقة'];
 export const TASK_SOURCES = ['ai-accepted', 'ai-edited', 'manual'];
 export const QUARANTINE_STATUS = ['معلّق', 'مُصحح', 'مرفوض'];
-export const AUDIT_ACTIONS = ['override', 'accept', 'escalate', 'writeback', 'model-update', 'validation', 'login', 'config', 'close'];
+export const AUDIT_ACTIONS = [
+  'override', 'accept', 'escalate', 'writeback', 'model-update', 'validation', 'login', 'config', 'close',
+  // v3 audited CRUD (risk lifecycle + tasks)
+  'create', 'evidence', 'residual', 'reopen', 'assign', 'edit', 'attachment',
+];
+/** v3: optional task priority (Latin ids; displayed through dictionaries). */
+export const TASK_PRIORITIES = ['high', 'medium', 'low'];
+export const EVIDENCE_KINDS = ['link', 'note', 'file'];
 export const PIPELINE_STATUS = ['running', 'idle', 'training', 'degraded'];
 export const CONNECTOR_STATUS = ['connected', 'degraded', 'disconnected', 'configurable'];
 export const ALERT_SEVERITIES = ['critical', 'routine'];
@@ -152,8 +182,13 @@ const PLATFORM_DATE_FIELDS = {
   scheduleTasks: { own: ['start', 'finish', 'baselineFinish'] },
   approvals: { own: ['submittedAt'] },
   changeOrders: { own: ['submittedAt'] },
-  aiRisks: { own: ['detectedAt', 'updatedAt', 'dueDate'], children: { history: ['at'], overrides: ['at'] } },
-  tasks: { own: ['dueDate', 'createdAt', 'closedAt'], nested: { writeback: ['at'] } },
+  aiRisks: {
+    own: ['detectedAt', 'updatedAt', 'dueDate', 'closedAt', 'reopenedAt'],
+    children: { history: ['at'], overrides: ['at'] },
+    nested: { residualAssessment: ['at'] },
+    deepChildren: { 'treatment.evidence': ['addedAt'] },
+  },
+  tasks: { own: ['dueDate', 'createdAt', 'closedAt', 'updatedAt'], nested: { writeback: ['at'] }, children: { attachments: ['addedAt'] } },
   alerts: { own: ['sentAt', 'ackAt'] },
   pipelines: { own: ['lastRun'] },
   connectors: { own: ['lastSync'] },
@@ -397,6 +432,12 @@ function shiftCollection(items, spec, shift) {
     if (spec.nested) {
       for (const [childKey, childFields] of Object.entries(spec.nested)) shiftFields(item[childKey], childFields, shift);
     }
+    if (spec.deepChildren) {
+      for (const [path, childFields] of Object.entries(spec.deepChildren)) {
+        const list = getPath(item, path);
+        if (Array.isArray(list)) list.forEach((child) => shiftFields(child, childFields, shift));
+      }
+    }
   }
 }
 
@@ -581,6 +622,55 @@ const INTEGRATION_STATUS_IDS = Array.isArray(INTEGRATION_STATUS)
   ? INTEGRATION_STATUS.map((s) => (isPlainObject(s) ? s.id : s)).filter(Boolean)
   : CONNECTOR_STATUS;
 
+/* ────────────────────────────── v3 validation (weights, thresholds, risk input) ────────────────────────────── */
+
+/** Bilingual failure object the UI can show as is (or map `reason` to its own dictionary). */
+function fail(reason, message, messageEn, extra = {}) {
+  return { ok: false, reason, message, messageEn, ...extra };
+}
+
+/**
+ * Weights rule (CONTRACT §8): exactly the five domains, each a finite number ≥ 0, summing to 1 ± 0.001.
+ * Returns { ok:true, weights, sum } or { ok:false, reason, message, messageEn, sum, field }.
+ */
+export function validateWeights(input) {
+  if (!isPlainObject(input)) return fail('weights-shape', 'يجب إدخال أوزان المجالات الخمسة.', 'Enter a weight for each of the five domains.', { sum: null });
+  const weights = {};
+  for (const key of WEIGHT_KEYS) {
+    const raw = input[key];
+    const n = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : (typeof raw === 'number' ? raw : NaN);
+    if (!Number.isFinite(n)) return fail('weights-missing', 'كل وزن يجب أن يكون رقماً.', 'Every weight must be a number.', { field: key, sum: null });
+    if (n < 0) return fail('weights-negative', 'لا يمكن أن يكون الوزن سالباً.', 'A weight cannot be negative.', { field: key, sum: null });
+    weights[key] = n;
+  }
+  const extra = Object.keys(input).filter((k) => !WEIGHT_KEYS.includes(k) && !isUnsafeKey(k));
+  if (extra.length) return fail('weights-unknown', 'توجد مفاتيح أوزان غير معروفة.', 'Unknown weight keys were supplied.', { field: extra[0], sum: null });
+  const sum = Math.round(WEIGHT_KEYS.reduce((a, k) => a + weights[k], 0) * 1e6) / 1e6;
+  if (Math.abs(sum - 1) > WEIGHT_TOLERANCE) {
+    const pct = Math.round(sum * 1000) / 10;
+    return fail('weights-sum', `مجموع الأوزان ${pct}% — يجب أن يساوي 100%.`, `The weights add up to ${pct}% — they must total 100%.`, { sum });
+  }
+  return { ok: true, weights, sum };
+}
+
+/**
+ * Thresholds rule: integers 0–100, critical ≥ alert + 5 (CONTRACT §8 / AC-07).
+ * Returns { ok:true, alertThreshold, criticalThreshold } or a bilingual failure.
+ */
+export function validateThresholds(input) {
+  const src = isPlainObject(input) ? input : {};
+  const a = Number(src.alertThreshold);
+  const c = Number(src.criticalThreshold);
+  if (!Number.isFinite(a) || !Number.isFinite(c)) return fail('thresholds-missing', 'أدخل عتبتي التنبيه والتصعيد كأرقام.', 'Enter both the alert and the critical threshold as numbers.');
+  if (a < 0 || a > 100 || c < 0 || c > 100) return fail('thresholds-range', 'العتبات بين 0 و100.', 'Thresholds must be between 0 and 100.');
+  const alertThreshold = Math.round(a);
+  const criticalThreshold = Math.round(c);
+  if (criticalThreshold < alertThreshold + THRESHOLD_GAP) {
+    return fail('thresholds-gap', `يجب أن تكون عتبة التصعيد الفوري أعلى من عتبة التنبيه بـ ${THRESHOLD_GAP} نقاط على الأقل.`, `The critical threshold must be at least ${THRESHOLD_GAP} points above the alert threshold.`, { field: 'criticalThreshold' });
+  }
+  return { ok: true, alertThreshold, criticalThreshold };
+}
+
 /** Platform category weights → numbers in 0..1 summing to exactly 1 (fallback when unusable). */
 export function normalizeWeights(input, fallback = DEFAULT_SETTINGS.platform.weights) {
   const base = isPlainObject(fallback) ? fallback : DEFAULT_SETTINGS.platform.weights;
@@ -603,11 +693,39 @@ export function normalizeWeights(input, fallback = DEFAULT_SETTINGS.platform.wei
  * platform weights normalised to sum 1, thresholds clamped (critical ≥ alert) with `current`
  * values as the fallback for unparsable numbers.
  */
+/** ISO instant that must not lie in the future (clock skew / imported files) → clamped; anything else → null. */
+function pastInstantOrNull(value, nowDate = new Date()) {
+  if (typeof value !== 'string' || !INSTANT_RE.test(value) || !Number.isFinite(Date.parse(value))) return null;
+  return clampInstant(value, nowDate);
+}
+
+/** dataSource.lastError: a short string or { code, message, messageEn } (bilingual), else null. */
+function sanitizeLastError(value) {
+  if (typeof value === 'string') return value.trim().slice(0, 500) || null;
+  if (isPlainObject(value)) {
+    const out = {
+      code: text(value.code).slice(0, 60) || null,
+      message: text(value.message).slice(0, 500),
+      messageEn: text(value.messageEn).slice(0, 500),
+    };
+    return out.message || out.messageEn || out.code ? out : null;
+  }
+  return null;
+}
+
 export function sanitizeSettings(input, current = DEFAULT_SETTINGS) {
   const cur = isPlainObject(current) ? current : DEFAULT_SETTINGS;
   const merged = deepMerge(clone(DEFAULT_SETTINGS), isPlainObject(input) ? input : {});
   merged.theme = merged.theme === 'light' ? 'light' : 'dark';
   merged.numerals = merged.numerals === 'arab' ? 'arab' : 'latn';
+  merged.lang = pickEnum(merged.lang, LANGS, 'ar');
+  merged.calendar = pickEnum(merged.calendar, CALENDAR_MODES, 'both');
+  merged.motion = pickEnum(merged.motion, MOTION_MODES, 'auto');
+  const ap = isPlainObject(merged.appearance) ? merged.appearance : {};
+  merged.appearance = {
+    background: pickEnum(ap.background, BACKGROUND_MODES, DEFAULT_SETTINGS.appearance.background),
+    density: pickEnum(ap.density, DENSITY_MODES, DEFAULT_SETTINGS.appearance.density),
+  };
   const brand = deepMerge(clone(DEFAULT_SETTINGS.brand), isPlainObject(merged.brand) ? merged.brand : {});
   brand.primary = hexOrEmpty(brand.primary, LEGACY_BRAND.primary);
   brand.accent = hexOrEmpty(brand.accent, LEGACY_BRAND.accent);
@@ -618,21 +736,41 @@ export function sanitizeSettings(input, current = DEFAULT_SETTINGS) {
   merged.feedPaused = bool(merged.feedPaused, false);
   if (merged.railCollapsed !== undefined) merged.railCollapsed = bool(merged.railCollapsed);
   if (merged.reducedMotion !== undefined) merged.reducedMotion = bool(merged.reducedMotion);
-  if (merged.motion !== undefined) merged.motion = pickEnum(merged.motion, MOTION_MODES, 'auto');
   const ds = deepMerge(clone(DEFAULT_SETTINGS.dataSource), isPlainObject(merged.dataSource) ? merged.dataSource : {});
   ds.type = pickEnum(ds.type, DATA_SOURCE_TYPES, 'simulation');
   ds.url = text(ds.url);
   ds.apiKey = text(ds.apiKey);
   ds.table = text(ds.table);
+  ds.lastSuccessAt = pastInstantOrNull(ds.lastSuccessAt);
+  ds.lastErrorAt = pastInstantOrNull(ds.lastErrorAt);
+  ds.lastError = sanitizeLastError(ds.lastError);
   merged.dataSource = ds;
   merged.alertWebhook = text(merged.alertWebhook);
   const curP = isPlainObject(cur.platform) ? cur.platform : DEFAULT_SETTINGS.platform;
   const p = deepMerge(clone(DEFAULT_SETTINGS.platform), isPlainObject(merged.platform) ? merged.platform : {});
-  p.weights = normalizeWeights(p.weights, normalizeWeights(curP.weights));
+  // Weights: a valid set (sum 1 ± 0.001) is kept exactly; a legacy set that is merely rounded (± 2 %) is
+  // renormalised; anything else falls back to the current (then default) weights — never a silent reshape.
+  const w = validateWeights(p.weights);
+  if (w.ok) p.weights = { ...w.weights };
+  else {
+    const vals = isPlainObject(p.weights) ? WEIGHT_KEYS.map((k) => Number(p.weights[k])) : [];
+    const sum = vals.reduce((a, b) => a + b, 0);
+    const nearlyValid = vals.length === WEIGHT_KEYS.length && vals.every((n) => Number.isFinite(n) && n >= 0) && Math.abs(sum - 1) <= 0.02;
+    const curW = validateWeights(curP.weights);
+    p.weights = nearlyValid ? normalizeWeights(p.weights) : (curW.ok ? { ...curW.weights } : { ...DEFAULT_SETTINGS.platform.weights });
+  }
+  // Thresholds: integers 0–100 with critical ≥ alert + 5; a violating pair falls back to the current pair.
   const curAlert = clampNum(curP.alertThreshold, 0, 100, DEFAULT_SETTINGS.platform.alertThreshold);
   const curCritical = clampNum(curP.criticalThreshold, 0, 100, DEFAULT_SETTINGS.platform.criticalThreshold);
   p.alertThreshold = Math.round(clampNum(p.alertThreshold, 0, 100, curAlert));
-  p.criticalThreshold = Math.round(clampNum(p.criticalThreshold, p.alertThreshold, 100, Math.max(p.alertThreshold, curCritical)));
+  p.criticalThreshold = Math.round(clampNum(p.criticalThreshold, 0, 100, curCritical));
+  if (!validateThresholds(p).ok) {
+    const curPair = validateThresholds({ alertThreshold: curAlert, criticalThreshold: curCritical });
+    if (curPair.ok) { p.alertThreshold = curPair.alertThreshold; p.criticalThreshold = curPair.criticalThreshold; } else {
+      p.alertThreshold = Math.min(p.alertThreshold, 100 - THRESHOLD_GAP);
+      p.criticalThreshold = Math.max(p.criticalThreshold, p.alertThreshold + THRESHOLD_GAP);
+    }
+  }
   const channels = {};
   for (const k of Object.keys(DEFAULT_SETTINGS.platform.channels)) {
     channels[k] = bool(isPlainObject(p.channels) ? p.channels[k] : undefined, DEFAULT_SETTINGS.platform.channels[k]);
@@ -678,6 +816,64 @@ export function backfillAlertCodes(list) {
     a.code = `AL-${pad(max, 4)}`;
   }
   return list;
+}
+
+/* ────────────────────────────── v3: likelihood × impact helpers ────────────────────────────── */
+
+/** Integer 1–5 or null (not given / not assessed). */
+function scale5(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n !== Math.round(n) || n < 1 || n > 5) return null;
+  return n;
+}
+
+/** Severity (CONTRACT §8, spec D5): likelihood × impact × 4 → 0–100. */
+export function scoreOf(likelihood, impact) {
+  const l = scale5(likelihood);
+  const i = scale5(impact);
+  return l && i ? l * i * 4 : null;
+}
+
+/** Legacy records (pre-v3 saved state) carry only a 0–100 score: the closest L×I×4 pair, rating-preserving. */
+export function liFromScore(score) {
+  const s = clampNum(score, 0, 100, 50);
+  const band = (v) => (v >= 70 ? 2 : v >= 40 ? 1 : 0);
+  let best = [3, 3];
+  let bestD = Infinity;
+  for (let i = 5; i >= 1; i -= 1) {
+    for (let l = 5; l >= 1; l -= 1) {
+      const v = l * i * 4;
+      const d = Math.abs(v - s) + (band(v) === band(s) ? 0 : 1000);
+      if (d < bestD) { bestD = d; best = [l, i]; }
+    }
+  }
+  return best;
+}
+
+function normalizeEvidenceItem(e, i, riskId) {
+  if (!isPlainObject(e)) return null;
+  const title = text(e.title).slice(0, 300);
+  if (!title) return null;
+  const url = typeof e.url === 'string' && /^https?:\/\//i.test(e.url.trim()) ? e.url.trim().slice(0, 2048) : null;
+  const out = {
+    id: text(e.id) || `EV-${riskId || 'X'}-${i + 1}`,
+    kind: pickEnum(e.kind, EVIDENCE_KINDS, 'note'),
+    title,
+    url,
+    addedAt: typeof e.addedAt === 'string' ? e.addedAt : null,
+    by: text(e.by) || null,
+    local: e.local !== false,
+  };
+  for (const k of ['titleEn', 'note', 'ref', 'sourceSystem', 'fileName', 'mime']) if (typeof e[k] === 'string' && e[k].trim()) out[k] = e[k].trim().slice(0, k === 'note' ? 2000 : 300);
+  if (Number.isFinite(Number(e.size)) && Number(e.size) >= 0) out.size = Math.round(Number(e.size));
+  return out;
+}
+
+function normalizeTreatment(t, riskId) {
+  const src = isPlainObject(t) ? t : {};
+  const evidence = Array.isArray(src.evidence) ? src.evidence.map((e, i) => normalizeEvidenceItem(e, i, riskId)).filter(Boolean) : [];
+  return { ...src, plan: typeof src.plan === 'string' && src.plan.trim() ? src.plan.trim() : null, taskId: src.taskId == null ? null : text(src.taskId), evidence };
 }
 
 /** Per-collection item normalisers (enums, clamped numbers, well-typed sub-structures). */
@@ -727,8 +923,21 @@ const ITEM_NORMALIZERS = {
     r.type = pickEnum(r.type, AI_TYPES, CATEGORY_TYPE[r.category]);
     r.pipeline = pickEnum(r.pipeline, AI_PIPELINES, CATEGORY_PIPELINE[r.category]);
     r.status = pickEnum(r.status, AI_RISK_STATUS, 'مكتشف');
-    r.score = Math.round(clampNum(r.score, 0, 100, 50));
-    r.confidence = clampNum(r.confidence, 0, 1, 0.8);
+    // v3: likelihood/impact are authoritative; the score is always derived (legacy records get the closest pair).
+    let l = scale5(r.likelihood);
+    let im = scale5(r.impact);
+    if (!l || !im) [l, im] = liFromScore(r.score);
+    r.likelihood = l;
+    r.impact = im;
+    r.score = l * im * 4;
+    r.residualLikelihood = scale5(r.residualLikelihood);
+    r.residualImpact = scale5(r.residualImpact);
+    if (!r.residualLikelihood || !r.residualImpact) { r.residualLikelihood = null; r.residualImpact = null; r.residualAssessment = null; }
+    else if (!isPlainObject(r.residualAssessment)) r.residualAssessment = { at: null, by: null, justification: '' };
+    r.treatment = normalizeTreatment(r.treatment, r.id);
+    if (r.dataQuality != null && !isPlainObject(r.dataQuality)) r.dataQuality = null;
+    // A manually registered risk has no model confidence (null); engine output keeps 0–1.
+    r.confidence = r.confidence == null && r.origin === 'manual' ? null : clampNum(r.confidence, 0, 1, 0.8);
     r.history = objectList(r.history);
     r.overrides = objectList(r.overrides);
     r.stakeholders = stringList(r.stakeholders);
@@ -744,6 +953,8 @@ const ITEM_NORMALIZERS = {
     t.riskId = t.riskId == null ? null : text(t.riskId);
     if (!isPlainObject(t.writeback)) t.writeback = { target: 'Biltix PM', status: 'pending', at: null };
     t.writeback.status = pickEnum(t.writeback.status, ['pending', 'synced', 'failed'], 'pending');
+    t.priority = t.priority == null ? null : pickEnum(t.priority, TASK_PRIORITIES, null);
+    t.attachments = Array.isArray(t.attachments) ? t.attachments.map((a, i) => normalizeEvidenceItem(a, i, t.id)).filter(Boolean) : [];
   },
   alerts(a) {
     a.severity = pickEnum(a.severity, ALERT_SEVERITIES, 'routine');
@@ -785,6 +996,8 @@ const ITEM_NORMALIZERS = {
   feed(ev) {
     ev.title = text(ev.title);
     ev.detail = text(ev.detail);
+    if (ev.titleEn != null) ev.titleEn = text(ev.titleEn);
+    if (ev.detailEn != null) ev.detailEn = text(ev.detailEn);
     ev.type = text(ev.type) || 'alert';
     ev.tone = text(ev.tone) || 'accent';
   },
@@ -1353,16 +1566,25 @@ function scheduleWriteback(taskId) {
     writebackTimers.delete(timer);
     const task = findPlatform('tasks', taskId);
     if (!task || !isPlainObject(task.writeback) || task.writeback.status !== 'pending') return;
+    // Demo build: there is no Biltix PM endpoint, so the write-back is SIMULATED and labelled as such
+    // (CONTRACT §5 — never claim an operation that did not happen). `simulated: true` travels with it.
     task.writeback.status = 'synced';
     task.writeback.at = localISO(store.now());
     task.writeback.target = task.writeback.target || 'Biltix PM';
+    task.writeback.simulated = true;
     changed(`platform.tasks.${task.id}`);
-    store.pushAudit({ actor: SYSTEM_ACTOR, action: 'writeback', target: task.code, detail: `تمت الكتابة العكسية إلى ${task.writeback.target}: علم المخاطرة والدرجة ومهمة المعالجة ${task.code}` });
+    store.pushAudit({
+      actor: SYSTEM_ACTOR, action: 'writeback', target: task.code,
+      detail: `محاكاة الكتابة العكسية إلى ${task.writeback.target}: علم المخاطرة والدرجة ومهمة المعالجة ${task.code} (لم يُرسل شيء إلى نظام خارجي)`,
+      detailEn: `Simulated write-back to ${task.writeback.target}: risk flag, score and mitigation task ${task.code} (nothing was sent to an external system)`,
+    });
     emitFeed({
-      type: 'writeback', tone: 'good', siteId: task.projectId,
-      title: `تمت الكتابة العكسية إلى ${task.writeback.target} — ${task.code}`,
+      type: 'writeback', tone: 'accent', siteId: task.projectId, simulated: true,
+      title: `محاكاة: كتابة عكسية إلى ${task.writeback.target} — ${task.code}`,
+      titleEn: `Simulated: write-back to ${task.writeback.target} — ${task.code}`,
       detail: [task.title, projectName(task.projectId)].filter(Boolean).join(' · '),
-      sourceId: 'biltix-pm', refId: task.id,
+      detailEn: [task.titleEn || '', siteEnById(state.sites, task.projectId)].filter(Boolean).join(' · '),
+      sourceId: 'biltix-pm', refId: task.id, code: task.code,
     });
   }, WRITEBACK_MS);
   writebackTimers.add(timer);
@@ -1393,16 +1615,21 @@ function createTask(obj = {}, { silent = false, by = '' } = {}) {
     writeback: isPlainObject(obj.writeback)
       ? { target: 'Biltix PM', status: 'pending', at: null, ...obj.writeback }
       : { target: 'Biltix PM', status: 'pending', at: null },
+    priority: obj.priority == null || obj.priority === '' ? null : pickEnum(obj.priority, TASK_PRIORITIES, null),
+    attachments: [],
     createdAt: localISO(now),
     closedAt: null,
     outcome: text(obj.outcome),
   };
+  if (typeof obj.titleEn === 'string' && obj.titleEn.trim()) task.titleEn = obj.titleEn.trim();
   tasks.unshift(task);
   if (risk) {
     risk.taskId = task.id;
     if (!text(risk.owner)) risk.owner = task.owner;
     if (!risk.dueDate) risk.dueDate = task.dueDate;
     if (['مكتشف', 'تنبيه'].includes(risk.status)) risk.status = 'مهمة مُسندة';
+    // v3: the linked task IS the treatment plan (treatment.taskId lets the UI localise it via the tasks namespace).
+    risk.treatment = normalizeTreatment({ ...(isPlainObject(risk.treatment) ? risk.treatment : {}), plan: task.title, taskId: task.id }, risk.id);
     risk.updatedAt = localISO(now);
   }
   changed(`platform.tasks.${task.id}`);
@@ -1410,12 +1637,58 @@ function createTask(obj = {}, { silent = false, by = '' } = {}) {
     emitFeed({
       type: 'task', tone: 'accent', siteId: task.projectId,
       title: `مهمة معالجة جديدة ${task.code}${risk ? ` — ${risk.code}` : ''}`,
+      titleEn: `New mitigation task ${task.code}${risk ? ` — ${risk.code}` : ''}`,
       detail: [task.title, `المسؤول: ${task.owner}`].filter(Boolean).join(' · '),
-      sourceId: 'biltix-pm', refId: task.id,
+      detailEn: [task.titleEn || '', `Owner: ${personEn(task.owner, 'assigned')}`].filter(Boolean).join(' · '),
+      sourceId: 'biltix-pm', refId: task.id, code: task.code,
     });
   }
   if (task.writeback.status === 'pending') scheduleWriteback(task.id);
   return task;
+}
+
+/* ────────────────────────────── v3: AI-risk input validation ────────────────────────────── */
+
+const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})/;
+
+function validDateOnly(value) {
+  const m = ISO_DATE_RE.exec(String(value || ''));
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return d.getUTCMonth() === +m[2] - 1 ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+
+function fieldError(field, code, message, messageEn) {
+  return { field, code, message, messageEn };
+}
+
+/** See store.validateAiRisk. Pure apart from reading the site list and the clock. */
+export function validateAiRiskInput(obj = {}, { mode = 'manual', now } = {}) {
+  const src = isPlainObject(obj) ? obj : {};
+  const errors = [];
+  const manual = mode !== 'engine';
+  if (!text(src.title)) errors.push(fieldError('title', 'required', 'العنوان مطلوب.', 'A title is required.'));
+  const projectId = text(src.projectId) || text(src.siteId);
+  const sites = objectItems(state && state.sites).map((s) => String(s.id));
+  if (!projectId) errors.push(fieldError('projectId', 'required', 'اختر المشروع.', 'Select a project.'));
+  else if (sites.length && !sites.includes(projectId)) errors.push(fieldError('projectId', 'unknown', 'المشروع غير معروف.', 'Unknown project.'));
+  if (!AI_CATEGORIES.includes(src.category)) errors.push(fieldError('category', 'required', 'اختر المجال.', 'Select a domain.'));
+  if (manual && !AI_TYPES.includes(src.type)) errors.push(fieldError('type', 'required', 'اختر نوع المخاطرة.', 'Select a risk type.'));
+  else if (!manual && src.type != null && !AI_TYPES.includes(src.type)) errors.push(fieldError('type', 'invalid', 'نوع المخاطرة غير صالح.', 'Invalid risk type.'));
+  if (src.likelihood == null || src.likelihood === '') errors.push(fieldError('likelihood', 'required', 'الاحتمالية مطلوبة (1–5).', 'Likelihood is required (1–5).'));
+  else if (!scale5(src.likelihood)) errors.push(fieldError('likelihood', 'range', 'الاحتمالية عدد صحيح من 1 إلى 5.', 'Likelihood must be a whole number from 1 to 5.'));
+  if (src.impact == null || src.impact === '') errors.push(fieldError('impact', 'required', 'الأثر مطلوب (1–5).', 'Impact is required (1–5).'));
+  else if (!scale5(src.impact)) errors.push(fieldError('impact', 'range', 'الأثر عدد صحيح من 1 إلى 5.', 'Impact must be a whole number from 1 to 5.'));
+  if (manual && !text(src.owner)) errors.push(fieldError('owner', 'required', 'حدّد المسؤول عن المخاطرة.', 'Assign an owner.'));
+  const due = src.dueDate == null || src.dueDate === '' ? null : validDateOnly(src.dueDate);
+  if (manual && (src.dueDate == null || src.dueDate === '')) errors.push(fieldError('dueDate', 'required', 'حدّد تاريخ الاستحقاق.', 'Set a due date.'));
+  else if (src.dueDate != null && src.dueDate !== '' && !due) errors.push(fieldError('dueDate', 'invalid', 'تاريخ الاستحقاق غير صالح.', 'Invalid due date.'));
+  else if (manual && due && due < todayISO(now || store.now())) errors.push(fieldError('dueDate', 'past', 'تاريخ الاستحقاق في الماضي.', 'The due date is in the past.'));
+  const link = isPlainObject(src.evidence) ? src.evidence.link : src.evidenceUrl;
+  if (link != null && link !== '' && !/^https?:\/\/[^\s]+$/i.test(String(link).trim()) && !/^biltix:\/\//i.test(String(link))) {
+    errors.push(fieldError('evidence', 'url', 'رابط الدليل يجب أن يبدأ بـ https:// أو http://.', 'The evidence link must start with https:// or http://.'));
+  }
+  return { ok: errors.length === 0, errors };
 }
 
 /* ────────────────────────────── the store ────────────────────────────── */
@@ -1569,7 +1842,9 @@ export const store = {
       tone: sel.tierTone(tier),
       siteId: risk.siteId,
       title: `تسجيل مخاطرة جديدة ${risk.code} — ${tier}`,
+      titleEn: `New risk registered ${risk.code} — ${enOf(RISK_TIER_EN, tier)}`,
       detail: risk.hazard || risk.activity,
+      detailEn: risk.hazardEn || `${siteEnById(state.sites, risk.siteId)}`,
       sourceId: 'biltix-hse',
       refId: risk.id,
     });
@@ -1645,7 +1920,9 @@ export const store = {
       tone: nearMiss ? 'warning' : severityTone(severity),
       siteId: incident.siteId,
       title: `${type} — ${incident.code}`,
+      titleEn: `${enOf(INCIDENT_TYPE_EN, type, 'Incident')} — ${incident.code}`,
       detail: [incident.title, incident.location].filter(Boolean).join(' · '),
+      detailEn: [incident.titleEn || '', siteEnById(state.sites, incident.siteId)].filter(Boolean).join(' · '),
       sourceId: 'biltix-hse',
       refId: incident.id,
     });
@@ -1700,7 +1977,9 @@ export const store = {
       tone: 'accent',
       siteId: permit.siteId,
       title: `تصريح عمل جديد ${permit.code} — ${permit.type}`,
+      titleEn: `New permit to work ${permit.code} — ${enOf(PERMIT_TYPE_EN, permit.type, 'permit')}`,
       detail: [siteName(permit.siteId), permit.location].filter(Boolean).join(' · '),
+      detailEn: [siteEnById(state.sites, permit.siteId), permit.locationEn || ''].filter(Boolean).join(' · '),
       sourceId: 'biltix-hse',
       refId: permit.id,
     });
@@ -1752,6 +2031,9 @@ export const store = {
       detail: text(event.detail),
       sourceId: event.sourceId == null ? null : event.sourceId,
     };
+    // v3 (CONTRACT §8): every generated event is bilingual; English copies are kept when given.
+    if (typeof event.titleEn === 'string') ev.titleEn = event.titleEn.trim();
+    if (typeof event.detailEn === 'string') ev.detailEn = event.detailEn.trim();
     if (!Array.isArray(state.feed)) state.feed = [];
     state.feed.unshift(ev);
     if (state.feed.length > FEED_CAP) state.feed.length = FEED_CAP;
@@ -1814,56 +2096,121 @@ export const store = {
    * Register a newly detected AI risk. Normalises every §B3 field, generates AIR-#### codes,
    * applies the alert thresholds (autoAlert) and pushes an 'ai' feed event. Returns the risk.
    */
-  addAiRisk(obj = {}, { autoAlert = true, by = AI_ENGINE_ACTOR } = {}) {
+  /**
+   * v3 input validation for a new AI risk (shared by the risk form and addAiRisk). No silent defaults:
+   * likelihood and impact (integers 1–5) are always required; owner and due date are required for a
+   * manually registered risk (`mode: 'manual'`, the default) and may be explicitly empty (unassigned)
+   * only for an engine detection (`mode: 'engine'`). Returns { ok, errors:[{ field, code, message, messageEn }] }.
+   */
+  validateAiRisk(obj = {}, { mode = 'manual' } = {}) {
+    return validateAiRiskInput(obj, { mode });
+  },
+
+  /**
+   * Register an AI risk — an engine detection (`{ engine: true }` or `obj.simulated === true`) or a
+   * manual entry (default). Validates first (see validateAiRisk): on failure NOTHING is stored and
+   * `{ ok:false, reason:'validation', errors, message, messageEn }` is returned. On success returns the
+   * stored risk: score = likelihood × impact × 4, input-data quality derived from the validation layer of
+   * its source system, empty treatment, residual not assessed; thresholds applied (autoAlert); audited
+   * ('create') for manual entries; bilingual feed event.
+   */
+  addAiRisk(obj = {}, { autoAlert = true, by = '', engine } = {}) {
+    const src = isPlainObject(obj) ? obj : {};
+    const isEngine = engine === true || (engine !== false && src.simulated === true);
+    const check = validateAiRiskInput(src, { mode: isEngine ? 'engine' : 'manual' });
+    if (!check.ok) {
+      return { ok: false, reason: 'validation', errors: check.errors, message: 'تعذّر تسجيل المخاطرة — راجع الحقول المطلوبة.', messageEn: 'The risk was not registered — check the required fields.' };
+    }
     const now = store.now();
     const list = platformList('aiRisks');
-    const category = pickEnum(obj.category, AI_CATEGORIES, 'site');
-    const pipeline = pickEnum(obj.pipeline, AI_PIPELINES, CATEGORY_PIPELINE[category]);
-    const score = Math.round(clampNum(obj.score, 0, 100, 50));
-    const rec = isPlainObject(obj.recommendation) ? obj.recommendation : {};
+    const actor = text(by) || (isEngine ? AI_ENGINE_ACTOR : 'مدير المشروع');
+    const category = src.category;
+    const pipeline = pickEnum(src.pipeline, AI_PIPELINES, CATEGORY_PIPELINE[category]);
+    const likelihood = scale5(src.likelihood);
+    const impact = scale5(src.impact);
+    const score = likelihood * impact * 4;
+    const rec = isPlainObject(src.recommendation) ? src.recommendation : {};
+    let evidence = isPlainObject(src.evidence) ? { ...src.evidence } : null;
+    if (!evidence && (text(src.evidenceUrl) || text(src.source))) {
+      // Manual form: "source" (system or document) + optional evidence link become the source evidence.
+      evidence = { kind: 'link', ref: text(src.evidenceUrl) || text(src.source), excerpt: '', sourceSystem: text(src.source) || 'إدخال يدوي', link: text(src.evidenceUrl) || null };
+    }
+    if (evidence && evidence.link != null && !/^https?:\/\//i.test(String(evidence.link)) && !/^biltix:\/\//i.test(String(evidence.link))) delete evidence.link;
+    const validation = platform().validation;
+    const dataQuality = typeof deriveDataQuality === 'function'
+      ? deriveDataQuality(validation, evidence && evidence.sourceSystem, evidence && evidence.kind)
+      : null;
     const risk = {
-      ...obj,
+      ...src,
       id: nextId(list, 'AIR'),
-      code: text(obj.code) || nextPlatformCode(list, 'AIR', 1000),
-      projectId: text(obj.projectId) || text(obj.siteId) || (state.sites && state.sites[0] ? state.sites[0].id : 'S1'),
+      code: text(src.code) || nextPlatformCode(list, 'AIR', 1000),
+      projectId: text(src.projectId) || text(src.siteId),
       category,
-      type: pickEnum(obj.type, AI_TYPES, CATEGORY_TYPE[category]),
+      type: pickEnum(src.type, AI_TYPES, CATEGORY_TYPE[category]),
+      likelihood,
+      impact,
       score,
-      title: text(obj.title) || 'مخاطرة مكتشفة بواسطة المحرك',
-      driverExplanation: text(obj.driverExplanation),
-      evidence: isPlainObject(obj.evidence) ? { ...obj.evidence } : null,
+      residualLikelihood: null,
+      residualImpact: null,
+      residualAssessment: null,
+      title: text(src.title),
+      description: text(src.description),
+      driverExplanation: text(src.driverExplanation),
+      evidence,
       recommendation: {
+        ...rec,
         action: text(rec.action), rationale: text(rec.rationale),
         effort: pickEnum(rec.effort, ['منخفض', 'متوسط', 'عالٍ'], 'متوسط'),
         impact: text(rec.impact), alternatives: Array.isArray(rec.alternatives) ? rec.alternatives.slice(0, 2) : [],
       },
       pipeline,
-      modelVersion: text(obj.modelVersion) || 'v2.3.1',
-      confidence: clampNum(obj.confidence, 0, 1, 0.8),
-      detectedAt: typeof obj.detectedAt === 'string' && obj.detectedAt ? obj.detectedAt : localISO(now),
+      origin: isEngine ? 'engine' : 'manual',
+      modelVersion: isEngine ? (text(src.modelVersion) || null) : null,
+      // Model confidence exists only for engine output; a human-registered risk has none (not 0, not a default).
+      confidence: isEngine ? clampNum(src.confidence, 0, 1, null) : null,
+      dataQuality,
+      treatment: normalizeTreatment({ plan: null, evidence: [] }, null),
+      detectedAt: typeof src.detectedAt === 'string' && src.detectedAt ? clampInstant(src.detectedAt, now) : localISO(now),
       updatedAt: localISO(now),
-      status: pickEnum(obj.status, AI_RISK_STATUS, 'مكتشف'),
-      owner: text(obj.owner),
-      dueDate: typeof obj.dueDate === 'string' && obj.dueDate ? obj.dueDate : todayISO(addMs(now, 14 * DAY_MS)),
-      taskId: obj.taskId == null ? null : text(obj.taskId),
-      escalated: Boolean(obj.escalated),
-      stakeholders: Array.isArray(obj.stakeholders) ? obj.stakeholders.map((s) => text(s)).filter(Boolean) : ['PM'],
-      responseParams: isPlainObject(obj.responseParams) ? obj.responseParams : {},
-      overrides: Array.isArray(obj.overrides) ? obj.overrides : [],
-      history: Array.isArray(obj.history) && obj.history.length
-        ? obj.history
-        : [{ at: localISO(now), by, text: `اكتشاف المخاطرة بواسطة ${pipelineLabel(pipeline)} — الدرجة ${score}` }],
+      status: pickEnum(src.status, ['مكتشف', 'تنبيه'], 'مكتشف'),
+      owner: text(src.owner) || null,
+      dueDate: typeof src.dueDate === 'string' && src.dueDate ? src.dueDate.slice(0, 10) : null,
+      taskId: null,
+      escalated: false,
+      stakeholders: Array.isArray(src.stakeholders) && src.stakeholders.length ? src.stakeholders.map((s) => text(s)).filter(Boolean) : ['PM'],
+      responseParams: isPlainObject(src.responseParams) ? src.responseParams : {},
+      overrides: [],
+      history: [{
+        at: localISO(now), by: actor,
+        text: isEngine
+          ? `اكتشاف المخاطرة بواسطة ${pipelineLabel(pipeline)} — الدرجة ${score} (الاحتمالية ${likelihood} × الأثر ${impact} × 4)`
+          : `تسجيل المخاطرة يدوياً — الدرجة ${score} (الاحتمالية ${likelihood} × الأثر ${impact} × 4)`,
+        textEn: isEngine
+          ? `Detected by ${PIPELINE_EN[pipeline] || pipeline} — score ${score} (likelihood ${likelihood} × impact ${impact} × 4)`
+          : `Registered manually — score ${score} (likelihood ${likelihood} × impact ${impact} × 4)`,
+      }],
     };
     delete risk.siteId;
+    if (risk.treatment) risk.treatment.taskId = null;
     list.unshift(risk);
     changed(`platform.aiRisks.${risk.id}`);
+    if (!isEngine) {
+      store.pushAudit({ actor, action: 'create', target: risk.code, detail: `تسجيل مخاطرة يدوياً — الدرجة ${score} (${likelihood}×${impact}×4)، المسؤول ${risk.owner || '—'}، الاستحقاق ${risk.dueDate || '—'}`, detailEn: `Risk registered manually — score ${score} (${likelihood}×${impact}×4), owner ${personEn(risk.owner, 'assigned')}, due ${risk.dueDate || '—'}` });
+    }
 
     const rating = ratingOf(score);
+    const titleEn = text(risk.titleEn) || risk.code;
     emitFeed({
-      type: 'ai', tone: RATING_TONE[rating], siteId: risk.projectId,
-      title: `${pipelineLabel(pipeline)}: ${risk.title} — الدرجة ${score} (${RATING_LABEL[rating]})`,
+      type: 'ai', tone: RATING_TONE[rating], siteId: risk.projectId, simulated: isEngine || undefined,
+      title: isEngine
+        ? `${pipelineLabel(pipeline)} (محاكاة): ${risk.title} — الدرجة ${score} (${RATING_LABEL[rating]})`
+        : `تسجيل مخاطرة يدوياً ${risk.code}: ${risk.title} — الدرجة ${score} (${RATING_LABEL[rating]})`,
+      titleEn: isEngine
+        ? `${PIPELINE_EN[pipeline] || pipeline} (simulated): ${titleEn} — score ${score} (${RATING_EN[rating]})`
+        : `Risk registered manually ${risk.code}: ${titleEn} — score ${score} (${RATING_EN[rating]})`,
       detail: risk.driverExplanation || (risk.evidence && risk.evidence.excerpt) || projectName(risk.projectId),
-      sourceId: pipeline, refId: risk.id,
+      detailEn: text(risk.driverExplanationEn) || siteEnById(state.sites, risk.projectId),
+      sourceId: pipeline, refId: risk.id, code: risk.code, score,
     });
 
     if (autoAlert) {
@@ -1876,6 +2223,8 @@ export const store = {
           severity: level === 'immediate' ? 'critical' : 'routine',
           queue: level,
           title: `${level === 'immediate' ? 'تصعيد فوري' : 'تنبيه'}: ${risk.code} — ${risk.title}`,
+          titleEn: `${level === 'immediate' ? 'Immediate escalation' : 'Alert'}: ${risk.code} — ${titleEn}`,
+          simulated: isEngine || undefined,
         });
       }
     }
@@ -1889,14 +2238,38 @@ export const store = {
     const { by, note, ...rest } = patch;
     const prevStatus = risk.status;
     if (rest.status !== undefined) rest.status = pickEnum(rest.status, AI_RISK_STATUS, risk.status);
-    // Terminal states are final: a closed / dismissed risk never changes status again.
+    // Terminal states are final: a closed / dismissed risk never changes status again (use reopenAiRisk).
     if (AI_RISK_TERMINAL.includes(prevStatus) && rest.status !== undefined && rest.status !== prevStatus) return null;
-    if (rest.score !== undefined) rest.score = Math.round(clampNum(rest.score, 0, 100, risk.score));
+    // Closing goes through closeAiRisk (residual assessment + outcome required).
+    if (rest.status === 'مغلق' && prevStatus !== 'مغلق') return null;
+    // v3: the score is derived — likelihood/impact patches recompute it; a bare score patch is ignored.
+    delete rest.score;
+    for (const key of ['id', 'code', 'history', 'overrides', 'origin']) delete rest[key];
+    if (rest.likelihood !== undefined || rest.impact !== undefined) {
+      const l = rest.likelihood !== undefined ? scale5(rest.likelihood) : risk.likelihood;
+      const im = rest.impact !== undefined ? scale5(rest.impact) : risk.impact;
+      if (!l || !im) return null;
+      if (l !== risk.likelihood || im !== risk.impact) riskHistory(risk, by, `إعادة تقدير الشدة: ${risk.likelihood}×${risk.impact} ← ${l}×${im} (الدرجة ${l * im * 4})`);
+      rest.likelihood = l;
+      rest.impact = im;
+      rest.score = l * im * 4;
+    }
+    if (rest.residualLikelihood !== undefined || rest.residualImpact !== undefined) {
+      const rl = rest.residualLikelihood !== undefined ? scale5(rest.residualLikelihood) : risk.residualLikelihood;
+      const ri = rest.residualImpact !== undefined ? scale5(rest.residualImpact) : risk.residualImpact;
+      if ((rl && !ri) || (!rl && ri)) return null;
+      rest.residualLikelihood = rl || null;
+      rest.residualImpact = ri || null;
+      if (!rl) rest.residualAssessment = null;
+    }
+    if (rest.treatment !== undefined) rest.treatment = normalizeTreatment({ ...(isPlainObject(risk.treatment) ? risk.treatment : {}), ...(isPlainObject(rest.treatment) ? rest.treatment : {}) }, risk.id);
     if (rest.confidence !== undefined) rest.confidence = clampNum(rest.confidence, 0, 1, risk.confidence);
     if (rest.category !== undefined) rest.category = pickEnum(rest.category, AI_CATEGORIES, risk.category);
     if (rest.type !== undefined) rest.type = pickEnum(rest.type, AI_TYPES, risk.type);
     if (rest.status && rest.status !== prevStatus) riskHistory(risk, by, `تغيير الحالة من «${prevStatus}» إلى «${rest.status}»`);
     if (typeof note === 'string' && note.trim()) riskHistory(risk, by, note.trim());
+    // treatment is replaced whole (already merged above) so deepMerge never concatenates arrays oddly.
+    if (rest.treatment) { risk.treatment = rest.treatment; delete rest.treatment; }
     return patchPlatformItem('aiRisks', id, rest, { stamp: true });
   },
 
@@ -2220,6 +2593,8 @@ export const store = {
       target: text(entry.target),
       detail: text(entry.detail),
     };
+    if (typeof entry.detailEn === 'string' && entry.detailEn.trim()) item.detailEn = entry.detailEn.trim();
+    if (entry.simulated === true) item.simulated = true;
     list.unshift(item);
     if (list.length > AUDIT_CAP) list.length = AUDIT_CAP;
     changed('platform.auditLog');

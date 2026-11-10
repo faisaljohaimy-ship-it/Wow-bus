@@ -12,6 +12,20 @@ import { C, EASE, RATING_TONE, STAGGER, TONE, type Tone } from '../theme';
 const CONS = DATA.consolidated;
 const HEAT = DATA.heatmap;
 const THRESH = { yellow: 40, red: 70 }; // platform-selectors RATING_THRESHOLDS (B2)
+const STORY_L = DATA.story.likelihood;
+const STORY_I = DATA.story.impact;
+const LEGEND: Array<{ tone: Tone; range: string; label: (lang: 'ar' | 'en') => string }> = [
+  { tone: 'critical', range: `≥ ${THRESH.red}`, label: (lang) => COPY[lang].rating.red },
+  { tone: 'warning', range: `${THRESH.yellow}–${THRESH.red - 1}`, label: (lang) => COPY[lang].rating.yellow },
+  { tone: 'good', range: `< ${THRESH.yellow}`, label: (lang) => COPY[lang].rating.green },
+];
+
+/** Solid mix of a tone over the card surface (avoids muddy alpha blends). */
+export function shade(hex: string, k: number): string {
+  const a = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const b = [0x11, 0x1d, 0x2e];
+  return `rgb(${a.map((v, i) => Math.round(v * k + b[i] * (1 - k))).join(',')})`;
+}
 
 export const Analyze: React.FC<SceneProps> = ({ lang, frames }) => {
   const f = useCurrentFrame();
@@ -28,8 +42,9 @@ export const Analyze: React.FC<SceneProps> = ({ lang, frames }) => {
   const gx = 206;
   const gy = 150;
   const colX = (l: number) => gx + (l - 1) * (cell + gap);
-  const rowY = (s: number) => gy + (5 - s) * (cell + gap); // severity 5 on top
+  const rowY = (i: number) => gy + (5 - i) * (cell + gap); // impact 5 on top
   const highlight = prog(f, 112, 18, EASE.out); // focus hand-off to the site category
+  const storyRing = prog(f, 120, 18, EASE.out); // …and to the story risk's cell
 
   const dist = DATA.ratingDistribution;
   const distTotal = dist.reduce((a, d) => a + d.value, 0);
@@ -42,7 +57,7 @@ export const Analyze: React.FC<SceneProps> = ({ lang, frames }) => {
       cam={[
         { f: 0, s: 1.0, x: 0, y: 0 },
         { f: 70, s: 1.012, x: 10, y: 0 },
-        { f: frames + 15, s: 1.05, x: -70, y: 8 },
+        { f: frames + 15, s: 1.04, x: -28, y: 4 },
       ]}
     >
       {/* ── consolidated score + categories ── */}
@@ -134,14 +149,14 @@ export const Analyze: React.FC<SceneProps> = ({ lang, frames }) => {
         </div>
       </Card>
 
-      {/* ── HSE register heatmap: likelihood × severity ── */}
+      {/* ── AI risk matrix: open AI risks by likelihood × impact ── */}
       <Card style={{ top: 236, insetInlineStart: 988, width: 836, height: 664, ...enter(f, 6, 24, 16) }}>
         <div style={{ position: 'absolute', top: 30, insetInlineStart: 36 }}>
           <Eyebrow>{t.heatTitle}</Eyebrow>
           <div style={{ fontSize: 34, fontWeight: 600, marginTop: 4 }}>{t.heatSub(HEAT.total).split(' · ')[0]}</div>
           <div style={{ fontSize: 20, color: C.ink3, marginTop: 4 }}>{t.heatSub(HEAT.total).split(' · ')[1]}</div>
         </div>
-        {/* severity axis */}
+        {/* impact axis (vertical) */}
         <div
           style={{
             position: 'absolute',
@@ -154,14 +169,14 @@ export const Analyze: React.FC<SceneProps> = ({ lang, frames }) => {
             transform: `rotate(${rtl ? 90 : -90}deg)`,
           }}
         >
-          {t.severity}
+          {t.severity} {rtl ? '←' : '→'}
         </div>
-        {[5, 4, 3, 2, 1].map((s) => (
+        {[5, 4, 3, 2, 1].map((i) => (
           <div
-            key={s}
+            key={i}
             style={{
               position: 'absolute',
-              top: rowY(s) + cell / 2 - 13,
+              top: rowY(i) + cell / 2 - 13,
               insetInlineStart: 64,
               width: 128,
               textAlign: 'end',
@@ -171,30 +186,31 @@ export const Analyze: React.FC<SceneProps> = ({ lang, frames }) => {
               opacity: prog(f, 14, 16),
             }}
           >
-            {t.severityLabels[s - 1]}{' '}
+            {t.severityLabels[i - 1]}{' '}
             <Num size={15} color={C.ink3} mono>
-              {s}
+              {i}
             </Num>
           </div>
         ))}
         {HEAT.cells.map((c) => {
           const tone = TONE[c.tone as Tone];
-          const order = c.likelihood - 1 + (5 - c.severity); // diagonal wave from the low corner
+          const order = c.likelihood - 1 + (5 - c.impact); // diagonal wave from the low corner
           const p = prog(f, 16 + order * STAGGER * 2 + (c.likelihood - 1) * STAGGER, 20, EASE.out);
           const has = c.count > 0;
+          const isStory = c.likelihood === STORY_L && c.impact === STORY_I;
           return (
             <div
-              key={`${c.likelihood}-${c.severity}`}
+              key={`${c.likelihood}-${c.impact}`}
               style={{
                 position: 'absolute',
-                top: rowY(c.severity),
+                top: rowY(c.impact),
                 insetInlineStart: colX(c.likelihood),
                 width: cell,
                 height: cell,
                 borderRadius: 10,
-                background: has ? `linear-gradient(180deg, ${tone}70 0%, ${tone}46 100%)` : `${tone}14`,
-                border: `1px solid ${has ? `${tone}` : `${tone}30`}`,
-                boxShadow: has ? `inset 0 1px 0 rgba(255,255,255,0.10)` : 'none',
+                background: has ? `linear-gradient(180deg, ${shade(tone, 0.74)} 0%, ${shade(tone, 0.6)} 100%)` : shade(tone, 0.13),
+                border: `1px solid ${has ? shade(tone, 0.95) : shade(tone, 0.3)}`,
+                boxShadow: isStory ? `0 0 0 ${3 * storyRing}px ${C.accent}, 0 0 ${22 * storyRing}px ${C.accent}88` : has ? 'inset 0 1px 0 rgba(255,255,255,0.12)' : 'none',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -204,7 +220,7 @@ export const Analyze: React.FC<SceneProps> = ({ lang, frames }) => {
               }}
             >
               {has && (
-                <Num size={30} weight={500} color={C.ink}>
+                <Num size={30} weight={600} color="#FFFFFF" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.35)' }}>
                   {c.count}
                 </Num>
               )}
@@ -246,24 +262,25 @@ export const Analyze: React.FC<SceneProps> = ({ lang, frames }) => {
         >
           {t.likelihood} {rtl ? '←' : '→'}
         </div>
-        {/* legend: tier = likelihood × severity bands from the app's TIERS table */}
-        <div style={{ position: 'absolute', top: gy + 4, insetInlineStart: 656, width: 150 }}>
-          {[...HEAT.tiers].reverse().map((tr, i) => {
-            const tone = TONE[tr.tone as Tone];
+        {/* legend: cell colour = platform rating of likelihood × impact × 4 */}
+        <div style={{ position: 'absolute', top: gy + 4, insetInlineStart: 652, width: 160 }}>
+          {LEGEND.map((lg, i) => {
+            const tone = TONE[lg.tone];
             return (
-              <div key={tr.tone} style={{ marginBottom: 20, ...enter(f, 28 + i * STAGGER, 18, 8) }}>
+              <div key={lg.tone} style={{ marginBottom: 22, ...enter(f, 28 + i * STAGGER, 18, 8) }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ width: 16, height: 16, borderRadius: 4, background: `${tone}55`, border: `1px solid ${tone}` }} />
-                  <span style={{ fontSize: 19, color: C.ink }}>{t.tiers[tr.tone]}</span>
+                  <span style={{ width: 16, height: 16, borderRadius: 4, background: shade(tone, 0.7), border: `1px solid ${tone}` }} />
+                  <span style={{ fontSize: 19, color: C.ink }}>{lg.label(lang)}</span>
                 </div>
                 <div style={{ marginInlineStart: 26, marginTop: 2 }}>
                   <Num size={15} color={C.ink3} mono>
-                    {tr.min}–{tr.max}
+                    {lg.range}
                   </Num>
                 </div>
               </div>
             );
           })}
+          <div style={{ fontSize: 15, color: C.ink3, lineHeight: 1.4, marginTop: 6, ...enter(f, 34, 18, 8) }}>{t.formula}</div>
         </div>
       </Card>
     </SceneFrame>

@@ -12,7 +12,8 @@ import { C, EASE } from '../theme';
 
 const S = DATA.story;
 const ratingOf = (score: number) => (score >= 70 ? 'red' : score >= 40 ? 'yellow' : 'green'); // B2 thresholds
-const CODE_SPLIT = /(AIR-\d+|MT-\d+|AL-\d+|IN-[\w-]+|Biltix PM)/;
+const CODE_SPLIT = /(AIR-\d+|MT-\d+|AL-\d+|IN-[\w-]+|Biltix PM|\d+(?:\.\d+)?%)/;
+const IS_PCT = /^\d+(?:\.\d+)?%$/;
 const IS_CODE = /^(AIR-\d+|MT-\d+|AL-\d+|IN-[\w-]+)$/;
 
 /** Isolate Latin codes inside Arabic sentences; "(MT-0214)" → "· MT-0214". */
@@ -26,6 +27,10 @@ const Rich: React.FC<{ text: string }> = ({ text }) => {
           <Code key={i} size={19}>
             {p}
           </Code>
+        ) : IS_PCT.test(p) ? (
+          <bdi key={i} dir="ltr">
+            {p}
+          </bdi>
         ) : p === 'Biltix PM' ? (
           <bdi key={i} dir="ltr">
             {p}
@@ -38,7 +43,7 @@ const Rich: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
-const ROW_H = 66;
+const ROW_H = 70;
 const ROW0 = 16; // first row appears
 const ROW_GAP = 6; // frames between rows (sequential audit read-out)
 
@@ -67,7 +72,7 @@ export const Close: React.FC<SceneProps> = ({ lang, frames }) => {
       cam={[
         { f: 0, s: 1.0, x: 0, y: 0 },
         { f: closeAt, s: 1.015, x: 20, y: 0 },
-        { f: frames + 15, s: 1.05, x: -64, y: 6 },
+        { f: frames + 15, s: 1.04, x: -28, y: 4 },
       ]}
     >
       {/* ── audit trail ── */}
@@ -138,14 +143,14 @@ export const Close: React.FC<SceneProps> = ({ lang, frames }) => {
       {/* ── verified-closure seal ── */}
       <div style={{ position: 'absolute', top: 240, insetInlineStart: 1160, width: 664, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <div style={{ opacity: Math.min(1, sealIn * 1.2), transform: `scale(${0.94 + 0.06 * sealIn})` }}>
-          <Seal size={392} ring={ring} ticks={ticks} text={prog(f, closeAt + 14, 20)} check={check} halo={halo} micro={`BILTIX RISK AI · VERIFIED CLOSURE · ${S.code} · BILTIX RISK AI · VERIFIED CLOSURE · ${S.code} · `} />
+          <Seal size={392} ring={ring} ticks={ticks} text={prog(f, closeAt + 14, 20)} check={check} halo={halo} micro={`BILTIX RISK AI · VERIFIED CLOSURE · ${S.code} · `.repeat(2)} />
         </div>
         <div style={{ marginTop: 18, fontSize: 36, fontWeight: 600, ...enter(f, closeAt + 26, 20, 10) }}>{t.verified}</div>
         <div style={{ marginTop: 6, fontSize: 19, color: C.ink2, ...enter(f, closeAt + 28, 20, 10) }}>{t.closure}</div>
         <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 14, ...enter(f, closeAt + 32, 20, 10) }}>
           <ScoreChip score={S.score} rating={S.rating} label={rl[S.rating]} size={22} />
           <DirArrow rtl={rtl} size={26} />
-          <ScoreChip score={target} rating={ratingOf(target)} label={rl[ratingOf(target)]} size={22} dashed />
+          <ScoreChip score={`${S.recommendation.targetApprox ? '~' : ''}${target}`} rating={ratingOf(target)} label={rl[ratingOf(target)]} size={22} dashed />
         </div>
         <div style={{ marginTop: 10, fontSize: 16, color: C.ink3, ...enter(f, closeAt + 34, 20, 10) }}>
           {t.residual} · {t.illustrative}

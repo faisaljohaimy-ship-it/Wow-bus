@@ -81,13 +81,13 @@ export const Section: React.FC<SectionProps> = ({
         <path d={body} fill={`url(#earth-${w})`} opacity={draw} />
         <path d={terrain} fill="none" stroke={C.ink2} strokeWidth={2} strokeDasharray={tlen} strokeDashoffset={tlen * (1 - draw)} />
 
-        {/* exclusion zone from the toe */}
+        {/* exclusion zone: a band on the pit floor measured from the toe */}
         {zoneM != null && zoneP > 0 && (
           <g opacity={zoneP}>
-            <rect x={rtl ? X(toeX) - zoneW * zoneP : X(toeX)} y={top - 6} width={zoneW * zoneP} height={floor - top + 6} fill={`url(#zone-${w})`} />
-            <line x1={X(toeX + zoneW * zoneP)} x2={X(toeX + zoneW * zoneP)} y1={top - 14} y2={floor} stroke={C.accent} strokeWidth={2} strokeDasharray="6 5" />
-            <line x1={X(toeX)} x2={X(toeX + zoneW * zoneP)} y1={top - 20} y2={top - 20} stroke={C.accent} strokeWidth={1} />
-            <line x1={X(toeX)} x2={X(toeX)} y1={top - 26} y2={top - 14} stroke={C.accent} strokeWidth={1} />
+            <rect x={rtl ? X(toeX) - zoneW * zoneP : X(toeX)} y={floor - 46} width={zoneW * zoneP} height={46} fill={`url(#zone-${w})`} />
+            <line x1={X(toeX + zoneW * zoneP)} x2={X(toeX + zoneW * zoneP)} y1={floor - 70} y2={floor} stroke={C.accent} strokeWidth={2} strokeDasharray="6 5" />
+            <line x1={X(toeX)} x2={X(toeX + zoneW * zoneP)} y1={floor - 62} y2={floor - 62} stroke={C.accent} strokeWidth={1} />
+            <line x1={X(toeX)} x2={X(toeX)} y1={floor - 68} y2={floor - 56} stroke={C.accent} strokeWidth={1} />
           </g>
         )}
 
@@ -166,7 +166,7 @@ export const Section: React.FC<SectionProps> = ({
           })}
         </g>
       </svg>
-      {label(crestX, top + 10, labels.crest, 'end', C.ink3)}
+      {crackX != null ? label(crestX + 22, top - 4, labels.crest, 'start', C.ink3) : label(crestX, top + 10, labels.crest, 'end', C.ink3)}
       {label(w - 6, floor - 66, labels.pit, 'end', C.ink3)}
       {crackX != null && labels.crack && label((crackX + crestX) / 2, top - 46, labels.crack, 'center', C.ink2, 16)}
       {sensorX != null && sensorLabel && (
@@ -176,7 +176,7 @@ export const Section: React.FC<SectionProps> = ({
       )}
       {labels.movement && label(crestX + (toeX - crestX) * 0.62 + 46, top + (floor - top) * 0.36, labels.movement, 'start', C.ink2, 16)}
       {zoneM != null && labels.zone && (
-        <div style={{ position: 'absolute', left: X(toeX + (zoneW * zoneP) / 2), top: top - 50, transform: 'translate(-50%, 0)', fontSize: 16, color: C.accent, opacity: zoneP, whiteSpace: 'nowrap' }}>
+        <div style={{ position: 'absolute', left: X(toeX + (zoneW * zoneP) / 2), top: floor - 90, transform: 'translate(-50%, 0)', fontSize: 16, color: C.accent, opacity: zoneP, whiteSpace: 'nowrap' }}>
           {labels.zone}
         </div>
       )}
