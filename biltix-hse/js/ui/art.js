@@ -458,7 +458,8 @@ const MARK_SHIELD = 'M0-4l3.4 1.4v2.4c0 2.3-1.4 4-3.4 4.7-2-.7-3.4-2.4-3.4-4.7v-
 
 /**
  * BILTIX mark: a gold hexagon frame (1.5 px at any size) around an isometric block in --brand (lit top,
- * shaded right face with a stepped wing) and an --accent shield notch on the lower inline-end corner.
+ * shaded right face with a stepped wing) and an --accent shield notch on the lower-right corner (a logo
+ * never mirrors).
  * No sub-pixel strokes, so it renders crisply from 24 px to 40 px (and scales up cleanly).
  */
 export function logoMark(size = 36) {
@@ -601,134 +602,69 @@ export function sectorIcon(categoryId, size = 18, opts) { return icon(sectorGlyp
 /* Page backdrop                                                       */
 /* ------------------------------------------------------------------ */
 
-const BACKDROP_CSS = [
-  '@keyframes bx-bd-drift{0%{transform:translate(0,0)}35%{transform:translate(56px,30px)}70%{transform:translate(-40px,66px)}100%{transform:translate(0,0)}}',
-  '@keyframes bx-bd-breathe{0%,100%{opacity:.7}50%{opacity:1}}',
-  '.bx-bd-glow{animation:bx-bd-drift 34s ease-in-out infinite;will-change:transform}',
-  '.bx-bd-glow-core{animation:bx-bd-breathe 11s ease-in-out infinite}',
-  '@media (prefers-reduced-motion:reduce){:root:not([data-motion="full"]) .bx-bd-glow,:root:not([data-motion="full"]) .bx-bd-glow-core{animation:none}}',
-  ':root[data-motion="reduce"] .bx-bd-glow,:root[data-motion="reduced"] .bx-bd-glow,:root[data-motion="reduce"] .bx-bd-glow-core,:root[data-motion="reduced"] .bx-bd-glow-core{animation:none}',
-  '@media (max-width:720px){.bx-bd-iso{transform:translate(10px,-186px) scale(.7)}}',
-  '@media print{.backdrop-art{display:none}}',
-].join('\n');
-
-// Sparse isometric cluster, drawn back-to-front. [tx, ty, a, b, c] in a 360×240 local box.
-const BACKDROP_BLOCKS = [
-  [126, 96, 22, 22, 14],
-  [64, 112, 26, 26, 48],
-  [168, 118, 36, 36, 72],
-  [250, 134, 28, 44, 30],
-  [118, 146, 50, 50, 36],
-  [82, 162, 30, 30, 22],
-  [214, 170, 40, 24, 18],
-];
+/** Live backdrops: paused (class .is-paused) while the document is hidden, so cinematic drift stops. */
+const liveBackdrops = new Set();
+let backdropVisibilityBound = false;
+function syncBackdropVisibility() {
+  for (const node of Array.from(liveBackdrops)) {
+    if (!node.isConnected && node.dataset.mounted === 'true') { liveBackdrops.delete(node); continue; }
+    if (node.isConnected) node.dataset.mounted = 'true';
+    node.classList.toggle('is-paused', !!document.hidden);
+  }
+}
 
 /**
- * Full-bleed decorative backdrop. Position: absolute; inset 0; pointer-events none; aria-hidden.
- * Colours come only from --ink-1, --accent and --gold. The glow drift is the single animation and
- * is switched off by prefers-reduced-motion and by html[data-motion="reduce"|"reduced"].
+ * Page background (CONTRACT §3 / §3.1). Returns
+ *   <div class="bg-layers" aria-hidden="true">
+ *     <div class="bg-ambient"></div>          two broad, very soft ambient lights (CSS)
+ *     <div class="bg-grid"></div>             sparse engineering grid at 2–4 % (CSS)
+ *     <div class="bg-mark">                   one small identity detail at the inline-end bottom
+ *       <svg class="bg-emblem">…</svg><span class="bg-mark-caption">…</span>
+ *     </div>
+ *   </div>
+ * Styling per html[data-bg="static"|"subtle"|"cinematic"] lives in css/ (A-STYLE). Nothing here moves:
+ * the cinematic drift is a CSS transform animation; this function only adds .is-paused while hidden.
+ * The caption is a drawing-datum flourish (Latin mono, dir=ltr), not a location claim.
  */
 export function backdrop() {
-  const id = uid('bx-bd');
-  const svg = el('svg', { xmlns: SVG_NS, width: '100%', height: '100%', 'aria-hidden': 'true', focusable: 'false' });
-  svg.classList.add('backdrop-art');
-  Object.assign(svg.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none', display: 'block', overflow: 'hidden' });
+  const root = document.createElement('div');
+  root.className = 'bg-layers';
+  root.setAttribute('aria-hidden', 'true');
 
-  const style = el('style');
-  style.textContent = BACKDROP_CSS;
-  svg.appendChild(style);
+  const ambient = document.createElement('div');
+  ambient.className = 'bg-ambient';
+  const grid = document.createElement('div');
+  grid.className = 'bg-grid';
 
-  /* defs: lattice pattern, alpha fade mask, glow gradient */
-  const defs = el('defs');
-  const pattern = el('pattern', { id: `${id}-lattice`, width: 56, height: 56, patternUnits: 'userSpaceOnUse', style: { color: 'var(--gold)' } });
-  appendLatticeTile(pattern, 56);
-  defs.appendChild(pattern);
+  const mark = document.createElement('div');
+  mark.className = 'bg-mark';
+  mark.appendChild(emblem(56));
+  const caption = document.createElement('span');
+  caption.className = 'bg-mark-caption mono';
+  caption.setAttribute('dir', 'ltr');
+  const l1 = document.createElement('span');
+  l1.className = 'bg-mark-line';
+  l1.textContent = 'BILTIX · RISK AI';
+  const l2 = document.createElement('span');
+  l2.className = 'bg-mark-line';
+  l2.textContent = 'DATUM X 0.000 · Y 0.000';
+  caption.append(l1, l2);
+  mark.appendChild(caption);
 
-  const fade = el('linearGradient', { id: `${id}-fade`, x1: '0', y1: '0', x2: '0', y2: '1' });
-  fade.appendChild(el('stop', { offset: '0', 'stop-color': 'currentColor', 'stop-opacity': '1' }));
-  fade.appendChild(el('stop', { offset: '0.55', 'stop-color': 'currentColor', 'stop-opacity': '0.45' }));
-  fade.appendChild(el('stop', { offset: '1', 'stop-color': 'currentColor', 'stop-opacity': '0' }));
-  defs.appendChild(fade);
+  root.append(ambient, grid, mark);
 
-  const mask = el('mask', { id: `${id}-mask`, maskUnits: 'userSpaceOnUse', x: '0', y: '0', width: '100%', height: '240', style: { maskType: 'alpha', color: 'var(--brand-ink)' } });
-  mask.appendChild(el('rect', { x: '0', y: '0', width: '100%', height: '240', fill: `url(#${id}-fade)` }));
-  defs.appendChild(mask);
-
-  const glow = el('radialGradient', { id: `${id}-glow`, cx: '0.5', cy: '0.5', r: '0.5' });
-  glow.appendChild(el('stop', { offset: '0', style: { stopColor: 'var(--accent)', stopOpacity: '0.14' } }));
-  glow.appendChild(el('stop', { offset: '0.45', style: { stopColor: 'var(--accent)', stopOpacity: '0.05' } }));
-  glow.appendChild(el('stop', { offset: '1', style: { stopColor: 'var(--accent)', stopOpacity: '0' } }));
-  defs.appendChild(glow);
-  svg.appendChild(defs);
-
-  /* 1. mashrabiya lattice band along the top, fading downwards */
-  svg.appendChild(el('rect', { class: 'bx-bd-lattice', x: '0', y: '0', width: '100%', height: '240', fill: `url(#${id}-lattice)`, mask: `url(#${id}-mask)`, opacity: '0.04' }));
-
-  /* 2. slow drifting radial glow (upper inline-end quadrant) */
-  const glowHost = el('svg', { x: '28%', y: '18%', width: '1', height: '1', overflow: 'visible', style: { overflow: 'visible' } });
-  const glowG = el('g', { class: 'bx-bd-glow' });
-  glowG.appendChild(el('circle', { class: 'bx-bd-glow-core', cx: '0', cy: '0', r: '420', fill: `url(#${id}-glow)` }));
-  glowHost.appendChild(glowG);
-  svg.appendChild(glowHost);
-
-  /* 3. three blueprint construction lines at 30°, anchored at the top inline-start corner, with dimension ticks */
-  const linesHost = el('svg', { x: '100%', y: '0', width: '1', height: '1', overflow: 'visible', style: { overflow: 'visible' } });
-  const lines = el('g', { class: 'bx-bd-lines', fill: 'none', stroke: 'currentColor', 'stroke-width': '1', 'stroke-linecap': 'round', style: { color: 'var(--accent)' }, opacity: '0.09' });
-  const ticks = el('g', { class: 'bx-bd-ticks', fill: 'none', stroke: 'currentColor', 'stroke-width': '1', 'stroke-linecap': 'round', style: { color: 'var(--gold)' }, opacity: '0.26' });
-  const nodes = el('g', { class: 'bx-bd-nodes', fill: 'none', stroke: 'currentColor', 'stroke-width': '1', style: { color: 'var(--gold)' }, opacity: '0.3' });
-  const dx = -ISO_UX, dy = ISO_UY; // down-left at 30°
-  const nx = ISO_UY, ny = ISO_UX;  // perpendicular
-  const LEN = 3200;
-  const starts = [[-120, 0], [0, 230], [-760, 0]];
-  starts.forEach(([sx, sy], i) => {
-    lines.appendChild(el('path', { d: `M${r2(sx)} ${r2(sy)}L${r2(sx + dx * LEN)} ${r2(sy + dy * LEN)}` }));
-    const tickCount = i === 1 ? 7 : 6;
-    for (let k = 0; k < tickCount; k++) {
-      const t = 96 + k * 112;
-      const px = sx + dx * t, py = sy + dy * t;
-      const h = k % 3 === 0 ? 7 : 4;
-      ticks.appendChild(el('path', { d: `M${r2(px - nx * h)} ${r2(py - ny * h)}L${r2(px + nx * h)} ${r2(py + ny * h)}` }));
-    }
-    const nt = 96 + 3 * 112;
-    nodes.appendChild(el('circle', { cx: r2(sx + dx * nt), cy: r2(sy + dy * nt), r: '3' }));
-  });
-  linesHost.appendChild(lines);
-  linesHost.appendChild(ticks);
-  linesHost.appendChild(nodes);
-  svg.appendChild(linesHost);
-
-  /* 4. sparse isometric block cluster at the bottom inline-end corner (6 % ink) */
-  const isoHost = el('svg', { x: '0', y: '100%', width: '1', height: '1', overflow: 'visible', style: { overflow: 'visible' } });
-  const iso = el('g', { class: 'bx-bd-iso', transform: 'translate(16 -252)', style: { color: 'var(--ink-1)' }, opacity: '0.06' });
-  // faint iso ground grid under the cluster
-  const grid = el('g', { fill: 'none', stroke: 'currentColor', 'stroke-width': '1', opacity: '0.5' });
-  for (let k = 0; k < 7; k++) {
-    const ox = 20 + k * 52;
-    grid.appendChild(el('path', { d: `M${r2(ox)} 240l${r2(ISO_UX * 160)} ${r2(-ISO_UY * 160)}` }));
-    grid.appendChild(el('path', { d: `M${r2(ox + 40)} 240l${r2(-ISO_UX * 160)} ${r2(-ISO_UY * 160)}` }));
+  liveBackdrops.add(root);
+  if (!backdropVisibilityBound && typeof document !== 'undefined') {
+    backdropVisibilityBound = true;
+    document.addEventListener('visibilitychange', syncBackdropVisibility);
   }
-  iso.appendChild(grid);
-  // each block: three faces at distinct opacities of the same ink token (top brightest), plus a hairline outline
-  BACKDROP_BLOCKS.forEach(([tx, ty, a, b, c]) => {
-    const f = isoFaces(tx, ty, a, b, c);
-    const block = el('g', { class: 'iso-block' });
-    // opaque page-coloured silhouette: hides the edges of blocks behind this one inside the 6 % group (hidden-line removal)
-    block.appendChild(el('polygon', { points: pts([f.top[0], f.top[1], f.right[3], f.right[2], f.left[3], f.top[3]]), fill: 'var(--bg-0)' }));
-    block.appendChild(el('polygon', { points: pts(f.left), fill: 'currentColor', opacity: '0.16' }));
-    block.appendChild(el('polygon', { points: pts(f.right), fill: 'currentColor', opacity: '0.32' }));
-    block.appendChild(el('polygon', { points: pts(f.top), fill: 'currentColor', opacity: '0.62' }));
-    block.appendChild(el('path', { d: `M${pts(f.top).replace(/ /g, 'L')}zM${pts(f.left).replace(/ /g, 'L')}zM${pts(f.right).replace(/ /g, 'L')}z`, fill: 'none', stroke: 'currentColor', 'stroke-width': '1', 'stroke-linejoin': 'round', opacity: '0.9' }));
-    iso.appendChild(block);
-  });
-  isoHost.appendChild(iso);
-  svg.appendChild(isoHost);
-
-  return svg;
+  if (document.hidden) root.classList.add('is-paused');
+  return root;
 }
 
 /* ------------------------------------------------------------------ */
 /* Bundle                                                              */
 /* ------------------------------------------------------------------ */
 
-export const art = { icon, logoMark, logoLockup, backdrop, isoCube, mashrabiyaTile, sectorGlyph, sectorIcon, hasIcon, iconNames };
+export const art = { icon, logoMark, logoLockup, emblem, backdrop, isoCube, mashrabiyaTile, sectorGlyph, sectorIcon, hasIcon, iconNames };
 export default art;

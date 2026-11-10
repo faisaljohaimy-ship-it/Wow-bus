@@ -19,10 +19,16 @@
  *                    a scanning line.
  *   ComplianceRadar  ISO 45001 clause scores vs. a target ring, gaps as warning wedges.
  *
- * Plain ES module, no dependencies besides ../core/bus.js. No colour is hard-coded here:
+ * Plain ES module; imports ../core/bus.js and the UI i18n bridge. No colour is hard-coded here:
  * everything is read from --bg-*, --line*, --ink-*, --accent, --gold, --good, --warning,
- * --serious, --critical (and --font-sans / --font-mono for canvas text). Side-effect free on
+ * --serious, --critical (and --font-sans / --font-mono-mixed for canvas text — both resolve per
+ * html[lang], so Arabic-first or Latin-first stacks follow the language). Side-effect free on
  * import: global listeners are attached only while at least one radar is running.
+ *
+ * Language (v3): canvas strings come from t('radar.*') at draw time; ctx.direction follows html[dir];
+ * the site plan mirrors its chrome in LTR (zone names at the inline-start corner, legend at the
+ * bottom inline-start, compass at the top inline-end). A change of html[lang|dir] invalidates the
+ * palette (fonts, direction) through the shared MutationObserver.
  *
  * Hover info object passed to onHover(item, info):
  *   { x, y }               the hovered item's centre in canvas CSS pixels (== localX/localY),
@@ -36,6 +42,7 @@
  */
 
 import { bus } from '../core/bus.js';
+import { t } from './i18n-bridge.js';
 
 /* ------------------------------------------------------------------ */
 /* Constants & small math helpers                                      */
@@ -217,6 +224,9 @@ export function readPalette(force = false) {
   p.theme = root.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
   p.light = p.theme === 'light';
   p.numerals = root.getAttribute('data-numerals') === 'arab' ? 'arab' : 'latn';
+  // Direction / language drive canvas text direction and the mirrored placement of labels (v3, LTR).
+  p.rtl = (root.getAttribute('dir') || (String(root.getAttribute('lang') || 'ar').startsWith('en') ? 'ltr' : 'rtl')) !== 'ltr';
+  p.lang = String(root.getAttribute('lang') || 'ar').startsWith('en') ? 'en' : 'ar';
   p.tone = (name) => (name && Object.prototype.hasOwnProperty.call(TONE_ORDER, name) ? p[name] : p.accent);
   paletteCache = p;
   paletteCacheVersion = paletteVersion;
@@ -621,7 +631,7 @@ function attachGlobals() {
   document.addEventListener('visibilitychange', onVisibility);
   try {
     loop.mo = new MutationObserver(onRootMutation);
-    loop.mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-motion', 'data-numerals', 'style'] });
+    loop.mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-motion', 'data-numerals', 'style', 'lang', 'dir'] });
   } catch { loop.mo = null; }
   try {
     loop.io = 'IntersectionObserver' in window ? new IntersectionObserver(onIntersect, { threshold: 0 }) : null;
@@ -920,7 +930,7 @@ export class RadarBase {
     ctx.save();
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    ctx.direction = 'rtl';
+    ctx.direction = this.palette.rtl === false ? 'ltr' : 'rtl';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineCap = 'round';
@@ -1430,7 +1440,7 @@ export class SensorRadar extends RadarBase {
     showValues: true,
     showThreshold: true,
     formatValue: null,     // (value, axis) => string
-    emptyText: 'لا توجد حساسات نشطة',
+    emptyText: null,       // default: t('radar.noSensors') at draw time
   };
 
   constructor(canvas, opts) {
@@ -1514,7 +1524,7 @@ export class SensorRadar extends RadarBase {
       ctx.fillStyle = p.ink3;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(o.emptyText, cx, cy);
+      ctx.fillText(o.emptyText || t('radar.noSensors'), cx, cy);
       return;
     }
 
@@ -1699,7 +1709,8 @@ export class SensorRadar extends RadarBase {
 /* ------------------------------------------------------------------ */
 
 const HAZARD_PERIOD = { critical: 1.1, serious: 1.5, warning: 1.9, good: 2.6 };
-const KIND_LABEL = { worker: 'عامل', vehicle: 'مركبة', crane: 'رافعة' };
+/** Localized names of moving things on the site plan (resolved at draw time). */
+const kindLabel = (kind) => t(`radar.kinds.${kind}`);
 
 export class SitePlanRadar extends RadarBase {
   static defaults = {
@@ -1896,12 +1907,15 @@ export class SitePlanRadar extends RadarBase {
     const zoneLineH = g.W >= 300 ? 13 : 12;
     const codeFont = `500 9px ${p.fontMono}`;
     const occ = (this._occ || (this._occ = new Occupancy(w, h))).reset(w, h);
-    // Reserve the fixed chrome: compass (top-left), legend strip (bottom-right) and the DOM chips that
-    // overlay the frame (status top-inline-start = top-right, caption bottom-inline-end = bottom-left).
-    if (o.showCompass) occ.take(g.m - 2, g.m - 2, 30, 40);
-    if (o.showLegend) occ.take(Math.max(0, w - g.m - 250), h - g.m - 16, 250, 20);
-    occ.take(Math.max(0, w - 170), 0, 170, 26);
-    occ.take(0, h - 24, 190, 24);
+    // Reserve the fixed chrome: compass (top inline-end), legend strip (bottom inline-start) and the DOM chips
+    // that overlay the frame (status top-inline-start, caption bottom-inline-end). RTL: compass top-left,
+    // legend bottom-right, status top-right, caption bottom-left; LTR mirrors every one of them.
+    const rtl = p.rtl !== false;
+    const mx = (x, width) => (rtl ? x : w - x - width);   // mirror a box's x for LTR
+    if (o.showCompass) occ.take(mx(g.m - 2, 30), g.m - 2, 30, 40);
+    if (o.showLegend) occ.take(mx(Math.max(0, w - g.m - 250), 250), h - g.m - 16, 250, 20);
+    occ.take(mx(Math.max(0, w - 170), 170), 0, 170, 26);
+    occ.take(mx(0, 190), h - 24, 190, 24);
     const minZonePx = num(o.zoneLabelMinPx, 90);
     const zkey = `${g.W}|${zoneFont}|${minZonePx}|${zones.map((z) => z && (z.id + z.name + z.w + z.h)).join('|')}`;
     if (!this._zoneLabels || this._zoneLabels.key !== zkey) {
@@ -1942,30 +1956,52 @@ export class SitePlanRadar extends RadarBase {
       const zwPx = zw * g.W;
       const zhPx = zh * g.Hp;
       if (lbl && lbl.lines && zwPx > 40 && zhPx > 22) {
-        // zone name: inline-start (right) of the zone's top edge, if the spot is free
+        // zone name: inline-start corner of the zone's top edge (right in RTL, left in LTR), if the spot is free
         const vTop = zy + Math.min(0.03, zh * 0.2);
-        const [rx, ry] = this.project(zx + zw, vTop);
-        const bx = rx - 8 - lbl.width;
-        const by = ry + 3;
-        const bh = lbl.lines.length * zoneLineH;
-        if (occ.free(bx - 2, by - 1, lbl.width + 4, bh + 2)) {
-          occ.take(bx - 2, by - 1, lbl.width + 4, bh + 2);
-          ctx.font = zoneFont;
-          ctx.fillStyle = p.ink2;
-          ctx.textAlign = 'right';
-          ctx.textBaseline = 'top';
-          for (let li = 0; li < lbl.lines.length; li++) ctx.fillText(lbl.lines[li], rx - 8, by + li * zoneLineH);
+        if (rtl) {
+          const [rx, ry] = this.project(zx + zw, vTop);
+          const bx = rx - 8 - lbl.width;
+          const by = ry + 3;
+          const bh = lbl.lines.length * zoneLineH;
+          if (occ.free(bx - 2, by - 1, lbl.width + 4, bh + 2)) {
+            occ.take(bx - 2, by - 1, lbl.width + 4, bh + 2);
+            ctx.font = zoneFont;
+            ctx.fillStyle = p.ink2;
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'top';
+            for (let li = 0; li < lbl.lines.length; li++) ctx.fillText(lbl.lines[li], rx - 8, by + li * zoneLineH);
+          }
+        } else {
+          const [lx0, ly0] = this.project(zx, vTop);
+          const bx = lx0 + 8;
+          const by = ly0 + 3;
+          const bh = lbl.lines.length * zoneLineH;
+          if (occ.free(bx - 2, by - 1, lbl.width + 4, bh + 2)) {
+            occ.take(bx - 2, by - 1, lbl.width + 4, bh + 2);
+            ctx.font = zoneFont;
+            ctx.fillStyle = p.ink2;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            for (let li = 0; li < lbl.lines.length; li++) ctx.fillText(lbl.lines[li], bx, by + li * zoneLineH);
+          }
         }
       }
       if (lbl && zwPx > 28 && zhPx > 16) {
-        // zone number: bottom-left corner in mono (keeps small zones identifiable without a name)
-        const [lx, ly] = this.project(zx, zy + zh);
+        // zone number: bottom inline-end corner in mono (keeps small zones identifiable without a name)
         ctx.font = codeFont;
         ctx.fillStyle = p.ink3;
-        ctx.textAlign = 'left';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(lbl.code, lx + 6, ly - 4);
-        occ.take(lx + 4, ly - 16, 18, 14);
+        if (rtl) {
+          const [lx, ly] = this.project(zx, zy + zh);
+          ctx.textAlign = 'left';
+          ctx.fillText(lbl.code, lx + 6, ly - 4);
+          occ.take(lx + 4, ly - 16, 18, 14);
+        } else {
+          const [rx, ry] = this.project(zx + zw, zy + zh);
+          ctx.textAlign = 'right';
+          ctx.fillText(lbl.code, rx - 6, ry - 4);
+          occ.take(rx - 22, ry - 16, 18, 14);
+        }
       }
       // hover target at the zone centre (silent: highlights the zone and reveals its name, never forwarded to onHover)
       if (lbl && lbl.name) {
@@ -2054,7 +2090,7 @@ export class SitePlanRadar extends RadarBase {
         ctx.beginPath();
         ctx.arc(x, y, 4, 0, TAU);
         ctx.stroke();
-        this.addHit(x, y, { ...pg, kind, index: i, label: pg.label || KIND_LABEL.crane }, o.hitRadius);
+        this.addHit(x, y, { ...pg, kind, index: i, label: pg.label || kindLabel('crane') }, o.hitRadius);
       } else if (kind === 'vehicle') {
         const hu = 0.022;
         const hv = 0.03;
@@ -2064,7 +2100,7 @@ export class SitePlanRadar extends RadarBase {
         ctx.lineWidth = 1.2;
         ctx.strokeStyle = p.bg1;
         ctx.stroke();
-        this.addHit(x, y, { ...pg, kind, index: i, label: pg.label || KIND_LABEL.vehicle }, o.hitRadius);
+        this.addHit(x, y, { ...pg, kind, index: i, label: pg.label || kindLabel('vehicle') }, o.hitRadius);
       } else {
         if (near) {
           ctx.shadowColor = rgba(p.accent, 0.9);
@@ -2261,9 +2297,9 @@ export class SitePlanRadar extends RadarBase {
       for (let li = 0; li < lines.length; li++) ctx.fillText(lines[li], px + pw / 2, py + 4 + zoneLineH / 2 + li * zoneLineH);
     }
 
-    /* compass (top-left: the .radar-status chip lives top-inline-start = top-right in RTL) */
+    /* compass (top inline-end: the .radar-status chip lives top-inline-start — top-right in RTL, top-left in LTR) */
     if (o.showCompass) {
-      const cxp = g.m + 12;
+      const cxp = rtl ? g.m + 12 : w - g.m - 12;
       const cyp = g.m + 12;
       ctx.strokeStyle = rgba(p.line2, 0.95);
       ctx.lineWidth = 1;
@@ -2290,20 +2326,70 @@ export class SitePlanRadar extends RadarBase {
       ctx.fillStyle = p.ink3;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.fillText('ش', cxp, cyp + 13);
+      ctx.fillText(t('radar.north'), cxp, cyp + 13);
     }
 
-    /* legend (bottom-right; .radar-caption lives bottom-inline-end = bottom-left in RTL) */
-    if (o.showLegend) {
+    /* legend (bottom inline-start; .radar-caption lives bottom-inline-end). RTL: drawn from the right edge
+       leftwards; LTR: the same strip mirrored — drawn from the left edge rightwards (icon, then label). */
+    if (o.showLegend && !rtl) {
+      ctx.font = `500 10px ${p.fontSans}`;
+      ctx.textBaseline = 'middle';
+      const y = h - g.m - 6;
+      let x = g.m + 2;
+      for (const it of [
+        { label: kindLabel('worker'), icon: 'dot' },
+        { label: kindLabel('vehicle'), icon: 'rect' },
+        { label: kindLabel('crane'), icon: 'crane' },
+        { label: kindLabel('hazard'), icon: 'hazard' },
+      ]) {
+        if (it.icon === 'dot') {
+          ctx.fillStyle = p.accent;
+          ctx.beginPath();
+          ctx.arc(x + 5, y, 2.6, 0, TAU);
+          ctx.fill();
+        } else if (it.icon === 'rect') {
+          ctx.fillStyle = p.ink2;
+          roundRect(ctx, x, y - 3, 10, 6, 1.5);
+          ctx.fill();
+        } else if (it.icon === 'crane') {
+          ctx.strokeStyle = p.ink1;
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.moveTo(x + 1, y + 3);
+          ctx.lineTo(x + 10, y - 3);
+          ctx.stroke();
+          ctx.fillStyle = p.ink1;
+          ctx.beginPath();
+          ctx.arc(x + 6, y + 0.5, 2.2, 0, TAU);
+          ctx.fill();
+        } else {
+          ctx.strokeStyle = rgba(p.critical, 0.8);
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.arc(x + 5, y, 4.5, 0, TAU);
+          ctx.stroke();
+          ctx.fillStyle = p.critical;
+          ctx.beginPath();
+          ctx.arc(x + 5, y, 2.2, 0, TAU);
+          ctx.fill();
+        }
+        x += 15;
+        ctx.fillStyle = p.ink3;
+        ctx.textAlign = 'left';
+        ctx.fillText(it.label, x, y);
+        x += ctx.measureText(it.label).width + 16;
+      }
+    }
+    if (o.showLegend && rtl) {
       ctx.font = `500 10px ${p.fontSans}`;
       ctx.textBaseline = 'middle';
       const y = h - g.m - 6;
       let x = w - g.m - 2;
       const items = [
-        { label: KIND_LABEL.worker, icon: 'dot' },
-        { label: KIND_LABEL.vehicle, icon: 'rect' },
-        { label: KIND_LABEL.crane, icon: 'crane' },
-        { label: 'خطر', icon: 'hazard' },
+        { label: kindLabel('worker'), icon: 'dot' },
+        { label: kindLabel('vehicle'), icon: 'rect' },
+        { label: kindLabel('crane'), icon: 'crane' },
+        { label: kindLabel('hazard'), icon: 'hazard' },
       ];
       for (const it of items) {
         // icon (right), then label (left of it)
@@ -2362,7 +2448,7 @@ export class ComplianceRadar extends RadarBase {
     pollMs: 500,
     ease: 0.06,
     showScores: true,
-    targetLabel: 'الهدف',
+    targetLabel: null,    // default: t('radar.target') at draw time
   };
 
   constructor(canvas, opts) {
@@ -2441,7 +2527,7 @@ export class ComplianceRadar extends RadarBase {
       ctx.fillStyle = p.ink3;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('لا توجد بنود للتقييم', cx, cy);
+      ctx.fillText(t('radar.noItems'), cx, cy);
       return;
     }
 
@@ -2512,7 +2598,7 @@ export class ComplianceRadar extends RadarBase {
 
     /* target label pill: rides the target ring midway between two axes (never over a score) */
     {
-      const text = `${o.targetLabel} ${localizeDigits(String(Math.round(target)), p.numerals)}`;
+      const text = `${o.targetLabel || t('radar.target')} ${localizeDigits(String(Math.round(target)), p.numerals)}`;
       ctx.font = `500 9.5px ${p.fontMono}`;
       const tw = ctx.measureText(text).width;
       const pw = tw + 12;

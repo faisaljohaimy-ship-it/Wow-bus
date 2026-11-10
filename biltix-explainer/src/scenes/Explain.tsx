@@ -69,7 +69,7 @@ export const Explain: React.FC<SceneProps> = ({ lang, frames }) => {
           </span>
         </div>
         {S.likelihood != null && S.impact != null && (
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 14, fontSize: 19, color: C.ink2, ...enter(f, 6, 20, 8) }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 10, fontSize: 19, color: C.ink2, ...enter(f, 6, 20, 8) }}>
             <span>{ar ? 'الاحتمالية' : 'Likelihood'}</span>
             <Num size={22} weight={600}>{S.likelihood}</Num>
             <span style={{ color: C.ink3 }}>×</span>
@@ -81,7 +81,7 @@ export const Explain: React.FC<SceneProps> = ({ lang, frames }) => {
             <Num size={22} weight={600} color={tone}>{S.score}</Num>
           </div>
         )}
-        <div style={{ marginTop: 14, fontSize: 20.5, lineHeight: 1.6, color: C.ink2, maxWidth: 828, ...enter(f, 10, 22, 10) }}>
+        <div style={{ marginTop: 10, fontSize: ar ? 19.5 : 20.5, lineHeight: 1.55, color: C.ink2, maxWidth: 828, ...enter(f, 10, 22, 10) }}>
           {ar ? S.explanationAr : S.explanationEn}
         </div>
         {/* detection facts */}

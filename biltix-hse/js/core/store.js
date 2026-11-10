@@ -46,10 +46,7 @@
 import seed, { RISK_STATUS, CONTROL_TYPES, INCIDENT_TYPES, INCIDENT_STATUS, PERMIT_TYPES, PERMIT_STATUS, INSPECTION_STATUS, INSPECTION_TYPES, INTEGRATION_STATUS } from '../data/seed.js';
 import { bus } from './bus.js';
 import { sel } from './selectors.js';
-import {
-  en as enOf, siteEnById, personEn, PERMIT_TYPE_EN, INCIDENT_TYPE_EN, RISK_TIER_EN, AI_STATUS_EN, TASK_STATUS_EN,
-  RATING_EN, PIPELINE_EN, CHANNEL_EN,
-} from '../data/vocab-en.js';
+import { enumEn, siteEnById, personEn } from '../data/vocab-en.js';
 
 /**
  * Part B — platform seed (ARCHITECTURE.md §B3/§B5). Loaded through an awaited dynamic
@@ -1540,9 +1537,11 @@ function pipelineLabel(id) {
   return (p && (p.nameAr || p.name)) || PIPELINE_LABEL[id] || 'محرك المخاطر';
 }
 
-function riskHistory(risk, by, textValue) {
+function riskHistory(risk, by, textValue, textEn) {
   if (!Array.isArray(risk.history)) risk.history = [];
-  risk.history.push({ at: localISO(store.now()), by: text(by) || SYSTEM_ACTOR, text: textValue });
+  const entry = { at: localISO(store.now()), by: text(by) || SYSTEM_ACTOR, text: textValue };
+  if (textEn) entry.textEn = textEn;
+  risk.history.push(entry);
 }
 
 /** Thresholds (§B2): > alertThreshold → standard alert; ≥ criticalThreshold → immediate escalation. */
@@ -1842,7 +1841,7 @@ export const store = {
       tone: sel.tierTone(tier),
       siteId: risk.siteId,
       title: `تسجيل مخاطرة جديدة ${risk.code} — ${tier}`,
-      titleEn: `New risk registered ${risk.code} — ${enOf(RISK_TIER_EN, tier)}`,
+      titleEn: `New risk registered ${risk.code} — ${enumEn('tier', tier)}`,
       detail: risk.hazard || risk.activity,
       detailEn: risk.hazardEn || `${siteEnById(state.sites, risk.siteId)}`,
       sourceId: 'biltix-hse',
@@ -1920,7 +1919,7 @@ export const store = {
       tone: nearMiss ? 'warning' : severityTone(severity),
       siteId: incident.siteId,
       title: `${type} — ${incident.code}`,
-      titleEn: `${enOf(INCIDENT_TYPE_EN, type, 'Incident')} — ${incident.code}`,
+      titleEn: `${enumEn('incidentType', type, 'Incident')} — ${incident.code}`,
       detail: [incident.title, incident.location].filter(Boolean).join(' · '),
       detailEn: [incident.titleEn || '', siteEnById(state.sites, incident.siteId)].filter(Boolean).join(' · '),
       sourceId: 'biltix-hse',
@@ -1977,7 +1976,7 @@ export const store = {
       tone: 'accent',
       siteId: permit.siteId,
       title: `تصريح عمل جديد ${permit.code} — ${permit.type}`,
-      titleEn: `New permit to work ${permit.code} — ${enOf(PERMIT_TYPE_EN, permit.type, 'permit')}`,
+      titleEn: `New permit to work ${permit.code} — ${enumEn('permitType', permit.type, 'permit')}`,
       detail: [siteName(permit.siteId), permit.location].filter(Boolean).join(' · '),
       detailEn: [siteEnById(state.sites, permit.siteId), permit.locationEn || ''].filter(Boolean).join(' · '),
       sourceId: 'biltix-hse',
@@ -2186,7 +2185,7 @@ export const store = {
           ? `اكتشاف المخاطرة بواسطة ${pipelineLabel(pipeline)} — الدرجة ${score} (الاحتمالية ${likelihood} × الأثر ${impact} × 4)`
           : `تسجيل المخاطرة يدوياً — الدرجة ${score} (الاحتمالية ${likelihood} × الأثر ${impact} × 4)`,
         textEn: isEngine
-          ? `Detected by ${PIPELINE_EN[pipeline] || pipeline} — score ${score} (likelihood ${likelihood} × impact ${impact} × 4)`
+          ? `Detected by ${enumEn('pipeline', pipeline)} — score ${score} (likelihood ${likelihood} × impact ${impact} × 4)`
           : `Registered manually — score ${score} (likelihood ${likelihood} × impact ${impact} × 4)`,
       }],
     };
@@ -2206,8 +2205,8 @@ export const store = {
         ? `${pipelineLabel(pipeline)} (محاكاة): ${risk.title} — الدرجة ${score} (${RATING_LABEL[rating]})`
         : `تسجيل مخاطرة يدوياً ${risk.code}: ${risk.title} — الدرجة ${score} (${RATING_LABEL[rating]})`,
       titleEn: isEngine
-        ? `${PIPELINE_EN[pipeline] || pipeline} (simulated): ${titleEn} — score ${score} (${RATING_EN[rating]})`
-        : `Risk registered manually ${risk.code}: ${titleEn} — score ${score} (${RATING_EN[rating]})`,
+        ? `${enumEn('pipeline', pipeline)} (simulated): ${titleEn} — score ${score} (${enumEn('rating', rating)})`
+        : `Risk registered manually ${risk.code}: ${titleEn} — score ${score} (${enumEn('rating', rating)})`,
       detail: risk.driverExplanation || (risk.evidence && risk.evidence.excerpt) || projectName(risk.projectId),
       detailEn: text(risk.driverExplanationEn) || siteEnById(state.sites, risk.projectId),
       sourceId: pipeline, refId: risk.id, code: risk.code, score,
@@ -2307,16 +2306,18 @@ export const store = {
     risk.dueDate = task.dueDate;
     risk.taskId = task.id;
     risk.updatedAt = localISO(store.now());
-    riskHistory(risk, actor, `قبول توصية المحرك وإنشاء مهمة المعالجة ${task.code} — المسؤول: ${task.owner}`);
+    riskHistory(risk, actor, `قبول توصية المحرك وإنشاء مهمة المعالجة ${task.code} — المسؤول: ${task.owner}`, `Engine recommendation accepted; mitigation task ${task.code} created — owner: ${personEn(task.owner, 'assigned')}`);
     const pipe = findPlatform('pipelines', risk.pipeline);
     if (pipe && Number.isFinite(Number(pipe.acceptedLast30d))) pipe.acceptedLast30d = Number(pipe.acceptedLast30d) + 1;
     changed(`platform.aiRisks.${risk.id}`);
-    store.pushAudit({ actor, action: 'accept', target: risk.code, detail: `قبول التوصية «${task.title}» → ${task.code} (${task.owner}، يستحق ${task.dueDate})` });
+    store.pushAudit({ actor, action: 'accept', target: risk.code, detail: `قبول التوصية «${task.title}» → ${task.code} (${task.owner}، يستحق ${task.dueDate})`, detailEn: `Recommendation accepted → ${task.code} (${personEn(task.owner, 'assigned')}, due ${task.dueDate})` });
     emitFeed({
       type: 'task', tone: 'good', siteId: risk.projectId,
       title: `قبول توصية المحرك — ${risk.code} ← مهمة ${task.code}`,
+      titleEn: `Engine recommendation accepted — ${risk.code} → task ${task.code}`,
       detail: `${task.title} · المسؤول: ${task.owner}`,
-      sourceId: 'biltix-pm', refId: task.id,
+      detailEn: `Owner: ${personEn(task.owner, 'assigned')} · due ${task.dueDate}`,
+      sourceId: 'biltix-pm', refId: task.id, code: task.code,
     });
     if (escalate) store.escalateRisk(risk.id, undefined, actor);
     return task;
@@ -2345,16 +2346,18 @@ export const store = {
     risk.dueDate = task.dueDate;
     risk.taskId = task.id;
     risk.updatedAt = localISO(store.now());
-    riskHistory(risk, actor, `تعديل توصية المحرك إلى «${toAction}» — السبب: ${why}`);
+    riskHistory(risk, actor, `تعديل توصية المحرك إلى «${toAction}» — السبب: ${why}`, `Engine recommendation overridden (task ${task.code}) — reason recorded`);
     const pipe = findPlatform('pipelines', risk.pipeline);
     if (pipe && Number.isFinite(Number(pipe.overridesLast30d))) pipe.overridesLast30d = Number(pipe.overridesLast30d) + 1;
     changed(`platform.aiRisks.${risk.id}`);
-    store.pushAudit({ actor, action: 'override', target: risk.code, detail: `تجاوز التوصية: من «${fromAction || '—'}» إلى «${toAction}» — السبب: ${why} → ${task.code}` });
+    store.pushAudit({ actor, action: 'override', target: risk.code, detail: `تجاوز التوصية: من «${fromAction || '—'}» إلى «${toAction}» — السبب: ${why} → ${task.code}`, detailEn: `Recommendation overridden → ${task.code}; the reason is recorded for model recalibration` });
     emitFeed({
       type: 'task', tone: 'warning', siteId: risk.projectId,
       title: `تعديل توصية المحرك — ${risk.code} ← مهمة ${task.code}`,
+      titleEn: `Engine recommendation overridden — ${risk.code} → task ${task.code}`,
       detail: `${toAction} · السبب: ${why}`,
-      sourceId: 'biltix-pm', refId: task.id,
+      detailEn: `Owner: ${personEn(task.owner, 'assigned')} · reason recorded`,
+      sourceId: 'biltix-pm', refId: task.id, code: task.code,
     });
     if (escalate) store.escalateRisk(risk.id, undefined, actor);
     return task;
@@ -2369,13 +2372,14 @@ export const store = {
     risk.escalated = true;
     if (['مكتشف'].includes(risk.status)) risk.status = 'تنبيه';
     risk.updatedAt = localISO(store.now());
-    riskHistory(risk, actor, `تصعيد فوري عبر: ${list.join('، ') || 'القنوات الافتراضية'}`);
+    riskHistory(risk, actor, `تصعيد فوري عبر: ${list.join('، ') || 'القنوات الافتراضية'}`, `Immediate escalation via ${list.map((c) => enumEn('channel', c)).join(', ') || 'default channels'}`);
     changed(`platform.aiRisks.${risk.id}`);
     const alert = store.addAlert({
       riskId: risk.id, projectId: risk.projectId, severity: 'critical', queue: 'immediate', channels: list,
       title: `تصعيد فوري: ${risk.code} — ${risk.title}`,
+      titleEn: `Immediate escalation: ${risk.code} — ${text(risk.titleEn) || risk.code}`,
     });
-    store.pushAudit({ actor, action: 'escalate', target: risk.code, detail: `تصعيد فوري (الدرجة ${risk.score}) عبر ${list.join('، ') || '—'}` });
+    store.pushAudit({ actor, action: 'escalate', target: risk.code, detail: `تصعيد فوري (الدرجة ${risk.score}) عبر ${list.join('، ') || '—'}`, detailEn: `Immediate escalation (score ${risk.score}) via ${list.map((c) => enumEn('channel', c)).join(', ') || '—'}` });
     return alert;
   },
 
@@ -2390,12 +2394,12 @@ export const store = {
     risk.updatedAt = localISO(store.now());
     if (!Array.isArray(risk.overrides)) risk.overrides = [];
     risk.overrides.push({ at: localISO(store.now()), by: actor, fromAction: (risk.recommendation && text(risk.recommendation.action)) || '', toAction: 'تجاهل المخاطرة', reason: why });
-    riskHistory(risk, actor, `تجاهل المخاطرة (كانت «${prev}») — السبب: ${why}`);
+    riskHistory(risk, actor, `تجاهل المخاطرة (كانت «${prev}») — السبب: ${why}`, `Risk dismissed (was ${enumEn('aiRiskStatus', prev)}) — reason recorded`);
     const pipe = findPlatform('pipelines', risk.pipeline);
     if (pipe && Number.isFinite(Number(pipe.overridesLast30d))) pipe.overridesLast30d = Number(pipe.overridesLast30d) + 1;
     changed(`platform.aiRisks.${risk.id}`);
-    store.pushAudit({ actor, action: 'override', target: risk.code, detail: `تجاهل المخاطرة — السبب: ${why}` });
-    emitFeed({ type: 'ai', tone: 'neutral', siteId: risk.projectId, title: `تجاهل مخاطرة ${risk.code} بقرار بشري`, detail: why, sourceId: risk.pipeline, refId: risk.id });
+    store.pushAudit({ actor, action: 'override', target: risk.code, detail: `تجاهل المخاطرة — السبب: ${why}`, detailEn: 'Risk dismissed — reason recorded' });
+    emitFeed({ type: 'ai', tone: 'neutral', siteId: risk.projectId, title: `تجاهل مخاطرة ${risk.code} بقرار بشري`, titleEn: `Risk ${risk.code} dismissed by a human decision`, detail: why, detailEn: 'Reason recorded in the risk history', sourceId: risk.pipeline, refId: risk.id, code: risk.code });
     return risk;
   },
 

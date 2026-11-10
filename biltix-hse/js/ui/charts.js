@@ -1,14 +1,21 @@
 /**
  * Biltix HSE — SVG charts (js/ui/charts.js)
  *
- * Plain ES module, no dependencies. Implements docs/ARCHITECTURE.md §5 exactly:
- *   lineChart, barChart, groupedBars, heatmap, segmentedBar, sparkline, meter,
- *   gauge, ring, spider, tooltip (singleton), paletteFor.
+ * Plain ES module. Implements docs/ARCHITECTURE.md §5 plus v3 CONTRACT §7:
+ *   lineChart, barChart, groupedBars, heatmap, segmentedBar, dumbbell (v3), sparkline,
+ *   meter, gauge, ring, spider, tooltip (singleton), paletteFor.
  *
  * Every chart returns `{ el, update(data), table(), destroy() }` where `el` is a
  * `<div class="chart">` wrapping an `<svg>`; `update` re-renders in place and
- * `table()` builds the Arabic `<table class="chart-table">` twin for the card
- * toggle. Sparkline / meter / ring / gauge return `{ el, update, destroy }`.
+ * `table()` builds the `<table class="chart-table">` twin for the card toggle.
+ * Sparkline / meter / ring / gauge return `{ el, update, destroy }`.
+ *
+ * Language (v3): every built-in string (roles, legend label, table headers, tooltip
+ * labels, "no data", tone names) comes from t('charts.*') (js/i18n/charts.js); numbers
+ * go through fmt (locale + numerals aware). Categorical axes follow the document
+ * direction (first category at the inline-start), time axes always run left→right.
+ * Charts redraw on bus 'theme:change' and 'lang:change'. heatmap onCellClick receives
+ * { value, ri, ci, row, col, event }.
  *
  * Rules in force (ARCHITECTURE.md §10 + the dataviz skill):
  *   - All data reaches the DOM through textContent / setAttribute, never innerHTML.
@@ -17,7 +24,7 @@
  *     square at the baseline; 2px lines with round joins; ≥ 8px end markers with a
  *     2px surface ring; 2px surface gaps between touching fills.
  *   - Legend for ≥ 2 series (none for one); selective direct labels (endpoint / max).
- *   - Hover AND keyboard focus show the same tooltip; marks carry an Arabic value-first
+ *   - Hover AND keyboard focus show the same tooltip; marks carry a localized value-first
  *     aria-label and use a roving tabindex (one tab stop per chart, arrows / Home / End
  *     move between marks); lines use a crosshair listing every series.
  *   - Responsive via ResizeObserver (debounced 60ms) → viewBox sized to the
@@ -33,29 +40,20 @@
  */
 import { fmt } from '../core/fmt.js';
 import { bus } from '../core/bus.js';
+import { t } from './i18n-bridge.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const TAU = Math.PI * 2;
 
-/* Arabic UI strings (the only text this module ever emits on its own). */
-const T = Object.freeze({
-  value: 'القيمة',
-  item: 'البند',
-  share: 'الحصة',
-  total: 'الإجمالي',
-  period: 'الفترة',
-  series: 'السلسلة',
-  axis: 'المحور',
-  part: 'الجزء',
-  other: 'أخرى',
-  row: 'الصف',
-  col: 'العمود',
-  of: 'من',
-  group: 'المجموعة',
-  table: 'جدول البيانات',
-  noData: 'لا توجد بيانات',
-  tones: { good: 'جيد', warning: 'تحذير', serious: 'خطير', critical: 'حرج' },
+/* Built-in chrome strings come from the 'charts' dictionary (js/i18n/charts.js) at render time, so a
+   language switch (router re-mount or the lang:change re-render below) never shows stale text. */
+const T = new Proxy({}, {
+  get(_, key) {
+    if (key === 'tones') return { good: t('charts.tones.good'), warning: t('charts.tones.warning'), serious: t('charts.tones.serious'), critical: t('charts.tones.critical') };
+    return typeof key === 'string' ? t(`charts.${key}`) : undefined;
+  },
 });
+const sep = () => t('charts.sep');
 
 /* ------------------------------------------------------------------------- */
 /* Small utilities                                                            */
@@ -153,11 +151,14 @@ function tween(from, to, ms, onFrame) {
 /* ------------------------------------------------------------------------- */
 
 let measureCtx = null;
-let fontCache = { sans: '', mono: '', at: 0 };
+let fontCache = { sans: '', mono: '', at: 0, lang: '' };
 
+/** App font stacks; --font-sans resolves per html[lang] (Arabic-first / Latin-first), so the cache is per language. */
 function fontFamilies() {
   const now = Date.now();
-  if (fontCache.sans && now - fontCache.at < 2000) return fontCache;
+  let lang = '';
+  try { lang = document.documentElement.getAttribute('lang') || ''; } catch { lang = ''; }
+  if (fontCache.sans && fontCache.lang === lang && now - fontCache.at < 2000) return fontCache;
   let sans = '';
   let mono = '';
   try {
@@ -169,6 +170,7 @@ function fontFamilies() {
     sans: sans || '"IBM Plex Sans Arabic", system-ui, sans-serif',
     mono: mono || '"IBM Plex Mono", ui-monospace, monospace',
     at: now,
+    lang,
   };
   return fontCache;
 }
@@ -390,11 +392,12 @@ function widthOf(el) {
  */
 function chartShell({ className = '', ariaLabel = '', role = 'group', render }) {
   const el = htmlEl('div', { class: ['chart', className] });
-  const svg = svgEl('svg', { xmlns: SVG_NS, role, 'aria-label': ariaLabel || null, 'aria-roledescription': 'رسم بياني' }, el);
+  const svg = svgEl('svg', { xmlns: SVG_NS, role, 'aria-label': ariaLabel || null, 'aria-roledescription': t('charts.roles.chart') }, el);
   const legendHost = htmlEl('div', { class: 'chart-legend-host' }, el);
   let destroyed = false;
   let width = 0;
   let offTheme = null;
+  let offLang = null;
   let dispose = null;
 
   const shell = {
@@ -415,11 +418,20 @@ function chartShell({ className = '', ariaLabel = '', role = 'group', render }) 
     destroyed = true;
     if (dispose) dispose();
     if (offTheme) offTheme();
+    if (offLang) offLang();
     tooltip.hideIfOwner(el);
   }
   dispose = observeWidth(el, draw, () => width);
-  offTheme = bus.on('theme:change', () => {
+  const redrawLater = () => {
     if (!el.isConnected) { destroy(); return; }
+    requestAnimationFrame(() => draw(0));
+  };
+  offTheme = bus.on('theme:change', redrawLater);
+  // A chart that survives a language switch (shell-level, or a view that patches instead of re-mounting)
+  // redraws: direction, fonts and built-in strings all depend on the language.
+  offLang = bus.on('lang:change', () => {
+    if (!el.isConnected) { destroy(); return; }
+    svg.setAttribute('aria-roledescription', t(`charts.roles.${shell.role || 'chart'}`));
     requestAnimationFrame(() => draw(0));
   });
   return shell;
@@ -666,10 +678,14 @@ function buildLegend(host, entries, { kind = 'rect' } = {}) {
   clear(host);
   if (!entries || entries.length < 2) { host.hidden = true; return null; }
   host.hidden = false;
-  const ul = htmlEl('ul', { class: 'legend', attrs: { 'aria-label': 'مفتاح الرسم' } }, host);
+  const ul = htmlEl('ul', { class: 'legend', attrs: { 'aria-label': t('charts.legend') } }, host);
   for (const e of entries) {
     const li = htmlEl('li', { class: 'legend-item' }, ul);
-    htmlEl('span', { class: ['legend-key', kind === 'line' ? 'is-line' : kind === 'dot' ? 'is-dot' : null], style: { '--key': e.color }, attrs: { 'aria-hidden': 'true' } }, li);
+    const k = e.kind || kind;
+    const style = { '--key': e.color };
+    // ring: hollow key (dumbbell "from" marker) drawn inline so it does not depend on a stylesheet rule
+    if (k === 'ring') Object.assign(style, { background: 'transparent', border: `2px solid ${e.color}`, borderRadius: '50%', boxSizing: 'border-box' });
+    htmlEl('span', { class: ['legend-key', k === 'line' ? 'is-line' : (k === 'dot' || k === 'ring') ? 'is-dot' : null, k === 'ring' ? 'is-ring' : null], style, attrs: { 'aria-hidden': 'true' } }, li);
     htmlEl('span', { class: 'legend-label', text: e.label }, li);
   }
   return ul;
@@ -756,7 +772,8 @@ export function lineChart(opts = {}) {
 
   const shell = chartShell({ className: 'chart-line', ariaLabel: o.ariaLabel, render });
   const { svg, el } = shell;
-  svg.setAttribute('aria-roledescription', 'رسم خطي');
+  svg.setAttribute('aria-roledescription', t('charts.roles.line'));
+  shell.role = 'line';
 
   function seriesList() {
     return arr(o.series).map((s, i) => ({ ...s, label: str(s.label), values: arr(s.values).map((v) => (isNum(v) ? v : null)), color: seriesColor(s, i) }));
@@ -885,7 +902,7 @@ export function lineChart(opts = {}) {
     for (let i = 0; i < n; i += 1) {
       const x0 = i === 0 ? left : (xs[i - 1] + xs[i]) / 2;
       const x1 = i === n - 1 ? right : (xs[i] + xs[i + 1]) / 2;
-      const desc = series.map((s) => `${fmtTick(s.values[i])} ${s.label}`).join('، ');
+      const desc = series.map((s) => `${fmtTick(s.values[i])} ${s.label}`).join(sep());
       svgEl('rect', {
         x: x0, y: top, width: Math.max(1, x1 - x0), height: plotH, class: 'hit-area', 'data-i': i,
         tabindex: i === Math.min(rovingIndex, n - 1) ? 0 : -1, role: 'img', 'aria-label': `${labels[i] || ''}: ${desc}`,
@@ -1004,7 +1021,8 @@ export function barChart(opts = {}) {
   let view = [];
   const shell = chartShell({ className: 'chart-bars', ariaLabel: o.ariaLabel, render });
   const { svg, el } = shell;
-  svg.setAttribute('aria-roledescription', 'رسم أعمدة');
+  svg.setAttribute('aria-roledescription', t('charts.roles.bars'));
+  shell.role = 'bars';
 
   function prepare() {
     const items = arr(o.items).map((it, i) => ({ id: str(it.id) || `item-${i}`, label: str(it.label), value: num(it.value), color: str(it.color).trim() || o.color, meta: str(it.meta) }));
@@ -1013,7 +1031,7 @@ export function barChart(opts = {}) {
     if (ranked.length <= max) return ranked;
     const head = ranked.slice(0, max - 1);
     const rest = ranked.slice(max - 1);
-    head.push({ id: 'other', label: `${T.other} (${fmt.num(rest.length)})`, value: rest.reduce((a, b) => a + b.value, 0), color: 'var(--ink-3)', meta: '', folded: rest });
+    head.push({ id: 'other', label: t('charts.other', { count: fmt.num(rest.length) }), value: rest.reduce((a, b) => a + b.value, 0), color: 'var(--ink-3)', meta: '', folded: rest });
     return head;
   }
   const f = (v) => str(o.valueFormat(v));
@@ -1070,7 +1088,7 @@ export function barChart(opts = {}) {
       svgEl('rect', { x: 0, y: yRow, width: W, height: rowH, class: 'hit-area', 'data-i': i }, g);
       const labelText = fitText(d.label, labelMaxW, 12);
       svgEl('text', { x: rtl ? W - 2 : 2, y: yRow + rowH / 2 + 4, 'text-anchor': rtl ? A.right : A.left, class: 'bar-label', text: labelText }, g);
-      const aria = `${f(d.value)} — ${d.label}${d.meta ? `، ${d.meta}` : ''}`;
+      const aria = `${f(d.value)} — ${d.label}${d.meta ? `${sep()}${d.meta}` : ''}`;
       if (len >= 1) {
         svgEl('path', { d: hBarPath(x0, yBar, len, thick, dir), class: 'bar mark', 'data-i': i, tabindex: -1, role: 'img', 'aria-label': aria, style: { fill: d.color } }, g);
       } else {
@@ -1173,7 +1191,8 @@ export function groupedBars(opts = {}) {
   let groups = [];
   const shell = chartShell({ className: 'chart-grouped', ariaLabel: o.ariaLabel, render });
   const { svg, el } = shell;
-  svg.setAttribute('aria-roledescription', 'رسم أعمدة مجمعة');
+  svg.setAttribute('aria-roledescription', t('charts.roles.grouped'));
+  shell.role = 'grouped';
   const f = (v) => str(o.valueFormat(v));
 
   function prepare() {
@@ -1289,7 +1308,8 @@ export function heatmap(opts = {}) {
   let model = null;
   const shell = chartShell({ className: 'chart-heatmap', ariaLabel: o.ariaLabel, render });
   const { svg, el } = shell;
-  svg.setAttribute('aria-roledescription', 'مصفوفة');
+  svg.setAttribute('aria-roledescription', t('charts.roles.matrix'));
+  shell.role = 'matrix';
 
   const rowsOf = () => arr(o.rows).map(str);
   const colsOf = () => arr(o.cols).map(str);
@@ -1388,7 +1408,7 @@ export function heatmap(opts = {}) {
         const rect = svgEl('rect', {
           x, y, width: cell, height: cell, rx: Math.min(6, cell / 4), class: ['cell', 'mark', empty ? 'is-empty' : null],
           'data-i': ri, 'data-j': ci, tabindex: -1, role: clickable ? 'button' : 'img',
-          'aria-label': `${label || fmt.num(v === null ? 0 : v)} — ${rowTitle}: ${rows[ri]}، ${colTitle}: ${cols[ci]}`,
+          'aria-label': t('charts.cellAria', { value: label || fmt.num(v === null ? 0 : v), rowTitle, row: rows[ri], colTitle, col: cols[ci] }),
           style: { fill: color || 'var(--bg-2)', stroke: color ? 'none' : 'var(--line)', strokeWidth: color ? '0' : '1' },
         }, cellsG);
         if (clickable) rect.style.cursor = 'pointer';
@@ -1407,7 +1427,7 @@ export function heatmap(opts = {}) {
     if (!model) return null;
     const v = valueAt(ri, ci);
     return {
-      title: `${model.rowTitle}: ${model.rows[ri]} · ${model.colTitle}: ${model.cols[ci]}`,
+      title: t('charts.cellTitle', { rowTitle: model.rowTitle, row: model.rows[ri], colTitle: model.colTitle, col: model.cols[ci] }),
       rows: [{ value: labelOf(v, ri, ci) || fmt.num(v === null ? 0 : v), label: T.value, color: colorOf(v, ri, ci) || undefined }],
     };
   }, {
@@ -1429,7 +1449,7 @@ export function heatmap(opts = {}) {
       const cols = colsOf();
       return buildTable({
         caption: o.ariaLabel,
-        columns: [{ label: `${o.rowTitle || T.row} \\ ${o.colTitle || T.col}` }, ...cols.map((c) => ({ label: c, numeric: true }))],
+        columns: [{ label: t('charts.corner', { row: o.rowTitle || T.row, col: o.colTitle || T.col }) }, ...cols.map((c) => ({ label: c, numeric: true }))],
         rows: rows.map((r, ri) => [r, ...cols.map((_, ci) => { const v = valueAt(ri, ci); return labelOf(v, ri, ci) || fmt.num(v === null ? 0 : v); })]),
       });
     },
@@ -1452,7 +1472,8 @@ export function segmentedBar(opts = {}) {
   let total = 0;
   const shell = chartShell({ className: 'chart-segbar', ariaLabel: o.ariaLabel, render });
   const { svg, el } = shell;
-  svg.setAttribute('aria-roledescription', 'شريط مجزأ');
+  svg.setAttribute('aria-roledescription', t('charts.roles.segbar'));
+  shell.role = 'segbar';
   const f = (v) => str(o.valueFormat(v));
 
   function prepare() {
@@ -1491,7 +1512,7 @@ export function segmentedBar(opts = {}) {
       const x = rtl ? cursor - w : cursor;
       cursor = rtl ? x - gap : x + w + gap;
       const share = shareOf(p.value, total);
-      const aria = `${f(p.value)} ${p.label}، ${share}`;
+      const aria = `${f(p.value)} ${p.label}${sep()}${share}`;
       svgEl('rect', { x: r2(x), y: 0, width: r2(w), height: h, rx: o.tall ? 4 : 0, class: 'segbar-part mark', 'data-i': idx, tabindex: -1, role: 'img', 'aria-label': aria, style: { fill: p.color } }, g);
       if (o.tall) {
         const text = o.showShare ? share : f(p.value);
@@ -1521,6 +1542,152 @@ export function segmentedBar(opts = {}) {
         columns: [{ label: T.part }, { label: T.value, numeric: true }, { label: T.share, numeric: true }],
         rows: parts.map((p) => [keyedCell(p.label, p.color), f(p.value), shareOf(p.value, total)]),
         footer: [T.total, f(total), total > 0 ? fmt.pct(100) : '—'],
+      });
+    },
+    destroy: shell.destroy,
+  };
+}
+
+/* ------------------------------------------------------------------------- */
+/* Dumbbell (before → after per item: inherent vs residual)                   */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * One row per item on ONE shared value axis (no dual axis): a hollow ring for `from` (inherent), a filled
+ * dot for `to` (residual) and a connector between them — one hue, two shades + two shapes, so the pair is
+ * never colour-alone. `to: null` means "not assessed" (ring only, labelled as such — never drawn as 0).
+ * Rows keep the given order (set `sorted: true` to rank by `from`). Labels sit on the inline-start side
+ * and the value axis grows toward the inline-end, like the horizontal bar chart.
+ * @param {{items:Array<{id?:string,label:string,from:number,to:number|null,meta?:string}>, max?:number,
+ *          valueFormat?:Function, ariaLabel?:string, fromLabel?:string, toLabel?:string, fromColor?:string,
+ *          toColor?:string, rowHeight?:number, showValues?:boolean, sorted?:boolean, onItemClick?:Function}} opts
+ * onItemClick({ item, index, event }) fires on click / Enter / Space on a row.
+ */
+export function dumbbell(opts = {}) {
+  const o = {
+    items: [], max: null, valueFormat: fmt.num, ariaLabel: '', fromLabel: '', toLabel: '',
+    fromColor: '', toColor: 'var(--s1)', rowHeight: 34, showValues: true, sorted: false, onItemClick: null,
+    ...opts,
+  };
+  let view = [];
+  const shell = chartShell({ className: 'chart-dumbbell', ariaLabel: o.ariaLabel, render });
+  const { svg, el } = shell;
+  svg.setAttribute('aria-roledescription', t('charts.roles.dumbbell'));
+  shell.role = 'dumbbell';
+  const value = (v) => (isNum(v) ? v : (v === null || v === undefined || v === '' ? null : num(v, null)));
+  const f = (v) => (isNum(v) ? str(o.valueFormat(v)) : t('charts.dumbbell.notAssessed'));
+  const fromLabel = () => str(o.fromLabel) || t('charts.dumbbell.from');
+  const toLabel = () => str(o.toLabel) || t('charts.dumbbell.to');
+  const toColor = () => str(o.toColor).trim() || 'var(--s1)';
+  // the same hue, one step toward the muted ink: distinct from `to` in both themes and still ≥ 3:1 on the card
+  const fromColor = () => str(o.fromColor).trim() || `color-mix(in srgb, ${toColor()} 62%, var(--ink-3))`;
+  const change = (d) => (isNum(d.from) && isNum(d.to) ? fmt.signed(d.to - d.from) : '');
+
+  function prepare() {
+    const items = arr(o.items).map((it, i) => ({ id: str(it && it.id) || `item-${i}`, label: str(it && it.label), from: value(it && it.from), to: value(it && it.to), meta: str(it && it.meta), src: it }));
+    return o.sorted ? items.slice().sort((a, b) => (b.from ?? -Infinity) - (a.from ?? -Infinity)) : items;
+  }
+
+  function render(W) {
+    clear(svg);
+    view = prepare();
+    const n = view.length;
+    const rtl = isRTL(el);
+    const A = anchors(rtl);
+    if (!n) {
+      setViewBox(svg, W, 120);
+      svgEl('text', { x: W / 2, y: 60, 'text-anchor': 'middle', class: 'label is-muted', text: T.noData }, svg);
+      buildLegend(shell.legendHost, []);
+      return;
+    }
+    const all = view.flatMap((d) => [d.from, d.to]).filter(isNum);
+    const scale = isNum(num(o.max, NaN)) && num(o.max) > 0
+      ? (() => { const sc = niceScale([0, num(o.max)], 4); return { ...sc, max: num(o.max), ticks: sc.ticks.filter((v) => v <= num(o.max)) }; })()
+      : niceScale(all, 4);
+    const maxV = scale.max || 1;
+    const rowH = Math.max(26, num(o.rowHeight, 34));
+    const top = 4;
+    const axisH = 24;
+    const H = Math.round(top + rowH * n + axisH);
+    setViewBox(svg, W, H);
+    const labelMaxW = Math.min(W * 0.36, Math.max(...view.map((d) => measure(d.label, 12)), 0) + 6);
+    const labelColW = Math.ceil(labelMaxW) + 12;
+    const valueText = (d) => (isNum(d.to) ? `${f(d.to)}${change(d) ? `  ${change(d)}` : ''}` : f(d.to));
+    const valueW = o.showValues ? Math.ceil(Math.max(...view.map((d) => measure(valueText(d), 11, { mono: true, weight: 500 })), 0)) + 14 : 8;
+    const plotW = Math.max(40, W - labelColW - valueW - 12);
+    const dir = rtl ? -1 : 1;
+    const x0 = rtl ? W - labelColW - 6 : labelColW + 6;      // value 0 at the inline-start edge of the plot
+    const xOf = (v) => x0 + dir * (clamp(v, 0, maxV) / maxV) * plotW;
+    const baseY = top + rowH * n;
+
+    const fmtTick = tickFormatter(o.valueFormat, scale.decimals);
+    const grid = svgEl('g', { class: 'grid', 'aria-hidden': 'true' }, svg);
+    scale.ticks.forEach((tk) => {
+      if (tk < 0 || tk > maxV) return;
+      const xx = Math.round(xOf(tk)) + 0.5;
+      svgEl('line', { x1: xx, x2: xx, y1: top, y2: baseY, class: tk === 0 ? 'axis-line' : 'grid-line' }, grid);
+      svgEl('text', { x: xx, y: H - 7, 'text-anchor': 'middle', class: 'axis-tick num', text: fmtTick(tk) }, grid);
+    });
+
+    const marks = svgEl('g', { class: 'marks' }, svg);
+    const cFrom = fromColor();
+    const cTo = toColor();
+    const clickable = typeof o.onItemClick === 'function';
+    view.forEach((d, i) => {
+      const cy = top + i * rowH + rowH / 2;
+      const aria = t('charts.dumbbell.rowAria', { label: d.label, fromLabel: fromLabel(), from: f(d.from), toLabel: toLabel(), to: f(d.to) })
+        + (change(d) ? `${sep()}${t('charts.dumbbell.change')} ${change(d)}` : '');
+      const g = svgEl('g', { class: ['mark', 'dumbbell-row', isNum(d.to) ? null : 'is-unassessed'], 'data-i': i, tabindex: -1, role: clickable ? 'button' : 'img', 'aria-label': aria }, marks);
+      svgEl('rect', { x: 0, y: cy - rowH / 2, width: W, height: rowH, class: 'hit-area' }, g);
+      svgEl('text', { x: rtl ? W - 2 : 2, y: cy + 4, 'text-anchor': rtl ? A.right : A.left, class: 'bar-label', text: fitText(d.label, labelMaxW, 12) }, g);
+      const xf = isNum(d.from) ? xOf(d.from) : null;
+      const xt = isNum(d.to) ? xOf(d.to) : null;
+      if (xf !== null && xt !== null && Math.abs(xt - xf) > 1) {
+        svgEl('line', { x1: r2(xf), x2: r2(xt), y1: cy, y2: cy, class: 'dumbbell-link', 'stroke-width': 3, 'stroke-linecap': 'round', style: { stroke: `color-mix(in srgb, ${cTo} 38%, var(--bg-2))` } }, g);
+      }
+      if (xf !== null) svgEl('circle', { cx: r2(xf), cy, r: 5, class: 'dumbbell-from', 'stroke-width': 2, style: { fill: 'var(--bg-1)', stroke: cFrom } }, g);
+      if (xt !== null) svgEl('circle', { cx: r2(xt), cy, r: 5.5, class: 'marker dumbbell-to', style: { fill: cTo } }, g);
+      if (o.showValues) {
+        const vx = rtl ? valueW - 6 : W - valueW + 6;
+        const txt = svgEl('text', { x: vx, y: cy + 4, 'text-anchor': rtl ? A.right : A.left, class: ['bar-value', isNum(d.to) ? null : 'is-muted'], text: isNum(d.to) ? f(d.to) : f(null) }, g);
+        if (change(d)) svgEl('tspan', { class: 'cum-label', text: `  ${change(d)}` }, txt);
+      }
+    });
+    buildLegend(shell.legendHost, [
+      { label: fromLabel(), color: cFrom, kind: 'ring' },
+      { label: toLabel(), color: cTo, kind: 'dot' },
+    ]);
+  }
+
+  bindMarks(shell, (i) => {
+    const d = view[i];
+    if (!d) return null;
+    const rows = [
+      { value: f(d.from), label: fromLabel(), color: fromColor() },
+      { value: f(d.to), label: toLabel(), color: isNum(d.to) ? toColor() : undefined },
+    ];
+    if (change(d)) rows.push({ value: change(d), label: t('charts.dumbbell.change') });
+    if (d.meta) rows.push({ value: d.meta, label: '' });
+    return { title: d.label, rows };
+  }, {
+    onActivate: (node, event) => {
+      if (typeof o.onItemClick !== 'function') return;
+      const i = Number(node.getAttribute('data-i'));
+      const d = view[i];
+      if (d) o.onItemClick({ item: d.src, index: i, event });
+    },
+  });
+
+  shell.redraw();
+  return {
+    el,
+    update(data = {}) { Object.assign(o, data || {}); shell.redraw(); },
+    table() {
+      const items = prepare();
+      return buildTable({
+        caption: o.ariaLabel,
+        columns: [{ label: T.item }, { label: fromLabel(), numeric: true }, { label: toLabel(), numeric: true }, { label: t('charts.dumbbell.change'), numeric: true }],
+        rows: items.map((d) => [d.label, f(d.from), f(d.to), change(d) || '—']),
       });
     },
     destroy: shell.destroy,
@@ -1638,7 +1805,7 @@ export function meter(opts = {}) {
 
   function text(v, max) {
     if (typeof o.format === 'function') return str(o.format(v, max));
-    return max === 100 ? fmt.pct(v) : `${fmt.num(v, { maximumFractionDigits: 1 })} ${T.of} ${fmt.num(max)}`;
+    return max === 100 ? fmt.pct(v) : t('charts.of', { value: fmt.num(v, { maximumFractionDigits: 1 }), max: fmt.num(max) });
   }
   function render() {
     const max = Math.max(num(o.max, 100), 0.000001);
@@ -1752,7 +1919,7 @@ export function gauge(opts = {}) {
     nodes.chipText.setAttribute('x', String(rtl ? x0 + w - 28 : x0 + 28));
     nodes.chipText.setAttribute('text-anchor', rtl ? 'start' : 'start');
     nodes.chipText.style.direction = rtl ? 'rtl' : 'ltr';
-    svg.setAttribute('aria-label', `${o.label ? `${o.label}: ` : ''}${fmt.num(value)} ${T.of} ${fmt.num(max)} — ${label}`);
+    svg.setAttribute('aria-label', `${o.label ? `${o.label}: ` : ''}${t('charts.of', { value: fmt.num(value), max: fmt.num(max) })} — ${label}`);
   }
 
   function paintValue(v, max) {
@@ -1776,7 +1943,8 @@ export function gauge(opts = {}) {
 
   build();
   render(true);
-  const offTheme = bus.on('theme:change', () => { if (!el.isConnected) { offTheme(); return; } requestAnimationFrame(() => render(false)); });
+  const offTheme = bus.on('theme:change', () => { if (!el.isConnected) { offTheme(); offLang(); return; } requestAnimationFrame(() => render(false)); });
+  const offLang = bus.on('lang:change', () => { if (!el.isConnected) { offTheme(); offLang(); return; } requestAnimationFrame(() => render(false)); });
   return {
     el,
     update(data) {
@@ -1784,7 +1952,7 @@ export function gauge(opts = {}) {
       if (data && typeof data === 'object' && 'size' in data) build();
       render(true);
     },
-    destroy() { cancelTween(); offTheme(); },
+    destroy() { cancelTween(); offTheme(); offLang(); },
   };
 }
 
@@ -1865,7 +2033,8 @@ export function spider(opts = {}) {
   const o = { axes: [], series: [], max: 100, size: 260, ariaLabel: '', target: null, rings: 4, ...opts };
   const shell = chartShell({ className: 'chart-spider', ariaLabel: o.ariaLabel, role: 'img', render });
   const { svg, el } = shell;
-  svg.setAttribute('aria-roledescription', 'رسم عنكبوتي');
+  svg.setAttribute('aria-roledescription', t('charts.roles.spider'));
+  shell.role = 'spider';
 
   const axesOf = () => arr(o.axes).map((a) => (typeof a === 'string' ? { id: a, label: a } : { id: str(a && a.id), label: str(a && a.label) }));
   const seriesOf = (n) => arr(o.series).map((s, i) => ({ ...s, label: str(s.label), color: seriesColor(s, i), values: Array.from({ length: n }, (_, k) => clamp(num(arr(s.values)[k], 0), 0, Math.max(num(o.max, 100), 0.000001))) }));
@@ -1920,7 +2089,7 @@ export function spider(opts = {}) {
       svgEl('text', { x: r2(x), y: r2(y + dy), 'text-anchor': anchor, class: 'spider-label', text: fitText(a.label, margin * 1.9, labelPx) }, labels);
     });
     buildLegend(shell.legendHost, series.map((s) => ({ label: s.label, color: s.color })), { kind: 'dot' });
-    svg.setAttribute('aria-label', o.ariaLabel || series.map((s) => `${s.label}: ${s.values.map((v, k) => `${fmt.num(v)} ${axes[k].label}`).join('، ')}`).join(' — '));
+    svg.setAttribute('aria-label', o.ariaLabel || series.map((s) => `${s.label}: ${s.values.map((v, k) => `${fmt.num(v)} ${axes[k].label}`).join(sep())}`).join(' — '));
   }
 
   shell.redraw();
@@ -1945,7 +2114,7 @@ export function spider(opts = {}) {
 /* ------------------------------------------------------------------------- */
 
 export const charts = {
-  lineChart, barChart, groupedBars, heatmap, segmentedBar, sparkline, meter, gauge, ring, spider,
+  lineChart, barChart, groupedBars, heatmap, segmentedBar, dumbbell, sparkline, meter, gauge, ring, spider,
   tooltip, paletteFor, prefersReducedMotion,
 };
 
