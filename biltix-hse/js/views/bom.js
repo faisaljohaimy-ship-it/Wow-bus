@@ -38,13 +38,33 @@ const CREDIT_TONE = { A: 'good', B: 'warning', C: 'critical' };
 const CLOSED_RISK = new Set(['مغلق', 'مُتجاوز']);
 const OPEN_TASK = new Set(['جديدة', 'قيد التنفيذ', 'متأخرة']);
 
+const STYLE_ID = 'view-bom-style';
+const STYLE_TEXT = `@layer views {
+  .view-bom .grid-12 { align-items: start; }
+  .view-bom .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
+  .view-bom .boq-desc { overflow-wrap: break-word; }
+}`;
+const CODE_RE = /\b[A-Z]{1,5}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
+const LONG_LEAD_DEFAULT = 5;
+
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
 const lower = (v) => String(v ?? '').toLowerCase();
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+/** Codes inside plain strings (drawer subtitles, toasts): bidi-isolated with non-breaking hyphens (RTL-5). */
+const codeText = (code) => `\u2068${String(code ?? '').replace(/-/g, '\u2011')}\u2069`;
+
+function ensureStyle() {
+  if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = STYLE_TEXT;
+  document.head.appendChild(style);
+}
 
 /** UI state that survives re-renders inside one visit (module-level, no persistence). */
 let selectedCommodityId = null;
-let kriOpen = true;
+let kriOpen = false;
+let longLeadExpanded = false;
 
 export default {
   id: 'bom',
@@ -57,6 +77,7 @@ export default {
     const psel = ctx.psel || null;
     const { h, card, statTile, badge, dataTable, button, drawer, toast, emptyState, progress, svgIcon, glyph, kv } = components;
 
+    ensureStyle();
     const root = h('section', { class: 'view view-bom' });
     container.appendChild(root);
 
@@ -68,6 +89,17 @@ export default {
     /* ───────────────────────── primitives ───────────────────────── */
 
     const mono = (text, extra = null) => h('span', { class: ['mono', ...String(extra || '').split(/\s+/).filter(Boolean)], style: { fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' } }, String(text ?? '—'));
+    /** A code such as BQ-0042 as an isolated LTR mono run that never breaks (RTL-5). */
+    const codeSpan = (code, extra = null) => h('span', { class: ['code', 'mono', 'nowrap', ...String(extra || '').split(/\s+/).filter(Boolean)], dir: 'ltr' }, String(code ?? '—'));
+    function withCodes(str) {
+      const t = String(str ?? ''); const out = []; let last = 0; let m;
+      CODE_RE.lastIndex = 0;
+      while ((m = CODE_RE.exec(t))) { if (m.index > last) out.push(t.slice(last, m.index)); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
+      if (last < t.length) out.push(t.slice(last));
+      return out.length ? out : [t];
+    }
+    /** Signed percentage through fmt.signedPct when the core provides it (RTL-4 / RTL-23). */
+    const signedPct = (n, d = 0) => (typeof fmt.signedPct === 'function' ? fmt.signedPct(n, d) : `${fmt.signed(n, d)}${typeof fmt.getNumerals === 'function' && fmt.getNumerals() === 'arab' ? '٪' : '%'}`);
     const sar = (n) => (Number.isFinite(Number(n)) ? `${fmt.compact(Number(n))} ر.س` : '—');
     const startOfToday = () => { const d = store.now ? store.now() : new Date(); d.setHours(0, 0, 0, 0); return d; };
     const daysUntil = (iso) => { const d = fmt.toDate(iso); if (!d) return null; d.setHours(0, 0, 0, 0); return Math.round((d.getTime() - startOfToday().getTime()) / DAY_MS); };
@@ -119,8 +151,8 @@ export default {
     function varianceBadge(pct) {
       const v = num(pct);
       const tone = varianceTone(v);
-      const b = badge(fmt.signed(v, 1) + '%', tone);
-      b.title = tone === 'good' ? 'ضمن حدود التحمل (± 5%)' : tone === 'warning' ? 'فرق ملحوظ بين BoQ و BIM — يتطلب مراجعة الكميات' : 'فرق جوهري — خطر تجاوز أو نقص في التوريد';
+      const b = badge(signedPct(v, 1), tone);
+      b.title = tone === 'good' ? `ضمن حدود التحمل (± ${fmt.pct(VARIANCE_WARN)})` : tone === 'warning' ? 'فرق ملحوظ بين BoQ و BIM — يتطلب مراجعة الكميات' : 'فرق جوهري — خطر تجاوز أو نقص في التوريد';
       return b;
     }
     function orderByCell(iso) {
@@ -259,7 +291,7 @@ export default {
           dueDate: isoPlusDays(overdue ? 2 : 7),
           status: 'جديدة',
           source: 'manual',
-          description: `فرق الكمية BoQ/BIM ${fmt.signed(num(item.variancePct), 1)}% · مدة التوريد ${fmt.num(num(item.leadTimeDays))} يوماً · المطابقة: ${item.specCompliance || '—'}${item.supplier ? ` · المورد: ${item.supplier.name}` : ''}`,
+          description: `فرق الكمية BoQ/BIM ${signedPct(num(item.variancePct), 1)} · مدة التوريد ${fmt.num(num(item.leadTimeDays))} يوماً · المطابقة: ${item.specCompliance || '—'}${item.supplier ? ` · المورد: ${item.supplier.name}` : ''}`,
           origin: { view: 'bom', boqItemId: item.id },
         });
       } catch (err) { console.warn('[bom] addTask failed', err); toast('تعذر إنشاء المهمة. حاول مرة أخرى.', { tone: 'critical' }); return null; }
@@ -316,7 +348,7 @@ export default {
           related.length
             ? h('ul', { class: 'urgent-list' }, ...related.map((r) => h('li', { class: 'urgent-item' },
               h('span', { class: 'urgent-icon' }, svgIcon('shield-alert', 15)),
-              h('div', { class: 'urgent-text' }, h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, mono(r.code), h('span', {}, r.title)), h('span', { class: 'urgent-sub' }, `${r.owner || 'بدون مالك'} · ${r.status}`)),
+              h('div', { class: 'urgent-text' }, h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, codeSpan(r.code), h('span', {}, ...withCodes(r.title))), h('span', { class: 'urgent-sub' }, `${r.owner || 'بدون مالك'} · ${r.status}`)),
               h('div', { class: 'urgent-due' }, scoreCell(r.score), button('فتح', { variant: 'ghost', size: 'sm', onClick: () => { if (openDrawer) openDrawer.close(); router.navigate('airisks', { risk: r.id }); } })),
             )))
             : h('p', { class: 'text-sm muted' }, 'لم يرصد المحرك مخاطر مفتوحة مرتبطة بهذا البند.'),
@@ -324,7 +356,7 @@ export default {
       );
       openDrawer = drawer({
         title: item.description,
-        subtitle: `${item.code} · ${siteName(data.state, item.projectId)}`,
+        subtitle: `${codeText(item.code)} · ${siteName(data.state, item.projectId)}`,
         body, size: 'lg',
         actions: [
           { label: 'إنشاء مهمة توريد', variant: 'primary', icon: svgIcon('list', 16), closes: false, onClick: () => { createProcurementTask(data, item); return false; } },
@@ -361,11 +393,11 @@ export default {
       const spark = cs && Array.isArray(cs.trend) && cs.trend.length > 1 ? makeChart('sparkline', { values: cs.trend, width: 96, height: 28, color: 'var(--ink-3)', accentLast: true }) : null;
       const overdueLong = data.longLead.filter((b) => b.days !== null && b.days < 0).length;
       return h('div', { class: 'kpi-row' },
-        statTile({ label: 'درجة مجال المواد والتوريد', value: num(cs.score), unit: '/ 100', tone: ratingTone(ratingOf(cs.score)), icon: svgIcon('list', 18), spark, hint: `${fmt.num(cs.open || 0)} مخاطر مفتوحة · ${fmt.num(cs.red || 0)} حمراء — ${RATING_META[ratingOf(cs.score)].hint}` }),
+        statTile({ label: 'درجة مجال المواد والتوريد', value: num(cs.score), unit: `/ ${fmt.num(100)}`, tone: ratingTone(ratingOf(cs.score)), icon: svgIcon('list', 18), spark, hint: `${fmt.num(cs.open || 0)} مخاطر مفتوحة · ${fmt.num(cs.red || 0)} حمراء — ${RATING_META[ratingOf(cs.score)].hint}` }),
         statTile({ label: 'التعرض لأسعار السلع', value: fmt.compact(data.totalExposure), unit: 'ر.س', tone: 'brand', icon: svgIcon('chart', 18), hint: `${fmt.num(data.commodities.length)} سلع مراقبة · ${fmt.num(data.commodities.filter((c) => c.trend === 'صاعد').length)} منها في اتجاه صاعد (على مستوى المحفظة)` }),
         statTile({ label: 'موردون أحاديو المصدر', value: data.singleSource.length, tone: data.singleSource.length ? 'critical' : 'good', icon: glyph(data.singleSource.length ? 'critical' : 'good', 18), hint: data.singleSource.length ? `${data.singleSource.map((s) => s.name).slice(0, 3).join('، ')}${data.singleSource.length > 3 ? ' …' : ''}` : 'لكل بند مورد بديل مؤهل', onClick: () => { const t = root.querySelector('[data-section="suppliers"]'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }),
-        statTile({ label: 'فروقات BoQ↔BIM ≥ 5%', value: data.varianceCount, tone: data.boqAll.some((b) => Math.abs(num(b.variancePct)) >= VARIANCE_CRIT) ? 'critical' : data.varianceCount ? 'warning' : 'good', icon: glyph('warning', 18), hint: `من أصل ${fmt.num(data.boqAll.length)} بنداً ضمن النطاق`, onClick: () => { const t = root.querySelector('[data-section="variance"]'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }),
-        statTile({ label: 'بنود طويلة التوريد', value: data.longLead.length, tone: overdueLong ? 'critical' : data.longLead.length ? 'warning' : 'good', icon: glyph('clock', 18), hint: overdueLong ? `${fmt.num(overdueLong)} بنداً تجاوز آخر موعد للطلب` : `مدة توريد ≥ ${fmt.num(LONG_LEAD_DAYS)} يوماً` }),
+        statTile({ label: `فروقات BoQ↔BIM من ${fmt.pct(VARIANCE_WARN)} فأكثر`, value: data.varianceCount, tone: data.boqAll.some((b) => Math.abs(num(b.variancePct)) >= VARIANCE_CRIT) ? 'critical' : data.varianceCount ? 'warning' : 'good', icon: glyph('warning', 18), hint: `من أصل ${fmt.num(data.boqAll.length)} بنداً ضمن النطاق`, onClick: () => { const t = root.querySelector('[data-section="variance"]'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }),
+        statTile({ label: 'بنود طويلة التوريد', value: data.longLead.length, tone: overdueLong ? 'critical' : data.longLead.length ? 'warning' : 'good', icon: glyph('clock', 18), hint: overdueLong ? `${fmt.num(overdueLong)} بنداً تجاوز آخر موعد للطلب` : `مدة توريد ${fmt.num(LONG_LEAD_DAYS)} يوماً فأكثر` }),
         statTile({ label: 'بنود غير مطابقة للمواصفات', value: data.nonCompliant, tone: data.nonCompliant ? 'serious' : 'good', icon: glyph(data.nonCompliant ? 'serious' : 'good', 18), hint: `${fmt.num(data.boqAll.filter((b) => b.specCompliance === 'قيد المراجعة').length)} بنداً قيد المراجعة` }),
       );
     }
@@ -391,7 +423,7 @@ export default {
           { id: 'forecast', label: 'توقع', color: 'var(--s2)', values: forecastValues },
         ],
         labels, height: 240, yFormat: (v) => fmt.num(v, { maximumFractionDigits: 1 }),
-        ariaLabel: `سعر ${c.name} (${c.unit}) خلال 24 شهراً مع توقع 6 أشهر`,
+        ariaLabel: `سعر ${c.name} (${c.unit}) خلال ${fmt.num(24)} شهراً مع توقع ${fmt.num(6)} أشهر`,
       }) : null;
       const fallback = () => simpleTable(`سعر ${c.name}`, ['الشهر', 'السعر الفعلي', 'توقع'], labels.map((l, i) => [l, actualValues[i] === null ? '—' : fmt.num(actualValues[i], { maximumFractionDigits: 1 }), forecastValues[i] === null || forecastValues[i] === undefined ? '—' : fmt.num(forecastValues[i], { maximumFractionDigits: 1 })]));
 
@@ -402,10 +434,10 @@ export default {
       const change6 = last ? ((end - last) / last) * 100 : 0;
       const fact = (label, value, sub = null, tone = null) => h('div', { class: ['fact', tone ? `tone-${tone}` : null] }, h('span', { class: 'fact-label' }, label), h('span', { class: 'fact-value' }, value), sub ? h('span', { class: 'text-xs muted' }, sub) : null);
       const facts = h('div', { class: 'hero-facts', style: { gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' } },
-        fact('آخر سعر', h('span', {}, mono(fmt.num(last, { maximumFractionDigits: 1 })), h('small', {}, ` ر.س / ${c.unit || 'وحدة'}`)), `${fmt.signed(change24, 1)}% خلال 24 شهراً`),
+        fact('آخر سعر', h('span', {}, mono(fmt.num(last, { maximumFractionDigits: 1 }), 'num'), h('small', {}, ` ر.س / ${c.unit || 'وحدة'}`)), `${signedPct(change24, 1)} خلال ${fmt.num(24)} شهراً`),
         fact('التقلب السنوي', h('span', {}, mono(fmt.pct(num(c.volatilityPct), 1))), num(c.volatilityPct) >= 20 ? 'تقلب مرتفع' : num(c.volatilityPct) >= 10 ? 'تقلب متوسط' : 'تقلب منخفض', num(c.volatilityPct) >= 20 ? 'critical' : num(c.volatilityPct) >= 10 ? 'warning' : 'good'),
         fact('التعرض', h('span', {}, mono(fmt.compact(num(c.exposureSAR))), h('small', {}, ' ر.س')), `${fmt.pct(data.totalExposure ? (num(c.exposureSAR) / data.totalExposure) * 100 : 0)} من إجمالي التعرض`),
-        fact('التوقع لـ 6 أشهر', h('span', { class: 'row gap-2', style: { alignItems: 'center' } }, mono(`${fmt.signed(change6, 1)}%`), trendBadge(c.trend)), `إلى ${fmt.num(end, { maximumFractionDigits: 1 })} ر.س / ${c.unit || 'وحدة'}`),
+        fact(`التوقع لـ${fmt.num(6)} أشهر`, h('span', { class: 'row gap-2', style: { alignItems: 'center' } }, mono(signedPct(change6, 1), 'num'), trendBadge(c.trend)), `إلى ${fmt.num(end, { maximumFractionDigits: 1 })} ر.س / ${c.unit || 'وحدة'}`),
       );
       const body = h('div', { class: 'stack gap-3' },
         h('div', { class: 'row between wrap gap-2', style: { alignItems: 'center' } },
@@ -489,14 +521,14 @@ export default {
     }
 
     function buildLongLeadCard(data) {
-      const rows = data.longLead.slice(0, 12);
+      const rows = longLeadExpanded ? data.longLead : data.longLead.slice(0, LONG_LEAD_DEFAULT);
       const list = rows.length ? h('ul', { class: 'urgent-list', 'aria-label': 'البنود طويلة التوريد' }, ...rows.map((b) => {
         const overdue = b.days !== null && b.days < 0;
         const soon = b.days !== null && b.days >= 0 && b.days <= 14;
         return h('li', { class: ['urgent-item', overdue ? 'is-overdue' : null, overdue ? 'tone-critical' : soon ? 'tone-warning' : 'tone-neutral'] },
           h('span', { class: 'urgent-icon' }, glyph(overdue ? 'critical' : soon ? 'warning' : 'clock', 15)),
           h('div', { class: 'urgent-text' },
-            h('button', { type: 'button', class: 'btn btn-ghost btn-sm', style: { blockSize: 'auto', padding: 0, justifyContent: 'flex-start', textAlign: 'start', whiteSpace: 'normal', fontSize: 'var(--fs-sm)' }, onClick: () => openItem(data, b) }, h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, mono(b.code), h('span', {}, b.description))),
+            h('button', { type: 'button', class: 'btn btn-ghost btn-sm', style: { blockSize: 'auto', padding: 0, justifyContent: 'flex-start', textAlign: 'start', whiteSpace: 'normal', fontSize: 'var(--fs-sm)' }, onClick: () => openItem(data, b) }, h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, codeSpan(b.code), h('span', {}, b.description))),
             h('span', { class: 'urgent-sub row gap-2 wrap' }, h('span', {}, b.supplier ? b.supplier.name : 'بدون مورد'), b.supplier && b.supplier.singleSource ? badge('مصدر وحيد', 'critical') : null, h('span', {}, `مدة التوريد ${fmt.num(num(b.leadTimeDays))} يوماً`), h('span', {}, siteName(data.state, b.projectId))),
           ),
           h('div', { class: 'urgent-due' }, h('span', {}, `آخر موعد للطلب ${fmt.date(b.orderBy, { style: 'short' })}`), badge(overdue ? `متأخر ${fmt.num(Math.abs(b.days))} يوم` : b.days === 0 ? 'اليوم' : `خلال ${fmt.num(b.days)} يوماً`, overdue ? 'critical' : soon ? 'warning' : 'neutral')),
@@ -504,7 +536,8 @@ export default {
       })) : emptyState({ title: 'لا توجد بنود طويلة التوريد ضمن النطاق', text: `البند طويل التوريد عندما تبلغ مدة توريده ${fmt.num(LONG_LEAD_DAYS)} يوماً أو أكثر.` });
       return card({
         code: 'BOM-04', title: 'البنود طويلة التوريد', className: 'col-span-6',
-        subtitle: `${fmt.num(data.longLead.length)} بنداً بمدة توريد ≥ ${fmt.num(LONG_LEAD_DAYS)} يوماً — الأقرب إلى آخر موعد للطلب أولاً`,
+        subtitle: `${fmt.num(data.longLead.length)} بنداً بمدة توريد ${fmt.num(LONG_LEAD_DAYS)} يوماً فأكثر — الأقرب إلى آخر موعد للطلب أولاً`,
+        actions: data.longLead.length > LONG_LEAD_DEFAULT ? [button(longLeadExpanded ? 'عرض أقل' : `عرض الكل (${fmt.num(data.longLead.length)})`, { variant: 'ghost', size: 'sm', icon: longLeadExpanded ? 'chevron-up' : 'chevron-down', onClick: () => { longLeadExpanded = !longLeadExpanded; schedule(); } })] : [],
         body: list,
         footer: data.longLead.length > rows.length ? h('p', { class: 'text-xs muted' }, `يُعرض ${fmt.num(rows.length)} من أصل ${fmt.num(data.longLead.length)} بنداً.`) : null,
       });
@@ -514,31 +547,31 @@ export default {
       const rows = data.boqItems.map((b) => ({ ...b, _absVar: Math.abs(num(b.variancePct)), _supplierName: b.supplier ? b.supplier.name : '' }));
       const table = dataTable({
         caption: 'فروقات الكميات بين جدول الكميات ونموذج BIM',
-        pageSize: 10, rowKey: 'id',
+        pageSize: 8, rowKey: 'id', stickyFirst: true,
         emptyText: data.search ? 'لا توجد بنود مطابقة للبحث' : 'لا توجد بنود ضمن هذا النطاق',
         onRowClick: (r) => openItem(data, r),
         initialSort: { key: '_absVar', dir: 'desc' },
         columns: [
-          { key: 'code', label: 'الرمز', mono: true, width: 110, render: (r) => mono(r.code) },
-          { key: 'description', label: 'الوصف', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.description), h('span', { class: 'text-xs muted' }, `${siteName(data.state, r.projectId)} · ${r.unit || ''}`)) },
-          { key: 'boqQty', label: 'كمية BoQ', align: 'end', render: (r) => mono(fmt.num(num(r.boqQty), { maximumFractionDigits: 1 })), sortValue: (r) => num(r.boqQty) },
-          { key: 'bimQty', label: 'كمية BIM', align: 'end', render: (r) => mono(fmt.num(num(r.bimQty), { maximumFractionDigits: 1 })), sortValue: (r) => num(r.bimQty) },
-          { key: '_absVar', label: 'الفرق %', render: (r) => varianceBadge(r.variancePct), sortValue: (r) => r._absVar },
-          { key: '_supplierName', label: 'المورد', render: (r) => (r.supplier ? h('div', { class: 'row gap-1 wrap', style: { alignItems: 'center' } }, h('span', {}, r.supplier.name), r.supplier.singleSource ? badge('مصدر وحيد', 'critical') : null) : h('span', { class: 'muted' }, '—')) },
-          { key: 'leadTimeDays', label: 'مدة التوريد', align: 'end', render: (r) => h('span', { class: num(r.leadTimeDays) >= LONG_LEAD_DAYS ? 'semibold' : null }, `${fmt.num(num(r.leadTimeDays))} يوم`), sortValue: (r) => num(r.leadTimeDays) },
-          { key: 'orderBy', label: 'آخر موعد للطلب', render: (r) => orderByCell(r.orderBy), sortValue: (r) => (fmt.toDate(r.orderBy) || new Date(0)).getTime() },
-          { key: 'specCompliance', label: 'المطابقة', render: (r) => statusBadge(r.specCompliance, SPEC_TONE) },
+          { key: 'code', label: 'الرمز / الموقع', width: 120, priority: 'high', render: (r) => h('div', { class: 'stack gap-1' }, codeSpan(r.code), h('span', { class: 'text-xs muted', style: { whiteSpace: 'normal' } }, siteName(data.state, r.projectId))) },
+          { key: 'description', label: 'الوصف', width: '32%', priority: 'high', render: (r) => h('div', { class: 'stack gap-1 boq-desc' }, h('span', { class: 'semibold' }, r.description), h('span', { class: 'text-xs muted' }, `الوحدة: ${r.unit || '—'}`)) },
+          { key: 'boqQty', label: 'كمية BoQ', align: 'end', priority: 'medium', render: (r) => mono(fmt.num(num(r.boqQty), { maximumFractionDigits: 1 }), 'num'), sortValue: (r) => num(r.boqQty) },
+          { key: 'bimQty', label: 'كمية BIM', align: 'end', priority: 'medium', render: (r) => mono(fmt.num(num(r.bimQty), { maximumFractionDigits: 1 }), 'num'), sortValue: (r) => num(r.bimQty) },
+          { key: '_absVar', label: 'الفرق', priority: 'high', render: (r) => varianceBadge(r.variancePct), sortValue: (r) => r._absVar },
+          { key: '_supplierName', label: 'المورد', priority: 'medium', render: (r) => (r.supplier ? h('div', { class: 'row gap-1 wrap', style: { alignItems: 'center' } }, h('span', {}, r.supplier.name), r.supplier.singleSource ? badge('مصدر وحيد', 'critical') : null) : h('span', { class: 'muted' }, '—')) },
+          { key: 'leadTimeDays', label: 'مدة التوريد', align: 'end', priority: 'low', render: (r) => h('span', { class: ['nowrap', num(r.leadTimeDays) >= LONG_LEAD_DAYS ? 'semibold' : null] }, h('span', { class: 'num' }, fmt.num(num(r.leadTimeDays))), ' يوماً'), sortValue: (r) => num(r.leadTimeDays) },
+          { key: 'orderBy', label: 'آخر موعد للطلب', priority: 'low', render: (r) => orderByCell(r.orderBy), sortValue: (r) => (fmt.toDate(r.orderBy) || new Date(0)).getTime() },
+          { key: 'specCompliance', label: 'المطابقة', priority: 'medium', render: (r) => statusBadge(r.specCompliance, SPEC_TONE) },
         ],
         rows,
       });
       const el = card({
         code: 'BOM-05', title: 'فروقات الكميات BoQ ↔ BIM', className: 'col-span-12',
-        subtitle: `${fmt.num(rows.length)} بنداً — ${fmt.num(data.varianceCount)} منها بفرق ≥ ${fmt.num(VARIANCE_WARN)}% · مرتبة حسب حجم الفرق`,
+        subtitle: `${fmt.num(rows.length)} بنداً — ${fmt.num(data.varianceCount)} منها بفرق ${fmt.pct(VARIANCE_WARN)} فأكثر · مرتبة حسب حجم الفرق`,
         body: table.el,
         footer: h('div', { class: 'tone-legend' },
-          h('span', { class: 'tone-legend-item tone-good' }, glyph('good', 12), h('span', {}, 'ضمن ± 5%')),
-          h('span', { class: 'tone-legend-item tone-warning' }, glyph('warning', 12), h('span', {}, '5% – 15%: مراجعة الكميات')),
-          h('span', { class: 'tone-legend-item tone-critical' }, glyph('critical', 12), h('span', {}, '≥ 15%: خطر تجاوز أو نقص')),
+          h('span', { class: 'tone-legend-item tone-good' }, glyph('good', 12), h('span', {}, `ضمن ± ${fmt.pct(VARIANCE_WARN)}`)),
+          h('span', { class: 'tone-legend-item tone-warning' }, glyph('warning', 12), h('span', {}, `من ${fmt.pct(VARIANCE_WARN)} إلى ${fmt.pct(VARIANCE_CRIT)}: مراجعة الكميات`)),
+          h('span', { class: 'tone-legend-item tone-critical' }, glyph('critical', 12), h('span', {}, `${fmt.pct(VARIANCE_CRIT)} فأكثر: خطر تجاوز أو نقص`)),
         ),
       });
       el.dataset.section = 'variance';
@@ -550,17 +583,17 @@ export default {
       const red = rows.filter((r) => ratingOf(r.score) === 'red').length;
       const table = dataTable({
         caption: 'المخاطر المكتشفة في مجال المواد والتوريد',
-        pageSize: 8, rowKey: 'id',
+        pageSize: 6, rowKey: 'id', stickyFirst: true,
         emptyText: 'لا توجد مخاطر مفتوحة في هذا المجال ضمن النطاق',
         onRowClick: (r) => router.navigate('airisks', { risk: r.id }),
         initialSort: { key: 'score', dir: 'desc' },
         columns: [
-          { key: 'code', label: 'الرمز', mono: true, width: 110, render: (r) => mono(r.code) },
-          { key: 'title', label: 'المخاطرة', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.title), h('span', { class: 'text-xs muted' }, `${siteName(data.state, r.projectId)}${r.evidence && r.evidence.ref ? ` · ${r.evidence.ref}` : ''}`)) },
-          { key: 'score', label: 'الدرجة والتصنيف', render: (r) => scoreCell(r.score), sortValue: (r) => num(r.score) },
-          { key: 'type', label: 'النوع', render: (r) => typeChip(r.type) },
-          { key: 'owner', label: 'المالك', render: (r) => r.owner || h('span', { class: 'muted' }, 'غير مُسند') },
-          { key: 'status', label: 'الحالة', render: (r) => statusBadge(r.status, RISK_STATUS_TONE) },
+          { key: 'code', label: 'الرمز', width: 110, priority: 'high', render: (r) => codeSpan(r.code) },
+          { key: 'title', label: 'المخاطرة', priority: 'high', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, ...withCodes(r.title)), h('span', { class: 'text-xs muted row gap-1 wrap' }, h('span', {}, siteName(data.state, r.projectId)), r.evidence && r.evidence.ref ? ' · ' : null, r.evidence && r.evidence.ref ? h('span', { class: 'mono', dir: 'ltr' }, r.evidence.ref) : null)) },
+          { key: 'score', label: 'الدرجة والتصنيف', priority: 'high', render: (r) => scoreCell(r.score), sortValue: (r) => num(r.score) },
+          { key: 'type', label: 'النوع', priority: 'medium', render: (r) => typeChip(r.type) },
+          { key: 'owner', label: 'المالك', priority: 'low', render: (r) => r.owner || h('span', { class: 'muted' }, 'غير مُسند') },
+          { key: 'status', label: 'الحالة', priority: 'medium', render: (r) => statusBadge(r.status, RISK_STATUS_TONE) },
         ],
         rows,
       });
@@ -636,9 +669,10 @@ export default {
 
     function schedule() { if (!raf) raf = requestAnimationFrame(build); }
 
-    const IGNORE = /^(feed|sensors|integrations|permits|incidents|inspections|risks|workers|platform\.(validation|connectors|auditLog|pipelines|alerts))/;
+    // Only the entities this view displays rebuild it (own data, AI risks, alerts, site names, full reset); tasks are read at action time only (C-4).
+    const RELEVANT = /^(\*|sites|platform\.(boqItems|suppliers|commodities|aiRisks|alerts))/;
     const unsubs = [
-      bus.on('store:change', (payload) => { const path = payload && payload.path ? String(payload.path) : '*'; if (!IGNORE.test(path)) schedule(); }),
+      bus.on('store:change', (payload) => { const path = payload && payload.path ? String(payload.path) : '*'; if (RELEVANT.test(path)) schedule(); }),
       bus.on('filters:change', (payload) => { const key = payload && payload.key; if (!key || key === 'siteId' || key === 'range' || key === 'search') schedule(); }),
       bus.on('settings:change', (payload) => {
         const s = (payload && payload.settings) || store.state.settings || {};

@@ -21,9 +21,30 @@ const RATING_LABEL = { red: 'أحمر', yellow: 'أصفر', green: 'أخضر' };
 const RATING_TONE = { red: 'critical', yellow: 'warning', green: 'good' };
 const CLOSED_STATUSES = new Set(['مغلق', 'مُتجاوز']);
 
+const STYLE_ID = 'view-cost-style';
+const STYLE_TEXT = `@layer views {
+  .view-cost .grid-12 { align-items: start; }
+  .view-cost .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
+  .view-cost .wrap-2 { overflow-wrap: break-word; }
+  @media (max-width: 599.98px) {
+    .view-cost .chips.is-scroll { flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; padding-block-end: 4px; scrollbar-width: thin; }
+    .view-cost .chips.is-scroll > .chip { flex: none; scroll-snap-align: start; }
+  }
+}`;
+const CODE_RE = /\b[A-Z]{1,5}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
+const LABOUR_DEFAULT = 6;
+
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
 const arr = (v) => (Array.isArray(v) ? v : []);
 const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
+
+function ensureStyle() {
+  if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = STYLE_TEXT;
+  document.head.appendChild(style);
+}
 
 export default {
   id: 'cost',
@@ -35,15 +56,28 @@ export default {
     const { store, bus, fmt, charts, components, psel, sources, router } = ctx;
     const { h, card, statTile, badge, dataTable, button, toast, emptyState, progress, svgIcon, glyph } = components;
 
+    ensureStyle();
     const root = h('section', { class: 'view view-cost' });
     container.appendChild(root);
 
     let raf = 0;
     let localProject = 'portfolio'; // used only while the global project filter is "all"
+    let labourExpanded = false;
 
     /* ───────────────────────── helpers ───────────────────────── */
 
     const mono = (text, extra = []) => h('span', { class: ['mono', 'num', ...arr(extra)] }, String(text ?? '—'));
+    /** A code such as CO-0042 / AIR-0042 as an isolated LTR mono run that never breaks (RTL-5). */
+    const codeSpan = (code, extra = null) => h('span', { class: ['code', 'mono', 'nowrap', extra], dir: 'ltr' }, String(code ?? '—'));
+    function withCodes(str) {
+      const t = String(str ?? ''); const out = []; let last = 0; let m;
+      CODE_RE.lastIndex = 0;
+      while ((m = CODE_RE.exec(t))) { if (m.index > last) out.push(t.slice(last, m.index)); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
+      if (last < t.length) out.push(t.slice(last));
+      return out.length ? out : [t];
+    }
+    /** Signed percentage through fmt.signedPct when the core provides it (RTL-4 / RTL-23). */
+    const signedPct = (n, d = 0) => (typeof fmt.signedPct === 'function' ? fmt.signedPct(n, d) : `${fmt.signed(n, d)}${typeof fmt.getNumerals === 'function' && fmt.getNumerals() === 'arab' ? '٪' : '%'}`);
     const sar = (v) => (Number.isFinite(Number(v)) ? `${fmt.compact(Number(v))} ر.س` : '—');
     const sarFull = (v) => (Number.isFinite(Number(v)) ? `${fmt.num(Number(v))} ر.س` : '—');
     const ratio = (v) => (Number.isFinite(Number(v)) ? fmt.num(Number(v), { maximumFractionDigits: 2, minimumFractionDigits: 2 }) : '—');
@@ -246,7 +280,7 @@ export default {
         );
       }
       const options = [{ value: 'portfolio', label: 'المحفظة', icon: 'layers' }, ...data.projects.map((p) => ({ value: p.id, label: projectCode(data.state, p.id), icon: 'building', title: projectName(data.state, p.id) }))];
-      const chips = h('div', { class: 'chip-group', role: 'group', 'aria-label': 'اختيار المشروع' }, ...options.map((o) => {
+      const chips = h('div', { class: 'chip-group chips is-scroll', role: 'group', 'aria-label': 'اختيار المشروع', style: { overflowX: 'auto' } }, ...options.map((o) => {
         const active = o.value === data.scopeId;
         return h('button', { type: 'button', class: ['chip', 'is-sm', active ? 'is-active' : null], 'aria-pressed': active ? 'true' : 'false', title: o.title || undefined, onClick: () => { localProject = o.value; schedule(); } }, svgIcon(o.icon, 12), h('span', {}, o.label));
       }));
@@ -347,7 +381,7 @@ export default {
       const totalImpact = items.reduce((a, c) => a + c.impactSAR, 0);
       const totalPct = data.commodities.reduce((a, c) => a + num(c.exposureSAR), 0) ? (totalImpact / data.commodities.reduce((a, c) => a + num(c.exposureSAR), 0)) * 100 : 0;
       return card({
-        code: 'CST-03', title: 'أثر تضخم السلع', subtitle: 'التعرض الحالي لكل سلعة والتغير المتوقع في سعرها خلال 6 أشهر — انقر للتفاصيل في مخاطر المواد',
+        code: 'CST-03', title: 'أثر تضخم السلع', subtitle: `التعرض الحالي لكل سلعة والتغير المتوقع في سعرها خلال ${fmt.num(6)} أشهر — انقر للتفاصيل في مخاطر المواد`,
         actions: [toneBadge(`${totalImpact < 0 ? '−' : '+'}${sar(Math.abs(totalImpact))}`, changeTone(totalPct, { badAbove: 4, warnAbove: 1 }))],
         body: h('div', { class: 'kpi-row' }, ...tiles),
       });
@@ -356,15 +390,15 @@ export default {
     function buildCurrencyCard(data) {
       const rows = data.currencies;
       const table = dataTable({
-        dense: true, pageSize: 0, rowKey: 'code', emptyText: 'لا تتوفر بيانات العملات',
+        dense: true, pageSize: 0, rowKey: 'code', stickyFirst: true, emptyText: 'لا تتوفر بيانات العملات',
         caption: 'التعرض للعملات الأجنبية',
         columns: [
-          { key: 'code', label: 'العملة', render: (r) => h('span', { class: 'row gap-2' }, mono(r.code), h('span', { class: 'text-sm' }, r.nameAr || '')) },
-          { key: 'rate', label: 'السعر (ر.س)', align: 'end', mono: true, render: (r) => fmt.num(num(r.rate), { maximumFractionDigits: 4, minimumFractionDigits: 2 }) },
-          { key: 'change30dPct', label: 'التغير 30 يوماً', align: 'end', render: (r) => h('span', { class: ['num', 'mono', `tone-${changeTone(Math.abs(num(r.change30dPct)), { badAbove: 3, warnAbove: 1.5 })}`], style: { color: 'var(--tone-ink)' } }, fmt.signed(num(r.change30dPct), 1) + '%') },
-          { key: 'exposureSAR', label: 'التعرض', align: 'end', mono: true, render: (r) => sar(r.exposureSAR), sortValue: (r) => num(r.exposureSAR) },
-          { key: 'forecast30d', label: 'توقع 30 يوماً', align: 'end', mono: true, render: (r) => fmt.num(num(r.forecast30d), { maximumFractionDigits: 4, minimumFractionDigits: 2 }) },
-          { key: 'advice', label: 'توصية التحوّط', sortable: false, render: (r) => toneBadge(r.advice.label, r.advice.tone) },
+          { key: 'code', label: 'العملة', priority: 'high', render: (r) => h('span', { class: 'row gap-2' }, h('span', { class: 'code mono nowrap', lang: 'en', dir: 'ltr' }, r.code), h('span', { class: 'text-sm' }, r.nameAr || '')) },
+          { key: 'rate', label: 'السعر (ر.س)', align: 'end', priority: 'medium', render: (r) => mono(fmt.num(num(r.rate), { maximumFractionDigits: 4, minimumFractionDigits: 2 })) },
+          { key: 'change30dPct', label: `التغير خلال ${fmt.num(30)} يوماً`, align: 'end', priority: 'high', render: (r) => h('span', { class: ['num', 'mono', `tone-${changeTone(Math.abs(num(r.change30dPct)), { badAbove: 3, warnAbove: 1.5 })}`], style: { color: 'var(--tone-ink)' } }, signedPct(num(r.change30dPct), 1)) },
+          { key: 'exposureSAR', label: 'التعرض', align: 'end', priority: 'high', render: (r) => mono(sar(r.exposureSAR)), sortValue: (r) => num(r.exposureSAR) },
+          { key: 'forecast30d', label: `توقع ${fmt.num(30)} يوماً`, align: 'end', priority: 'low', render: (r) => mono(fmt.num(num(r.forecast30d), { maximumFractionDigits: 4, minimumFractionDigits: 2 })) },
+          { key: 'advice', label: 'توصية التحوّط', sortable: false, priority: 'medium', render: (r) => toneBadge(r.advice.label, r.advice.tone) },
         ],
         rows, initialSort: { key: 'exposureSAR', dir: 'desc' },
       });
@@ -386,12 +420,12 @@ export default {
         h('div', { class: 'summary-cell' }, h('span', { class: 'summary-label' }, 'إجمالي الأوامر'), h('span', { class: ['summary-value', 'mono', 'num'] }, fmt.num(data.changeOrders.length)), h('span', { class: 'text-xs muted' }, `أثر زمني ${fmt.num(data.changeOrders.reduce((a, c) => a + num(c.impactDays), 0))} يوماً`)),
       );
       const table = dataTable({
-        dense: true, pageSize: 6, emptyText: 'لا توجد أوامر تغيير في هذا النطاق', caption: 'أوامر التغيير',
+        dense: true, pageSize: 5, stickyFirst: true, emptyText: 'لا توجد أوامر تغيير في هذا النطاق', caption: 'أوامر التغيير',
         columns: [
-          { key: 'code', label: 'الرمز', mono: true, render: (r) => mono(r.code) },
-          { key: 'title', label: 'الأمر', render: (r) => h('span', { class: 'stack', style: { gap: '2px' } }, h('span', { title: r.title || '' }, r.title || '—'), h('span', { class: 'text-xs muted' }, `${data.scopeId === 'portfolio' ? `${projectCode(data.state, r.projectId)} · ` : ''}أثر ${fmt.num(num(r.impactDays))} يوماً · قُدّم ${fmt.relative(r.submittedAt)}${r.driver ? ` · ${r.driver}` : ''}`)) },
-          { key: 'amountSAR', label: 'القيمة', align: 'end', render: (r) => h('span', { class: 'mono num nowrap' }, sar(r.amountSAR)), sortValue: (r) => num(r.amountSAR) },
-          { key: 'status', label: 'الحالة', render: (r) => toneBadge(r.status || '—', CO_TONE[r.status] || 'neutral') },
+          { key: 'code', label: 'الرمز', priority: 'high', render: (r) => codeSpan(r.code) },
+          { key: 'title', label: 'الأمر', priority: 'high', render: (r) => h('span', { class: 'stack', style: { gap: '2px' } }, h('span', { class: 'wrap-2', title: r.title || '' }, ...withCodes(r.title || '—')), h('span', { class: 'text-xs muted' }, `${data.scopeId === 'portfolio' ? `${projectCode(data.state, r.projectId)} · ` : ''}أثر ${fmt.num(num(r.impactDays))} يوماً · قُدّم ${fmt.relative(r.submittedAt)}${r.driver ? ` · ${r.driver}` : ''}`)) },
+          { key: 'amountSAR', label: 'القيمة', align: 'end', priority: 'high', render: (r) => h('span', { class: 'mono num nowrap' }, sar(r.amountSAR)), sortValue: (r) => num(r.amountSAR) },
+          { key: 'status', label: 'الحالة', priority: 'medium', render: (r) => toneBadge(r.status || '—', CO_TONE[r.status] || 'neutral') },
         ],
         rows: data.changeOrders, initialSort: { key: 'amountSAR', dir: 'desc' },
       });
@@ -405,20 +439,22 @@ export default {
 
     function buildLabourCard(data) {
       if (!data.labour.length) return card({ code: 'CST-06', title: 'مؤشر أجور العمالة', className: 'col-span-5', body: emptyState({ title: 'لا تتوفر مؤشرات الأجور' }) });
-      const rows = data.labour.map((l) => {
+      const shown = labourExpanded ? data.labour : data.labour.slice(0, LABOUR_DEFAULT);
+      const rows = shown.map((l) => {
         const spark = makeChart('sparkline', { values: arr(l.series).map((v) => num(v)), width: 110, height: 28, color: 'var(--ink-3)', accentLast: true });
         const tone = changeTone(num(l.change12mPct), { badAbove: 6, warnAbove: 3 });
         return h('div', { class: 'row between gap-3', style: { paddingBlock: '8px', borderBlockEnd: '1px solid var(--line)' } },
-          h('div', { class: 'stack gap-1 grow', style: { gap: '2px' } }, h('span', { class: 'text-sm semibold truncate' }, l.trade || '—'), h('span', { class: 'text-xs muted truncate' }, l.region || '—')),
+          h('div', { class: 'stack gap-1 grow wrap-2', style: { gap: '2px', minInlineSize: 0 } }, h('span', { class: 'text-sm semibold' }, l.trade || '—'), h('span', { class: 'text-xs muted' }, l.region || '—')),
           spark ? h('span', { class: 'spark', 'aria-hidden': 'true' }, spark.el) : null,
-          h('span', { class: ['badge', `tone-${tone}`], 'data-tone': tone }, glyph(tone, 13), h('span', { class: 'badge-text mono' }, `${fmt.signed(num(l.change12mPct), 1)}%`)),
+          h('span', { class: ['badge', `tone-${tone}`], 'data-tone': tone }, glyph(tone, 13), h('span', { class: 'badge-text mono num' }, signedPct(num(l.change12mPct), 1))),
         );
       });
       return card({
-        code: 'CST-06', title: 'مؤشر أجور العمالة', subtitle: 'التغير خلال 12 شهراً حسب المنطقة والحرفة',
+        code: 'CST-06', title: 'مؤشر أجور العمالة', subtitle: `التغير خلال ${fmt.num(12)} شهراً حسب المنطقة والحرفة`,
         className: 'col-span-5',
+        actions: data.labour.length > LABOUR_DEFAULT ? [button(labourExpanded ? 'عرض أقل' : `عرض الكل (${fmt.num(data.labour.length)})`, { variant: 'ghost', size: 'sm', icon: labourExpanded ? 'chevron-up' : 'chevron-down', onClick: () => { labourExpanded = !labourExpanded; schedule(); } })] : [],
         body: h('div', { class: 'stack', style: { gap: '0' } }, ...rows),
-        tableView: () => simpleTable(['الحرفة', 'المنطقة', 'التغير 12 شهراً'], data.labour.map((l) => [l.trade, l.region, `${fmt.signed(num(l.change12mPct), 1)}%`])),
+        tableView: () => simpleTable(['الحرفة', 'المنطقة', `التغير خلال ${fmt.num(12)} شهراً`], data.labour.map((l) => [l.trade, l.region, signedPct(num(l.change12mPct), 1)])),
         footer: h('p', { class: 'text-xs muted' }, 'المصدر: مؤشرات السلع والأجور — يُستخدم كمدخل لنموذج توقع التكلفة.'),
       });
     }
@@ -426,15 +462,15 @@ export default {
     function buildCostLinesCard(data) {
       const over = data.costLines.filter((l) => l.variancePct > 5).length;
       const table = dataTable({
-        dense: true, pageSize: 8, emptyText: 'لا توجد بنود تكلفة في هذا النطاق', caption: 'انحراف بنود التكلفة',
+        dense: true, pageSize: 6, stickyFirst: true, emptyText: 'لا توجد بنود تكلفة في هذا النطاق', caption: 'انحراف بنود التكلفة',
         columns: [
-          { key: 'wbs', label: 'WBS', mono: true, render: (r) => mono(r.wbs) },
-          { key: 'name', label: 'البند', render: (r) => h('span', { class: 'stack', style: { gap: '1px' } }, h('span', { class: 'truncate', title: r.name || '' }, r.name || '—'), data.scopeId === 'portfolio' ? h('span', { class: 'text-xs muted' }, projectCode(data.state, r.projectId)) : null) },
-          { key: 'budget', label: 'الميزانية', align: 'end', mono: true, render: (r) => sar(r.budget), sortValue: (r) => num(r.budget) },
-          { key: 'actual', label: 'الفعلي', align: 'end', mono: true, render: (r) => sar(r.actual), sortValue: (r) => num(r.actual) },
-          { key: 'committed', label: 'الملتزم', align: 'end', mono: true, render: (r) => sar(r.committed), sortValue: (r) => num(r.committed) },
-          { key: 'forecast', label: 'المتوقع', align: 'end', mono: true, render: (r) => sar(r.forecast), sortValue: (r) => num(r.forecast) },
-          { key: 'variancePct', label: 'الانحراف', align: 'end', render: (r) => h('span', { class: 'row gap-2', style: { justifyContent: 'flex-end' } }, toneBadge(varianceLabel(r.variancePct), varianceTone(r.variancePct)), mono(`${fmt.signed(r.variancePct, 1)}%`)) },
+          { key: 'wbs', label: 'WBS', priority: 'high', render: (r) => h('span', { class: 'code mono nowrap', dir: 'ltr' }, String(r.wbs ?? '—')) },
+          { key: 'name', label: 'البند', priority: 'high', render: (r) => h('span', { class: 'stack wrap-2', style: { gap: '1px' } }, h('span', { title: r.name || '' }, r.name || '—'), data.scopeId === 'portfolio' ? h('span', { class: 'text-xs muted' }, projectCode(data.state, r.projectId)) : null) },
+          { key: 'budget', label: 'الميزانية', align: 'end', priority: 'medium', render: (r) => mono(sar(r.budget)), sortValue: (r) => num(r.budget) },
+          { key: 'actual', label: 'الفعلي', align: 'end', priority: 'low', render: (r) => mono(sar(r.actual)), sortValue: (r) => num(r.actual) },
+          { key: 'committed', label: 'الملتزم', align: 'end', priority: 'low', render: (r) => mono(sar(r.committed)), sortValue: (r) => num(r.committed) },
+          { key: 'forecast', label: 'المتوقع', align: 'end', priority: 'medium', render: (r) => mono(sar(r.forecast)), sortValue: (r) => num(r.forecast) },
+          { key: 'variancePct', label: 'الانحراف', align: 'end', priority: 'high', render: (r) => h('span', { class: 'row gap-2', style: { justifyContent: 'flex-end' } }, toneBadge(varianceLabel(r.variancePct), varianceTone(r.variancePct)), mono(signedPct(r.variancePct, 1))) },
         ],
         rows: data.costLines, initialSort: { key: 'variancePct', dir: 'desc' },
       });
@@ -470,15 +506,15 @@ export default {
       const rows = data.aiRisks;
       const red = rows.filter((r) => ratingOf(num(r.score)) === 'red').length;
       const table = dataTable({
-        dense: true, pageSize: 6, emptyText: 'لا توجد مخاطر تكلفة مفتوحة في هذا النطاق', caption: 'مخاطر التكلفة المكتشفة بالذكاء الاصطناعي',
+        dense: true, pageSize: 6, stickyFirst: true, emptyText: 'لا توجد مخاطر تكلفة مفتوحة في هذا النطاق', caption: 'مخاطر التكلفة المكتشفة بالذكاء الاصطناعي',
         onRowClick: (r) => router.navigate('airisks', { risk: r.id }),
         columns: [
-          { key: 'code', label: 'الرمز', mono: true, render: (r) => mono(r.code) },
-          { key: 'title', label: 'المخاطرة', render: (r) => h('span', { class: 'stack', style: { gap: '1px' } }, h('span', { class: 'truncate', title: r.title || '' }, r.title || '—'), h('span', { class: 'text-xs muted' }, projectCode(data.state, r.projectId))) },
-          { key: 'type', label: 'النوع', render: (r) => typeChip(r.type) },
-          { key: 'score', label: 'الدرجة', align: 'end', render: (r) => h('span', { class: 'row gap-2', style: { justifyContent: 'flex-end' } }, mono(fmt.num(num(r.score))), ratingBadge(r.score)), sortValue: (r) => num(r.score) },
-          { key: 'owner', label: 'المالك', render: (r) => { const o = String(r.owner || '—'); const short = o.split(/\s[—-]\s/)[0]; return h('span', { class: 'nowrap', title: o }, short); } },
-          { key: 'status', label: 'الحالة', render: (r) => badge(r.status || '—', 'neutral') },
+          { key: 'code', label: 'الرمز', priority: 'high', render: (r) => codeSpan(r.code) },
+          { key: 'title', label: 'المخاطرة', priority: 'high', render: (r) => h('span', { class: 'stack wrap-2', style: { gap: '1px' } }, h('span', { title: r.title || '' }, ...withCodes(r.title || '—')), h('span', { class: 'text-xs muted' }, projectCode(data.state, r.projectId))) },
+          { key: 'type', label: 'النوع', priority: 'medium', render: (r) => typeChip(r.type) },
+          { key: 'score', label: 'الدرجة', align: 'end', priority: 'high', render: (r) => h('span', { class: 'row gap-2', style: { justifyContent: 'flex-end' } }, mono(fmt.num(num(r.score))), ratingBadge(r.score)), sortValue: (r) => num(r.score) },
+          { key: 'owner', label: 'المالك', priority: 'low', render: (r) => { const o = String(r.owner || '—'); const short = o.split(/\s[—-]\s/)[0]; return h('span', { class: 'nowrap', title: o }, short); } },
+          { key: 'status', label: 'الحالة', priority: 'medium', render: (r) => badge(r.status || '—', 'neutral') },
         ],
         rows, initialSort: { key: 'score', dir: 'desc' },
       });
@@ -515,9 +551,10 @@ export default {
       raf = requestAnimationFrame(build);
     }
 
-    const NOISY = /^(feed|sensors|integrations)/;
+    // Only the entities this view displays rebuild it (own data, AI risks, alerts, site names, full reset); pipeline / validation / connector telemetry and tasks never change it (C-4).
+    const RELEVANT = /^(\*|sites|platform\.(projects|commodities|currencies|changeOrders|labourIndex|costLines|aiRisks|alerts))/;
     const unsubs = [
-      bus.on('store:change', (payload) => { const path = payload && payload.path ? String(payload.path) : '*'; if (!NOISY.test(path)) schedule(); }),
+      bus.on('store:change', (payload) => { const path = payload && payload.path ? String(payload.path) : '*'; if (RELEVANT.test(path)) schedule(); }),
       bus.on('filters:change', (payload) => { const key = payload && payload.key; if (!key || key === 'siteId' || key === 'range' || key === 'search') schedule(); }),
       bus.on('settings:change', () => schedule()),
     ];

@@ -191,7 +191,7 @@ function arDigits(text) {
   const s = String(text || '');
   if (!arabNumerals()) return s;
   return s
-    .replace(/(^|[^A-Za-z0-9₂‑-])(\d+(?:[.,:/–]\d+)*)(%?)(?![A-Za-z0-9₂])/g, (_, pre, run, pct) => (
+    .replace(/(^|[^A-Za-z0-9₂‑-])(\d+(?:[.,:/–]\d+)*)(%?)(?![A-Za-z0-9₂]|-\d)/g, (_, pre, run, pct) => (
       pre
       + run.replace(/[0-9]/g, (d) => ARABIC_INDIC[d.charCodeAt(0) - 48]).replace(/(\d|[٠-٩])\.(?=[٠-٩])/g, '$1٫').replace(/,(?=[٠-٩]{3})/g, '٬')
       + (pct ? '٪' : '')
@@ -366,8 +366,10 @@ function emitFeed(partial, { force = false } = {}) {
     type,
     tone,
     siteId: partial.siteId == null ? null : partial.siteId,
-    title: String(partial.title || '').trim(),
-    detail: String(partial.detail || '').trim(),
+    // Final pass over the sentence: literal digits and digits inside Arabic entity names follow
+    // the numerals setting; identifiers (PTW‑5521, H2S, B2070, 2026-11-20) are left alone.
+    title: arDigits(String(partial.title || '').trim()),
+    detail: arDigits(String(partial.detail || '').trim()),
     sourceId,
   };
   if (partial.refId != null) event.refId = partial.refId;
@@ -504,13 +506,12 @@ function templatesByType() {
 }
 
 /**
- * Replace `{key}` / `{{key}}` placeholders; unknown keys become empty strings.
- * `localize: true` (feed copy) first routes the template's literal digits through the active
- * numeral system; record content (incident descriptions) keeps Latin digits like the seed.
+ * Replace `{key}` / `{{key}}` placeholders; unknown keys become empty strings. Feed copy is
+ * digit-localised later in emitFeed(); record content (incident descriptions) keeps Latin
+ * digits like the seed.
  */
-function fill(text, ctx, { localize = false } = {}) {
-  const src = localize ? arDigits(text) : String(text || '');
-  const out = src
+function fill(text, ctx) {
+  return String(text || '')
     .replace(/\{\{?\s*([\w.]+)\s*\}?\}/g, (_, key) => {
       const v = ctx[key];
       return v == null ? '' : String(v);
@@ -519,7 +520,6 @@ function fill(text, ctx, { localize = false } = {}) {
     .replace(/\s+(،)/g, '$1')
     .replace(/(^|\s)[—·]\s*$/g, '')
     .trim();
-  return localize && arabNumerals() ? out.replace(/([٠-٩])%/g, '$1٪') : out;
 }
 
 /** Placeholder → raw payload field, so consumers get the number behind the formatted text. */
@@ -537,6 +537,8 @@ function payloadFor(templateText, ctx) {
     if (field && out[field] === undefined && Number.isFinite(raw[m[1]])) out[field] = raw[m[1]];
   }
   if (out.value !== undefined && ctx.unit) out.unit = ctx.unit;
+  // Explicit raw fields set by the seed-template resolver win over placeholder inference.
+  for (const [k, v] of Object.entries(ctx.payload || {})) if (v !== undefined && v !== null && v !== '') out[k] = v;
   return out;
 }
 
@@ -658,6 +660,7 @@ function buildContext() {
     code: '',
     rawCode: '',
     refId: null,
+    payload: {},
     unit: '',
     siteId,
     site: site ? site.name : '',
@@ -726,7 +729,9 @@ function buildContext() {
 function setValue(ctx, raw, unit, digits = 0) {
   ctx.value = digits ? n1(raw) : n0(raw);
   ctx.unit = unit;
-  if (ctx.raw && ctx.raw.numbers) ctx.raw.numbers.value = raw;
+  if (!ctx.payload) ctx.payload = {};
+  ctx.payload.value = raw;
+  if (unit) ctx.payload.unit = unit;
   return ctx;
 }
 /** Code helper for seed-template contexts: U+2011 in the sentence, plain code + id in the payload. */
@@ -768,7 +773,7 @@ function kindCompatible(phrase, kind) {
 function seedContext(t, base) {
   const raw = base.raw || {};
   const phrase = `${t.title} ${t.detail}`;
-  const ctx = { ...base, raw: { ...raw, numbers: { ...(raw.numbers || {}) } } };
+  const ctx = { ...base, payload: { ...(base.payload || {}) } };
   // State-changing "critical" phrases are produced by the engine itself with real data.
   if (t.tone === 'critical') return null;
   switch (t.type) {
@@ -790,7 +795,7 @@ function seedContext(t, base) {
         if (!p) return null;
         const minutes = Math.max(1, Math.round((Date.parse(p.expiresAt) - raw.now) / MINUTE));
         setValue(ctx, minutes, 'دقيقة');
-        ctx.raw.numbers.minutes = minutes;
+        ctx.payload.minutes = minutes;
       } else if (/إغلاق|أُغلق|اكتمال العمل/.test(phrase)) p = raw.closedPermit;
       else if (/تعليق|معلق/.test(phrase)) p = raw.suspendedPermit;
       if (!p) return null;
@@ -823,7 +828,7 @@ function seedContext(t, base) {
       break;
     }
     case 'training': {
-      if (/تنتهي خلال/.test(phrase)) { const d = randInt(7, 45); setValue(ctx, d, 'يومًا'); ctx.raw.numbers.days = d; }
+      if (/تنتهي خلال/.test(phrase)) { const d = randInt(7, 45); setValue(ctx, d, 'يومًا'); ctx.payload.days = d; }
       else if (/شهادة/.test(phrase)) setValue(ctx, randInt(14, 80), '');
       else setValue(ctx, randInt(6, 24), '');
       break;
@@ -833,7 +838,7 @@ function seedContext(t, base) {
       if (!g) return null;
       if (/استعادة/.test(phrase) && g.status !== 'connected') return null;
       ctx.code = g.name; ctx.rawCode = g.id; ctx.siteId = null;
-      if (/الاستجابة/.test(phrase)) { const ms = Math.max(20, num(g.latencyMs, 120)); setValue(ctx, ms, 'مللي ثانية'); ctx.raw.numbers.latency = ms; }
+      if (/الاستجابة/.test(phrase)) { const ms = Math.max(20, num(g.latencyMs, 120)); setValue(ctx, ms, 'مللي ثانية'); ctx.payload.ms = ms; }
       else setValue(ctx, randInt(12, 180), '');
       ctx.sourceId = g.id;
       break;
@@ -880,7 +885,7 @@ function emitRandomFeed() {
     const template = weightedPick(candidates, (t) => num(t.weight, 1));
     const ctx = template.fromSeed ? seedContext(template, base) : base;
     if (!ctx) continue;
-    const title = fill(template.title, ctx, { localize: true });
+    const title = fill(template.title, ctx);
     if (!title) continue;
     let sourceId = ctx.sourceId || template.sourceId;
     if (type === 'integration' && !sourceId) sourceId = ctx.integrationId;
@@ -900,7 +905,7 @@ function emitRandomFeed() {
       tone: template.tone,
       siteId: ctx.siteId,
       title,
-      detail: fill(template.detail, ctx, { localize: true }),
+      detail: fill(template.detail, ctx),
       sourceId: sourceId || null,
       code: code || undefined,
       refId: refId || undefined,
@@ -1390,7 +1395,7 @@ function integrationStep(now = Date.now()) {
         tone: 'warning',
         siteId: null,
         title: `تدهور أداء ${victim.name}`,
-        detail: arDigits(`ارتفاع زمن الاستجابة إلى {ms} مللي ثانية — إعادة المحاولة تلقائيًا كل 30 ثانية`).replace('{ms}', n0(latency)),
+        detail: `ارتفاع زمن الاستجابة إلى ${n0(latency)} مللي ثانية — إعادة المحاولة تلقائيًا كل 30 ثانية`,
         sourceId: victim.id,
         ms: latency,
         value: latency,

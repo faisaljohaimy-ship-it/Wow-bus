@@ -1,5 +1,5 @@
 /**
- * Biltix HSE — formatting helpers (js/core/fmt.js)
+ * Biltix Risk AI — formatting helpers (js/core/fmt.js)
  *
  * Numerals-aware number / date / duration formatting for the Arabic UI.
  * Contract (ARCHITECTURE.md §4):
@@ -9,12 +9,15 @@
  *   fmt.compact(n)
  *   fmt.pct(n, digits=0)             // n already in 0..100
  *   fmt.signed(n, digits=0)          // "+3" / "−2" (U+2212 minus)
+ *   fmt.signedPct(n, digits=0)       // "+3%" / "−2%" (sign + percent, numerals-aware)
+ *   fmt.parseSigned(str)             // "‎+3.5%" / "−٢٪" → 3.5 / -2 (strips bidi marks; NaN when invalid)
+ *   fmt.digits(text)                 // ASCII digits inside free text → active numeral system
  *   fmt.date(iso, {style='medium'}={})
  *   fmt.dateTime(iso)
  *   fmt.time(iso)
  *   fmt.hijri(dateObj=new Date())
  *   fmt.relative(iso)
- *   fmt.duration(ms)
+ *   fmt.duration(ms, {style='short'|'long'}={})   // "٥ س ١٢ د" / "يومان و٥ ساعات"
  *   fmt.dayName(iso)
  *
  * Locale strategy
@@ -42,6 +45,20 @@ const RELATIVE_LOCALE = Object.freeze({
 });
 
 const ARABIC_INDIC_DIGITS = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+/** Bidi control marks Intl may emit around signed numbers (LRM, RLM, ALM, embeddings, isolates). */
+const BIDI_MARKS_RE = /[‎‏؜‪-‮⁦-⁩]/g;
+/** Arabic-Indic (U+0660–0669) and Extended Arabic-Indic (U+06F0–06F9) digits → ASCII. */
+const NON_ASCII_DIGIT_RE = /[٠-٩۰-۹]/g;
+
+/** Arabic count words: [singular, dual, plural (3–10), singular-accusative (11+)]. */
+const DURATION_WORDS = Object.freeze({
+  day: ['يوم', 'يومان', 'أيام', 'يوماً'],
+  hour: ['ساعة', 'ساعتان', 'ساعات', 'ساعة'],
+  minute: ['دقيقة', 'دقيقتان', 'دقائق', 'دقيقة'],
+  second: ['ثانية', 'ثانيتان', 'ثوانٍ', 'ثانية'],
+});
+/** Compact unit letters for the countdown style ("٥ س ١٢ د"). */
+const DURATION_LETTERS = Object.freeze({ day: 'ي', hour: 'س', minute: 'د', second: 'ث' });
 const MONTHS_AR = [
   'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
   'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
@@ -192,6 +209,15 @@ function fallbackRelative(value, unit) {
   return value < 0 ? `قبل ${localizeDigits(n)} ${word}` : `خلال ${localizeDigits(n)} ${word}`;
 }
 
+/** "يومان" / "٥ ساعات" / "١٢ دقيقة" — Arabic agreement for counted units. */
+function countWord(n, unit, formatInt) {
+  const words = DURATION_WORDS[unit];
+  if (n === 1) return words[0];
+  if (n === 2) return words[1];
+  if (n >= 3 && n <= 10) return `${formatInt(n)} ${words[2]}`;
+  return `${formatInt(n)} ${words[3]}`;
+}
+
 export const fmt = {
   /**
    * Switch the numeral system used by every formatter.
@@ -265,6 +291,51 @@ export const fmt = {
       const body = fallbackNumber(Math.abs(rounded), digits);
       return rounded > 0 ? `+${body}` : `${MINUS}${body}`;
     }
+  },
+
+  /**
+   * Signed percentage → "+3%" / "−2%" ("+٣٪" with Arabic-Indic numerals); zero → "0%".
+   * @param {number} n  already in percentage points
+   * @param {number} [digits=0]
+   */
+  signedPct(n, digits = 0) {
+    if (!isFiniteNumber(n)) return EM_DASH;
+    const sign = numerals === 'arab' ? '٪' : '%';
+    return `${fmt.signed(n, digits)}${sign}`;
+  },
+
+  /**
+   * Parse a number rendered by fmt.signed / fmt.signedPct / fmt.num (or typed by a user) back
+   * into a JS number: strips bidi marks, grouping separators, percent signs and whitespace,
+   * maps Arabic-Indic digits and the Arabic decimal separator, understands U+2212 minus.
+   * @param {string|number} str
+   * @returns {number} NaN when nothing numeric is left
+   */
+  parseSigned(str) {
+    if (typeof str === 'number') return str;
+    if (str === null || str === undefined) return NaN;
+    const cleaned = String(str)
+      .replace(BIDI_MARKS_RE, '')
+      .replace(NON_ASCII_DIGIT_RE, (d) => {
+        const code = d.charCodeAt(0);
+        return String(code >= 0x06f0 ? code - 0x06f0 : code - 0x0660);
+      })
+      .replace(/[٬,\s  ']/g, '')   // Arabic & Latin thousands separators, spaces
+      .replace(/٫/g, '.')                     // Arabic decimal separator
+      .replace(/[−‒–]/g, '-')       // typographic minus / dashes
+      .replace(/[%٪‰]/g, '')             // %, ٪, ‰
+      .trim();
+    if (!/^[+-]?(\d+\.?\d*|\.\d+)$/.test(cleaned)) return NaN;
+    return Number(cleaned);
+  },
+
+  /**
+   * Convert ASCII digits inside free text to the active numeral system (identity for 'latn').
+   * Use for sentences assembled elsewhere (feed titles, seed copy) so the numerals setting holds.
+   * @param {string} text
+   */
+  digits(text) {
+    return localizeDigits(text == null ? '' : text);
   },
 
   /**
@@ -362,13 +433,15 @@ export const fmt = {
   },
 
   /**
-   * Countdown-style duration:
-   *   ≥ 1 day  → "2ي 5س"     ≥ 1 hour → "5س 12د"
-   *   ≥ 1 min  → "45د"       < 1 min  → "30ث"
+   * Duration in two sizes (digits never glued to letters):
+   *   style 'short' (countdown chips):  ≥ 1 day → "٢ ي ٥ س" · ≥ 1 hour → "٥ س ١٢ د" ·
+   *                                    ≥ 1 min → "٤٥ د" · < 1 min → "٣٠ ث"
+   *   style 'long'  (where there is room): "يومان و٥ ساعات" · "٥ ساعات و١٢ دقيقة" · "٤٥ دقيقة" · "٣٠ ثانية"
    *   negative → "منتهٍ"
    * @param {number} ms
+   * @param {{style?: 'short'|'long'}} [opts]
    */
-  duration(ms) {
+  duration(ms, { style = 'short' } = {}) {
     if (!isFiniteNumber(ms)) return EM_DASH;
     if (ms < 0) return 'منتهٍ';
     const total = Math.floor(ms / SECOND);
@@ -377,10 +450,15 @@ export const fmt = {
     const minutes = Math.floor((total % 3600) / 60);
     const seconds = total % 60;
     const n = (x) => formatNumber(x, { maximumFractionDigits: 0 });
-    if (days > 0) return `${n(days)}ي ${n(hours)}س`;
-    if (hours > 0) return `${n(hours)}س ${n(minutes)}د`;
-    if (minutes > 0) return `${n(minutes)}د`;
-    return `${n(seconds)}ث`;
+    const parts = days > 0 ? [['day', days], ['hour', hours]]
+      : hours > 0 ? [['hour', hours], ['minute', minutes]]
+        : minutes > 0 ? [['minute', minutes]]
+          : [['second', seconds]];
+    if (style === 'long') {
+      const words = parts.filter(([, v], i) => i === 0 || v > 0).map(([unit, v]) => countWord(v, unit, n));
+      return words.join(' و');
+    }
+    return parts.map(([unit, v]) => `${n(v)} ${DURATION_LETTERS[unit]}`).join(' ');
   },
 
   /**

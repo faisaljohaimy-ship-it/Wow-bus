@@ -100,6 +100,23 @@ const signedPct = (n, digits = 1) => { try { return `${fmt.signed(n, digits)}${a
 const nbh = (code) => String(code ?? '').replace(/-/g, '‑');
 const unitOf = (pipeId) => String(PIPELINE_UNIT[pipeId] || 'سجلاً').replace('{runs}', num(MONTE_CARLO_RUNS));
 const parseMs = (v) => { const t = Date.parse(v || ''); return Number.isFinite(t) ? t : 0; };
+const ARABIC_INDIC = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+/**
+ * Final pass over an event sentence when the UI uses Arabic-Indic numerals: literal digits and
+ * digits inside Arabic record titles / names follow the setting; identifiers (CT-2026-014,
+ * B2070, H2S, v2.3.1, ISO dates) are left alone. No lookbehind (Safari < 16.4).
+ */
+function arDigits(text) {
+  const s = String(text || '');
+  if (!arabNumerals()) return s;
+  return s
+    .replace(/(^|[^A-Za-z0-9₂‑-])(\d+(?:[.,:/–]\d+)*)(%?)(?![A-Za-z0-9₂]|-\d)/g, (_, pre, run, p) => (
+      pre
+      + run.replace(/[0-9]/g, (d) => ARABIC_INDIC[d.charCodeAt(0) - 48]).replace(/([٠-٩])\.(?=[٠-٩])/g, '$1٫').replace(/,(?=[٠-٩]{3})/g, '٬')
+      + (p ? '٪' : '')
+    ))
+    .replace(/([٠-٩])%/g, '$1٪');
+}
 
 function weightedPick(entries) {
   const total = entries.reduce((s, [, w]) => s + w, 0);
@@ -180,7 +197,7 @@ function pipelineLabel(id) {
 
 function emit(event) {
   if (!S || !event) return null;
-  const ev = S.pushFeed({ ts: localISO(new Date()), ...event });
+  const ev = S.pushFeed({ ts: localISO(new Date()), ...event, title: arDigits(event.title), detail: arDigits(event.detail) });
   if (ev && B) B.emit('feed:event', ev);
   return ev;
 }

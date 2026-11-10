@@ -47,11 +47,30 @@ const CLOSED_RISK = new Set(['مغلق', 'مُتجاوز']);
 const OPEN_TASK = new Set(['جديدة', 'قيد التنفيذ', 'متأخرة']);
 const SUBCONTRACT_TYPE = 'عقد من الباطن';
 
+const STYLE_ID = 'view-contracts-style';
+const STYLE_TEXT = `@layer views {
+  .view-contracts .grid-12 { align-items: start; }
+  .view-contracts .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
+}`;
+const CODE_RE = /\b[A-Z]{1,5}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
+const OBLIGATIONS_DEFAULT = 6;
+
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
 const lower = (v) => String(v ?? '').toLowerCase();
+/** Codes inside plain strings (drawer subtitles, toasts): bidi-isolated with non-breaking hyphens (RTL-5). */
+const codeText = (code) => `\u2068${String(code ?? '').replace(/-/g, '\u2011')}\u2069`;
+
+function ensureStyle() {
+  if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = STYLE_TEXT;
+  document.head.appendChild(style);
+}
 
 /** UI state that survives re-renders inside one visit (module-level, no persistence). */
-let kriOpen = true;
+let kriOpen = false;
+let obligationsExpanded = false;
 
 export default {
   id: 'contracts',
@@ -64,6 +83,7 @@ export default {
     const psel = ctx.psel || null;
     const { h, card, statTile, badge, dataTable, button, drawer, toast, emptyState, progress, svgIcon, glyph, kv } = components;
 
+    ensureStyle();
     const root = h('section', { class: 'view view-contracts' });
     container.appendChild(root);
 
@@ -75,6 +95,16 @@ export default {
     /* ───────────────────────── primitives ───────────────────────── */
 
     const mono = (text, extra = null) => h('span', { class: ['mono', ...String(extra || '').split(/\s+/).filter(Boolean)], style: { fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' } }, String(text ?? '—'));
+    /** A code such as CT-2026-014 as an isolated LTR mono run that never breaks (RTL-5). */
+    const codeSpan = (code, extra = null) => h('span', { class: ['code', 'mono', 'nowrap', ...String(extra || '').split(/\s+/).filter(Boolean)], dir: 'ltr' }, String(code ?? '—'));
+    /** Split a title mixing Arabic prose and Latin codes into text + code spans. */
+    function withCodes(str) {
+      const t = String(str ?? ''); const out = []; let last = 0; let m;
+      CODE_RE.lastIndex = 0;
+      while ((m = CODE_RE.exec(t))) { if (m.index > last) out.push(t.slice(last, m.index)); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
+      if (last < t.length) out.push(t.slice(last));
+      return out.length ? out : [t];
+    }
     const sar = (n) => (Number.isFinite(Number(n)) ? `${fmt.compact(Number(n))} ر.س` : '—');
     const startOfToday = () => { const d = store.now ? store.now() : new Date(); d.setHours(0, 0, 0, 0); return d; };
     const daysUntil = (iso) => { const d = fmt.toDate(iso); if (!d) return null; d.setHours(0, 0, 0, 0); return Math.round((d.getTime() - startOfToday().getTime()) / DAY_MS); };
@@ -385,7 +415,7 @@ export default {
           related.length
             ? h('ul', { class: 'urgent-list' }, ...related.map((r) => h('li', { class: 'urgent-item' },
               h('span', { class: 'urgent-icon' }, svgIcon('shield-alert', 15)),
-              h('div', { class: 'urgent-text' }, h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, mono(r.code), h('span', {}, r.title)), h('span', { class: 'urgent-sub' }, `${r.owner || 'بدون مالك'} · ${r.status}`)),
+              h('div', { class: 'urgent-text' }, h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, codeSpan(r.code), h('span', {}, ...withCodes(r.title))), h('span', { class: 'urgent-sub' }, `${r.owner || 'بدون مالك'} · ${r.status}`)),
               h('div', { class: 'urgent-due' }, scoreCell(r.score), button('فتح', { variant: 'ghost', size: 'sm', onClick: () => { if (openDrawer) openDrawer.close(); router.navigate('airisks', { risk: r.id }); } })),
             )))
             : h('p', { class: 'text-sm muted' }, 'لم يرصد المحرك مخاطر مفتوحة مرتبطة بهذا العقد.'),
@@ -394,7 +424,7 @@ export default {
 
       openDrawer = drawer({
         title: contract.title,
-        subtitle: `${contract.code} · ${contract.counterparty}`,
+        subtitle: `${codeText(contract.code)} · ${contract.counterparty}`,
         body,
         size: 'lg',
         actions: [
@@ -447,12 +477,12 @@ export default {
       const activeValue = activeList.reduce((n, c) => n + (Number(c.valueSAR) || 0), 0);
       const avgScore = active ? Math.round(activeList.reduce((n, c) => n + (Number(c.riskScore) || 0), 0) / active) : 0;
       return h('div', { class: 'kpi-row' },
-        statTile({ label: 'درجة مجال العقود', value: Number(cs.score) || 0, unit: '/ 100', tone: ratingTone(ratingOf(cs.score)), icon: svgIcon('file-text', 18), spark, hint: `${fmt.num(cs.open || 0)} مخاطر مفتوحة · ${fmt.num(cs.red || 0)} حمراء — ${RATING_META[ratingOf(cs.score)].hint}` }),
+        statTile({ label: 'درجة مجال العقود', value: Number(cs.score) || 0, unit: `/ ${fmt.num(100)}`, tone: ratingTone(ratingOf(cs.score)), icon: svgIcon('file-text', 18), spark, hint: `${fmt.num(cs.open || 0)} مخاطر مفتوحة · ${fmt.num(cs.red || 0)} حمراء — ${RATING_META[ratingOf(cs.score)].hint}` }),
         statTile({ label: 'عقود مراقبة', value: data.contractsAll.length, tone: 'brand', icon: svgIcon('list', 18), hint: `${fmt.num(active)} سارية · ${fmt.num(data.contractsAll.filter((c) => c.status === 'قيد التفاوض').length)} قيد التفاوض · ${fmt.num(data.contractsAll.filter((c) => c.status === 'منتهٍ').length)} منتهية` }),
         statTile({ label: 'قيمة العقود السارية', value: fmt.compact(activeValue), unit: 'ر.س', tone: 'accent', icon: svgIcon('chart', 18), hint: `${fmt.num(active)} عقداً سارياً — متوسط درجة المخاطر ${fmt.num(avgScore)}` }),
         statTile({ label: 'بنود مُعلَّمة', value: data.flaggedClauses.length, tone: redClauses ? 'critical' : data.flaggedClauses.length ? 'warning' : 'good', icon: glyph(redClauses ? 'critical' : 'warning', 18), hint: `${fmt.num(redClauses)} بنداً بتصنيف أحمر تتطلب تدخلاً فورياً`, onClick: () => { const t = root.querySelector('[data-section="flags"]'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }),
         statTile({ label: `التزامات خلال ${fmt.num(OBLIGATION_KPI_DAYS)} يوماً`, value: data.obligations30.length, tone: data.overdue.length ? 'critical' : data.obligations30.length ? 'warning' : 'good', icon: glyph('clock', 18), hint: data.overdue.length ? `${fmt.num(data.overdue.length)} التزاماً متأخراً بالفعل` : 'لا توجد التزامات متأخرة', onClick: () => { const t = root.querySelector('[data-section="obligations"]'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }),
-        statTile({ label: 'تركّز المقاولين من الباطن', value: conc, unit: '%', tone: concTone, icon: svgIcon('truck', 18), hint: data.concentration.length ? `أعلى حصة: ${data.concentration[0].label} · مؤشر هيرفندال ${fmt.num(Math.round(data.hhi))}` : 'لا توجد عقود من الباطن ضمن النطاق' }),
+        statTile({ label: 'تركّز المقاولين من الباطن', value: fmt.pct(conc, 1), tone: concTone, icon: svgIcon('truck', 18), hint: data.concentration.length ? `أعلى حصة: ${data.concentration[0].label} · مؤشر هيرفندال ${fmt.num(Math.round(data.hhi))}` : 'لا توجد عقود من الباطن ضمن النطاق' }),
       );
     }
 
@@ -464,19 +494,19 @@ export default {
       });
       const table = dataTable({
         caption: 'العقود المراقبة ضمن النطاق',
-        pageSize: 10,
+        pageSize: 8, stickyFirst: true,
         rowKey: 'id',
         emptyText: data.search ? 'لا توجد عقود مطابقة للبحث' : 'لا توجد عقود ضمن هذا النطاق',
         onRowClick: (r) => openContract(data, data.contractsAll.find((c) => c.id === r.id) || r),
         initialSort: { key: 'riskScore', dir: 'desc' },
         columns: [
-          { key: 'code', label: 'الرمز', mono: true, width: 120, render: (r) => mono(r.code) },
-          { key: 'title', label: 'العقد والطرف المقابل', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.title), h('span', { class: 'text-xs muted' }, `${r.counterparty || '—'} · ${siteName(data.state, r.projectId)}`)) },
-          { key: 'type', label: 'النوع', render: (r) => badge(r.type || '—', r.type === SUBCONTRACT_TYPE ? 'accent' : 'neutral') },
-          { key: 'valueSAR', label: 'القيمة', align: 'end', render: (r) => mono(sar(r.valueSAR)), sortValue: (r) => Number(r.valueSAR) || 0 },
-          { key: '_flagged', label: 'بنود مُعلَّمة', align: 'center', render: (r) => (r._flagged ? badge(fmt.num(r._flagged), ratingTone(ratingOf(r._maxSev))) : badge('0', 'good')), sortValue: (r) => r._flagged },
-          { key: 'riskScore', label: 'درجة المخاطر', render: (r) => scoreCell(r.riskScore), sortValue: (r) => Number(r.riskScore) || 0 },
-          { key: 'status', label: 'الحالة', render: (r) => statusBadge(r.status, CONTRACT_STATUS_TONE) },
+          { key: 'code', label: 'الرمز', width: 120, priority: 'high', render: (r) => codeSpan(r.code) },
+          { key: 'title', label: 'العقد والطرف المقابل', priority: 'high', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, ...withCodes(r.title)), h('span', { class: 'text-xs muted' }, `${r.counterparty || '—'} · ${siteName(data.state, r.projectId)}`)) },
+          { key: 'type', label: 'النوع', priority: 'low', render: (r) => badge(r.type || '—', r.type === SUBCONTRACT_TYPE ? 'accent' : 'neutral') },
+          { key: 'valueSAR', label: 'القيمة', align: 'end', priority: 'medium', render: (r) => mono(sar(r.valueSAR), 'num'), sortValue: (r) => Number(r.valueSAR) || 0 },
+          { key: '_flagged', label: 'بنود مُعلَّمة', align: 'center', priority: 'medium', render: (r) => (r._flagged ? badge(fmt.num(r._flagged), ratingTone(ratingOf(r._maxSev))) : badge(fmt.num(0), 'good')), sortValue: (r) => r._flagged },
+          { key: 'riskScore', label: 'درجة المخاطر', priority: 'high', render: (r) => scoreCell(r.riskScore), sortValue: (r) => Number(r.riskScore) || 0 },
+          { key: 'status', label: 'الحالة', priority: 'low', render: (r) => statusBadge(r.status, CONTRACT_STATUS_TONE) },
         ],
         rows,
       });
@@ -515,16 +545,16 @@ export default {
       const rows = data.flaggedClauses.slice(0, 40).map((f) => ({ id: `${f.contract.id}-${f.clause.id}`, contractId: f.contract.id, clauseId: f.clause.id, code: f.contract.code, ref: f.clause.ref, title: f.clause.title, flag: f.clause.flag, severity: Number(f.clause.severity) || 0, status: f.clause.status, counterparty: f.contract.counterparty, contract: f.contract, clause: f.clause }));
       const table = dataTable({
         caption: 'البنود المُعلَّمة مرتبة حسب الخطورة',
-        pageSize: 8, dense: true, rowKey: 'id',
+        pageSize: 6, dense: true, rowKey: 'id', stickyFirst: true,
         emptyText: 'لا توجد بنود مُعلَّمة ضمن النطاق',
         onRowClick: (r) => openContract(data, r.contract, r.clauseId),
         initialSort: { key: 'severity', dir: 'desc' },
         columns: [
-          { key: 'code', label: 'العقد والمادة', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, mono(r.code), mono(`§${r.ref}`, 'semibold')), h('span', { class: 'text-sm' }, r.title), h('span', { class: 'text-xs muted' }, r.counterparty)), sortValue: (r) => `${r.code} ${r.ref}` },
-          { key: 'flag', label: 'العلامة', render: (r) => flagBadge(r.clause) },
-          { key: 'severity', label: 'الخطورة', render: (r) => scoreCell(r.severity), sortValue: (r) => r.severity },
-          { key: 'status', label: 'الحالة', render: (r) => statusBadge(r.status, CLAUSE_STATUS_TONE) },
-          { key: 'actions', label: '', sortable: false, render: (r) => button('إحالة للقانونية', { variant: 'ghost', size: 'sm', onClick: () => { referToLegal(data, r.contract, r.clause); } }) },
+          { key: 'code', label: 'العقد والمادة', priority: 'high', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'row gap-2 wrap', style: { alignItems: 'center' } }, codeSpan(r.code), mono(`§${r.ref}`, 'semibold num')), h('span', { class: 'text-sm' }, r.title), h('span', { class: 'text-xs muted' }, r.counterparty)), sortValue: (r) => `${r.code} ${r.ref}` },
+          { key: 'flag', label: 'العلامة', priority: 'medium', render: (r) => flagBadge(r.clause) },
+          { key: 'severity', label: 'الخطورة', priority: 'high', render: (r) => scoreCell(r.severity), sortValue: (r) => r.severity },
+          { key: 'status', label: 'الحالة', priority: 'low', render: (r) => statusBadge(r.status, CLAUSE_STATUS_TONE) },
+          { key: 'actions', label: '', sortable: false, priority: 'medium', render: (r) => button('إحالة للقانونية', { variant: 'ghost', size: 'sm', onClick: () => { referToLegal(data, r.contract, r.clause); } }) },
         ],
         rows,
       });
@@ -538,13 +568,13 @@ export default {
     }
 
     function buildObligationsCard(data) {
-      const shown = data.obligations.slice(0, 14);
+      const shown = obligationsExpanded ? data.obligations : data.obligations.slice(0, OBLIGATIONS_DEFAULT);
       const list = shown.length
         ? h('ul', { class: 'urgent-list', 'aria-label': 'تقويم الالتزامات التعاقدية', style: shown.length > 4 ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '8px' } : undefined }, ...shown.map((o) => h('li', { class: ['urgent-item', o.overdue ? 'is-overdue' : null, `tone-${o.overdue ? 'critical' : o.days <= 7 ? 'serious' : o.days <= 30 ? 'warning' : 'neutral'}`] },
           h('span', { class: 'urgent-icon' }, glyph(o.overdue ? 'critical' : o.days <= 7 ? 'serious' : 'clock', 15)),
           h('div', { class: 'urgent-text' },
             h('button', { type: 'button', class: 'btn btn-ghost btn-sm', style: { blockSize: 'auto', padding: 0, justifyContent: 'flex-start', textAlign: 'start', whiteSpace: 'normal', fontSize: 'var(--fs-sm)' }, onClick: () => openContract(data, o.contract) }, o.text),
-            h('span', { class: 'urgent-sub row gap-2 wrap' }, mono(o.contract.code), h('span', {}, `§${o.clauseRef || '—'}`), h('span', {}, o.owner || '—')),
+            h('span', { class: 'urgent-sub row gap-2 wrap' }, codeSpan(o.contract.code), h('span', { class: 'num' }, `§${o.clauseRef || '—'}`), h('span', {}, o.owner || '—')),
           ),
           h('div', { class: 'urgent-due' }, h('span', {}, `${fmt.dayName(o.due)} ${fmt.date(o.due, { style: 'short' })}`), dueBadge(o.due, o.status)),
         )))
@@ -553,7 +583,8 @@ export default {
         code: 'CT-04', title: `تقويم الالتزامات — ${fmt.num(OBLIGATION_WINDOW_DAYS)} يوماً`, className: 'col-span-12',
         subtitle: `${fmt.num(data.obligations.length)} التزاماً قادماً أو متأخراً · ${fmt.num(data.overdue.length)} متأخر`,
         body: list,
-        footer: data.obligations.length > shown.length ? h('p', { class: 'text-xs muted' }, `يُعرض أقرب ${fmt.num(shown.length)} التزاماً من أصل ${fmt.num(data.obligations.length)}؛ افتح العقد لعرض القائمة كاملة.`) : h('div', { class: 'tone-legend' },
+        actions: data.obligations.length > OBLIGATIONS_DEFAULT ? [button(obligationsExpanded ? 'عرض أقل' : `عرض الكل (${fmt.num(data.obligations.length)})`, { variant: 'ghost', size: 'sm', icon: obligationsExpanded ? 'chevron-up' : 'chevron-down', onClick: () => { obligationsExpanded = !obligationsExpanded; schedule(); } })] : [],
+        footer: data.obligations.length > shown.length ? h('p', { class: 'text-xs muted' }, `يُعرض أقرب ${fmt.num(shown.length)} التزاماً من أصل ${fmt.num(data.obligations.length)}؛ اضغط «عرض الكل» أو افتح العقد لعرض القائمة كاملة.`) : h('div', { class: 'tone-legend' },
           h('span', { class: 'tone-legend-item tone-critical' }, glyph('critical', 12), h('span', {}, 'متأخر')),
           h('span', { class: 'tone-legend-item tone-serious' }, glyph('serious', 12), h('span', {}, 'خلال أسبوع')),
           h('span', { class: 'tone-legend-item tone-warning' }, glyph('warning', 12), h('span', {}, 'خلال 30 يوماً')),
@@ -569,17 +600,17 @@ export default {
       const red = rows.filter((r) => ratingOf(r.score) === 'red').length;
       const table = dataTable({
         caption: 'المخاطر المكتشفة في مجال العقود',
-        pageSize: 8, rowKey: 'id',
+        pageSize: 6, rowKey: 'id', stickyFirst: true,
         emptyText: 'لا توجد مخاطر مفتوحة في هذا المجال ضمن النطاق',
         onRowClick: (r) => router.navigate('airisks', { risk: r.id }),
         initialSort: { key: 'score', dir: 'desc' },
         columns: [
-          { key: 'code', label: 'الرمز', mono: true, width: 110, render: (r) => mono(r.code) },
-          { key: 'title', label: 'المخاطرة', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, r.title), h('span', { class: 'text-xs muted' }, `${siteName(data.state, r.projectId)}${r.evidence && r.evidence.ref ? ` · ${r.evidence.ref}` : ''}`)) },
-          { key: 'score', label: 'الدرجة والتصنيف', render: (r) => scoreCell(r.score), sortValue: (r) => Number(r.score) || 0 },
-          { key: 'type', label: 'النوع', render: (r) => typeChip(r.type) },
-          { key: 'owner', label: 'المالك', render: (r) => r.owner || h('span', { class: 'muted' }, 'غير مُسند') },
-          { key: 'status', label: 'الحالة', render: (r) => statusBadge(r.status, RISK_STATUS_TONE) },
+          { key: 'code', label: 'الرمز', width: 110, priority: 'high', render: (r) => codeSpan(r.code) },
+          { key: 'title', label: 'المخاطرة', priority: 'high', render: (r) => h('div', { class: 'stack gap-1' }, h('span', { class: 'semibold' }, ...withCodes(r.title)), h('span', { class: 'text-xs muted row gap-1 wrap' }, h('span', {}, siteName(data.state, r.projectId)), r.evidence && r.evidence.ref ? ' · ' : null, r.evidence && r.evidence.ref ? h('span', { class: 'mono', dir: 'ltr' }, r.evidence.ref) : null)) },
+          { key: 'score', label: 'الدرجة والتصنيف', priority: 'high', render: (r) => scoreCell(r.score), sortValue: (r) => Number(r.score) || 0 },
+          { key: 'type', label: 'النوع', priority: 'medium', render: (r) => typeChip(r.type) },
+          { key: 'owner', label: 'المالك', priority: 'low', render: (r) => r.owner || h('span', { class: 'muted' }, 'غير مُسند') },
+          { key: 'status', label: 'الحالة', priority: 'medium', render: (r) => statusBadge(r.status, RISK_STATUS_TONE) },
         ],
         rows,
       });
@@ -655,10 +686,11 @@ export default {
 
     function schedule() { if (!raf) raf = requestAnimationFrame(build); }
 
-    // Paths that cannot change what this view shows (live feed, HSE sensors, pipeline telemetry …).
-    const IGNORE = /^(feed|sensors|integrations|permits|incidents|inspections|risks|workers|platform\.(validation|connectors|auditLog|pipelines|alerts))/;
+    // Only the entities this view displays rebuild it: contracts, AI risks, alerts (and site names / a full reset).
+    // Tasks are read at action time only (duplicate detection), pipeline / validation / connector telemetry is never shown (C-4).
+    const RELEVANT = /^(\*|sites|platform\.(contracts|aiRisks|alerts))/;
     const unsubs = [
-      bus.on('store:change', (payload) => { const path = payload && payload.path ? String(payload.path) : '*'; if (!IGNORE.test(path)) schedule(); }),
+      bus.on('store:change', (payload) => { const path = payload && payload.path ? String(payload.path) : '*'; if (RELEVANT.test(path)) schedule(); }),
       bus.on('filters:change', (payload) => { const key = payload && payload.key; if (!key || key === 'siteId' || key === 'range' || key === 'search') schedule(); }),
       bus.on('settings:change', (payload) => {
         const s = (payload && payload.settings) || store.state.settings || {};

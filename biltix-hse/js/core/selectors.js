@@ -1,5 +1,5 @@
 /**
- * Biltix HSE — selectors (js/core/selectors.js)
+ * Biltix Risk AI — selectors (js/core/selectors.js)
  *
  * Pure derived-data functions. No DOM, no store mutation, no formatting: every
  * function takes `state` (+ optional `filters`) and returns plain data for the
@@ -750,31 +750,100 @@ function radarBlips(state, filters, now) {
     .sort((a, b) => b.score - a.score);
 }
 
-/** Sensor axes for the SensorRadar; 'all' (or a site without sensors) falls back to the first site with sensors. */
-function sensorAxes(state, siteId = 'all') {
-  const sensors = arr(state.sensors);
-  let list = siteId && siteId !== 'all' ? sensors.filter((s) => s.siteId === siteId) : [];
-  if (!list.length) {
-    const firstSite = sensors.find((s) => s && s.siteId);
-    list = firstSite ? sensors.filter((s) => s.siteId === firstSite.siteId) : sensors.slice();
+/**
+ * Fixed sensor-radar schema: every site shows the same six axes in the same order so the
+ * polygons are comparable across sites. A site's sensors are matched to an axis by `kind`;
+ * an axis without a sensor is returned with `missing: true` and `value: null` (the radar
+ * draws a gap / "—"). Sensor kinds outside the schema (e.g. الاهتزاز) are appended after it.
+ */
+export const SENSOR_AXES = Object.freeze([
+  { key: 'wind', label: 'الرياح', unit: 'كم/س', max: 80, threshold: 38, match: ['الرياح', 'wind'] },
+  { key: 'noise', label: 'الضوضاء', unit: 'dB(A)', max: 110, threshold: 85, match: ['الضوضاء', 'noise'] },
+  { key: 'pm25', label: 'الغبار PM2.5', unit: 'µg/m³', max: 150, threshold: 75, match: ['PM2.5', 'PM10', 'الغبار', 'dust'] },
+  { key: 'gas', label: 'الغازات (H2S/CO)', unit: 'ppm', max: 50, threshold: 25, match: ['H2S', 'CO', 'غاز', 'gas'] },
+  { key: 'heat', label: 'الحرارة/WBGT', unit: '°م', max: 40, threshold: 30, match: ['WBGT', 'الحرار', 'heat'] },
+  { key: 'oxygen', label: 'الأكسجين O₂', unit: '%', max: 25, threshold: 23.5, match: ['الأكسجين', 'O₂', 'O2', 'oxygen'] },
+].map((a) => Object.freeze(a)));
+
+function axisKeyFor(sensor) {
+  const kind = String((sensor && sensor.kind) || '');
+  const code = String((sensor && sensor.code) || '');
+  for (const axis of SENSOR_AXES) {
+    if (axis.match.some((needle) => kind.includes(needle) || code.toUpperCase().includes(`-${needle.toUpperCase()}-`))) return axis.key;
   }
-  return list.map((s) => {
-    const max = Number(s.max) || 1;
-    const value = Number(s.value) || 0;
-    return {
-      id: s.id,
-      label: s.kind,
-      unit: s.unit,
-      min: Number(s.min) || 0,
-      max,
-      threshold: Number(s.threshold) || max,
-      value,
-      pct: Math.round(clamp((value / max) * 100, 0, 100)),
-      over: value > (Number(s.threshold) || max),
-      siteId: s.siteId,
-      zoneId: s.zoneId ?? null,
-    };
+  return null;
+}
+
+function axisFromSensor(s, key) {
+  const schema = SENSOR_AXES.find((a) => a.key === key) || null;
+  const max = Number(s.max) || (schema ? schema.max : 1);
+  const value = Number.isFinite(Number(s.value)) ? Number(s.value) : 0;
+  const threshold = Number(s.threshold) || (schema ? schema.threshold : max);
+  return {
+    id: s.id,
+    key: key || 'other',
+    label: schema ? schema.label : s.kind,
+    kind: s.kind,
+    code: s.code ?? null,
+    unit: s.unit || (schema ? schema.unit : ''),
+    min: Number(s.min) || 0,
+    max,
+    threshold,
+    lowThreshold: Number.isFinite(Number(s.lowThreshold)) ? Number(s.lowThreshold) : null,
+    value,
+    pct: Math.round(clamp((value / max) * 100, 0, 100)),
+    over: value > threshold,
+    missing: false,
+    siteId: s.siteId,
+    zoneId: s.zoneId ?? null,
+  };
+}
+
+function missingAxis(schema, siteId) {
+  return {
+    id: `${siteId}:axis:${schema.key}`,
+    key: schema.key,
+    label: schema.label,
+    kind: null,
+    code: null,
+    unit: schema.unit,
+    min: 0,
+    max: schema.max,
+    threshold: schema.threshold,
+    lowThreshold: null,
+    value: null,
+    pct: null,
+    over: false,
+    missing: true,
+    siteId,
+    zoneId: null,
+  };
+}
+
+/**
+ * Sensor axes for the SensorRadar — fixed six-axis schema per site (see SENSOR_AXES), missing
+ * axes marked `missing: true` with `value: null`. 'all' (or an unknown site) falls back to the
+ * first site that has sensors, as before. Return shape stays compatible with
+ * live.getSensorValues() (same order, same ids) and the radar view.
+ */
+function sensorAxes(state, siteId = 'all') {
+  const sensors = arr(state.sensors).filter((s) => s && s.id != null);
+  const knownSite = siteId && siteId !== 'all' && arr(state.sites).some((s) => s && s.id === siteId);
+  let target = knownSite ? siteId : null;
+  if (!target) {
+    const first = sensors.find((s) => s.siteId);
+    target = first ? first.siteId : (arr(state.sites)[0] ? arr(state.sites)[0].id : siteId);
+  }
+  const list = sensors.filter((s) => s.siteId === target);
+  const used = new Set();
+  const out = SENSOR_AXES.map((schema) => {
+    const sensor = list.find((s) => !used.has(s.id) && axisKeyFor(s) === schema.key);
+    if (!sensor) return missingAxis(schema, target);
+    used.add(sensor.id);
+    return axisFromSensor(sensor, schema.key);
   });
+  for (const s of list) if (!used.has(s.id)) out.push(axisFromSensor(s, null));
+  return out;
 }
 
 /* ────────────────────────────── urgent actions ────────────────────────────── */

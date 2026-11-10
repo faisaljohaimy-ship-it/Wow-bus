@@ -1,5 +1,5 @@
 /**
- * Biltix HSE — event bus (js/core/bus.js)
+ * Biltix Risk AI — event bus (js/core/bus.js)
  *
  * Tiny synchronous pub/sub shared by every module. Contract (ARCHITECTURE.md §4):
  *
@@ -10,7 +10,9 @@
  *
  * Event names used across the app are plain strings and are the contract:
  *   theme:change, settings:change, store:change, filters:change, feed:event,
- *   alert, route:change, sensors:tick, integrations:tick
+ *   alert, route:change, sensors:tick, integrations:tick,
+ *   ui:route-leave {from, to, params}   — emitted by the router BEFORE the current view is torn
+ *                                          down, so transient UI (menus, drawers, sheets) can close.
  *
  * Every handler runs inside its own try/catch so a failing listener can never
  * break the others or the emitter. Handlers are invoked in subscription order on

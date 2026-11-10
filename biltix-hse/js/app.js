@@ -2,14 +2,19 @@
  * Biltix Risk AI — application bootstrap (app shell wiring).
  *
  * Order of work (docs/ARCHITECTURE.md §9, §12, §B7):
- *   optional modules + views (parallel) → settings → art mount → grouped rail / tab bar →
- *   filters → feed → clock → integrations pill → consolidated score pill → notifications
- *   (bell, banner) → theme & rail toggles → command palette → router → live engines.
+ *   optional modules → settings → art mount → grouped rail / tab bar (from the static view
+ *   registry, modules imported lazily on first navigation / hover prefetch) → filters → feed →
+ *   clock → integrations pill → consolidated score pill → notifications (bell, banner, one
+ *   assertive live region for critical alerts) → theme & rail toggles → command palette →
+ *   router → live engines.
  *
  * Resilience: the core (store, bus, fmt, sel, router, components, views registry) is imported
  * statically; charts / radar / art / live / sources / psel / platformLive are loaded through
  * guarded dynamic imports so a module that is missing or broken degrades to a stub and the
  * HSE pillar still boots (one console.warn lists what was skipped, never console.error).
+ * Clock / feed-time intervals pause while the tab is hidden; transient UI (bell drawer, "المزيد"
+ * sheet, command palette, anchored menus) closes on `ui:route-leave`; input modality is tracked
+ * on <html data-input="keyboard"|"pointer"> for focus-ring styling.
  *
  * Everything that comes from data or user input reaches the DOM through textContent /
  * setAttribute. No innerHTML anywhere in this file.
@@ -20,7 +25,7 @@ import { fmt } from './core/fmt.js';
 import { sel } from './core/selectors.js';
 import { router } from './core/router.js';
 import * as components from './ui/components.js';
-import { navGroups, loadViews, navMeta, TAB_IDS, DEFAULT_VIEW, FALLBACK_VIEW } from './views/index.js';
+import { navGroups, views as navViews, loadView, navMeta, TAB_IDS, DEFAULT_VIEW, FALLBACK_VIEW } from './views/index.js';
 
 const { h, clear, glyph, badge, button, toast, drawer, segmented, liveDot, emptyState } = components;
 
@@ -32,9 +37,11 @@ let live = null;
 let sources = null;
 let psel = null;
 let platformLive = null;
-/** Ordered, loaded view modules (filled by loadViews()). */
+/** Ordered view entries (static nav metadata; `render` attached once a module is imported). */
 let views = [];
 const missingModules = [];
+/** Latin code tokens inside Arabic copy (AIR-1042, CT-2026-014, PTW-5521, R-1001 …). */
+const CODE_TOKEN_RE = /\b[A-Z]{1,5}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
 
 const STORAGE_KEY = 'biltix-hse:v1';
 const APP_VERSION = '2.0.0';
@@ -103,7 +110,7 @@ const platformList = (key) => (Array.isArray(platformState()[key]) ? platformSta
  * harness / devtools can call store.setSettings({theme}) while the optional modules are still
  * loading; boot() replaces this with the frozen, complete object.
  */
-window.biltix = { store, bus, router, sel, fmt, live: null, psel: null, platformLive: null, ready: false };
+window.biltix = { store, bus, router, sel, fmt, live: null, psel: null, platformLive: null, ready: false, views: navViews };
 
 /* ------------------------------------------------------------------ */
 /* Small helpers                                                       */
@@ -124,6 +131,62 @@ function debounce(fn, ms) {
   const wrapped = (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
   wrapped.cancel = () => clearTimeout(timer);
   return wrapped;
+}
+
+/* Intervals that stop while the tab is hidden and tick once + restart when it is shown again. */
+const pausableIntervals = new Set();
+function pausableInterval(fn, ms) {
+  const entry = { fn, ms, id: null };
+  entry.start = () => { if (entry.id === null) entry.id = setInterval(fn, ms); };
+  entry.stop = () => { if (entry.id !== null) { clearInterval(entry.id); entry.id = null; } };
+  pausableIntervals.add(entry);
+  if (!document.hidden) entry.start();
+  return entry;
+}
+function installVisibilityManager() {
+  document.addEventListener('visibilitychange', () => {
+    for (const entry of pausableIntervals) {
+      if (document.hidden) { entry.stop(); continue; }
+      try { entry.fn(); } catch (err) { reportError(err, 'visibility:tick'); }
+      entry.start();
+    }
+  });
+}
+
+/* Input modality (keyboard vs pointer) → <html data-input> so focus rings show only for keyboard users. */
+function trackInputModality() {
+  const root = document.documentElement;
+  const set = (mode) => { if (root.getAttribute('data-input') !== mode) root.setAttribute('data-input', mode); };
+  set('pointer');
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab' || (typeof e.key === 'string' && e.key.startsWith('Arrow'))) set('keyboard');
+  }, true);
+  document.addEventListener('pointerdown', () => set('pointer'), true);
+}
+
+/** Digits inside free text follow the numerals setting (identity for Western digits). */
+function localizeText(s) {
+  try { return fmt.digits(s); } catch { return s; }
+}
+
+/**
+ * Text → nodes: Latin code tokens (AIR-1042, CT-2026-014 …) are wrapped in
+ * <span class="code mono nowrap" dir="ltr"> so they never break across lines or flip inside
+ * Arabic sentences; the remaining digits are localised. textContent-safe (no HTML parsing).
+ */
+function richText(value) {
+  const str = String(value == null ? '' : value);
+  const frag = document.createDocumentFragment();
+  let last = 0;
+  CODE_TOKEN_RE.lastIndex = 0;
+  let m;
+  while ((m = CODE_TOKEN_RE.exec(str))) {
+    if (m.index > last) frag.appendChild(document.createTextNode(localizeText(str.slice(last, m.index))));
+    frag.appendChild(h('span', { class: 'code mono nowrap', dir: 'ltr', lang: 'en' }, m[0]));
+    last = m.index + m[0].length;
+  }
+  if (last < str.length) frag.appendChild(document.createTextNode(localizeText(str.slice(last))));
+  return frag;
 }
 
 /** Subscribe helper that tolerates a bus without `on` and always returns an unsubscribe fn. */
@@ -182,8 +245,7 @@ function applySettings(s = settings()) {
   syncThemeColorMeta();
 
   const brand = { ...DEFAULT_BRAND, ...(s.brand || {}) };
-  if (HEX_RE.test(brand.primary || '')) root.style.setProperty('--brand', brand.primary); else root.style.removeProperty('--brand');
-  if (HEX_RE.test(brand.accent || '')) root.style.setProperty('--accent', brand.accent); else root.style.removeProperty('--accent');
+  applyBrandColors(brand);
 
   const numerals = s.numerals === 'arab' ? 'arab' : 'latn';
   root.setAttribute('data-numerals', numerals);
@@ -211,6 +273,35 @@ function applySettings(s = settings()) {
   }
   applyBrandText(brand);
   syncFeedToggle(!!s.feedPaused);
+}
+
+function normalizeHex(hex) {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex || '').trim());
+  if (!m) return '';
+  let v = m[1].toLowerCase();
+  if (v.length === 3) v = v.split('').map((c) => c + c).join('');
+  return `#${v}`;
+}
+
+/**
+ * Brand colours: '' (the default) means "use the theme tokens" — nothing is written inline, so
+ * the light theme keeps its own accent. A hex is applied only when it differs from the current
+ * theme's token value.
+ */
+function applyBrandColors(brand) {
+  const root = document.documentElement;
+  root.style.removeProperty('--brand');
+  root.style.removeProperty('--accent');
+  let computed = null;
+  try { computed = getComputedStyle(root); } catch { computed = null; }
+  const apply = (prop, value) => {
+    const hex = normalizeHex(value);
+    if (!hex || !HEX_RE.test(hex)) return;
+    const themeDefault = computed ? normalizeHex(computed.getPropertyValue(prop)) : '';
+    if (hex !== themeDefault) root.style.setProperty(prop, hex);
+  };
+  apply('--brand', brand.primary);
+  apply('--accent', brand.accent);
 }
 
 /** Browser chrome color follows the page plane token (no hard-coded colors in JS). */
@@ -284,14 +375,25 @@ function resolvedGroups(pool = views) {
   return groups;
 }
 
+/** Warm a lazy view module on hover / focus so the click paints instantly. */
+function prefetchView(id) {
+  try { const p = loadView(id); if (p && typeof p.catch === 'function') p.catch(() => {}); } catch { /* ignore */ }
+}
+
 function navItem(view, { compact = false } = {}) {
   const meta = navMeta(view);
+  const fullTitle = `${meta.title}${meta.code ? ` · ${meta.code}` : ''}`;
+  const label = compact ? meta.tabTitle : meta.shortTitle;
   const btn = h('button', {
     type: 'button', class: compact ? 'tab-item' : 'rail-item', 'data-view': view.id,
-    title: compact ? undefined : `${meta.title}${meta.code ? ` · ${meta.code}` : ''}`, onClick: () => router.navigate(view.id),
+    // The visible label may be the short form (and hidden when the rail is collapsed): the
+    // accessible name always carries the full title.
+    'aria-label': compact ? meta.title : fullTitle,
+    title: compact ? undefined : fullTitle, onClick: () => router.navigate(view.id),
+    onPointerenter: () => prefetchView(view.id), onFocus: () => prefetchView(view.id),
   });
   btn.appendChild(h('span', { class: compact ? 'tab-icon' : 'rail-icon', 'aria-hidden': 'true' }, iconFor(view.icon, compact ? 22 : 20)));
-  btn.appendChild(h('span', { class: compact ? 'tab-label' : 'rail-label' }, meta.title));
+  btn.appendChild(h('span', { class: compact ? 'tab-label' : 'rail-label' }, label));
   if (!compact) btn.appendChild(h('span', { class: 'rail-code mono', 'aria-hidden': 'true' }, meta.code));
   return btn;
 }
@@ -351,6 +453,7 @@ function openMoreSheet(rest, anchor) {
       const b = h('button', {
         type: 'button', class: ['sheet-item', current.id === view.id ? 'is-active' : null], 'aria-current': current.id === view.id ? 'page' : undefined,
         onClick: () => { moreDrawer.close(); router.navigate(view.id); },
+        onPointerenter: () => prefetchView(view.id), onFocus: () => prefetchView(view.id),
       });
       b.appendChild(h('span', { class: 'sheet-icon', 'aria-hidden': 'true' }, iconFor(view.icon, 20)));
       b.appendChild(h('span', { class: 'sheet-label' }, meta.title));
@@ -389,7 +492,7 @@ let rangeSeg = null;
 function rangeLabel(days) {
   const n = fmt.num(days);
   if (days === 7) return `${n} أيام`;
-  return `${n} يومًا`;
+  return `${n} يوماً`;
 }
 
 function buildFilters() {
@@ -463,7 +566,7 @@ function syncFeedToggle(paused) {
   const feedLive = $('feedLive');
   if (feedLive) feedLive.classList.toggle('is-paused', paused);
   const status = $('feedStatus');
-  if (status) status.textContent = paused ? 'البث متوقف مؤقتًا — القراءات الحية مستمرة' : 'متصل بالأنظمة الحية';
+  if (status) status.textContent = paused ? 'البث متوقف مؤقتاً — القراءات الحية مستمرة' : 'متصل بالأنظمة الحية';
   const feed = $('feed');
   if (feed) feed.classList.toggle('is-paused', paused);
 }
@@ -489,7 +592,7 @@ const FEED_ICONS = {
   ai: 'ai', validation: 'badge-check', connector: 'integration', writeback: 'sync', task: 'file-check',
 };
 const FEED_TYPE_LABELS = {
-  sensor: 'حسّاس', permit: 'تصريح عمل', incident: 'حادث', nearmiss: 'حادث وشيك', inspection: 'تفتيش',
+  sensor: 'حساس', permit: 'تصريح عمل', incident: 'حادث', nearmiss: 'حادث وشيك', inspection: 'تفتيش',
   training: 'تدريب', integration: 'تكامل', ppe: 'معدات الوقاية', weather: 'طقس', alert: 'تنبيه', risk: 'مخاطرة',
   ai: 'محرك الذكاء الاصطناعي', validation: 'طبقة التحقق', connector: 'موصل مؤسسي', writeback: 'كتابة عكسية', task: 'مهمة معالجة',
 };
@@ -529,19 +632,25 @@ function feedItem(ev, { fresh = false } = {}) {
   li.appendChild(h('span', { class: 'feed-icon', 'aria-hidden': 'true' }, iconFor(FEED_ICONS[type], 16, tone)));
   const body = h('div', { class: 'feed-body' });
   const row = h('div', { class: 'feed-title-row' });
-  row.appendChild(h('strong', { class: 'feed-title' }, String(ev.title || FEED_TYPE_LABELS[type])));
+  // Codes stay LTR / unbroken, digits follow the numerals setting (RTL-4 / RTL-5).
+  row.appendChild(h('strong', { class: 'feed-title' }, richText(ev.title || FEED_TYPE_LABELS[type])));
   const time = h('time', { class: 'feed-time mono', datetime: ev.ts || '' }, safeRelative(ev.ts));
   time.dataset.ts = ev.ts || '';
   feedTimes.add(time);
   row.appendChild(time);
   body.appendChild(row);
-  if (ev.detail) body.appendChild(h('p', { class: 'feed-detail' }, String(ev.detail)));
+  if (ev.detail) body.appendChild(h('p', { class: 'feed-detail' }, richText(ev.detail)));
   const meta = h('div', { class: 'feed-meta' });
   meta.appendChild(h('span', { class: 'feed-type' }, FEED_TYPE_LABELS[type]));
   const site = siteById(ev.siteId);
   if (site) meta.appendChild(h('span', { class: 'feed-site' }, site.name));
   const sourceName = feedSourceName(ev.sourceId);
   if (sourceName) meta.appendChild(h('span', { class: 'feed-source' }, sourceName));
+  // Events that carry a numeric reading render it through fmt (never raw digits).
+  if (Number.isFinite(Number(ev.value)) && ev.value !== null && ev.value !== '') {
+    const digits = Math.abs(Number(ev.value)) < 10 ? 1 : 0;
+    meta.appendChild(h('span', { class: 'feed-value mono num' }, `${fmt.num(Number(ev.value), { maximumFractionDigits: digits })}${ev.unit ? ` ${ev.unit}` : ''}`));
+  }
   body.appendChild(meta);
   li.appendChild(body);
   li.setAttribute('aria-label', `${FEED_TYPE_LABELS[type]}: ${ev.title || ''}`);
@@ -571,21 +680,29 @@ function refreshFeedTimes() {
 }
 
 function updateFeedCount() {
-  const count = $('feedCount');
+  const count = $('feedCountValue') || $('feedCount');
   const list = $('feedList');
-  if (count && list) count.textContent = fmt.num(list.children.length);
+  if (count && list) count.textContent = fmt.num(list.querySelectorAll('.feed-item').length);
+}
+
+/** (Re)build the feed list from the store (boot, and after a numerals change so digits re-localise). */
+function renderFeedList() {
+  const list = $('feedList');
+  if (!list) return;
+  clear(list);
+  pruneFeedTimes();
+  const existing = ((store.state && store.state.feed) || []).slice(0, FEED_CAP);
+  const frag = document.createDocumentFragment();
+  existing.forEach((ev) => frag.appendChild(feedItem(ev)));
+  list.appendChild(frag);
+  if (!existing.length) list.appendChild(h('li', { class: 'feed-empty' }, emptyState({ icon: glyph('accent', 28), title: 'بانتظار أول حدث من الأنظمة المتصلة', text: 'يبدأ البث الحي تلقائياً خلال ثوانٍ.' })));
+  updateFeedCount();
 }
 
 function buildFeed() {
   const list = $('feedList');
   if (!list) return;
-  clear(list);
-  const existing = ((store.state && store.state.feed) || []).slice(0, FEED_CAP);
-  const frag = document.createDocumentFragment();
-  existing.forEach((ev) => frag.appendChild(feedItem(ev)));
-  list.appendChild(frag);
-  if (!existing.length) list.appendChild(h('li', { class: 'feed-empty' }, emptyState({ icon: glyph('accent', 28), title: 'بانتظار أول حدث من الأنظمة المتصلة', text: 'يبدأ البث الحي تلقائيًا خلال ثوانٍ.' })));
-  updateFeedCount();
+  renderFeedList();
 
   on('feed:event', (ev) => {
     if (!ev || typeof ev !== 'object') return;
@@ -597,7 +714,7 @@ function buildFeed() {
     updateFeedCount();
   });
 
-  setInterval(refreshFeedTimes, 30000);
+  pausableInterval(refreshFeedTimes, 30000);
 
   const all = $('feedAll');
   if (all) all.addEventListener('click', openFeedArchive);
@@ -609,7 +726,7 @@ function openFeedArchive() {
   if (!items.length) list.appendChild(h('li', {}, emptyState({ title: 'لا توجد أحداث بعد' })));
   items.forEach((ev) => list.appendChild(feedItem(ev)));
   const d = drawer({
-    title: 'سجل البث الحي', subtitle: `آخر ${fmt.num(items.length)} حدثًا من الأنظمة المتصلة`, body: list, size: 'lg',
+    title: 'سجل البث الحي', subtitle: `آخر ${fmt.num(items.length)} حدثاً من الأنظمة المتصلة`, body: list, size: 'lg',
     actions: [{ label: 'تصدير JSON', variant: 'outline', closes: false, onClick: () => exportFeed(items) }, { label: 'إغلاق', variant: 'ghost' }],
     onClose: pruneFeedTimes,
   });
@@ -618,7 +735,7 @@ function openFeedArchive() {
 
 function canExport() {
   if (sources && typeof sources.exportJSON === 'function') return true;
-  toast('وحدة التصدير غير متاحة حاليًا.', { tone: 'warning', timeout: 3500 });
+  toast('وحدة التصدير غير متاحة حالياً.', { tone: 'warning', timeout: 3500 });
   return false;
 }
 
@@ -667,7 +784,7 @@ function tickClock() {
 function startClock() {
   rebuildClockFormatters();
   tickClock();
-  setInterval(tickClock, 1000);
+  pausableInterval(tickClock, 1000); // paused while document.hidden, ticks immediately on return
 }
 
 /* ------------------------------------------------------------------ */
@@ -688,7 +805,7 @@ function refreshIntegrationsPill() {
   pill.dataset.tone = tone;
   const dot = pill.querySelector('.live-dot');
   if (dot) { TONES.forEach((t) => dot.classList.remove(`tone-${t}`)); dot.classList.add(`tone-${tone === 'good' ? 'accent' : tone}`); }
-  const parts = [`${fmt.num(connected)} من ${fmt.num(list.length)} تكاملًا وموصلًا متصلًا`];
+  const parts = [`${fmt.num(connected)} من ${fmt.num(list.length)} تكاملاً وموصلاً متصلاً`];
   if (degraded) parts.push(`${fmt.num(degraded)} متدهور`);
   if (down) parts.push(`${fmt.num(down)} منقطع`);
   pill.setAttribute('aria-label', `حالة التكاملات والموصلات: ${parts.join('، ')}`);
@@ -811,10 +928,10 @@ function openBellDrawer() {
   if (bellDrawer && bellDrawer.isOpen()) { bellDrawer.close(); return; }
   unreadAlerts = 0; updateBell();
   const list = h('ul', { class: 'alert-list', role: 'list' });
-  if (!alerts.length) list.appendChild(h('li', {}, emptyState({ icon: glyph('good', 30), title: 'لا توجد تنبيهات', text: 'ستظهر هنا التنبيهات الحرجة والتحذيرات الواردة من الحسّاسات والأنظمة المتصلة.' })));
+  if (!alerts.length) list.appendChild(h('li', {}, emptyState({ icon: glyph('good', 30), title: 'لا توجد تنبيهات', text: 'ستظهر هنا التنبيهات الحرجة والتحذيرات الواردة من الحساسات والأنظمة المتصلة.' })));
   alerts.forEach((a) => list.appendChild(alertRow(a)));
   bellDrawer = drawer({
-    title: 'التنبيهات', subtitle: `آخر ${fmt.num(alerts.length)} تنبيهًا`, body: list,
+    title: 'التنبيهات', subtitle: `آخر ${fmt.num(alerts.length)} تنبيهاً`, body: list,
     actions: [
       { label: 'مسح الكل', variant: 'outline', onClick: () => { alerts.length = 0; unreadAlerts = 0; updateBell(); toast('تم مسح قائمة التنبيهات.', { tone: 'neutral' }); } },
       { label: 'إغلاق', variant: 'ghost' },
@@ -862,6 +979,24 @@ function hideBanner() {
   if (reducedMotion()) done(); else setTimeout(done, 240);
 }
 
+/* Single assertive live region (#liveAnnouncer): critical / serious alerts are announced once each. */
+const announcedAlerts = new Set();
+let announceTimer = null;
+function announceAlert(a) {
+  const el = $('liveAnnouncer');
+  if (!el || (a.tone !== 'critical' && a.tone !== 'serious')) return;
+  const key = a.alertId || a.id || `${a.ts}|${a.title}`;
+  if (announcedAlerts.has(key)) return;
+  announcedAlerts.add(key);
+  if (announcedAlerts.size > 500) announcedAlerts.clear();
+  const site = siteById(a.siteId);
+  const text = [a.tone === 'critical' ? 'تنبيه حرج' : 'تنبيه عالٍ', a.title, a.detail, site && site.name].filter(Boolean).join('، ');
+  el.textContent = '';
+  requestAnimationFrame(() => { el.textContent = text; });
+  if (announceTimer) clearTimeout(announceTimer);
+  announceTimer = setTimeout(() => { el.textContent = ''; }, 8000);
+}
+
 function buildNotifications() {
   const bell = $('bellBtn');
   if (bell) bell.addEventListener('click', openBellDrawer);
@@ -876,7 +1011,16 @@ function buildNotifications() {
     const msg = [a.detail, site && site.name].filter(Boolean).join(' — ');
     toast(msg || a.title || 'تنبيه جديد', { tone: a.tone, title: msg ? a.title : '', timeout: a.tone === 'critical' ? 9000 : 5500, action: { label: 'عرض', onClick: openBellDrawer } });
     if (a.tone === 'critical') showBanner(a);
+    announceAlert(a);
   });
+}
+
+/** Close every transient surface before the view changes (bell drawer, "المزيد" sheet, palette, menus). */
+function closeTransientUi() {
+  if (bellDrawer && bellDrawer.isOpen()) bellDrawer.close();
+  if (moreDrawer && moreDrawer.isOpen()) moreDrawer.close();
+  if (cmdk.open) closeCmdk();
+  document.querySelectorAll('.menu.is-open').forEach((menu) => { try { if (typeof menu.__close === 'function') menu.__close(); else menu.remove(); } catch { /* ignore */ } });
 }
 
 /* ------------------------------------------------------------------ */
@@ -892,7 +1036,7 @@ function toggleTheme() {
 function toggleFeedPaused() {
   const paused = !settings().feedPaused;
   store.setSettings({ feedPaused: paused });
-  toast(paused ? 'تم إيقاف البث الحي مؤقتًا. القراءات الحية مستمرة في الخلفية.' : 'تم استئناف البث الحي.', { tone: paused ? 'warning' : 'good', timeout: 2600 });
+  toast(paused ? 'تم إيقاف البث الحي مؤقتاً. القراءات الحية مستمرة في الخلفية.' : 'تم استئناف البث الحي.', { tone: paused ? 'warning' : 'good', timeout: 2600 });
 }
 
 const narrowQuery = () => window.matchMedia('(max-width: 959px)');
@@ -1097,7 +1241,7 @@ function renderCmdk() {
   if (!list) return;
   clear(list);
   if (!cmdk.results.length) {
-    list.appendChild(h('li', { class: 'cmdk-empty', role: 'option', 'aria-selected': 'false', id: 'cmdk-empty' }, emptyState({ icon: glyph('empty', 26), title: 'لا توجد نتائج مطابقة', text: 'جرّب رمزًا مثل AIR-1042 أو CT-2026-014 أو MT-0231 أو R-1001، أو اسم قسم أو إجراء.' })));
+    list.appendChild(h('li', { class: 'cmdk-empty', role: 'option', 'aria-selected': 'false', id: 'cmdk-empty' }, emptyState({ icon: glyph('empty', 26), title: 'لا توجد نتائج مطابقة', text: 'جرّب رمزاً مثل AIR-1042 أو CT-2026-014 أو MT-0231 أو R-1001، أو اسم قسم أو إجراء.' })));
     cmdk.input.setAttribute('aria-activedescendant', '');
     return;
   }
@@ -1214,7 +1358,7 @@ function handleSettingsChange(payload) {
   applySettings(s);
   const numerals = s.numerals === 'arab' ? 'arab' : 'latn';
   if (lastNumerals !== null && numerals !== lastNumerals) {
-    refreshRangeLabels(); refreshFeedTimes(); updateFeedCount(); refreshIntegrationsPill(); refreshScorePill(); updateBell(); tickClock();
+    refreshRangeLabels(); renderFeedList(); refreshIntegrationsPill(); refreshScorePill(); updateBell(); tickClock();
     const cur = router.current ? router.current() : null;
     if (cur && cur.id) {
       try { router.navigate(cur.id, cur.params || {}); } catch (err) { reportError(err, 'router.navigate'); }
@@ -1248,9 +1392,13 @@ function syncDocumentTitle(view) {
 async function boot() {
   const main = $('main');
   document.body.classList.add('is-booting');
+  trackInputModality();
+  installVisibilityManager();
 
-  const [, loaded] = await Promise.all([loadOptionalModules(), loadViews()]);
-  views = Array.isArray(loaded) ? loaded.filter((v) => v && typeof v.id === 'string' && typeof v.render === 'function') : [];
+  // Views are NOT imported here: the static registry drives the rail / tab bar / palette and the
+  // router imports each module on first navigation (hover / focus prefetch warms it up).
+  await loadOptionalModules();
+  views = navViews.filter((v) => v && typeof v.id === 'string' && (typeof v.load === 'function' || typeof v.render === 'function'));
 
   applySettings();
   lastNumerals = settings().numerals === 'arab' ? 'arab' : 'latn';
@@ -1269,14 +1417,18 @@ async function boot() {
   views.forEach((view) => { try { router.register(view); } catch (err) { reportError(err, `router.register(${view && view.id})`); } });
   configureRouter(main);
 
+  // Before the view changes: close menus, drawers, the "المزيد" sheet and the palette.
+  on('ui:route-leave', (payload) => {
+    closeTransientUi();
+    if (payload && payload.to) markActive(payload.to);
+  });
   on('route:change', (payload) => {
     const id = payload && payload.id;
     markActive(id);
     syncDocumentTitle((payload && payload.view) || viewById(id));
     if (narrowQuery().matches) setFeedOpen(false);
     setRailOpen(false);
-    if (cmdk.open) closeCmdk();
-    if (moreDrawer && moreDrawer.isOpen()) moreDrawer.close();
+    closeTransientUi();
     if (main) main.scrollTop = 0;
     window.scrollTo({ top: 0, behavior: reducedMotion() ? 'auto' : 'smooth' });
   });
@@ -1299,6 +1451,7 @@ async function boot() {
     try { platformLive.start({ store, bus }); } catch (err) { reportError(err, 'platformLive.start'); }
   }
 
+  // `views` = the registered entries (static metas; `loaded`/`render` appear once a module is imported).
   window.biltix = Object.freeze({ store, bus, router, live, sel, fmt, psel, platformLive, ready: true, views: Object.freeze(views.slice()), missingModules: Object.freeze(missingModules.slice()) });
   document.body.classList.remove('is-booting');
   document.body.classList.add('is-ready');

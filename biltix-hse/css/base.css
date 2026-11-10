@@ -791,19 +791,19 @@ html[data-input="pointer"] .view-head h1:focus-visible { outline: none; }
   .kpi-row:has(> :nth-child(3):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .kpi-row:has(> :nth-child(4):last-child) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .kpi-row:has(> :nth-child(5):last-child) { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .kpi-row:has(> :nth-child(5):last-child) > * { grid-column: span 2; }
-  .kpi-row:has(> :nth-child(5):last-child) > :nth-child(n + 4) { grid-column: span 3; }
+  .kpi-row:has(> :nth-child(5):last-child):not([style*="grid-template"]) > * { grid-column: span 2; }
+  .kpi-row:has(> :nth-child(5):last-child):not([style*="grid-template"]) > :nth-child(n + 4) { grid-column: span 3; }
   .kpi-row:has(> :nth-child(6):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .kpi-row:has(> :nth-child(7):last-child) { grid-template-columns: repeat(12, minmax(0, 1fr)); }
-  .kpi-row:has(> :nth-child(7):last-child) > * { grid-column: span 3; }
-  .kpi-row:has(> :nth-child(7):last-child) > :nth-child(n + 5) { grid-column: span 4; }
+  .kpi-row:has(> :nth-child(7):last-child):not([style*="grid-template"]) > * { grid-column: span 3; }
+  .kpi-row:has(> :nth-child(7):last-child):not([style*="grid-template"]) > :nth-child(n + 5) { grid-column: span 4; }
   .kpi-row:has(> :nth-child(8):last-child) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .kpi-row:has(> :nth-child(9):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   /* Wide panes (≥1200px inner): five and six tiles on one row */
   @container main (min-width: 1248px) {
     .kpi-row:has(> :nth-child(5):last-child) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-    .kpi-row:has(> :nth-child(5):last-child) > *,
-    .kpi-row:has(> :nth-child(5):last-child) > :nth-child(n + 4) { grid-column: auto; }
+    .kpi-row:has(> :nth-child(5):last-child):not([style*="grid-template"]) > *,
+    .kpi-row:has(> :nth-child(5):last-child):not([style*="grid-template"]) > :nth-child(n + 4) { grid-column: auto; }
     .kpi-row:has(> :nth-child(6):last-child) { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   }
 }
@@ -1343,7 +1343,7 @@ body.is-feed-paused .feed-status::before,
 }
 
 @media (max-width: 479.98px) {
-  .kpi-row { grid-template-columns: minmax(0, 1fr); }
+  /* KPI tiles stay two-up on phones (V15); the 2-column rule above still applies */
   .main { padding-inline: var(--space-3); }
   .clock { display: none; }
   .appbar { padding-inline: var(--space-2); }

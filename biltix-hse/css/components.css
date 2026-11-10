@@ -481,7 +481,7 @@
    -------------------------------------------------------------------------- */
 
 .table-wrap {
-  --scroll-edge: color-mix(in srgb, var(--ink-1) 16%, transparent);
+  --scroll-edge: color-mix(in srgb, var(--ink-1) 20%, transparent);
   position: relative;
   min-inline-size: 0;
   max-block-size: min(72vh, 820px);
@@ -506,7 +506,7 @@
    .is-scroll (long unpaged lists keep the cap) and .is-overflowing (columns hidden sideways). */
 .table-wrap.is-paged { max-block-size: none; }
 .table-wrap.is-scroll { max-block-size: min(72vh, 820px); }
-.table-wrap.is-overflowing { --scroll-edge: color-mix(in srgb, var(--ink-1) 24%, transparent); background-size: 48px 100%, 48px 100%, 20px 100%, 20px 100%; }
+.table-wrap.is-overflowing { --scroll-edge: color-mix(in srgb, var(--ink-1) 30%, transparent); background-size: 48px 100%, 48px 100%, 22px 100%, 22px 100%; }
 /* Sticky first column (code / title) while the rest scrolls sideways */
 .table.has-sticky-first th:first-child,
 .table.has-sticky-first td:first-child {
@@ -565,6 +565,36 @@
 .table td .badge { vertical-align: middle; }
 .table.is-dense th, .table.is-dense td { padding: 6px 10px; font-size: var(--fs-xs); }
 .table .is-overdue { color: var(--tone-ink, color-mix(in srgb, var(--critical) 80%, var(--ink-1))); font-weight: 500; }
+/* Row opener: dataTable wraps the first cell's content in <button class="row-open"> (the keyboard
+   path to the drawer, RTL-8). It inherits the cell's type and fills the cell; .row-open-aux is the
+   small chevron used when the cell already holds interactive content. */
+.row-open {
+  display: block;
+  inline-size: 100%;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.row-open:hover { color: var(--ink-1); }
+.row-open:focus-visible { outline-offset: 3px; }
+.row-open.row-open-aux {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  margin-inline-start: 6px;
+  color: var(--ink-3);
+  border-radius: 6px;
+  vertical-align: middle;
+}
+.row-open-aux:hover { color: var(--ink-1); background: var(--bg-2); }
+.row-open-aux svg { inline-size: 14px; block-size: 14px; }
+td.has-row-open { white-space: normal; }
 .table tr.is-critical td:first-child { box-shadow: inset calc(var(--dir) * 3px) 0 0 var(--critical); }
 
 /* Sortable headers: the button covers the whole header cell (negative margins eat the
@@ -981,25 +1011,23 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
   scroll-snap-type: inline proximity;
 }
 @media (max-width: 1599.98px) { .kanban { grid-auto-columns: minmax(220px, 1fr); } }
-/* kanban() adds .is-overflowing when columns are cut off: the cut edge fades out.
-   Optional .is-scrolled fades both edges; .is-at-end removes the fade. */
-.kanban.is-overflowing {
-  -webkit-mask-image: linear-gradient(to left, transparent, black 36px);
-  mask-image: linear-gradient(to left, transparent, black 36px);
+/* kanban() toggles .is-overflowing (columns cut off) plus .is-scroll-start / .is-scroll-end
+   (scroll position). The edge that still hides columns fades out; both edges fade mid-scroll.
+   RTL: inline-end is the left edge. --fade-end / --fade-start are the physical gradient directions. */
+.kanban { --fade-end: to left; --fade-start: to right; }
+:root[dir="ltr"] .kanban { --fade-end: to right; --fade-start: to left; }
+.kanban.is-overflowing:not(.is-scroll-end) {
+  -webkit-mask-image: linear-gradient(var(--fade-end), transparent, black 36px);
+  mask-image: linear-gradient(var(--fade-end), transparent, black 36px);
 }
-.kanban.is-overflowing.is-scrolled {
-  -webkit-mask-image: linear-gradient(to left, transparent, black 36px, black calc(100% - 36px), transparent);
-  mask-image: linear-gradient(to left, transparent, black 36px, black calc(100% - 36px), transparent);
+.kanban.is-overflowing.is-scroll-end:not(.is-scroll-start) {
+  -webkit-mask-image: linear-gradient(var(--fade-start), transparent, black 36px);
+  mask-image: linear-gradient(var(--fade-start), transparent, black 36px);
 }
-:root[dir="ltr"] .kanban.is-overflowing {
-  -webkit-mask-image: linear-gradient(to right, transparent, black 36px);
-  mask-image: linear-gradient(to right, transparent, black 36px);
+.kanban.is-overflowing:not(.is-scroll-start):not(.is-scroll-end) {
+  -webkit-mask-image: linear-gradient(var(--fade-end), transparent, black 36px, black calc(100% - 36px), transparent);
+  mask-image: linear-gradient(var(--fade-end), transparent, black 36px, black calc(100% - 36px), transparent);
 }
-:root[dir="ltr"] .kanban.is-overflowing.is-scrolled {
-  -webkit-mask-image: linear-gradient(to right, transparent, black 36px, black calc(100% - 36px), transparent);
-  mask-image: linear-gradient(to right, transparent, black 36px, black calc(100% - 36px), transparent);
-}
-.kanban.is-overflowing.is-at-end { -webkit-mask-image: none; mask-image: none; }
 /* Column-count / scroll hint rendered after the board (e.g. "٥ مراحل — مرّر لعرض الباقي") */
 .kanban-hint {
   display: none;
@@ -1865,6 +1893,10 @@ a.urgent-item:hover, button.urgent-item:hover, .urgent-item.is-clickable:hover {
   .tab { padding-block: 11px; }
   .switch::before { content: ""; position: absolute; inset: -9px; }
   .legend-item { padding: 6px 4px; margin: -6px -4px; }
+  .row-open { padding-block: 10px; margin-block: -10px; }
+  .row-open.row-open-aux { inline-size: 40px; block-size: 40px; margin-block: -8px; }
+  .weights-legend button { padding-block: 10px; margin-block: -10px; }
+  .kanban-grip { inline-size: 20px; block-size: 20px; }
 }
 
 /* --------------------------------------------------------------------------

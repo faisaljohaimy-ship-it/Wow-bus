@@ -70,6 +70,46 @@ export default {
     let openDrawer = null;
     let lastNumerals = safe(() => store.state.settings.numerals, 'latn');
     const expanded = new Set(); // clause ids whose sub-clause list is open (survives re-render)
+    let clauseGridEl = null;    // ISO-03 cards grid (re-laid out on container width changes)
+    let lastWidth = 0;
+
+    /**
+     * ISO-03: seven clause cards never leave an orphan. On wide containers a 12-column grid gives
+     * 3 + 4 (remainder row first, spanning 4 each, then four cards spanning 3); narrower containers
+     * fall back to auto-fill columns (two-up, then one-up on phones).
+     */
+    function layoutClauseGrid(w) {
+      const g = clauseGridEl;
+      if (!g) return;
+      const cards = Array.from(g.children);
+      const n = cards.length;
+      // ≥ 760px: four 190px cards fit (the main column is ~830px at 1440 with the rail and feed open).
+      const wide = w >= 760 && n >= 5;
+      if (wide) {
+        const r = n % 4;
+        const headSpan = r === 3 ? 4 : r === 2 ? 6 : r === 1 ? 12 : 3;
+        g.style.gridTemplateColumns = 'repeat(12, minmax(0, 1fr))';
+        cards.forEach((c, i) => { c.style.gridColumn = `span ${i < r ? headSpan : 3}`; });
+      } else {
+        g.style.gridTemplateColumns = 'repeat(auto-fill, minmax(min(100%, 230px), 1fr))';
+        cards.forEach((c) => { c.style.gridColumn = ''; });
+      }
+    }
+    // Width-only, deferred a frame so the re-span never re-enters the observer loop.
+    let layoutObserver = null;
+    let layoutRaf = 0;
+    if (typeof ResizeObserver === 'function') {
+      layoutObserver = new ResizeObserver((entries) => {
+        for (const e of entries) {
+          const w = Math.round(e.contentRect.width);
+          if (w === lastWidth || w === 0) continue;
+          lastWidth = w;
+          if (layoutRaf) cancelAnimationFrame(layoutRaf);
+          layoutRaf = requestAnimationFrame(() => { layoutRaf = 0; layoutClauseGrid(w); });
+        }
+      });
+      layoutObserver.observe(root);
+    }
 
     /* ───────────────────────── helpers ───────────────────────── */
 
@@ -284,8 +324,10 @@ export default {
         );
         return card({ code: `ISO-${String(c.id).padStart(2, '0')}`, title: c.title, subtitle: `البند ${digits(c.id)}`, className: 'is-compact', body });
       });
-      // Seven clause cards: four columns on wide mains (4 + 3) instead of a two-column grid with an orphan.
-      const clauseGrid = h('div', { class: 'cards-grid', style: { gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 230px), 1fr))', alignItems: 'start' } }, ...cards);
+      // Seven clause cards: 3 + 4 on wide mains (see layoutClauseGrid) instead of a grid with an orphan.
+      const clauseGrid = h('div', { class: 'cards-grid', style: { alignItems: 'start' } }, ...cards);
+      clauseGridEl = clauseGrid;
+      layoutClauseGrid(lastWidth || Math.round(root.getBoundingClientRect().width) || 1200);
       return h('section', { class: 'stack gap-3', 'aria-labelledby': 'iso-clauses-title' },
         h('div', { class: 'row between wrap' },
           h('div', { class: 'card-titles' }, h('span', { class: 'card-code', 'aria-hidden': 'true' }, 'ISO-03'), h('h2', { class: 'card-title', id: 'iso-clauses-title' }, 'بطاقات البنود والفجوات')),
@@ -424,6 +466,9 @@ export default {
     return () => {
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
+      if (layoutObserver) { try { layoutObserver.disconnect(); } catch { /* ignore */ } layoutObserver = null; }
+      if (layoutRaf) { cancelAnimationFrame(layoutRaf); layoutRaf = 0; }
+      clauseGridEl = null;
       unsubs.forEach((u) => { try { if (typeof u === 'function') u(); } catch { /* ignore */ } });
       if (openDrawer) { try { openDrawer.close(); } catch { /* ignore */ } openDrawer = null; }
       root.remove();

@@ -44,6 +44,9 @@ const STYLE_TEXT = `@layer views {
   .principle-col { padding: 12px 14px; border-radius: var(--radius-ctl); border: 1px solid var(--line); background: var(--bg-2); border-block-start: 3px solid var(--tone, var(--line-2)); }
   .principle-col h3 { margin: 0 0 8px; font-size: var(--fs-sm); display: flex; align-items: center; gap: 8px; }
   .principle-col ul { margin: 0; padding-inline-start: 1.1em; font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.6; }
+  .view-roadmap .grid-12 { align-items: start; }
+  .layer-stack-item h3.layer-stack-heading { margin: 0; font-size: var(--fs-sm); }
+  .view-roadmap .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
   @media (max-width: 720px) { .principle-grid { grid-template-columns: minmax(0, 1fr); } }
   @media print { .view-roadmap .view-actions, .view-roadmap .btn, .view-roadmap .card-view-toggle { display: none !important; } .view-roadmap .card { break-inside: avoid; } .view-roadmap .roadmap-payment input { border: 0; background: transparent; } }
 }`;
@@ -98,8 +101,13 @@ export default {
     /* ───────────────────────── helpers ───────────────────────── */
 
     const mono = (text, extra = []) => h('span', { class: ['mono', 'num', ...arr(extra)] }, String(text ?? '—'));
+    /** Milestone ids (M0 … M4) as isolated LTR code runs (RTL-5). */
+    const codeSpan = (code, extra = null) => h('span', { class: ['code', 'mono', 'nowrap', extra], dir: 'ltr' }, String(code ?? ''));
+    /** Latin product / vendor names get lang="en" dir="ltr" (RTL-28). */
+    const latin = (label) => { const str = String(label ?? ''); return /^[\x20-\x7E]+$/.test(str) ? h('span', { lang: 'en', dir: 'ltr' }, str) : str; };
+    const pctSign = () => (typeof fmt.getNumerals === 'function' && fmt.getNumerals() === 'arab' ? '٪' : '%');
     const totalTone = (t) => (t === 100 ? 'good' : (t > 100 ? 'critical' : (t > 0 ? 'warning' : 'neutral')));
-    const totalLabel = (t) => (t === 100 ? 'المجموع 100% — مكتمل' : (t > 100 ? `المجموع ${fmt.pct(t)} — يتجاوز 100%` : (t > 0 ? `المجموع ${fmt.pct(t)} — المتبقي ${fmt.pct(100 - t)}` : 'لم تُحدد النسب بعد')));
+    const totalLabel = (t) => (t === 100 ? `المجموع ${fmt.pct(100)} — مكتمل` : (t > 100 ? `المجموع ${fmt.pct(t)} — يتجاوز ${fmt.pct(100)}` : (t > 0 ? `المجموع ${fmt.pct(t)} — المتبقي ${fmt.pct(100 - t)}` : 'لم تُحدد النسب بعد')));
 
     function totalBadge(total) {
       const el = badge(totalLabel(total), totalTone(total));
@@ -162,12 +170,12 @@ export default {
         const v2 = layer.v2 ? V2[layer.v2] : null;
         const nodes = h('div', { class: 'arch-nodes' }, ...layer.nodes.map(([icon, label, v2key]) => {
           const tag = v2key ? V2[v2key] : null;
-          return h('span', { class: ['arch-node', tag ? 'is-v2' : null], style: tag ? { '--v2-tone': tag.tone } : undefined, title: tag ? `إضافة الإصدار الثاني — ${tag.label}` : undefined }, svgIcon(icon, 13), h('span', {}, label), tag ? h('span', { class: 'sr-only' }, ` (إضافة الإصدار الثاني: ${tag.label})`) : null);
+          return h('span', { class: ['arch-node', tag ? 'is-v2' : null], style: tag ? { '--v2-tone': tag.tone } : undefined, title: tag ? `إضافة الإصدار الثاني — ${tag.label}` : undefined }, svgIcon(icon, 13), h('span', {}, latin(label)), tag ? h('span', { class: 'sr-only' }, ` (إضافة الإصدار الثاني: ${tag.label})`) : null);
         }));
         diagram.appendChild(h('div', { class: ['layer-stack-item', v2 ? 'is-v2' : null], 'data-layer': layer.no, style: v2 ? { '--v2-tone': v2.tone } : undefined },
           h('span', { class: 'layer-stack-index', 'aria-hidden': 'true' }, layer.no),
           h('div', { class: 'layer-stack-body' },
-            h('div', { class: 'layer-stack-title' }, h('h4', {}, layer.title), v2 ? h('span', { class: 'v2-badge' }, svgIcon('sparkles', 12), h('span', {}, `إضافة الإصدار الثاني — ${v2.toneName}`)) : null),
+            h('div', { class: 'layer-stack-title' }, h('h3', { class: 'layer-stack-heading' }, layer.title), v2 ? h('span', { class: 'v2-badge' }, svgIcon('sparkles', 12), h('span', {}, `إضافة الإصدار الثاني — ${v2.toneName}`)) : null),
             h('p', {}, layer.desc),
             nodes,
           ),
@@ -197,10 +205,7 @@ export default {
       return card({
         code: 'RM-02', title: 'نطاق العمل', subtitle: `${fmt.num(data.scope.length)} بنود تسليم في الإصدار الثاني`,
         className: 'col-span-6',
-        body: h('div', { class: 'stack gap-4' },
-          checkList(data.scope, { icon: () => glyph('good', 18), className: 'is-scope', empty: 'لم تُحمَّل بنود نطاق العمل' }),
-          data.outOfScope.length ? h('div', { class: 'stack gap-2' }, h('span', { class: 'text-sm semibold muted' }, 'خارج النطاق'), checkList(data.outOfScope, { icon: () => glyph('neutral', 18), className: 'is-out', empty: '' })) : null,
-        ),
+        body: checkList(data.scope, { icon: () => glyph('good', 18), className: 'is-scope', empty: 'لم تُحمَّل بنود نطاق العمل' }),
       });
     }
 
@@ -208,7 +213,10 @@ export default {
       return card({
         code: 'RM-03', title: 'الافتراضات', subtitle: 'ما يعتمد عليه الجدول الزمني والنطاق',
         className: 'col-span-6',
-        body: checkList(data.assumptions, { icon: () => glyph('brand', 18), className: 'is-assumptions', empty: 'لم تُحمَّل الافتراضات' }),
+        body: h('div', { class: 'stack gap-4' },
+          checkList(data.assumptions, { icon: () => glyph('brand', 18), className: 'is-assumptions', empty: 'لم تُحمَّل الافتراضات' }),
+          data.outOfScope.length ? h('div', { class: 'stack gap-2' }, h('span', { class: 'text-sm semibold muted' }, 'خارج النطاق'), checkList(data.outOfScope, { icon: () => glyph('neutral', 18), className: 'is-out', empty: '' })) : null,
+        ),
         footer: h('p', { class: 'text-xs muted' }, 'أي تغيير في الافتراضات (توفر واجهات الأنظمة، جودة البيانات التاريخية، توفر فريق العميل) يُدار عبر طلب تغيير على المعالم M2–M4.'),
       });
     }
@@ -233,7 +241,7 @@ export default {
           title: `${m.name || m.id} — ${m.status || ''} · من الشهر ${fmt.num(Math.floor(start) + 1)}، ${fmt.num(span, { maximumFractionDigits: 1 })} شهر` },
           glyph(tone, 12), h('span', {}, m.status || '—'));
         gantt.appendChild(h('div', { class: 'roadmap-row', role: 'row' },
-          h('div', { class: 'roadmap-row-label', role: 'rowheader' }, h('span', { class: 'mono' }, m.id), h('strong', { title: m.name || '' }, m.name || m.id)),
+          h('div', { class: 'roadmap-row-label', role: 'rowheader' }, h('span', { class: 'mono code', dir: 'ltr' }, m.id), h('strong', { title: m.name || '' }, m.name || m.id)),
           h('div', { class: 'roadmap-row-track', role: 'cell' }, bar),
         ));
       });
@@ -244,7 +252,7 @@ export default {
         tableView: () => {
           const t = h('table', { class: 'table is-dense' });
           t.appendChild(h('thead', {}, h('tr', {}, ...['المعلم', 'الاسم', 'الشهر', 'الحالة'].map((x) => h('th', { scope: 'col' }, x)))));
-          t.appendChild(h('tbody', {}, ...data.milestones.map((m) => h('tr', {}, h('td', { class: 'mono' }, m.id), h('td', {}, m.name || '—'), h('td', {}, `الشهر ${fmt.num(Math.floor(m.month) + 1)} · ${fmt.num(m.duration, { maximumFractionDigits: 1 })} شهر`), h('td', {}, m.status || '—')))));
+          t.appendChild(h('tbody', {}, ...data.milestones.map((m) => h('tr', {}, h('td', {}, codeSpan(m.id)), h('td', {}, m.name || '—'), h('td', {}, `الشهر ${fmt.num(Math.floor(m.month) + 1)} · ${fmt.num(m.duration, { maximumFractionDigits: 1 })} شهر`), h('td', {}, m.status || '—')))));
           return t;
         },
       });
@@ -278,15 +286,15 @@ export default {
           restoreFocusId = id;
           savePayment(m.id, v);
           const sum = Array.from(inputs.values()).reduce((a, inp) => a + (inp.value === '' ? 0 : num(inp.value)), 0);
-          toast(sum === 100 ? 'تم حفظ نسب الدفعات — المجموع 100%' : `تم حفظ نسبة ${m.id} — المجموع الحالي ${fmt.pct(sum)}`, { tone: sum === 100 ? 'good' : 'neutral' });
+          toast(sum === 100 ? `تم حفظ نسب الدفعات — المجموع ${fmt.pct(100)}` : `تم حفظ نسبة ${m.id} — المجموع الحالي ${fmt.pct(sum)}`, { tone: sum === 100 ? 'good' : 'neutral' });
         });
         inputs.set(m.id, input);
         tbody.appendChild(h('tr', {},
-          h('td', {}, h('div', { class: 'stack', style: { gap: '2px' } }, mono(m.id), h('span', { class: 'text-sm semibold' }, m.name || '—'))),
+          h('td', {}, h('div', { class: 'stack', style: { gap: '2px' } }, codeSpan(m.id, 'text-xs'), h('span', { class: 'text-sm semibold' }, m.name || '—'))),
           h('td', {}, m.deliverables.length ? h('ul', { class: 'deliverables' }, ...m.deliverables.map((d) => h('li', {}, typeof d === 'string' ? d : (d && (d.text || d.title)) || '—'))) : h('span', { class: 'muted' }, '—')),
           h('td', { class: 'align-center' }, h('span', { class: 'stack', style: { gap: '1px', alignItems: 'center' } }, h('span', { class: 'mono num' }, `${fmt.num(Math.floor(m.month) + 1)}`), h('span', { class: 'text-xs muted nowrap' }, `${fmt.num(m.duration, { maximumFractionDigits: 1 })} شهر`))),
           h('td', {}, badge(m.status || '—', STATUS_TONE[m.status] || 'neutral')),
-          h('td', { class: 'align-end' }, h('span', { class: 'roadmap-payment' }, input, h('span', { class: 'muted text-sm', 'aria-hidden': 'true' }, '%'))),
+          h('td', { class: 'align-end' }, h('span', { class: 'roadmap-payment' }, input, h('span', { class: 'muted text-sm', 'aria-hidden': 'true' }, pctSign()))),
         ));
       });
       table.appendChild(tbody);
@@ -294,7 +302,7 @@ export default {
       return card({
         code: 'RM-05', title: 'المعالم والمخرجات وجدول الدفعات', subtitle: data.paymentNote,
         body: h('div', { class: 'stack gap-3' }, h('div', { class: 'table-wrap' }, table), totalRow),
-        footer: h('p', { class: 'text-xs muted' }, 'النسب تُحفظ محلياً في إعدادات المنصة وتظهر في المقترح المطبوع؛ يتحول المجموع إلى الأخضر عند بلوغ 100% بالضبط.'),
+        footer: h('p', { class: 'text-xs muted' }, `النسب تُحفظ محلياً في إعدادات المنصة وتظهر في المقترح المطبوع؛ يتحول المجموع إلى الأخضر عند بلوغ ${fmt.pct(100)} بالضبط.`),
       });
     }
 
@@ -339,9 +347,9 @@ export default {
       raf = requestAnimationFrame(build);
     }
 
-    const NOISY = /^(feed|sensors|integrations|settings)/;
     const unsubs = [
-      bus.on('store:change', (payload) => { const path = payload && payload.path ? String(payload.path) : '*'; if (!NOISY.test(path)) schedule(); }),
+      // Only the roadmap entity (and a full reset) can change this page; every other platform / Part A path is ignored (C-4).
+      bus.on('store:change', (payload) => { const path = payload && payload.path ? String(payload.path) : '*'; if (path === '*' || /^platform\.roadmap/.test(path)) schedule(); }),
       bus.on('filters:change', () => { /* roadmap is portfolio-level: no filter dependency */ }),
       bus.on('settings:change', () => schedule()),
     ];

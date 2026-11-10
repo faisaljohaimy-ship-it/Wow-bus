@@ -371,6 +371,10 @@ export const permitsView = {
           items,
           onMove: (id, toColumnId) => movePermit(id, toColumnId),
         });
+        // The board is the scroll container for its columns; it must also be the containing block of the
+        // absolutely-positioned .sr-only labels inside the column heads, or those boxes (static position
+        // far to the inline-end of the off-screen columns) widen the whole page on phones in RTL.
+        board.el.style.position = 'relative';
         boardHost.appendChild(board.el);
       } else {
         board.update(items);

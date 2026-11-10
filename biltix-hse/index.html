@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl" data-theme="dark">
+<!-- بلتكس Risk AI — منصة إدارة المخاطر بالذكاء الاصطناعي (Biltix Risk AI). Static app shell: plain ES modules, no build step. -->
+<html lang="ar" dir="rtl" data-theme="dark" data-input="pointer">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -42,6 +43,22 @@
   <link rel="stylesheet" href="css/charts.css">
   <link rel="stylesheet" href="css/platform.css">
   <link rel="stylesheet" href="css/print.css" media="print">
+  <!-- Module preloads: the core graph, the shared UI libraries, both seeds and the home view (other views load on first navigation). -->
+  <link rel="modulepreload" href="js/app.js">
+  <link rel="modulepreload" href="js/core/bus.js">
+  <link rel="modulepreload" href="js/core/fmt.js">
+  <link rel="modulepreload" href="js/core/store.js">
+  <link rel="modulepreload" href="js/core/selectors.js">
+  <link rel="modulepreload" href="js/core/router.js">
+  <link rel="modulepreload" href="js/core/platform-selectors.js">
+  <link rel="modulepreload" href="js/views/index.js">
+  <link rel="modulepreload" href="js/ui/components.js">
+  <link rel="modulepreload" href="js/ui/charts.js">
+  <link rel="modulepreload" href="js/ui/radar.js">
+  <link rel="modulepreload" href="js/ui/art.js">
+  <link rel="modulepreload" href="js/data/seed.js">
+  <link rel="modulepreload" href="js/data/platform-seed.js">
+  <link rel="modulepreload" href="js/views/cockpit.js">
 </head>
 <body class="app" data-view="cockpit">
   <a class="skip-link" href="#main">تخطي إلى المحتوى</a>
@@ -131,7 +148,7 @@
     </div>
     <div class="filters-group filters-search">
       <label class="sr-only" for="searchInput">بحث في المخاطر الذكية والعقود والمهام والحوادث والتصاريح</label>
-      <input class="field-control" id="searchInput" name="search" type="search" placeholder="بحث بالرمز أو العنوان… (AIR-1042، CT-2026-014، R-1001)" autocomplete="off" spellcheck="false" enterkeyhint="search">
+      <input class="field-control" id="searchInput" name="search" type="search" placeholder="ابحث بالرمز أو العنوان…" title="ابحث بالرمز أو العنوان — مثال: AIR-1042 أو CT-2026-014 أو MT-0231 أو R-1001" autocomplete="off" spellcheck="false" enterkeyhint="search">
     </div>
     <div class="filters-group filters-feed">
       <button type="button" class="btn btn-outline btn-sm feed-toggle" id="feedToggle" aria-pressed="false" aria-controls="feed">
@@ -150,12 +167,13 @@
     <header class="feed-head">
       <span class="live-dot tone-accent" id="feedLive" aria-hidden="true"></span>
       <h2 class="feed-title">البث الحي</h2>
-      <span class="feed-count mono" id="feedCount" aria-label="عدد الأحداث">0</span>
+      <span class="feed-count mono" id="feedCount"><span class="sr-only">عدد الأحداث: </span><span id="feedCountValue">0</span></span>
       <button type="button" class="btn btn-ghost btn-icon feed-close" id="feedClose" aria-label="إغلاق البث الحي">
         <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"></path></svg>
       </button>
     </header>
-    <ul class="feed-list" id="feedList" role="list" aria-live="polite" aria-relevant="additions" aria-atomic="false"></ul>
+    <!-- The feed is a log, not a live region: ~20 events/min must never be announced. Critical alerts go through #liveAnnouncer. -->
+    <ul class="feed-list" id="feedList" role="log" aria-live="off" aria-label="سجل أحداث البث الحي"></ul>
     <footer class="feed-foot">
       <span class="feed-status" id="feedStatus">متصل بالأنظمة الحية</span>
       <button type="button" class="btn btn-ghost btn-sm" id="feedAll">عرض الكل</button>
@@ -164,7 +182,10 @@
 
   <nav class="tabbar" id="tabbar" aria-label="التنقل السريع"></nav>
 
-  <div class="toast-stack" id="toasts" aria-live="polite" aria-relevant="additions"></div>
+  <!-- Single assertive live region: app.js announces each critical / serious alert here exactly once. -->
+  <div class="sr-only" id="liveAnnouncer" aria-live="assertive" aria-atomic="true"></div>
+  <!-- No aria-live on the stack itself: each toast carries its own role (status / alert). -->
+  <div class="toast-stack" id="toasts"></div>
   <div id="modals"></div>
   <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
 
