@@ -118,7 +118,7 @@ const company = {
   nameEn: 'BILTIX',
   product: 'بلتكس Risk AI',
   productEn: 'BILTIX Risk AI',
-  hseProduct: 'بلتكس HSE',
+  hseProduct: 'بلتكس Risk AI · السلامة والصحة المهنية',
   pillar: 'ركيزة السلامة والصحة المهنية',
   tagline: 'مركز قيادة السلامة والصحة المهنية',
   website: 'https://biltix.sa',
@@ -2015,13 +2015,13 @@ for (const inc of incidents) {
 // ------------------------------------------------------------------
 
 const courses = [
-  { id: 'C1',  code: 'HSE-IND-01', name: 'التوعية بالسلامة في الموقع',        validityMonths: 12, mandatory: true,  hours: 4,  provider: 'بلتكس HSE',                         description: 'تعريف إلزامي لكل عامل قبل أول دخول للموقع: قواعد الموقع الذهبية، معدات الوقاية، الإبلاغ عن الحوادث، ومسارات الإخلاء.' },
-  { id: 'C2',  code: 'HSE-WAH-02', name: 'العمل على ارتفاعات',                 validityMonths: 24, mandatory: true,  hours: 8,  provider: 'بلتكس HSE',                         description: 'هرمية الحماية من السقوط، فحص أحزمة الأمان ونقاط التثبيت، العمل على السقالات والمنصات المتحركة، وخطة الإنقاذ.' },
+  { id: 'C1',  code: 'HSE-IND-01', name: 'التوعية بالسلامة في الموقع',        validityMonths: 12, mandatory: true,  hours: 4,  provider: 'بلتكس (تدريب داخلي)',                         description: 'تعريف إلزامي لكل عامل قبل أول دخول للموقع: قواعد الموقع الذهبية، معدات الوقاية، الإبلاغ عن الحوادث، ومسارات الإخلاء.' },
+  { id: 'C2',  code: 'HSE-WAH-02', name: 'العمل على ارتفاعات',                 validityMonths: 24, mandatory: true,  hours: 8,  provider: 'بلتكس (تدريب داخلي)',                         description: 'هرمية الحماية من السقوط، فحص أحزمة الأمان ونقاط التثبيت، العمل على السقالات والمنصات المتحركة، وخطة الإنقاذ.' },
   { id: 'C3',  code: 'HSE-CSE-03', name: 'الأماكن المغلقة',                    validityMonths: 24, mandatory: false, hours: 8,  provider: 'معهد الخليج للسلامة',                description: 'تصنيف الأماكن المغلقة، اختبار الغازات، التهوية، أدوار الداخل والمراقب الخارجي، وتمرين إنقاذ عملي.' },
-  { id: 'C4',  code: 'HSE-PTW-04', name: 'تصاريح العمل',                       validityMonths: 24, mandatory: false, hours: 6,  provider: 'بلتكس HSE',                         description: 'نظام تصاريح العمل في بلتكس: الأنواع السبعة، أدوار الطالب والمعتمد، العزل والتسليم والإغلاق.' },
+  { id: 'C4',  code: 'HSE-PTW-04', name: 'تصاريح العمل',                       validityMonths: 24, mandatory: false, hours: 6,  provider: 'بلتكس (تدريب داخلي)',                         description: 'نظام تصاريح العمل في بلتكس: الأنواع السبعة، أدوار الطالب والمعتمد، العزل والتسليم والإغلاق.' },
   { id: 'C5',  code: 'HSE-FAD-05', name: 'الإسعافات الأولية',                  validityMonths: 36, mandatory: false, hours: 16, provider: 'هيئة الهلال الأحمر السعودي',          description: 'الإنعاش القلبي الرئوي واستخدام جهاز الصدمات، التعامل مع النزيف والكسور وضربة الشمس حتى وصول الإسعاف.' },
   { id: 'C6',  code: 'HSE-FIR-06', name: 'مكافحة الحريق',                      validityMonths: 24, mandatory: true,  hours: 4,  provider: 'معهد الخليج للسلامة',                description: 'مثلث الاحتراق، أنواع الطفايات واستخدامها العملي، مراقب الحريق في الأعمال الساخنة، وإجراءات الإخلاء.' },
-  { id: 'C7',  code: 'HSE-HST-07', name: 'الإجهاد الحراري',                    validityMonths: 12, mandatory: true,  hours: 2,  provider: 'بلتكس HSE',                         description: 'أعراض الإجهاد الحراري ودرجاته، الترطيب والتأقلم، جدول العمل/الراحة وفق WBGT، وحظر العمل تحت الشمس.' },
+  { id: 'C7',  code: 'HSE-HST-07', name: 'الإجهاد الحراري',                    validityMonths: 12, mandatory: true,  hours: 2,  provider: 'بلتكس (تدريب داخلي)',                         description: 'أعراض الإجهاد الحراري ودرجاته، الترطيب والتأقلم، جدول العمل/الراحة وفق WBGT، وحظر العمل تحت الشمس.' },
   { id: 'C8',  code: 'HSE-HEQ-08', name: 'قيادة المعدات الثقيلة',              validityMonths: 36, mandatory: false, hours: 24, provider: 'المؤسسة العامة للتدريب التقني والمهني', description: 'تشغيل الحفارات واللوادر وشاحنات القلاب بأمان، الفحص اليومي، النقاط العمياء، والعمل قرب الخنادق والخدمات المدفونة.' },
   { id: 'C9',  code: 'HSE-RIG-09', name: 'الإشارة والربط (Rigging)',           validityMonths: 24, mandatory: false, hours: 16, provider: 'معهد الخليج للسلامة',                description: 'اختيار أدوات الرفع وفحصها، حساب الأحمال وزوايا الرفع، إشارات اليد والاتصال اللاسلكي، وخطط الرفع الحرج.' },
   { id: 'C10', code: 'HSE-DDR-10', name: 'قيادة دفاعية',                       validityMonths: 24, mandatory: false, hours: 8,  provider: 'الإدارة العامة للمرور — برنامج معتمد',   description: 'القيادة على الطرق الترابية والداخلية، السرعة والمسافة الآمنة، الإرهاق، والقيادة قرب المشاة والمعدات.' },
@@ -2270,7 +2270,7 @@ const legalRegister = [
     authority: 'وزارة الموارد البشرية والتنمية الاجتماعية',
     status: 'ممتثل', lastReview: d(-41), nextReview: d(139), owner: 'م. سلطان الرشيدي',
     requirements: ['إحاطة العامل بمخاطر مهنته ووسائل الوقاية (المادة 123)', 'اتخاذ الاحتياطات اللازمة لحماية العمال (المادة 122)', 'توفير الإسعافات الأولية والرعاية الطبية', 'الإبلاغ عن إصابات العمل'],
-    evidence: 'برنامج التعريف بالسلامة، سجلات التدريب، عيادات المواقع، سجل الإصابات في Biltix HSE.',
+    evidence: 'برنامج التعريف بالسلامة، سجلات التدريب، عيادات المواقع، سجل الإصابات في ركيزة السلامة بمنصة بلتكس Risk AI.',
     gap: null,
   },
   {

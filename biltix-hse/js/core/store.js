@@ -1949,10 +1949,13 @@ export const store = {
     const at = localISO(store.now());
     if (!Array.isArray(risk.history)) risk.history = [];
     if (rest.status && rest.status !== prevStatus) {
-      risk.history.push({ at, by: text(by) || risk.owner || 'النظام', text: `تغيير الحالة من «${prevStatus}» إلى «${rest.status}»` });
+      // Structured from/to so any view can label the change in the active language (English enums load lazily,
+      // so a pre-rendered English sentence written during an Arabic session could carry Arabic status names).
+      risk.history.push({ at, by: text(by) || risk.owner || 'النظام', kind: 'status', statusFrom: prevStatus, statusTo: rest.status, text: `تغيير الحالة من «${prevStatus}» إلى «${rest.status}»` });
     }
     if (typeof note === 'string' && note.trim()) {
-      risk.history.push({ at, by: text(by) || risk.owner || 'النظام', text: note.trim() });
+      // A user-typed note is shown as written in both languages (no machine translation).
+      risk.history.push({ at, by: text(by) || risk.owner || 'النظام', text: note.trim(), textEn: note.trim() });
     }
     return patchItem('risks', id, rest);
   },

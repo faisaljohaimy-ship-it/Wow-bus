@@ -37,7 +37,7 @@ export const ISO_TARGET = 85;
 const DAY_MS = 86_400_000;
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1', '0.0.0.0']);
 /** One product name everywhere (V19/RTL-25): the HSE module is a pillar of Biltix Risk AI. */
-export const BRAND = Object.freeze({ product: 'بلتكس Risk AI', hseProduct: 'بلتكس HSE', pillar: 'ركيزة السلامة والصحة المهنية' });
+export const BRAND = Object.freeze({ product: 'بلتكس Risk AI', hseProduct: 'بلتكس Risk AI · السلامة والصحة المهنية', pillar: 'ركيزة السلامة والصحة المهنية' });
 const CONTROL_DEFAULT_TYPE = 'ضوابط إدارية';
 const RISK_CLOSED = 'مغلق';
 
@@ -1216,7 +1216,16 @@ function buildReport(state, opts = {}) {
   const byType = safe(() => sel.incidentsByType(s, filters, at), []);
   const pareto = safe(() => sel.rootCausePareto(s, filters, at), []).slice(0, 6);
   const incidents = safe(() => sel.filteredIncidents(s, filters, at), []);
-  const openHigh = incidents.filter((i) => i.status !== 'مغلق' && Number(i.severity) >= 4).slice(0, 6);
+  // Open high-severity incidents use the sel.urgentActions rule (open, severity ≥ 4, site scope, any date):
+  // an incident reported before the period is still open work. `openHighCount` is the total; `openHigh` lists the top 6.
+  const incidentById = new Map(arr(s.incidents).filter(Boolean).map((i) => [i.id, i]));
+  const openHighAll = safe(() => sel.urgentActions(s, at, { siteId: filters.siteId }), [])
+    .filter((a) => a && a.kind === 'incident')
+    .map((a) => incidentById.get(a.id))
+    .filter(Boolean)
+    .sort((a, b) => (Number(b.severity) || 0) - (Number(a.severity) || 0) || String(b.date || '').localeCompare(String(a.date || '')));
+  const openHighCount = openHighAll.length;
+  const openHigh = openHighAll.slice(0, 6);
   const matrix = safe(() => sel.riskMatrix(s, filters, at), []);
   const tiers = safe(() => tierCounts(s, filters, at), { 'منخفض': 0, 'متوسط': 0, 'عالٍ': 0, 'حرج': 0 });
   const byCategory = safe(() => sel.risksByCategory(s, filters, at), []).slice(0, 6);
@@ -1254,8 +1263,8 @@ function buildReport(state, opts = {}) {
 
   /* ── narrative ── */
   const summary = [
-    `سجّل مؤشر السلامة ${num(k.safetyIndex)} من 100 لنطاق «${scopeLabel}» خلال الفترة ${period.label}، ${versusPrevious(d.safetyIndex, F.point)}.`,
-    `بلغ عدد الحوادث المسجلة ${count(k.incidentsInPeriod || 0, F.incident)} (${versusPrevious(d.incidentsInPeriod, F.incident)})، منها ${count(k.nearMisses30d || 0, F.nearMiss)} خلال آخر 30 يومًا، وما زال ${count(k.openIncidents || 0, F.incident)} قيد المتابعة.`,
+    `سجّل مؤشر السلامة ${num(k.safetyIndex)} من ${num(100)} لنطاق «${scopeLabel}» خلال الفترة ${period.label}، ${versusPrevious(d.safetyIndex, F.point)}.`,
+    `بلغ عدد الحوادث المسجلة ${count(k.incidentsInPeriod || 0, F.incident)} (${versusPrevious(d.incidentsInPeriod, F.incident)})، منها ${count(k.nearMisses30d || 0, F.nearMiss)} خلال آخر ${count(30, F.day)}، وما زال ${count(k.openIncidents || 0, F.incident)} قيد المتابعة.`,
     `معدل تكرار الإصابات المضيعة للوقت LTIFR بلغ ${num(k.ltifr, 2)} ومعدل الحوادث المسجلة TRIR ${num(k.trir, 2)}، مع ${count(k.daysSinceLTI || 0, F.day)} دون إصابة مضيعة للوقت.`,
     `يضم سجل المخاطر ${count(k.openRisks || 0, F.risk)} مفتوحة، منها ${count(k.criticalRisks || 0, F.risk)} حرجة و${count(k.highRisks || 0, F.risk)} عالية، و${count(overdueCount, F.risk)} تجاوزت موعد المعالجة.`,
     `التصاريح النشطة ${count(k.activePermits || 0, F.permit)}، والامتثال التدريبي ${pct(k.trainingCompliance)} (${versusPrevious(d.trainingCompliance, null, { pctUnit: true })})، ونسبة إغلاق الإجراءات التصحيحية ${pct(k.capaClosure)}.`,
@@ -1268,7 +1277,8 @@ function buildReport(state, opts = {}) {
     { id: 'trir', label: 'TRIR', value: k.trir, unit: '', digits: 2, delta: d.trir, deltaGoodWhen: 'down', tone: deltaTone(d.trir, 'down') },
     { id: 'daysSinceLTI', label: 'أيام دون إصابة مضيعة للوقت', value: k.daysSinceLTI, unit: 'يوم', delta: d.daysSinceLTI, deltaGoodWhen: 'up', tone: deltaTone(d.daysSinceLTI, 'up') },
     { id: 'openIncidents', label: 'الحوادث المفتوحة', value: k.openIncidents, unit: '', delta: d.openIncidents, deltaGoodWhen: 'down', tone: deltaTone(d.openIncidents, 'down') },
-    { id: 'nearMisses30d', label: 'الحوادث الوشيكة (30 يومًا)', value: k.nearMisses30d, unit: '', delta: d.nearMisses30d, deltaGoodWhen: 'down', tone: deltaTone(d.nearMisses30d, 'down') },
+    // Near misses carry no good/bad judgement: a rise can mean more hazards or a healthier reporting culture.
+    { id: 'nearMisses30d', label: `الحوادث الوشيكة (${count(30, F.day)})`, value: k.nearMisses30d, unit: '', delta: d.nearMisses30d, deltaGoodWhen: 'none', tone: 'neutral' },
     { id: 'activePermits', label: 'التصاريح النشطة', value: k.activePermits, unit: '', delta: d.activePermits, deltaGoodWhen: 'up', tone: 'neutral' },
     { id: 'criticalRisks', label: 'المخاطر الحرجة', value: k.criticalRisks, unit: '', delta: d.criticalRisks, deltaGoodWhen: 'down', tone: deltaTone(d.criticalRisks, 'down') },
     { id: 'capaClosure', label: 'إغلاق الإجراءات التصحيحية', value: k.capaClosure, unit: '%', delta: d.capaClosure, deltaGoodWhen: 'up', tone: deltaTone(d.capaClosure, 'up') },
@@ -1296,7 +1306,7 @@ function buildReport(state, opts = {}) {
   const incidentNarrative = [
     `وقع خلال الفترة ${count(k.incidentsInPeriod || 0, F.incident)}، ${versusPrevious(d.incidentsInPeriod, F.incident)}؛ وتشكّل الحوادث الوشيكة ${pct(incidents.length ? Math.round((incidents.filter((i) => i.type === 'حادث وشيك').length / incidents.length) * 100) : 0)} من البلاغات، وهو مؤشر على ثقافة إبلاغ ${incidents.length && incidents.filter((i) => i.type === 'حادث وشيك').length / incidents.length >= 0.5 ? 'إيجابية' : 'تحتاج إلى تعزيز'}.`,
     topCause ? `السبب الجذري الأكثر تكرارًا هو «${topCause.label}» بنسبة ${pct(topCause.pct)} من الحوادث المصنفة${pareto[1] ? `، يليه «${pareto[1].label}» (${pct(pareto[1].pct)})` : ''}.` : 'لا تتوفر أسباب جذرية مصنفة لحوادث هذه الفترة.',
-    openHigh.length ? `ما زال ${count(openHigh.length, F.incident)} بدرجة خطورة عالية (4 فأكثر) مفتوحًا ويستلزم استكمال التحقيق وإغلاق الإجراءات.` : 'لا توجد حوادث مفتوحة بدرجة خطورة عالية.',
+    openHighCount ? `ما زال ${count(openHighCount, F.incident)} بدرجة خطورة عالية (${num(4)} فأكثر) مفتوحًا ويستلزم استكمال التحقيق وإغلاق الإجراءات.` : 'لا توجد حوادث مفتوحة بدرجة خطورة عالية.',
   ];
 
   const riskNarrative = [
@@ -1315,26 +1325,26 @@ function buildReport(state, opts = {}) {
   const trainingNarrative = [
     `بلغ الامتثال التدريبي للدورات الإلزامية ${pct(k.trainingCompliance)}، ${versusPrevious(d.trainingCompliance, null, { pctUnit: true })}.`,
     weakestCourses.length ? `أقل الدورات تغطية: ${weakestCourses.map((c) => `«${c.label}» (${pct(c.pct)})`).join('، ')}.` : 'لا تتوفر بيانات دورات.',
-    `${count(expiring30.length, F.cert)} تنتهي خلال 30 يومًا و${count(expiring60.length, F.cert)} خلال 60 يومًا، ويلزم جدولة إعادة التأهيل قبل انتهائها.`,
+    `${count(expiring30.length, F.cert)} تنتهي خلال ${count(30, F.day)} و${count(expiring60.length, F.cert)} خلال ${count(60, F.day)}، ويلزم جدولة إعادة التأهيل قبل انتهائها.`,
   ];
 
   const complianceNarrative = [
-    `متوسط درجات بنود ISO 45001 (4–10) هو ${pct(isoOverall)} مقابل مستهدف ${pct(ISO_TARGET)}${isoBelow.length ? `؛ البنود دون المستهدف: ${isoBelow.map((c) => `${c.id} ${c.title} (${pct(c.score)})`).join('، ')}` : '، وجميع البنود تحقق المستهدف'}.`,
+    `متوسط درجات بنود ISO 45001 (${num(4)}–${num(10)}) هو ${pct(isoOverall)} مقابل مستهدف ${pct(ISO_TARGET)}${isoBelow.length ? `؛ البنود دون المستهدف: ${isoBelow.map((c) => `${c.id} ${c.title} (${pct(c.score)})`).join('، ')}` : '، وجميع البنود تحقق المستهدف'}.`,
     `يضم السجل القانوني ${num(legal.length)} متطلبًا: ${num(legalCounts['ممتثل'])} ممتثل، ${num(legalCounts['جزئي'])} امتثال جزئي، ${num(legalCounts['فجوة'])} فجوة${isoGaps ? `؛ وإجمالي الفجوات الموثقة في بنود المعيار ${num(isoGaps)}` : ''}.`,
   ];
 
   /* ── recommendations ── */
   const recommendations = [];
-  if (k.criticalRisks > 0) recommendations.push({ tone: 'critical', text: `معالجة ${count(k.criticalRisks, F.risk)} حرجة عبر ضوابط هندسية أو إلغاء النشاط قبل استئنافه، ومراجعة التقييم أسبوعيًا حتى تنخفض الدرجة المتبقية دون 10.` });
+  if (k.criticalRisks > 0) recommendations.push({ tone: 'critical', text: `معالجة ${count(k.criticalRisks, F.risk)} حرجة عبر ضوابط هندسية أو إلغاء النشاط قبل استئنافه، ومراجعة التقييم أسبوعيًا حتى تنخفض الدرجة المتبقية دون ${num(10)}.` });
   if (overdueCount > 0) recommendations.push({ tone: 'serious', text: `إغلاق ${count(overdueCount, F.risk)} متأخرة عن موعد المعالجة وتصعيد المتأخر منها لمدير الموقع مع تواريخ مستهدفة جديدة.` });
-  if (openHigh.length) recommendations.push({ tone: 'serious', text: `استكمال التحقيق في ${count(openHigh.length, F.incident)} عالية الخطورة وإغلاق إجراءاتها التصحيحية خلال 14 يومًا.` });
+  if (openHighCount) recommendations.push({ tone: 'serious', text: `استكمال التحقيق في ${count(openHighCount, F.incident)} عالية الخطورة وإغلاق إجراءاتها التصحيحية خلال ${count(14, F.day)}.` });
   if (topCause) recommendations.push({ tone: 'warning', text: `استهداف السبب الجذري «${topCause.label}» ببرنامج وقائي مخصص (تدريب، إشراف، إجراءات عمل) لكونه يفسر ${pct(topCause.pct)} من الحوادث.` });
-  if (k.trainingCompliance < 90) recommendations.push({ tone: 'warning', text: `رفع الامتثال التدريبي من ${pct(k.trainingCompliance)} إلى 90% على الأقل بجدولة ${count(expiring30.length + expiring60.length, F.cert)} قريبة الانتهاء وتغطية الفجوات في ${weakestCourses.map((c) => `«${c.label}»`).join(' و') || 'الدورات الإلزامية'}.` });
+  if (k.trainingCompliance < 90) recommendations.push({ tone: 'warning', text: `رفع الامتثال التدريبي من ${pct(k.trainingCompliance)} إلى ${pct(90)} على الأقل بجدولة ${count(expiring60.length, F.cert)} قريبة الانتهاء وتغطية الفجوات في ${weakestCourses.map((c) => `«${c.label}»`).join(' و') || 'الدورات الإلزامية'}.` });
   if (k.inspectionsDue > 0) recommendations.push({ tone: 'warning', text: `تنفيذ ${count(k.inspectionsDue, F.inspection)} مستحقة أو متأخرة وتوثيق نتائجها خلال الأسبوع.` });
   if (isoBelow.length) recommendations.push({ tone: 'warning', text: `خطة تحسين لبنود ISO 45001 دون المستهدف (${isoBelow.map((c) => c.id).join('، ')}) مع مالك ومهلة لكل فجوة قبل التدقيق الداخلي القادم.` });
   if (legalCounts['فجوة'] > 0 || legalCounts['جزئي'] > 0) recommendations.push({ tone: 'warning', text: `معالجة ${num(legalCounts['فجوة'] + legalCounts['جزئي'])} متطلبًا نظاميًا غير مكتمل الامتثال في السجل القانوني وتحديث تواريخ المراجعة.` });
   if (integ.degraded > 0 || integ.disconnected > 0) recommendations.push({ tone: 'warning', text: `استعادة ${num(integ.degraded + integ.disconnected)} تكاملًا متدهورًا أو منقطعًا لضمان اكتمال بيانات الحساسات والحضور في قمرة القيادة.` });
-  if (k.capaClosure < 80) recommendations.push({ tone: 'warning', text: `رفع نسبة إغلاق الإجراءات التصحيحية من ${pct(k.capaClosure)} إلى 80% عبر مراجعة أسبوعية للإجراءات المتأخرة.` });
+  if (k.capaClosure < 80) recommendations.push({ tone: 'warning', text: `رفع نسبة إغلاق الإجراءات التصحيحية من ${pct(k.capaClosure)} إلى ${pct(80)} عبر مراجعة أسبوعية للإجراءات المتأخرة.` });
   if (!recommendations.length) recommendations.push({ tone: 'good', text: 'الأداء ضمن المستهدفات؛ يُوصى بالحفاظ على وتيرة الجولات الميدانية واجتماعات صندوق الأدوات وتحديث تقييمات المخاطر قبل كل مرحلة جديدة.' });
 
   /* ── English narrative (same facts, same definitions; numbers formatted by the view) ── */
@@ -1367,7 +1377,7 @@ function buildReport(state, opts = {}) {
   const incidentNarrativeEn = [
     `${plural(k.incidentsInPeriod || 0, 'incident', 'incidents')} occurred in the period, ${vsPrevEn(d.incidentsInPeriod, 'incident', 'incidents')}; near misses make up ${pe(nearMissShare)} of reports, ${nearMissShare >= 50 ? 'a sign of a healthy reporting culture' : 'so reporting culture needs strengthening'}.`,
     topCause ? `The most frequent root cause is "${enumEn('rootCause', topCause.label, topCause.label)}" at ${pe(topCause.pct)} of classified incidents${pareto[1] ? `, followed by "${enumEn('rootCause', pareto[1].label, pareto[1].label)}" (${pe(pareto[1].pct)})` : ''}.` : 'No classified root causes are available for this period.',
-    openHigh.length ? `${plural(openHigh.length, 'high-severity incident (4+) is', 'high-severity incidents (4+) are')} still open and need the investigation and corrective actions completed.` : 'There are no open high-severity incidents.',
+    openHighCount ? `${plural(openHighCount, 'high-severity incident (4+) is', 'high-severity incidents (4+) are')} still open and need the investigation and corrective actions completed.` : 'There are no open high-severity incidents.',
   ];
   const riskNarrativeEn = [
     `Open risks: ${n0(tiers['حرج'])} critical, ${n0(tiers['عالٍ'])} high, ${n0(tiers['متوسط'])} medium and ${n0(tiers['منخفض'])} low; the number of critical risks is ${vsPrevEn(d.criticalRisks, 'risk', 'risks')}.`,
@@ -1390,9 +1400,9 @@ function buildReport(state, opts = {}) {
   const recEn = [];
   if (k.criticalRisks > 0) recEn.push({ tone: 'critical', text: `Treat ${plural(k.criticalRisks, 'critical risk', 'critical risks')} with engineering controls or by stopping the activity before it resumes, and review the assessment weekly until the residual score is below 10.` });
   if (overdueCount > 0) recEn.push({ tone: 'serious', text: `Close ${plural(overdueCount, 'overdue risk', 'overdue risks')} and escalate the late ones to the site manager with new target dates.` });
-  if (openHigh.length) recEn.push({ tone: 'serious', text: `Complete the investigation of ${plural(openHigh.length, 'high-severity incident', 'high-severity incidents')} and close their corrective actions within 14 days.` });
+  if (openHighCount) recEn.push({ tone: 'serious', text: `Complete the investigation of ${plural(openHighCount, 'high-severity incident', 'high-severity incidents')} and close their corrective actions within 14 days.` });
   if (topCause) recEn.push({ tone: 'warning', text: `Target the root cause "${enumEn('rootCause', topCause.label, topCause.label)}" with a dedicated prevention programme (training, supervision, work procedures) — it explains ${pe(topCause.pct)} of incidents.` });
-  if (k.trainingCompliance < 90) recEn.push({ tone: 'warning', text: `Raise training compliance from ${pe(k.trainingCompliance)} to at least 90% by scheduling ${plural(expiring30.length + expiring60.length, 'expiring certificate', 'expiring certificates')} and closing the gaps in the weakest courses.` });
+  if (k.trainingCompliance < 90) recEn.push({ tone: 'warning', text: `Raise training compliance from ${pe(k.trainingCompliance)} to at least 90% by scheduling ${plural(expiring60.length, 'expiring certificate', 'expiring certificates')} due within 60 days and closing the gaps in the weakest courses.` });
   if (k.inspectionsDue > 0) recEn.push({ tone: 'warning', text: `Carry out ${plural(k.inspectionsDue, 'due or overdue inspection', 'due or overdue inspections')} and record the results this week.` });
   if (isoBelow.length) recEn.push({ tone: 'warning', text: `Improvement plan for the ISO 45001 clauses below target (${isoBelow.map((c) => c.id).join(', ')}) with an owner and a deadline for each gap before the next internal audit.` });
   if (legalCounts['فجوة'] > 0 || legalCounts['جزئي'] > 0) recEn.push({ tone: 'warning', text: `Address ${plural(legalCounts['فجوة'] + legalCounts['جزئي'], 'regulatory requirement', 'regulatory requirements')} that are not fully compliant and update the review dates.` });
@@ -1411,7 +1421,7 @@ function buildReport(state, opts = {}) {
   const sections = [
     { id: 'summary', code: 'RPT-01', title: 'الملخص التنفيذي', titleEn: 'Executive summary', narrative: summary, narrativeEn: summaryEn, highlights: kpiItems.slice(0, 4) },
     { id: 'kpis', code: 'RPT-02', title: 'مؤشرات الأداء', titleEn: 'Performance indicators', narrative: kpiNarrative, narrativeEn: kpiNarrativeEn, items: kpiItems, siteScores: siteScores.map((row) => ({ siteId: row.site.id, site: row.site.name, city: row.site.city, score: row.score, openRisks: row.openRisks, openIncidents: row.openIncidents, trend: row.trend })) },
-    { id: 'incidents', code: 'RPT-03', title: 'الحوادث', titleEn: 'Incidents', narrative: incidentNarrative, narrativeEn: incidentNarrativeEn, trend, byType, pareto, openHigh: openHigh.map((i) => ({ id: i.id, code: i.code, title: i.title, type: i.type, severity: i.severity, status: i.status, siteId: i.siteId, date: i.date })) },
+    { id: 'incidents', code: 'RPT-03', title: 'الحوادث', titleEn: 'Incidents', narrative: incidentNarrative, narrativeEn: incidentNarrativeEn, trend, byType, pareto, openHighCount, openHigh: openHigh.map((i) => ({ id: i.id, code: i.code, title: i.title, type: i.type, severity: i.severity, status: i.status, siteId: i.siteId, date: i.date })) },
     { id: 'risks', code: 'RPT-04', title: 'المخاطر', titleEn: 'Risks', narrative: riskNarrative, narrativeEn: riskNarrativeEn, matrix, tiers, byCategory, overdue: overdueRisks, overdueCount },
     { id: 'permits', code: 'RPT-05', title: 'التصاريح', titleEn: 'Permits to work', narrative: permitNarrative, narrativeEn: permitNarrativeEn, byStatus: permitsByStatus, byType: permitsByType, expiringSoon: expiringPermits },
     { id: 'training', code: 'RPT-06', title: 'التدريب', titleEn: 'Training', narrative: trainingNarrative, narrativeEn: trainingNarrativeEn, byCourse: trainingByCourse, expiring30: expiring30.length, expiring60: expiring60.length, expiring: expiring60.slice(0, 12).map((e) => ({ worker: e.worker.name, workerId: e.worker.id, course: e.course.name, expiresAt: e.expiresAt, daysLeft: e.daysLeft, tone: e.tone })) },

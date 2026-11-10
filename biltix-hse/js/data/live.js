@@ -1797,10 +1797,16 @@ function getSensorValues(siteId) {
   if (!E.store) return [];
   syncSensorModels();
   const now = Date.now();
+  // A missing sensor is null (rendered as a gap / "No sensor"), never a fabricated 0.
   return safeSensorAxes(siteId).map((axis) => {
+    if (!axis || axis.missing) return null;
     const m = E.sensors.get(axis.id);
-    if (!m) return num(axis.value, 0);
-    return round(displayValueOf(m, now), 3);
+    if (!m) {
+      const v = Number(axis.value);
+      return Number.isFinite(v) ? v : null;
+    }
+    const v = displayValueOf(m, now);
+    return Number.isFinite(v) ? round(v, 3) : null;
   });
 }
 

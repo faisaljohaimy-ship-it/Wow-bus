@@ -12,7 +12,7 @@ export default {
     _: {
       name: 'BILTIX',
       product: 'BILTIX Risk AI',
-      hseProduct: 'BILTIX HSE',
+      hseProduct: 'BILTIX Risk AI · Health, Safety & Environment',
       pillar: 'Health, Safety & Environment (HSE) pillar',
       tagline: 'Health, Safety & Environment (HSE) command centre',
       description: 'A Saudi construction technology platform covering construction project management, site inspections, document management (BILTIX DMS) and day-to-day site operations for contractors, project managers, engineers and consultants.',
@@ -1307,12 +1307,12 @@ export default {
   courses: {
     C1: {
       name: 'Site safety induction',
-      provider: 'BILTIX HSE',
+      provider: 'BILTIX (in-house training)',
       description: 'Mandatory induction for every worker before first site entry: the site\'s golden rules, PPE, incident reporting and evacuation routes.',
     },
     C2: {
       name: 'Work at height',
-      provider: 'BILTIX HSE',
+      provider: 'BILTIX (in-house training)',
       description: 'Fall protection hierarchy, harness and anchor point inspection, work on scaffolds and mobile platforms, and rescue planning.',
     },
     C3: {
@@ -1322,7 +1322,7 @@ export default {
     },
     C4: {
       name: 'Permits to work',
-      provider: 'BILTIX HSE',
+      provider: 'BILTIX (in-house training)',
       description: 'The BILTIX permit-to-work (PTW) system: the seven permit types, requester and approver roles, isolation, handover and close-out.',
     },
     C5: {
@@ -1337,7 +1337,7 @@ export default {
     },
     C7: {
       name: 'Heat stress',
-      provider: 'BILTIX HSE',
+      provider: 'BILTIX (in-house training)',
       description: 'Heat stress symptoms and stages, hydration and acclimatisation, WBGT-based work/rest schedules, and the midday work ban.',
     },
     C8: {
@@ -1587,7 +1587,7 @@ export default {
         'Providing first aid and medical care',
         'Reporting work injuries',
       ],
-      evidence: 'Safety induction programme, training records, site clinics and the injury register in BILTIX HSE.',
+      evidence: 'Safety induction programme, training records, site clinics and the injury register in the BILTIX Risk AI safety pillar.',
     },
     L2: {
       title: 'Occupational Safety and Health Regulation and requirements for fall protection, excavations and confined spaces',
@@ -2051,7 +2051,8 @@ export default {
     // Organisations, contractors, authorities and systems
     'بلتكس': 'BILTIX',
     'بلتكس Risk AI': 'BILTIX Risk AI',
-    'بلتكس HSE': 'BILTIX HSE',
+    'بلتكس HSE': 'BILTIX (in-house training)',
+    'بلتكس (تدريب داخلي)': 'BILTIX (in-house training)',
     'بلتكس للمقاولات': 'BILTIX Contracting',
     'شركة الواجهة المالية للتطوير': 'Financial Gateway Development Company',
     'شركة الإنشاءات الحديثة': 'Modern Construction Company',

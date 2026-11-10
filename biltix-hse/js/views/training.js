@@ -30,7 +30,7 @@ const STATUS = {
 };
 const STATUS_BY_CODE = ['missing', 'expired', 'expiring', 'valid'];
 const STATUS_ORDER = ['valid', 'expiring', 'expired', 'missing'];
-const INTERNAL_PROVIDERS = new Set(['بلتكس HSE', 'BILTIX HSE', 'بلتكس', 'BILTIX']);
+const INTERNAL_PROVIDERS = new Set(['بلتكس (تدريب داخلي)', 'BILTIX (in-house training)', 'بلتكس HSE', 'BILTIX HSE', 'بلتكس', 'BILTIX']);
 
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
 const statusLabel = (key) => t(`training.status.${key}`);
