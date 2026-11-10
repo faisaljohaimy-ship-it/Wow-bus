@@ -1181,7 +1181,8 @@ function pipelineHealth(state) {
       openRisks: open.length,
       redRisks: open.filter((r) => rating(r.score) === 'red').length,
       overridePct: pct(num(p.overridesLast30d), num(p.overridesLast30d) + Math.round(num(p.risksLast30d) * num(p.acceptanceRatePct) / 100)),
-      f1: num(p.precision) + num(p.recall) > 0 ? round((2 * num(p.precision) * num(p.recall)) / (num(p.precision) + num(p.recall)), 2) : 0,
+      // null when not measured (precision/recall are null in this version) — never a fabricated 0 or score.
+      f1: Number.isFinite(p.precision) && Number.isFinite(p.recall) && p.precision + p.recall > 0 ? round((2 * p.precision * p.recall) / (p.precision + p.recall), 2) : null,
     };
   });
 }

@@ -986,7 +986,8 @@ const ITEM_NORMALIZERS = {
   },
   pipelines(p) {
     p.status = pickEnum(p.status, PIPELINE_STATUS, 'idle');
-    for (const k of ['precision', 'recall', 'calibrationError', 'driftScore']) if (p[k] !== undefined) p[k] = clampNum(p[k], 0, 1, 0);
+    // null = not measured (no test set / model service in this version): keep it null, never coerce to 0.
+    for (const k of ['precision', 'recall', 'calibrationError', 'driftScore']) if (p[k] !== undefined) p[k] = p[k] === null ? null : clampNum(p[k], 0, 1, null);
     if (p.runsToday !== undefined) p.runsToday = clampInt(p.runsToday, 0, 1e6, 0);
     if (p.acceptanceRatePct !== undefined) p.acceptanceRatePct = clampNum(p.acceptanceRatePct, 0, 100, 0);
   },

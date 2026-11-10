@@ -487,7 +487,7 @@ export default {
       detail: 'Wind reading of 312 km/h rejected — outside the physical range (rule VR10)',
     },
     AU9: {
-      detail: 'Drift score 0.33 exceeded the 0.30 threshold — retraining requires a connected model service (not available in the demo)',
+      detail: 'Drift monitoring is not active: it needs a connected model service and a labelled test set (not available in the demo)',
     },
     AU10: { detail: 'Record ERP-PO-2026-0512-L3 quarantined: currency inconsistency (rule VR8)' },
     AU11: { detail: 'Recommendation accepted and task MT-0203 created (edge protection — Floor 23)' },
@@ -495,7 +495,7 @@ export default {
     AU13: { target: 'Cockpit', detail: 'Signed in — role: Legal' },
     AU14: { detail: 'Recommendation accepted and task MT-0214 created (north slope evacuation) with escalation' },
     AU15: { detail: 'Automatic immediate escalation — score 100 ≥ critical threshold (email, Slack, WhatsApp)' },
-    AU16: { detail: 'Task closed with outcome; risk AIR-1041 closed — outcome fed back for recalibration' },
+    AU16: { detail: 'Task closed with outcome; risk AIR-1041 closed — outcome recorded (used for calibration once a model service is connected)' },
     AU17: { detail: 'Manual escalation by email, Slack and Teams — inspection still not scheduled after 25 days' },
     AU18: { detail: 'Risk dismissed: hedging capped at 70% under treasury policy' },
     AU19: { detail: 'Recommendation accepted and task MT-0204 created' },
@@ -507,7 +507,7 @@ export default {
     AU23: {
       detail: 'Recommendation edited: added a standby contract for an alternative transformer — reason: plan B for SAR 1.2 million/day damages',
     },
-    AU24: { detail: 'Released v2.3.1: improved detection of missing caps (precision 0.88 → 0.91)' },
+    AU24: { detail: 'Contract-analysis pipeline settings recorded (illustrative scenario) — no model service is connected and model accuracy is not measured in this version' },
     AU25: {
       detail: 'Recommendation edited: added a payment certificate financing facility — reason: immediate cash cover for subcontractor payments',
     },
