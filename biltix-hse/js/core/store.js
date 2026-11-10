@@ -1001,6 +1001,7 @@ export function buildFreshState(nowDate = new Date()) {
   };
   reanchor(base, nowDate, { instants: true });
   backfillAlertCodes(base.platform.alerts);
+  normalizeState(base); // idempotent for a valid seed; keeps the baseline identical to a normalised load
   return base;
 }
 
