@@ -102,10 +102,11 @@
    Glyph coverage (cmap of the woff2 files, checked with fontTools): beyond Latin-1
    the Latin subsets hold only – — ‘ ’ ‚ “ ” „ • … ‹ › ⁄ € ™ ↑ ↓ − ∕ (Sans and Mono
    add ′ ″); there is no → ← ↔ ≥ ≤ ≈ ₂ σ ✓ ✕ in any file, so copy should not use
-   those characters (they render and print in a system font). Neither Latin subset has U+2010/U+2011 (hyphen, non-breaking hyphen):
-   the two Latin fallbacks leave U+2010-2011 out of their range so that these fall
-   through to the Plex Sans Arabic hyphen (HarfBuzz draws U+2011 with the U+2010 glyph)
-   instead of a local Arial/Liberation glyph. */
+   those characters (they render and print in a system font). Neither Latin subset
+   has U+2010/U+2011 (hyphen, non-breaking hyphen): the two Latin fallbacks leave
+   U+2010-2011 out of their range so these fall through to the Plex Sans Arabic
+   hyphen (HarfBuzz draws U+2011 with the U+2010 glyph) instead of a local
+   Arial/Liberation glyph. */
 @font-face { font-family: "Plex Arabic Fallback";
   src: local("Arial"), local("ArialMT"), local("Liberation Sans"), local("Helvetica Neue"), local("Helvetica");
   size-adjust: 100.87%; ascent-override: 107.56%; descent-override: 41.14%; line-gap-override: 0%; }
@@ -132,8 +133,8 @@
   --font-en: "IBM Plex Sans", "Plex Sans Fallback", "IBM Plex Sans Arabic", "Plex Arabic Fallback Naskh", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-sans: var(--font-ar);
   /* Plex Mono has no Arabic script: Arabic-Indic digits (numerals = arab), ٪ ٫ ٬, the
-     U+061C mark Intl puts in Arabic numbers and stray Arabic letters fall to Plex Sans
-     Arabic before any system monospace (it was DejaVu Sans Mono on screen and in PDFs). */
+     U+061C mark Intl puts in Arabic-Indic numbers and stray Arabic letters fall to Plex
+     Sans Arabic before any system monospace (before: DejaVu Sans Mono on screen and in PDFs). */
   --font-mono: "IBM Plex Mono", "Plex Mono Fallback", "IBM Plex Sans Arabic", "Plex Arabic Fallback Naskh", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   /* Mixed strings ("5س 12د", "قبل 3 دقائق", "AIR-1042 · المرحلة 2"): Latin/digits in Plex Mono,
      Arabic letters fall to the language's sans face instead of the system monospace. */

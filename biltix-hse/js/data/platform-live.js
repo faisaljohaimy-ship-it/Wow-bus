@@ -573,7 +573,7 @@ const DETECTORS = {
         stakeholders: ['Procurement', 'PM'],
       },
       {
-        title: `فرق كمية BoQ↔BIM بنسبة ${variance}% في البند ${boq.code}`, titleEn: `BoQ↔BIM quantity variance of ${variance}% on item ${boq.code}`,
+        title: `فرق كمية BoQ–BIM بنسبة ${variance}% في البند ${boq.code}`, titleEn: `BoQ–BIM quantity variance of ${variance}% on item ${boq.code}`,
         driver: `كمية جدول الكميات ${boqQty} ${unitAr} مقابل ${bimQty} ${unitAr} من النموذج (Autodesk APS)؛ الفرق يعني طلب شراء ناقصاً أو زائداً في ${site}.`,
         driverEn: `The BoQ quantity is ${enN(boqQty)} ${unitEnS} against ${enN(bimQty)} ${unitEnS} in the model (Autodesk APS); the gap means an under- or over-sized purchase order at ${siteEn}.`,
         action: 'مراجعة الكميات مع الاستشاري وتصحيح أمر الشراء قبل الإصدار', actionEn: 'Review the quantities with the consultant and correct the purchase order before issue',

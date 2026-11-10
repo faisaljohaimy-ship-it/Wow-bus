@@ -47,9 +47,9 @@ const TYPE_ICON = {
 
 /** Gas test limits (confined-space practice: O₂ 19.5–23.5 %, LEL < 10 %, H₂S < 10 ppm, CO < 35 ppm). */
 const GAS = [
-  { key: 'o2', label: 'O₂', unit: '%', digits: 1, min: 0, max: 100, tone: (v) => (v < 19.5 || v > 23.5 ? 'critical' : 'good') },
+  { key: 'o2', label: 'O2', unit: '%', digits: 1, min: 0, max: 100, tone: (v) => (v < 19.5 || v > 23.5 ? 'critical' : 'good') },
   { key: 'lel', label: 'LEL', unit: '%', digits: 0, min: 0, max: 100, tone: (v) => (v >= 10 ? 'critical' : v > 0 ? 'warning' : 'good') },
-  { key: 'h2s', label: 'H₂S', unit: 'ppm', digits: 1, min: 0, max: 1000, tone: (v) => (v >= 10 ? 'critical' : v >= 5 ? 'warning' : 'good') },
+  { key: 'h2s', label: 'H2S', unit: 'ppm', digits: 1, min: 0, max: 1000, tone: (v) => (v >= 10 ? 'critical' : v >= 5 ? 'warning' : 'good') },
   { key: 'co', label: 'CO', unit: 'ppm', digits: 0, min: 0, max: 5000, tone: (v) => (v >= 35 ? 'critical' : v >= 25 ? 'warning' : 'good') },
 ];
 const GAS_TEXT = { good: 'permits.gas.ok', warning: 'permits.gas.warn', critical: 'permits.gas.alarm' };

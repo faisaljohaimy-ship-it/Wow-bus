@@ -123,7 +123,7 @@ export default {
     },
     thresholds: {
       title: 'عتبات التنبيه والتصعيد',
-      intro: 'تحدد العتبات أي المخاطر المُقيَّمة حديثاً تُنشئ تنبيهاً: أكبر من عتبة التنبيه ← قائمة التنبيهات القياسية؛ عند عتبة التصعيد فأكثر ← تصعيد فوري.',
+      intro: 'تحدد العتبات أي المخاطر المُقيَّمة حديثاً تُنشئ تنبيهاً: أكبر من عتبة التنبيه: قائمة التنبيهات القياسية؛ عند عتبة التصعيد فأكثر: تصعيد فوري.',
       alert: 'عتبة التنبيه',
       alertHint: 'الدرجات الأكبر من هذه القيمة تدخل قائمة التنبيهات.',
       critical: 'عتبة التصعيد الفوري',
@@ -132,7 +132,7 @@ export default {
       errGap: 'عتبة التصعيد يجب أن تكون {min} على الأقل (عتبة التنبيه + {gap}).',
       scaleAria: 'مقياس من {min} إلى {max} يوضح نطاقات التقييم وموضع العتبتين',
       markerAlert: 'تنبيه > {n}',
-      markerCritical: 'تصعيد ≥ {n}',
+      markerCritical: 'تصعيد من {n}',
       impact: 'الأثر على المخاطر المفتوحة الحالية',
       impactHint: 'لا يُعاد إرسال التنبيهات الموجودة عند الحفظ؛ العتبات تحكم التنبيهات الجديدة.',
       immediate: 'تصعيد فوري',
@@ -180,7 +180,7 @@ export default {
       typeHint: {
         simulation: 'المحاكاة المدمجة: بيانات تجريبية واقعية تُولَّد في هذا المتصفح دون أي اتصال خارجي.',
         json: 'نقطة نهاية HTTPS تعيد مصفوفة JSON من سجلات المخاطر (أو كائناً يضم data أو items أو rows). يُرسل المفتاح في ترويسة Authorization عند تعبئته.',
-        sheets: 'انشر الورقة على الويب بصيغة CSV (ملف ← مشاركة ← النشر على الويب ← CSV) ثم الصق الرابط. يجب أن يطابق صف العناوين أعمدة القالب.',
+        sheets: 'انشر الورقة على الويب بصيغة CSV (ملف › مشاركة › النشر على الويب › CSV) ثم الصق الرابط. يجب أن يطابق صف العناوين أعمدة القالب.',
         supabase: 'عنوان المشروع (https://xxxx.supabase.co) ومفتاح anon واسم الجدول. تُقرأ البيانات عبر REST بصلاحيات المفتاح فقط.',
       },
       url: 'الرابط (URL)',
@@ -446,7 +446,7 @@ export default {
     },
     thresholds: {
       title: 'Alert and escalation thresholds',
-      intro: 'Thresholds decide which newly scored risks raise an alert: above the alert threshold → standard alert queue; at the critical threshold or higher → immediate escalation.',
+      intro: 'Thresholds decide which newly scored risks raise an alert: above the alert threshold: standard alert queue; at the critical threshold or higher: immediate escalation.',
       alert: 'Alert threshold',
       alertHint: 'Scores above this value enter the alert queue.',
       critical: 'Critical (immediate escalation) threshold',
@@ -455,7 +455,7 @@ export default {
       errGap: 'The critical threshold must be at least {min} (alert threshold + {gap}).',
       scaleAria: 'Scale from {min} to {max} showing the rating bands and both thresholds',
       markerAlert: 'Alert > {n}',
-      markerCritical: 'Critical ≥ {n}',
+      markerCritical: 'Critical from {n}',
       impact: 'Effect on the current open risks',
       impactHint: 'Existing alerts are not re-sent when you save; thresholds govern new alerts.',
       immediate: 'Immediate escalation',
@@ -503,7 +503,7 @@ export default {
       typeHint: {
         simulation: 'The built-in simulation: realistic demo data generated in this browser, with no external connection.',
         json: 'An HTTPS endpoint that returns a JSON array of risk records (or an object with data, items or rows). The key is sent in the Authorization header when provided.',
-        sheets: 'Publish the sheet to the web as CSV (File → Share → Publish to the web → CSV), then paste the link. The header row must match the template columns.',
+        sheets: 'Publish the sheet to the web as CSV (File › Share › Publish to the web › CSV), then paste the link. The header row must match the template columns.',
         supabase: 'The project URL (https://xxxx.supabase.co), the anon key and the table name. Data is read over REST with the key\'s permissions only.',
       },
       url: 'URL',

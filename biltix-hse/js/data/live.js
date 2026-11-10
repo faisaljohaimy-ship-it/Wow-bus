@@ -418,7 +418,7 @@ const TEMPLATES = [
   // ── permits (BILTIX PM)
   { type: 'permit', tone: 'good', sourceId: SOURCES.pm, weight: 2, title: 'اعتماد تصريح {permitPending} — {permitPendingType}', detail: '{permitPendingLocation} · اعتمده {permitPendingApprover}', titleEn: 'Permit {permitPending} approved — {permitPendingType}', detailEn: '{permitPendingLocation} · approved by {permitPendingApprover}', requires: (c) => Boolean(c.permitPending) },
   { type: 'permit', tone: 'accent', sourceId: SOURCES.pm, weight: 3, title: 'تسجيل دخول {workersCount} عمال بموجب التصريح {permit}', detail: '{permitType} — {permitLocation}', titleEn: '{workersCount} workers signed in under permit {permit}', detailEn: '{permitType} — {permitLocation}' },
-  { type: 'permit', tone: 'good', sourceId: SOURCES.pm, weight: 2, title: 'اختبار غازات جديد للتصريح {permit}', detail: 'O₂ {o2}% · LEL 0% · H2S {h2s} ppm · CO {co} ppm — القيم ضمن الحدود المقبولة', titleEn: 'New gas test for permit {permit}', detailEn: 'O₂ {o2}% · LEL 0% · H2S {h2s} ppm · CO {co} ppm — values within acceptable limits', requires: (c) => c.permitHasGas },
+  { type: 'permit', tone: 'good', sourceId: SOURCES.pm, weight: 2, title: 'اختبار غازات جديد للتصريح {permit}', detail: 'O2 {o2}% · LEL 0% · H2S {h2s} ppm · CO {co} ppm — القيم ضمن الحدود المقبولة', titleEn: 'New gas test for permit {permit}', detailEn: 'O2 {o2}% · LEL 0% · H2S {h2s} ppm · CO {co} ppm — values within acceptable limits', requires: (c) => c.permitHasGas },
   { type: 'permit', tone: 'accent', sourceId: SOURCES.pm, weight: 1, title: 'طلب تمديد التصريح {permit} لمدة {hours} ساعات', detail: 'بانتظار موافقة {approver} — {permitLocation}', titleEn: 'Extension of permit {permit} requested for {hours} hours', detailEn: 'Awaiting approval by {approver} — {permitLocation}' },
   { type: 'permit', tone: 'good', sourceId: SOURCES.pm, weight: 1, title: 'إقفال مراقبة الحريق للتصريح {permit}', detail: 'انتهت فترة المراقبة (60 دقيقة) دون ملاحظات — {permitLocation}', titleEn: 'Fire watch closed for permit {permit}', detailEn: 'The 60-minute watch ended with no observations — {permitLocation}', requires: (c) => c.permitType === 'أعمال ساخنة' },
   { type: 'permit', tone: 'accent', sourceId: SOURCES.pm, weight: 1, title: 'جولة تحقق ميدانية على التصريح {permit}', detail: 'تطابق الضوابط المكتوبة مع الواقع الميداني — {permitLocation}', titleEn: 'Field verification walk on permit {permit}', detailEn: 'Written controls match the conditions on site — {permitLocation}' },
@@ -907,7 +907,7 @@ function seedContext(t, base) {
       } else if (/إغلاق|أُغلق|اكتمال العمل/.test(phrase)) p = raw.closedPermit;
       else if (/تعليق|معلق/.test(phrase)) p = raw.suspendedPermit;
       if (!p) return null;
-      if (/O₂|غازات/.test(phrase)) {
+      if (/O₂|O2|غازات/.test(phrase)) {
         if (!p.gasTest && !/قبل الدخول/.test(phrase)) return null;
         setValue(ctx, round(randBetween(20.6, 20.9), 1), '%', 1);
       }

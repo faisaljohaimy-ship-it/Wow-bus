@@ -23,9 +23,9 @@ const MATRIX_WORKER_CAP = 24;
 
 /** Cell status → ordinal heatmap code, colour, glyph, tone. Labels come from the dictionary. */
 const STATUS = {
-  valid:    { code: 3, color: 'var(--seq-500)', glyph: '✓', tone: 'good' },
+  valid:    { code: 3, color: 'var(--seq-500)', glyph: '•', tone: 'good' },
   expiring: { code: 2, color: 'var(--seq-300)', glyph: '!', tone: 'warning' },
-  expired:  { code: 1, color: 'var(--critical)', glyph: '✕', tone: 'critical' },
+  expired:  { code: 1, color: 'var(--critical)', glyph: '×', tone: 'critical' },
   missing:  { code: 0, color: 'var(--bg-3)', glyph: '–', tone: 'neutral' },
 };
 const STATUS_BY_CODE = ['missing', 'expired', 'expiring', 'valid'];

@@ -92,7 +92,7 @@ export default {
     matrix: {
       title: 'المصفوفة المصغّرة',
       subtitle: 'المخاطر المفتوحة — انقر خلية لعرض سجلاتها فقط',
-      corner: 'الشدة (الصفوف) / الاحتمالية (الأعمدة)',
+      corner: 'الشدة ↓ / الاحتمالية ›',
       tableCaption: 'مصفوفة المخاطر {n}×{n} — المخاطر المفتوحة',
       aria: 'مصفوفة المخاطر المفتوحة حسب الاحتمالية والشدة',
       rowTitle: 'الشدة',
@@ -292,7 +292,7 @@ export default {
     matrix: {
       title: 'Mini matrix',
       subtitle: 'Open risks — click a cell to show only its records',
-      corner: 'Severity (rows) / Likelihood (columns)',
+      corner: 'Severity ↓ / Likelihood ›',
       tableCaption: '{n}×{n} risk matrix — open risks',
       aria: 'Open risks by likelihood and severity',
       rowTitle: 'Severity',

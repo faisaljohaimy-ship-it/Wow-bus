@@ -1040,7 +1040,7 @@ export default {
         });
       });
       LEVELS.forEach((lik, ci) => matrix.appendChild(h('span', { class: 'ck-mx-clabel', 'aria-hidden': 'true', style: { gridRow: '6', gridColumn: String(ci + 3) } }, h('span', { class: 'ck-mx-lvl' }, fmt.num(lik)), h('span', { class: 'ck-mx-name' }, lName(lik)))));
-      matrix.appendChild(h('span', { class: 'ck-mx-xtitle', 'aria-hidden': 'true', style: { gridRow: '7' } }, `${t('analysis.heatmap.likelihood')} →`));
+      matrix.appendChild(h('span', { class: 'ck-mx-xtitle', 'aria-hidden': 'true', style: { gridRow: '7' } }, `${t('analysis.heatmap.likelihood')} ›`));
 
       // roving tabindex: one tab stop, arrows move in the reading direction (columns follow `dir`)
       let focusKey = '3:3';
