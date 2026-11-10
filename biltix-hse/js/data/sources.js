@@ -1067,14 +1067,14 @@ async function postWebhook(url, payload = {}) {
 
 function exportCSV(rows, columns, filename) {
   const csv = toCSV(rows, columns);
-  download(csv, safeFilename(filename, 'biltix-hse-export.csv'), 'text/csv;charset=utf-8');
+  download(csv, safeFilename(filename, 'biltix-risk-ai-export.csv'), 'text/csv;charset=utf-8');
   return csv;
 }
 
 function exportJSON(obj, filename) {
   let json;
   try { json = JSON.stringify(obj, null, 2); } catch { json = JSON.stringify({ error: 'تعذّر تحويل البيانات إلى JSON' }); }
-  download(json, safeFilename(filename, 'biltix-hse-export.json'), 'application/json;charset=utf-8');
+  download(json, safeFilename(filename, 'biltix-risk-ai-export.json'), 'application/json;charset=utf-8');
   return json;
 }
 
@@ -1093,7 +1093,7 @@ function templateRows() {
 
 function downloadTemplateCSV() {
   const csv = toCSV(templateRows(), TEMPLATE_COLUMNS);
-  download(csv, 'biltix-hse-risks-template.csv', 'text/csv;charset=utf-8');
+  download(csv, 'biltix-risk-ai-risks-template.csv', 'text/csv;charset=utf-8');
   return csv;
 }
 

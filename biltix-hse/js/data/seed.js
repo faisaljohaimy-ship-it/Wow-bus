@@ -115,9 +115,9 @@ export const INTEGRATION_STATUS = [
 
 const company = {
   name: 'بلتكس',
-  nameEn: 'Biltix',
+  nameEn: 'BILTIX',
   product: 'بلتكس Risk AI',
-  productEn: 'Biltix Risk AI',
+  productEn: 'BILTIX Risk AI',
   hseProduct: 'بلتكس HSE',
   pillar: 'ركيزة السلامة والصحة المهنية',
   tagline: 'مركز قيادة السلامة والصحة المهنية',

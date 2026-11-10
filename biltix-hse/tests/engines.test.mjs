@@ -67,4 +67,18 @@ export const tests = [
       }
     },
   },
+  {
+    name: 'before the (lazy) dictionaries load, English fallbacks are neutral codes — never Arabic',
+    async fn() {
+      const v = await import(`../js/data/vocab-en.js?cold=${Date.now()}`); // separate instance, nothing loaded
+      assert.equal(v.vocabLoaded(), false);
+      assert.equal(v.siteEn({ id: 'S1', code: 'RUH-01', name: 'برج الواجهة المالية' }), 'RUH-01');
+      assert.equal(v.zoneEn({ id: 'S1-Z4', name: 'ساحة التخزين' }, { id: 'S1', code: 'RUH-01', zones: [] }), 'RUH-01 · zone 4');
+      assert.equal(v.personEn('م. سارة القحطاني', 'the owner'), 'the owner');
+      assert.equal(v.enumEn('permitType', 'أعمال ساخنة', 'permit'), 'permit');
+      assert.equal(v.workerEn({ id: 'W1', badge: 'RUH-01-0101', name: 'سعود بن فهد' }), 'RUH-01-0101');
+      assert.equal(await v.loadVocab(), true);
+      assert.equal(v.siteEn({ id: 'S1', code: 'RUH-01' }), 'Financial Gateway Tower');
+    },
+  },
 ];

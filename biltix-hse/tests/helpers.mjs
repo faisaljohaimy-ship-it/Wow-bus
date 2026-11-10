@@ -12,7 +12,7 @@ const sourcesMod = await import('../js/data/sources.js');
 const busMod = await import('../js/core/bus.js');
 const seedMod = await import('../js/data/platform-seed.js');
 const vocab = await import('../js/data/vocab-en.js');
-await vocab.vocabReady;
+await vocab.loadVocab(); // the dictionaries are lazy in the app (English sessions only); tests need them up front
 
 export const { store } = storeMod;
 export const storeExports = storeMod;

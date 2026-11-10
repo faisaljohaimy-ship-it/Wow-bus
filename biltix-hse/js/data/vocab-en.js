@@ -6,23 +6,45 @@
  * `titleEn/…`). They cannot depend on the active UI language, so they resolve English names here.
  *
  * Single source of English: the data dictionaries (js/i18n/data/index.js — `{ <ns>: { <id>: mirror }, terms }`)
- * and the enum labels (js/i18n/enums.js — `en.enum.<ns>[storedValue]`). They are loaded with a NON-blocking
- * dynamic import started when this module is evaluated (boot is never delayed; `vocabReady` resolves when
- * they are in). Until then — or for a value the dictionaries do not cover — resolvers fall back to a neutral,
- * code-based phrase (site code, "zone 3", worker badge) and NEVER to Arabic text. The only hard-coded strings
- * below are the few the dictionaries do not have.
+ * and the enum labels (js/i18n/enums.js — `en.enum.<ns>[storedValue]`). They are loaded LAZILY — never for an
+ * Arabic session that does not need English: on `lang:change` to 'en' (bus), when the document is already in
+ * English at start-up (html[lang="en"], set by the shell's pre-paint script), or when a caller asks for them
+ * (`loadVocab()`, e.g. tests). Until they arrive — or for a value they do not cover — resolvers fall back to a
+ * neutral, code-based phrase (site code, "zone 3", worker badge) and NEVER to Arabic text. The only hard-coded
+ * strings below are the few the dictionaries do not have.
  *
- * No side effects beyond that one import; no DOM.
+ * Side effects: one bus subscription; no DOM writes.
  */
+
+import { bus } from '../core/bus.js';
 
 let DATA = null;   // merged data dictionaries
 let ENUM = null;   // enums.en.enum
+let loading = null;
 
-/** Resolves (never rejects) once the dictionaries are available — or failed to load. */
-export const vocabReady = Promise.all([
-  import('../i18n/data/index.js').then((m) => { DATA = (m && m.default) || null; }).catch(() => {}),
-  import('../i18n/enums.js').then((m) => { ENUM = (m && m.default && m.default.en && m.default.en.enum) || null; }).catch(() => {}),
-]).then(() => Boolean(DATA || ENUM));
+/**
+ * Load the English dictionaries once (idempotent). Resolves to true when they are available; never rejects.
+ * The module URLs are the shell's own, so the browser module cache shares one download.
+ */
+export function loadVocab() {
+  if (!loading) {
+    loading = Promise.all([
+      import('../i18n/data/index.js').then((m) => { DATA = (m && m.default) || null; }).catch(() => {}),
+      import('../i18n/enums.js').then((m) => { ENUM = (m && m.default && m.default.en && m.default.en.enum) || null; }).catch(() => {}),
+    ]).then(() => Boolean(DATA || ENUM));
+  }
+  return loading;
+}
+
+/** Back-compat: a promise for callers that want to wait (resolves immediately when nothing was requested yet). */
+export const vocabReady = {
+  then(resolve, reject) { return (loading || Promise.resolve(false)).then(resolve, reject); },
+};
+
+try {
+  if (bus && typeof bus.on === 'function') bus.on('lang:change', (e) => { if (e && e.lang === 'en') loadVocab(); });
+  if (typeof document !== 'undefined' && document.documentElement && document.documentElement.getAttribute('lang') === 'en') loadVocab();
+} catch { /* non-browser host */ }
 
 /** True when the dictionaries are loaded (diagnostics / tests). */
 export function vocabLoaded() {
@@ -149,6 +171,6 @@ export function unitEn(unit) {
 }
 
 export default {
-  vocabReady, vocabLoaded, hasArabic, latinOnly, enumEn, dataEn, dataAt, siteEn, siteEnById, zoneEn, personEn, workerEn, courseEn,
+  loadVocab, vocabReady, vocabLoaded, hasArabic, latinOnly, enumEn, dataEn, dataAt, siteEn, siteEnById, zoneEn, personEn, workerEn, courseEn,
   integrationEn, sourceSystemEn, unitEn,
 };

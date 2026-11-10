@@ -1330,7 +1330,7 @@ function riskTimeline(risk, state) {
       const wb = obj(t.writeback);
       if (wb.at) {
         const label = wb.status === 'synced' ? 'تمت الكتابة العكسية إلى Biltix PM' : wb.status === 'failed' ? 'فشلت الكتابة العكسية إلى Biltix PM' : 'الكتابة العكسية إلى Biltix PM قيد الانتظار';
-        const labelEn = wb.status === 'synced' ? 'Write-back to Biltix PM (simulated)' : wb.status === 'failed' ? 'Write-back to Biltix PM failed (simulated)' : 'Write-back to Biltix PM pending (simulated)';
+        const labelEn = wb.status === 'synced' ? 'Write-back to BILTIX PM (simulated)' : wb.status === 'failed' ? 'Write-back to BILTIX PM failed (simulated)' : 'Write-back to BILTIX PM pending (simulated)';
         out.push({ at: wb.at, kind: 'writeback', by: 'النظام', text: `${label} (${t.code})`, textEn: `${labelEn} (${t.code})`, status: wb.status, simulated: true, tone: wb.status === 'synced' ? 'good' : wb.status === 'failed' ? 'critical' : 'warning' });
       }
       if (t.closedAt) out.push({ at: t.closedAt, kind: 'task-closed', by: t.owner || '—', text: `إغلاق المهمة ${t.code}${t.outcome ? ` — ${t.outcome}` : ''}`, textEn: `Task ${t.code} closed`, task: t, tone: 'good' });

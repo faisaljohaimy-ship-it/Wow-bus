@@ -1599,12 +1599,12 @@ function scheduleWriteback(taskId) {
     store.pushAudit({
       actor: SYSTEM_ACTOR, action: 'writeback', target: task.code,
       detail: `محاكاة الكتابة العكسية إلى ${task.writeback.target}: علم المخاطرة والدرجة ومهمة المعالجة ${task.code} (لم يُرسل شيء إلى نظام خارجي)`,
-      detailEn: `Simulated write-back to ${task.writeback.target}: risk flag, score and mitigation task ${task.code} (nothing was sent to an external system)`,
+      detailEn: `Simulated write-back to BILTIX PM: risk flag, score and mitigation task ${task.code} (nothing was sent to an external system)`,
     });
     emitFeed({
       type: 'writeback', tone: 'accent', siteId: task.projectId, simulated: true,
       title: `محاكاة: كتابة عكسية إلى ${task.writeback.target} — ${task.code}`,
-      titleEn: `Simulated: write-back to ${task.writeback.target} — ${task.code}`,
+      titleEn: `Simulated: write-back to BILTIX PM — ${task.code}`,
       detail: [task.title, projectName(task.projectId)].filter(Boolean).join(' · '),
       detailEn: [task.titleEn || '', siteEnById(state.sites, task.projectId)].filter(Boolean).join(' · '),
       sourceId: 'biltix-pm', refId: task.id, code: task.code,

@@ -2862,7 +2862,8 @@ export const SIMULATED_DATASETS = Object.freeze({ connectors: true, pipelines: t
 const platformSeed = {
   product: {
     name: 'بلتكس — منصة إدارة المخاطر بالذكاء الاصطناعي',
-    nameEn: 'Biltix AI Risk Management Platform',
+    nameEn: 'BILTIX Risk AI — AI risk management platform',
+    brandShortEn: 'BILTIX Risk AI',
     brandShort: 'بلتكس Risk AI',
     tagline: 'قمرة قيادة المخاطر — خمسة مجالات، تصنيف فوري، معالجة مُتتبعة',
     proposalVersion: 'v2',
