@@ -261,6 +261,28 @@ tabular figures.
   transform/opacity. Measured on `#/cockpit` (median of 5, same conditions): motion auto 9.65 → 11.93
   ms/s, reduce 6.75 → 6.72, Static background 8.30 → 10.01.
 
+### 3.2 Motion pass costs (v3.6, measured 2026-11-11)
+
+Headless Chromium (Playwright) at 1440×900, Arabic, light theme, `python3 -m http.server`, before = da1fbc3,
+after = the motion pass, interleaved rounds on a shared 4-core machine (load average 5–22 during the runs, so
+wall-clock numbers are noisy; CPU-time numbers use `Performance.enable({ timeDomain: 'threadTicks' })`).
+
+| Gate | Before | After |
+|---|---|---|
+| Idle main-thread CPU, ms/s, median of 7 (cockpit / overview / airisks / integrations / tasks) | 11.1 / 140.2 / 7.5 / 21.2 / 11.4 | 10.1 / 133.8 / 8.8 / 21.6 / 11.9 |
+| Idle wall TaskDuration, ms/s, median of 5 (same routes) | 16.9 / 347 / 13.4 / 32.2 / 20.3 | 21.6 / 379 / 11.4 / 36.2 / 21.9 |
+| Interaction CPU in the following second, ms, median of 7: open AI-register row / sort risks table / move kanban card | 107 / 78 / 106 | 128 / 100 / 123 |
+| Layouts in that second (same) | 3 / 1 / 13 | 5 / 6 / 16 |
+| CLS while scrolling the whole page (overview, airisks × 1440, 390; max of 3) | 0 | 0 |
+| Animations alive 2 s after a mount, reduced motion (OS) and Settings → reduce, 6 routes | 0 | 0 |
+| Unfinished animations / faint elements after print emulation mid-entrance (4 routes) | 9–149 / 0–13 | 0 / 0 |
+| Entrances started by live updates (cockpit, alerts; 7 simulation steps + a near-miss) | 2 ring-gauge updates from zero, 0 enter | identical |
+
+Overview's idle cost is the existing radar canvas; the pass adds one composited halo per critical KPI icon at
+idle and nothing else (no timers, no observers firing without scroll). Interaction cost is the FLIP / drawer
+cascade animations themselves (+8 to +23 ms of CPU spread over 300 ms); the "first" boxes are read before the
+interaction writes, so the click itself adds no forced layout of its own.
+
 ## 4. Motion
 
 `--dur-micro 160ms` (hover, press, colour fades) · `--dur-main 260ms` (panels, dialogs, drawers,

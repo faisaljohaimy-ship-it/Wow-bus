@@ -72,8 +72,8 @@ function light(host) {
   if (!host || !allowed()) return;
   const spot = spotOf(host);
   current = { host, spot };
-  apply();
   spot.setAttribute('data-on', '');
+  schedule();   // position in the next frame (no layout read inside the pointer event)
 }
 
 function dim() {
