@@ -842,7 +842,8 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     }
     data = Array.isArray(nextRows) ? nextRows.slice() : [];
     if (resetPage) page = 0;
-    if (flip && !preserve) motion.flip(() => tbody.rows, renderBody, { key: (tr) => tr.getAttribute('data-key'), fadeNew: true, within: table });
+    // Old boxes: the ones measured after the last render (measure(), rAF), so this costs no extra layout.
+    if (flip && !preserve && rowBoxes.size) motion.flip(() => tbody.rows, renderBody, { key: rowKeyOf, fadeNew: true, within: table, first: rowBoxes });
     else renderBody();
     if (saved) {
       wrap.scrollTop = saved.top;
@@ -864,12 +865,16 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
     else { sortKey = key; sortDir = 'asc'; }
     page = 0;
+    // Rows glide to their new places (FLIP, transform only); rows new to this page fade in. The old boxes are read
+    // before the header is repainted, so the read costs no layout of its own.
+    const first = motion.flipFirst(() => tbody.rows, { key: rowKeyOf, within: table });
     paintHead();
-    // Rows glide to their new places (FLIP, transform only); rows new to this page fade in.
-    motion.flip(() => tbody.rows, renderBody, { key: (tr) => tr.getAttribute('data-key'), fadeNew: true, within: table });
+    motion.flip(() => tbody.rows, renderBody, { key: rowKeyOf, fadeNew: true, within: table, first });
   }
 
   /* ---- overflow affordance + auto page size (measured) ---- */
+  const rowKeyOf = (tr) => tr.getAttribute('data-key');
+  let rowBoxes = new Map();
   let ro = null;
   let wasConnected = false;
   let measureRaf = 0;
@@ -901,6 +906,8 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     wasConnected = true;
     updateOverflow();
     fitRows();
+    // Row boxes for a later filter FLIP (layout is already fresh here: updateOverflow read it).
+    rowBoxes = motion.enabled() && !table.hidden ? motion.flipFirst(() => tbody.rows, { key: rowKeyOf, within: table }) : new Map();
   }
   function scheduleMeasure() {
     if (measureRaf || typeof requestAnimationFrame !== 'function') return;
@@ -1953,9 +1960,11 @@ export function kanban({ columns = [], items = [], onMove = null, headingLevel =
   const explicitLevel = [2, 3, 4, 5, 6].includes(Number(headingLevel)) ? Number(headingLevel) : null;
   let level = explicitLevel || 2;
 
+  let moveFirst = null;   // boxes read when the user moved a card (FLIP "first"), consumed by update()
   const move = (id, toColumnId, { viaKeyboard = false } = {}) => {
     const item = current.find((i) => String(i.id) === String(id));
     if (!item || String(item.columnId) === String(toColumnId)) return;
+    moveFirst = { at: Date.now(), boxes: motion.flipFirst(() => el.querySelectorAll('.kanban-card'), { key: (c) => c.getAttribute('data-id'), within: el }) };
     if (viaKeyboard) {
       pendingFocusId = String(id);
       clearTimeout(pendingFocusTimer);
@@ -2105,8 +2114,10 @@ export function kanban({ columns = [], items = [], onMove = null, headingLevel =
     update(next) {
       const prev = current;
       current = Array.isArray(next) ? next.slice() : [];
-      // A card that changed column (or order) glides there from its old place (FLIP); nothing is measured otherwise.
-      if (placesChanged(prev, current)) motion.flip(() => el.querySelectorAll('.kanban-card'), render, { key: (c) => c.getAttribute('data-id'), lift: true, within: el });
+      // A card the user moved glides to its new place (FLIP from the boxes read at the move); live moves just repaint.
+      const first = moveFirst && Date.now() - moveFirst.at < 2000 ? moveFirst.boxes : null;
+      moveFirst = null;
+      if (first && first.size && placesChanged(prev, current)) motion.flip(() => el.querySelectorAll('.kanban-card'), render, { key: (c) => c.getAttribute('data-id'), lift: true, within: el, first });
       else render();
     },
     focusCard(id) { const c = el.querySelector(`.kanban-card[data-id="${cssEscape(String(id))}"]`); if (c) c.focus(); return !!c; },

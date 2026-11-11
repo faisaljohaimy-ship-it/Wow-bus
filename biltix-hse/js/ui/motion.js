@@ -65,7 +65,8 @@
  *                                                       built after the mount, e.g. by a live update).
  *   motion.countIn(textNode|el, { delay })           count a figure up from 0 to its current text; stops at once if
  *                                                       anything else rewrites the text (a live update wins).
- *   motion.flip(items, mutate, { key })               FLIP: measure, mutate the DOM, play moved items from their old box.
+ *   motion.flipFirst(items) / motion.flip(items, mutate, { first })   FLIP: read boxes before the interaction writes,
+ *                                                       mutate the DOM, play moved items from their old box.
  *   parseFigure(text) / flipDeltas(a, b) / staggerDelays(n, step, cap)   pure helpers (unit-tested).
  * The scroll reveal uses an IntersectionObserver whose root is the page scroller (main on desktop, the document on
  * phones) with a positive bottom margin (12 %), so a card starts rising just before it comes into view; once per
@@ -933,35 +934,47 @@ export function stage(root, { fresh = true } = {}) {
 /* ---- FLIP ---- */
 
 /**
- * FLIP for keyed items: measure, run `mutate()` (which may rebuild the items), then play every item whose box
- * moved from its old position (transform only, 300 ms). `items()` returns the current elements; `key(el)` their
- * identity. Boxes are measured in the content coordinates of `within` (its box plus its scroll offsets), so a
- * page or board scroll caused by the mutation (focus moving) is not mistaken for a move. `lift` scales the item
- * that moved farthest a little while it travels; `fadeNew` fades in items that were not there before.
- * Returns the mutate result.
+ * FLIP for keyed items, in two halves so the "first" read never forces a layout of its own:
+ *   const first = flipFirst(items, { key, within })   read boxes now, before any DOM write of the interaction
+ *   flip(items, mutate, { first, ... })               run mutate() (which may rebuild the items), read the new boxes
+ *                                                     once (the layout the next frame needs anyway) and play every
+ *                                                     item that moved from its old box (transform only, 300 ms)
+ * Without `first`, flip() measures before mutating (fine when nothing has been written yet).
+ * Boxes are measured in the content coordinates of `within` (its box plus its scroll offsets), so a page or board
+ * scroll caused by the mutation (focus moving) is not mistaken for a move. `lift` scales the item that moved
+ * farthest a little while it travels; `fadeNew` fades in items that were not there before. Returns mutate()'s result.
  */
-export function flip(items, mutate, { key = (el) => el.getAttribute('data-key') || el.getAttribute('data-id'), duration = 0.3, lift = false, max = 60, fadeNew = false, within = null } = {}) {
-  const list = () => { try { return Array.from(typeof items === 'function' ? items() : items || []).slice(0, max); } catch { return []; } };
+const FLIP_KEY = (el) => el.getAttribute('data-key') || el.getAttribute('data-id');
+function flipList(items, max) {
+  try { return Array.from(typeof items === 'function' ? items() : items || []).slice(0, max); } catch { return []; }
+}
+function flipFrame(within) {
+  if (!within || !within.isConnected) return { x: 0, y: 0 };
+  const r = within.getBoundingClientRect();
+  return { x: r.left - within.scrollLeft, y: r.top - within.scrollTop };
+}
+function flipBox(el, f) { const r = el.getBoundingClientRect(); return { left: r.left - f.x, top: r.top - f.y }; }
+
+export function flipFirst(items, { key = FLIP_KEY, within = null, max = 60 } = {}) {
+  const out = new Map();
+  if (!enabled() || forcedQuery()) return out;
+  const f = flipFrame(within);
+  for (const el of flipList(items, max)) { const k = key(el); if (k) out.set(k, flipBox(el, f)); }
+  return out;
+}
+
+export function flip(items, mutate, { key = FLIP_KEY, duration = 0.3, lift = false, max = 60, fadeNew = false, within = null, first = null } = {}) {
   if (!enabled() || forcedQuery()) return mutate();
-  const frame = () => {
-    if (!within || !within.isConnected) return { x: 0, y: 0 };
-    const r = within.getBoundingClientRect();
-    return { x: r.left - within.scrollLeft, y: r.top - within.scrollTop };
-  };
-  const box = (el, f) => { const r = el.getBoundingClientRect(); return { left: r.left - f.x, top: r.top - f.y }; };
-  const before = new Map();
-  const f0 = frame();
-  for (const el of list()) { const k = key(el); if (k) before.set(k, box(el, f0)); }
+  const before = first instanceof Map ? first : flipFirst(items, { key, within, max });
   const result = mutate();
   if (!before.size) return result;
-  const now = list();
   const after = new Map();
   const byKey = new Map();
   const fresh = [];
-  const f1 = frame();
-  for (const el of now) {
+  const f1 = flipFrame(within);
+  for (const el of flipList(items, max)) {
     const k = key(el);
-    if (k && before.has(k)) { after.set(k, box(el, f1)); byKey.set(k, el); }
+    if (k && before.has(k)) { after.set(k, flipBox(el, f1)); byKey.set(k, el); }
     else if (fadeNew) fresh.push(el);
   }
   fresh.slice(0, stageTiming.rowCap).forEach((el, i) => play(el, [{ opacity: 0 }, { opacity: 1 }], { duration: 0.22, delay: 0.06 + i * 0.015 }));
@@ -981,5 +994,5 @@ export function flip(items, mutate, { key = (el) => el.getAttribute('data-key') 
   return result;
 }
 
-export const motion = { enabled, enter, exit, number, flash, drawer, page, leave, glide, reveal, timing, animate, stage, stageBegin, intro, countIn, flip, stageTiming, parseFigure, flipDeltas, staggerDelays };
+export const motion = { enabled, enter, exit, number, flash, drawer, page, leave, glide, reveal, timing, animate, stage, stageBegin, intro, countIn, flip, flipFirst, stageTiming, parseFigure, flipDeltas, staggerDelays };
 export default motion;
