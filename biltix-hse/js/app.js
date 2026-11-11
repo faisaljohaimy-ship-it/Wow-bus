@@ -2652,6 +2652,9 @@ async function boot() {
   window.biltix = Object.freeze({ store, bus, router, live, sel, fmt, psel, platformLive, i18n, status, motion, ready: true, views: Object.freeze(views.slice()), missingModules: Object.freeze(missingModules.slice()) });
   document.body.classList.remove('is-booting');
   document.body.classList.add('is-ready');
+  // Offline field layer (js/core/offline.js, docs/offline.md): outbox, the app-bar offline indicator (#netIndicator)
+  // and the service worker (registered after load + idle; versioned by <meta name="biltix-build">).
+  import('./core/offline.js').then((m) => m.initOffline({ store, bus, toast })).catch((err) => reportError(err, 'offline'));
   // Edge laser (css "Edges"): decoration, loaded after the first render and off the critical path.
   const startEdges = () => {
     import('./ui/edges.js').then((m) => m.initEdges()).catch((err) => reportError(err, 'edges'));

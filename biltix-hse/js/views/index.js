@@ -3,9 +3,9 @@
  *
  * Part B (ARCHITECTURE.md §B7) makes the navigation grouped; this registry is STATIC and LAZY:
  *
- *   • `NAV_META`     — the 24 views' navigation metadata (id, code, title, shortTitle, tabTitle,
+ *   • `NAV_META`     — the 25 views' navigation metadata (id, code, title, shortTitle, tabTitle,
  *                      icon, group, path). No view module is imported at boot.
- *   • `views`        — the same 24 entries as lazy view objects ({…meta, load(), loaded, module,
+ *   • `views`        — the same 25 entries as lazy view objects ({…meta, load(), loaded, module,
  *                      render once loaded}) in rail order; filled synchronously, so importers
  *                      always see the full list (window.biltix.views exposes it).
  *   • `loadView(id)` — imports a view module on demand (cached promise), attaches its render()
@@ -54,7 +54,7 @@ export const navGroups = [
   group('cockpit', ['cockpit', 'airisks', 'tasks', 'alerts']),
   group('domains', ['contracts', 'bom', 'schedule', 'cost', 'overview']),
   group('hse', ['radar', 'spatial', 'risks', 'incidents', 'permits', 'inspections', 'training', 'compliance']),
-  group('platform', ['engine', 'dataquality', 'integrations', 'reports', 'roadmap', 'golive', 'settings']),
+  group('platform', ['engine', 'dataquality', 'integrations', 'fieldkit', 'reports', 'roadmap', 'golive', 'settings']),
 ];
 
 /** Flat navigation order (= rail order = command-palette order). */
@@ -86,7 +86,7 @@ export const TAB_IDS = ['cockpit', 'airisks', 'overview', 'radar'];
 export const DEFAULT_VIEW = 'cockpit';
 export const FALLBACK_VIEW = 'overview';
 
-/** Static navigation metadata for all 24 views (titles/codes/icons mirror each module's own). */
+/** Static navigation metadata for all 25 views (titles/codes/icons mirror each module's own). */
 export const NAV_META = Object.freeze([
   { id: 'cockpit', code: 'CPT-00', title: 'قمرة قيادة المخاطر', icon: 'radar', group: 'cockpit', path: './cockpit.js' },
   { id: 'airisks', code: 'AIR-01', title: 'سجل المخاطر الذكي', icon: 'shield-alert', group: 'cockpit', path: './airisks.js' },
@@ -108,6 +108,7 @@ export const NAV_META = Object.freeze([
   { id: 'engine', code: 'PLT-01', title: 'محرك الذكاء الاصطناعي والتفسير', icon: 'sliders', group: 'platform', path: './engine.js' },
   { id: 'dataquality', code: 'PLT-02', title: 'جودة البيانات وطبقة التحقق', icon: 'badge-check', group: 'platform', path: './dataquality.js' },
   { id: 'integrations', code: 'SEC-09', title: 'التكاملات والأنظمة', icon: 'plug', group: 'platform', path: './integrations.js' },
+  { id: 'fieldkit', code: 'FLD-01', title: 'عُدّة الميدان', icon: 'helmet', group: 'platform', path: './fieldkit.js' },
   { id: 'reports', code: 'SEC-10', title: 'التقارير', icon: 'file-text', group: 'platform', path: './reports.js' },
   { id: 'roadmap', code: 'PLT-03', title: 'خارطة الطريق والمقترح التفصيلي', icon: 'calendar', group: 'platform', path: './roadmap.js' },
   { id: 'golive', code: 'PLT-04', title: 'الجاهزية للتشغيل', icon: 'send', group: 'platform', path: './golive.js' },
@@ -159,7 +160,7 @@ function makeEntry(meta) {
   return entry;
 }
 
-/** The 24 lazy view entries in rail order (stable array instance). */
+/** The 25 lazy view entries in rail order (stable array instance). */
 export const views = NAV_META.map(makeEntry);
 
 const entryById = new Map(views.map((v) => [v.id, v]));

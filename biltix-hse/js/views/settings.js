@@ -1,7 +1,7 @@
 /**
  * BILTIX Risk AI — SEC-11 Settings (js/views/settings.js). Owner: B-PLATFORM.
  *
- * Seven sections with anchors (deep links `#/settings?section=<id>`; aliases below):
+ * Eight sections with anchors (deep links `#/settings?section=<id>`; aliases below):
  *   SET-01 Language & region   (#settings-language)   language AR/EN, numerals latn/arab, calendar, live format preview (Riyadh time)
  *   SET-02 Appearance          (#settings-appearance) theme, background Static/Subtle/Cinematic, density, motion
  *   SET-03 Risk scoring        (#settings-scoring)    weights editor (#settings-weights: 5 domains in %, live sum = 100 %, inline
@@ -12,6 +12,8 @@
  *   SET-05 Notifications       (#settings-notifications) webhook URL + a real test POST (honest result)
  *   SET-06 Data management     (#settings-management) export / restore JSON (validated preview) / reset with confirmation
  *   SET-07 About               (#settings-about)      version, honest notes, open questions
+ *   SET-08 Offline             (#settings-offline)    offline copy (service worker), storage used, persistence, clear cache,
+ *                                                     outbox count, iOS notes (shared/offline-panel.js, dictionary 'fieldkit')
  *
  * Every change goes through the store (setSettings / setWeights / setThresholds / recordDataSourceResult). The view
  * listens to settings:change and syncs its controls in place (drafts and focused inputs are kept). Strings: dictionary
@@ -22,6 +24,7 @@ import { i18n } from '../core/i18n.js';
 import * as storeModule from '../core/store.js';
 import dict from '../i18n/settings.js';
 import { openImportPreview } from './shared/import-preview.js';
+import { offlinePanel } from './shared/offline-panel.js';
 
 i18n.register('settings', dict);
 
@@ -59,6 +62,7 @@ const SECTIONS = [
   { id: 'appearance', anchor: 'settings-appearance', code: 'SET-02', icon: 'theme' },
   { id: 'scoring', anchor: 'settings-scoring', code: 'SET-03', icon: 'sliders' },
   { id: 'data', anchor: 'settings-data', code: 'SET-04', icon: 'layers' },
+  { id: 'offline', anchor: 'settings-offline', code: 'SET-08', icon: 'offline', labelKey: 'fieldkit.settings.nav' },
   { id: 'notifications', anchor: 'settings-notifications', code: 'SET-05', icon: 'bell' },
   { id: 'management', anchor: 'settings-management', code: 'SET-06', icon: 'folder' },
   { id: 'about', anchor: 'settings-about', code: 'SET-07', icon: 'info' },
@@ -71,6 +75,7 @@ const SECTION_ALIASES = {
   notifications: 'settings-notifications', webhook: 'settings-notifications',
   management: 'settings-management', backup: 'settings-management', reset: 'settings-management',
   about: 'settings-about',
+  offline: 'settings-offline', field: 'settings-offline', cache: 'settings-offline',
 };
 
 const STYLE_ID = 'view-settings-style';
@@ -1187,13 +1192,21 @@ function render(container, ctx) {
   function dictList(key) { return arr(safe(() => (en() ? dict.en : dict.ar).about[key], [])).map(String); }
   function interpolate(s, p) { return String(s).replace(/\{(\w+)\}/g, (w, k) => (p[k] === undefined ? w : String(p[k]))); }
 
+  /* ════════════════ SET-08 Offline (shared/offline-panel.js) ════════════════ */
+
+  const offlineApi = offlinePanel(ctx);
+  const offlineCard = card({
+    id: 'settings-offline', code: 'SET-08', title: t('fieldkit.settings.title'), subtitle: t('fieldkit.settings.sub'), className: 'set-anchor',
+    body: offlineApi.el,
+  });
+
   /* ════════════════ navigation + assembly ════════════════ */
 
   const navButtons = new Map();
   const nav = h('nav', { class: 'set-nav', 'aria-label': t('settings.navAria') },
     h('ul', { class: 'set-nav-list' }, ...SECTIONS.map((s) => {
       const b = h('button', { type: 'button', class: 'set-nav-item', 'aria-controls': s.anchor, onClick: () => reveal(s.anchor, { focus: true }) },
-        svgIcon(s.icon, 16), h('span', {}, t(`settings.sections.${s.id}`)), h('span', { class: 'set-nav-code', 'aria-hidden': 'true' }, s.code));
+        svgIcon(s.icon, 16), h('span', {}, t(s.labelKey || `settings.sections.${s.id}`)), h('span', { class: 'set-nav-code', 'aria-hidden': 'true' }, s.code));
       navButtons.set(s.anchor, b);
       return h('li', {}, b);
     })));
@@ -1202,7 +1215,7 @@ function render(container, ctx) {
   }
   setCurrent(SECTIONS[0].anchor);
 
-  const sectionCards = [languageCard, appearanceCard, scoringCard, dataCard, notificationsCard, managementCard, aboutCard];
+  const sectionCards = [languageCard, appearanceCard, scoringCard, dataCard, offlineCard, notificationsCard, managementCard, aboutCard];
   const view = h('section', { class: 'view view-settings' },
     head,
     h('div', { class: 'set-layout' }, nav, h('div', { class: 'set-sections' }, ...sectionCards)));
@@ -1300,6 +1313,7 @@ function render(container, ctx) {
   const tick = setInterval(() => { if (!document.hidden) { paintExample(); paintStatus(); } }, 30_000);
 
   return function cleanup() {
+    offlineApi.destroy();
     subs.splice(0).forEach((off) => { try { off(); } catch { /* ignore */ } });
     if (dataTimer) { clearTimeout(dataTimer); dataTimer = null; }
     clearInterval(tick);
