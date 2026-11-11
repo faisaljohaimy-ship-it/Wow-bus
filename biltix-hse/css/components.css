@@ -71,7 +71,7 @@
   --tile-depth: 0 1px 2px rgba(2, 6, 14, .4);
   --pill-hl: inset 0 1px 0 rgba(255, 255, 255, .05);
   /* Corner accents: the metal's bright and deep stops (ornament only, never status). */
-  --corner-hi: #FFC48A;
+  --corner-hi: #FFB570;
   --corner-lo: #E0761F;
   --corner-rest: .8;
   /* Segmented control: recessed track, raised brand-tinted thumb. */
@@ -307,12 +307,15 @@
 }
 .tile.is-clickable { cursor: pointer; }
 .tile.is-clickable:hover { border-color: var(--line-2); transform: translateY(-1px); }
-/* Status light: a capsule set into the inline-start frame (straddles the border), with a faint glow. */
+/* Status light: a short capsule set into the inline-start frame beside the head (it straddles the border),
+   with a faint glow. Card-like hosts (tiles, domain, integration and kanban cards) carry a 24 px light by
+   their head; list rows (alerts, urgent actions) a light the height of the row. */
 .tile[class*="tone-"]::before {
   content: "";
   position: absolute;
   inset-inline-start: -3px;
-  inset-block: 16px;
+  inset-block-start: 14px;
+  block-size: 24px;
   inline-size: 4px;
   border-radius: var(--radius-pill);
   background: var(--tone);
@@ -468,10 +471,11 @@ a.metric-tile:hover, button.metric-tile:hover, .metric-tile.is-clickable:hover {
 .domain-card[data-rating="red"]    { --tone: var(--critical); --tone-ink: var(--critical-text); }
 .domain-card[data-rating="yellow"] { --tone: var(--warning);  --tone-ink: var(--warning-text); }
 .domain-card[data-rating="green"]  { --tone: var(--good);     --tone-ink: var(--good-text); }
-.domain-card::before {   /* status light (capsule in the inline-start frame) */
+.domain-card::before {   /* status light (capsule in the inline-start frame, level with the head) */
   content: "";
   position: absolute;
-  inset-block: calc(var(--space-4) + 4px);
+  inset-block-start: calc(var(--space-4) + 4px);
+  block-size: 24px;
   inset-inline-start: -3px;
   inline-size: 4px;
   border-radius: var(--radius-pill);
@@ -801,7 +805,7 @@ a.domain-card:hover, button.domain-card:hover, .domain-card.is-clickable:hover {
   box-shadow: var(--seg-thumb-shadow);
   opacity: 0;
   transform: translateX(calc(var(--seg-from) * var(--dir) * 100%));
-  transition: transform 220ms var(--ease-glide), opacity 200ms var(--ease-out);
+  transition: transform 220ms var(--ease-glide), opacity 200ms var(--ease-in);   /* leaving: fades late, while it travels */
   pointer-events: none;
 }
 /* Resting side of the hidden thumbs: toward the selected option. */
@@ -816,7 +820,7 @@ a.domain-card:hover, button.domain-card:hover, .domain-card.is-clickable:hover {
 .seg-btn:is(.is-active, [aria-pressed="true"], [aria-checked="true"], [aria-selected="true"])::before {
   opacity: 1;
   transform: none;
-  transition: transform 220ms var(--ease-glide), opacity 90ms linear;
+  transition: transform 220ms var(--ease-glide), opacity 140ms var(--ease-out);   /* arriving: appears early */
 }
 .seg-btn:active:not(:is(.is-active, [aria-pressed="true"], [aria-checked="true"], [aria-selected="true"])) { transform: scale(calc(1 - var(--shell-fx) * .03)); }
 .seg-btn:focus-visible { outline-offset: -2px; }
@@ -884,7 +888,7 @@ a.domain-card:hover, button.domain-card:hover, .domain-card.is-clickable:hover {
   box-shadow: var(--tab-glow);
   opacity: 0;
   transform: translateX(calc(var(--tab-from) * var(--dir) * 100%)) scaleX(.6);
-  transition: transform 240ms var(--ease-glide), opacity 200ms var(--ease-out);
+  transition: transform 240ms var(--ease-glide), opacity 200ms var(--ease-in);
   pointer-events: none;
 }
 :is(.tab, .drawer-tab, .drawer-tabs [role="tab"]):has(~ :is(.tab, .drawer-tab, [role="tab"]):is(.is-active, [aria-selected="true"])) { --tab-from: 1; }
@@ -899,7 +903,7 @@ a.domain-card:hover, button.domain-card:hover, .domain-card.is-clickable:hover {
 :is(.tab, .drawer-tab, .drawer-tabs [role="tab"]):is(.is-active, [aria-selected="true"])::after {
   opacity: 1;
   transform: none;
-  transition: transform 240ms var(--ease-glide), opacity 100ms linear;
+  transition: transform 240ms var(--ease-glide), opacity 140ms var(--ease-out);
 }
 .tab:focus-visible, .drawer-tabs [role="tab"]:focus-visible, .drawer-tab:focus-visible { outline-offset: -4px; border-radius: var(--radius-md); }
 .tab > svg, .drawer-tabs [role="tab"] > svg { inline-size: 15px; block-size: 15px; color: var(--ink-3); }
@@ -1855,7 +1859,7 @@ dialog > .toast-stack.is-docked .toast { box-shadow: none; }
 .kanban-card-meta > span { display: inline-flex; align-items: center; gap: 4px; }
 .kanban-card-meta svg { inline-size: 12px; block-size: 12px; }
 .kanban-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
-.kanban-card[class*="tone-"]::before { content: ""; position: absolute; inset-block: 12px; inset-inline-start: -3px; inline-size: 4px; border-radius: var(--radius-pill); background: var(--tone); box-shadow: 0 0 6px color-mix(in srgb, var(--tone) 45%, transparent); }
+.kanban-card[class*="tone-"]::before { content: ""; position: absolute; inset-block-start: 11px; block-size: 22px; inset-inline-start: -3px; inline-size: 4px; border-radius: var(--radius-pill); background: var(--tone); box-shadow: 0 0 6px color-mix(in srgb, var(--tone) 45%, transparent); }
 
 /* --------------------------------------------------------------------------
    States — empty · loading · error · offline · skeleton (CONTRACT §7)
@@ -2421,7 +2425,8 @@ a.evidence-title { color: var(--link); }
   content: "";
   position: absolute;
   inset-inline-start: -1.5px;
-  inset-block: 16px;
+  inset-block-start: 25px;
+  block-size: 24px;
   inline-size: 4px;
   border-radius: var(--radius-pill);
   background: var(--int-status);
