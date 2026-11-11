@@ -127,6 +127,8 @@
 .fk-check-item { display: flex; align-items: center; gap: 10px; min-block-size: 40px; padding: 4px 8px; border-radius: var(--radius-sm); }
 .fk-check-item:hover { background: var(--bg-2); }
 .fk-check-item input { inline-size: 20px; block-size: 20px; flex: none; accent-color: var(--brand); }
+/* a ticked item is locked (aria-disabled), not disabled: it keeps the focus and stays in the tab order */
+.fk-check-item input[aria-disabled="true"] { opacity: .65; cursor: default; }
 .fk-check-item label { flex: 1 1 auto; line-height: 1.5; }
 .fk-form { display: flex; flex-direction: column; gap: var(--space-3); padding-block-start: var(--space-3); border-block-start: 1px solid var(--line); }
 .fk-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }

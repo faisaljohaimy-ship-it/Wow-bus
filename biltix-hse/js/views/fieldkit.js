@@ -13,6 +13,10 @@
  *
  * Every action goes through js/core/offline.js act() (idempotency key per intent). Data reaches the DOM through
  * components.h / textContent. Strings: dictionary 'fieldkit'.
+ *
+ * Repaints: the page repaints on outbox, network, filter and live-data events (paintAll, one per frame). Those
+ * never rebuild the open scan result or an open form — refreshResult() patches the live parts in place — and the
+ * field-action lists are rebuilt only when their rows change, with the focus kept (docs/offline.md "Repaints").
  */
 import { components } from '../ui/components.js';
 import { i18n, t, tn, L } from '../core/i18n.js';
@@ -246,17 +250,26 @@ export default {
       const label = buildRegistry(state()).find((l) => l.payload === parsed.payload);
       if (!label) { errLine.textContent = t('fieldkit.scan.errors.unknown', { code: parsed.payload }); return; }
       errLine.textContent = '';
-      current = { label, formKey: null, formOpen: false };
+      current = { label, formKey: null, sentKey: null, formOpen: false, live: null };
       paintResult({ enter: true });
       if (focus) requestAnimationFrame(() => { const tEl = resultHost.querySelector('.fk-result-title'); if (tEl) tEl.focus({ preventScroll: false }); });
     }
 
     function siteOf(id) { return arr(state().sites).find((s) => s.id === id) || null; }
 
-    function paintResult({ enter = false } = {}) {
+    /**
+     * Builds the result of the open code. Runs when the reader opens a code and when the observation form opens,
+     * is cancelled or is sent — never for a background change: refreshResult() handles those in place, so an open
+     * form keeps what was typed, the focus stays where it is and the live region announces only what changed.
+     * `focus`: selector of the node that takes the focus afterwards; without it, a focus that was inside the result
+     * goes to the result heading instead of dropping to <body>.
+     */
+    function paintResult({ enter = false, focus = null } = {}) {
       if (!alive) return;
+      const held = resultHost.contains(document.activeElement);
       clear(resultHost);
       if (!current) return;
+      current.live = null;
       const { label } = current;
       const site = siteOf(label.siteId);
       const box2 = h('section', { class: ['fk-result', enter ? 'is-entering' : null], 'aria-labelledby': 'fkResultTitle' },
@@ -267,51 +280,96 @@ export default {
         h('p', { class: 'text-sm muted fk-m0' }, [label.sub, site && label.ref.kind !== 'zone' ? siteName(site) : null].filter(Boolean).join(' · ')));
       const body = h('div', { class: 'stack gap-3' });
       box2.appendChild(body);
-      if (label.ref.kind === 'zone') zoneResult(body, label, site);
-      else if (label.ref.kind === 'crane') craneResult(body, label, site);
+      // Each kind returns what follows the data afterwards: { update() } patches nodes in place; { sig() } names the
+      // facts the block was built from, and the block is rebuilt only when that changes.
+      let live = null;
+      if (label.ref.kind === 'zone') live = zoneResult(body, label, site);
+      else if (label.ref.kind === 'crane') live = craneResult(body, label, site);
       else if (label.ref.kind === 'camera') cameraResult(body, label);
-      else if (label.ref.kind === 'crate') crateResult(body, label);
-      else if (label.ref.kind === 'permit') permitResult(body, label);
+      else if (label.ref.kind === 'crate') live = crateResult(body, label);
+      else if (label.ref.kind === 'permit') live = permitResult(body, label);
+      if (live && typeof live.sig === 'function') live.built = live.sig();
+      current.live = live;
       resultHost.appendChild(box2);
+      const to = (focus && resultHost.querySelector(focus)) || (held ? box2.querySelector('.fk-result-title') : null);
+      if (to) { try { to.focus(); } catch { /* not focusable */ } }
     }
+
+    /** A background change (outbox, network, live data, filters): update the open result without rebuilding it. */
+    function refreshResult() {
+      if (!alive || !current || !current.live) return;
+      const live = current.live;
+      if (typeof live.sig === 'function' && live.sig() !== live.built) { paintResult(); return; }
+      if (typeof live.update === 'function') live.update();
+    }
+    const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };
 
     const facts = (pairs) => h('dl', { class: 'fk-facts fk-facts-inline' }, ...pairs.map(([k, v]) => h('div', { class: 'fk-fact' }, h('dt', {}, k), h('dd', {}, v))));
 
     function zoneResult(body, label, site) {
-      let links = null;
-      try { links = zoneLinks(state(), label.siteId, label.zoneId, { sel, now: now() }); } catch { links = null; }
-      const c = (links && links.counts) || {};
+      const cells = [0, 1, 2].map(() => h('span', { dir: 'ltr' }));
+      const paintCounts = () => {
+        let links = null;
+        try { links = zoneLinks(state(), label.siteId, label.zoneId, { sel, now: now() }); } catch { links = null; }
+        const c = (links && links.counts) || {};
+        [c.openRisks, c.permits, c.inspections].forEach((n, i) => setText(cells[i], num(n || 0)));
+      };
       body.appendChild(facts([
-        [t('fieldkit.zone.openRisks'), h('span', { dir: 'ltr' }, num(c.openRisks || 0))],
-        [t('fieldkit.zone.permits'), h('span', { dir: 'ltr' }, num(c.permits || 0))],
-        [t('fieldkit.zone.inspections'), h('span', { dir: 'ltr' }, num(c.inspections || 0))],
+        [t('fieldkit.zone.openRisks'), cells[0]],
+        [t('fieldkit.zone.permits'), cells[1]],
+        [t('fieldkit.zone.inspections'), cells[2]],
       ]));
       const acts = h('div', { class: 'fk-actions' },
         button(t('fieldkit.zone.openMap'), { variant: 'outline', size: 'sm', icon: 'map-pin', onClick: () => navigate('spatial', { site: label.siteId, zone: label.zoneId }) }));
-      if (!current.formOpen) acts.appendChild(button(t('fieldkit.zone.report'), { variant: 'primary', size: 'sm', icon: 'plus', onClick: () => { current.formOpen = true; current.formKey = current.formKey || off.randomKey('risk.add'); paintResult(); requestAnimationFrame(() => { const f = resultHost.querySelector('#fkHazard'); if (f) f.focus(); }); } }));
+      // One idempotency key per form: a second observation in the same zone is a new intent, not a repeat.
+      if (!current.formOpen) acts.appendChild(button(t('fieldkit.zone.report'), { variant: 'primary', size: 'sm', icon: 'plus', attrs: { 'data-fk': 'report' }, onClick: () => { current.formOpen = true; current.formKey = off.randomKey('risk.add'); paintResult({ focus: '#fkHazard' }); } }));
       body.appendChild(acts);
-      if (current.formKey && !current.formOpen) {
-        const e = entryOf(current.formKey);
-        if (e) body.appendChild(h('p', { class: 'fk-row text-sm' }, chip(e.status), h('span', {}, e.status === 'synced' ? t('fieldkit.form.saved') : (e.status === 'failed' ? (e.error || '') : t('fieldkit.form.queued')))));
-      }
+      // The last observation sent from this result: its line follows the outbox (waiting to sync → saved).
+      const sent = h('p', { class: 'fk-row text-sm' });
+      let sentSig = null;
+      const paintSent = () => {
+        const e = current.sentKey && !current.formOpen ? entryOf(current.sentKey) : null;
+        const sig = e ? `${e.status}|${e.error || ''}` : '';
+        if (sig === sentSig) return;
+        sentSig = sig;
+        if (!e) { sent.remove(); return; }
+        sent.replaceChildren(chip(e.status), h('span', {}, e.status === 'synced' ? t('fieldkit.form.saved') : (e.status === 'failed' ? (e.error || '') : t('fieldkit.form.queued'))));
+        if (!sent.isConnected) body.appendChild(sent);
+      };
       if (current.formOpen) body.appendChild(reportForm(label, site));
+      const update = () => { paintCounts(); paintSent(); };
+      update();
+      return { update };
     }
 
     function reportForm(label, site) {
       const opt = (v, text) => h('option', { value: String(v) }, text);
       const lvl = (name, id) => h('select', { class: 'field-control', name, id, required: true }, opt('', t('fieldkit.form.choose')), ...[1, 2, 3, 4, 5].map((n) => opt(n, num(n))));
       const err = h('p', { class: 'fk-err text-sm', role: 'status', 'aria-live': 'polite' });
+      const cur = current;
+      let sending = false;
       const form = h('form', { class: 'fk-form', novalidate: true, onSubmit: async (e) => {
         e.preventDefault();
+        if (sending) return;
         const fd = new FormData(form);
         const hazard = String(fd.get('hazard') || '').trim();
         const categoryId = String(fd.get('category') || '');
         const likelihood = Number(fd.get('likelihood'));
         const severity = Number(fd.get('severity'));
         if (!hazard || !categoryId || !likelihood || !severity) { err.textContent = t('fieldkit.form.required'); return; }
-        const res = await off.act('risk.add', { zoneId: label.zoneId, risk: { siteId: label.siteId, zoneId: label.zoneId, categoryId, hazard, activity: dict.ar.form.activity, activityEn: dict.en.form.activity, description: hazard, likelihood, severity } }, { key: current.formKey });
-        current.formOpen = false;
+        sending = true;
+        const key = cur.formKey;
+        let res = null;
+        try {
+          res = await off.act('risk.add', { zoneId: label.zoneId, risk: { siteId: label.siteId, zoneId: label.zoneId, categoryId, hazard, activity: dict.ar.form.activity, activityEn: dict.en.form.activity, description: hazard, likelihood, severity } }, { key });
+        } finally { sending = false; }
+        if (!alive) return;
+        cur.formOpen = false;
+        cur.sentKey = key;
+        cur.formKey = null;
         toast(res.duplicate ? t('fieldkit.outbox.duplicate') : t(res.queued ? 'fieldkit.form.queued' : 'fieldkit.form.saved'), { tone: res.queued ? 'warning' : 'good' });
+        // The form leaves: the focus returns to the button that opened it (unless another code was opened meanwhile).
+        if (cur === current) paintResult({ focus: '[data-fk="report"]' });
         paintAll();
       } },
       h('h4', { class: 'fk-h4' }, t('fieldkit.form.title', { zone: zoneName(site, label.zoneId) })),
@@ -323,24 +381,47 @@ export default {
       err,
       h('div', { class: 'fk-actions' },
         button(t('fieldkit.form.submit'), { variant: 'primary', size: 'sm', icon: 'check', attrs: { type: 'submit' } }),
-        button(t('fieldkit.form.cancel'), { variant: 'ghost', size: 'sm', onClick: () => { current.formOpen = false; paintResult(); } })));
+        button(t('fieldkit.form.cancel'), { variant: 'ghost', size: 'sm', onClick: () => { cur.formOpen = false; cur.formKey = null; if (cur === current) paintResult({ focus: '[data-fk="report"]' }); } })));
       return form;
     }
 
     function craneResult(body, label) {
-      const insp = arr(state().inspections).find((x) => x && x.siteId === label.siteId && x.zoneId === label.zoneId && x.type === CRANE_INSPECTION && x.status !== DONE_INSPECTION) || null;
+      const find = () => arr(state().inspections).find((x) => x && x.siteId === label.siteId && x.zoneId === label.zoneId && x.type === CRANE_INSPECTION && x.status !== DONE_INSPECTION) || null;
+      const sig = () => { const x = find(); return x ? String(x.id) : ''; };
+      const insp = find();
       body.appendChild(h('div', { class: 'fk-actions' }, button(t('fieldkit.zone.openMap'), { variant: 'outline', size: 'sm', icon: 'map-pin', onClick: () => navigate('spatial', { site: label.siteId, zone: label.zoneId }) })));
-      if (!insp) { body.appendChild(h('p', { class: 'text-sm muted fk-m0' }, t('fieldkit.equip.noChecklist'))); return; }
+      if (!insp) { body.appendChild(h('p', { class: 'text-sm muted fk-m0' }, t('fieldkit.equip.noChecklist'))); return { sig }; }
       const items = dictList('equip.items');
       const list = h('ul', { class: 'fk-check', 'aria-label': t('fieldkit.equip.checklist', { code: insp.code }) });
-      items.forEach((text, i) => {
+      const rows = items.map((text, i) => {
         const key = off.idemKey('checklist.tick', insp.id, i);
-        const e = entryOf(key);
-        const cb = h('input', { type: 'checkbox', id: `fkChk${i}`, checked: Boolean(e), disabled: Boolean(e), 'aria-label': t('fieldkit.equip.tickAria', { item: text }),
-          onChange: async () => { cb.disabled = true; await off.act('checklist.tick', { inspectionId: insp.id, code: insp.code, item: i }, { key }); paintAll(); } });
-        list.appendChild(h('li', { class: 'fk-check-item' }, cb, h('label', { for: `fkChk${i}`, class: 'text-sm' }, text), e ? chip(e.status) : null));
+        // A ticked item is locked, not disabled: it stays in the tab order and keeps the focus, so the keyboard
+        // (and a screen reader) stays on the item that was just ticked instead of falling to <body>.
+        const locked = () => cb.getAttribute('aria-disabled') === 'true';
+        const lock = () => { cb.checked = true; cb.setAttribute('aria-disabled', 'true'); };
+        const cb = h('input', { type: 'checkbox', id: `fkChk${i}`, 'aria-label': t('fieldkit.equip.tickAria', { item: text }),
+          onClick: (e) => { if (locked()) e.preventDefault(); },
+          onChange: async () => { if (!cb.checked || locked()) return; lock(); await off.act('checklist.tick', { inspectionId: insp.id, code: insp.code, item: i }, { key }); paintAll(); } });
+        const li = h('li', { class: 'fk-check-item' }, cb, h('label', { for: `fkChk${i}`, class: 'text-sm' }, text));
+        let shown = '';
+        let chipEl = null;
+        list.appendChild(li);
+        return () => {
+          const b = box();
+          const e = entryOf(key);
+          if (e || (b && b.has(key))) lock();
+          const status = e ? e.status : '';
+          if (status === shown) return;
+          shown = status;
+          if (chipEl) chipEl.remove();
+          chipEl = e ? chip(e.status) : null;
+          if (chipEl) li.appendChild(chipEl);
+        };
       });
       body.appendChild(h('div', { class: 'stack gap-2' }, h('h4', { class: 'fk-h4' }, t('fieldkit.equip.checklist', { code: insp.code })), list));
+      const update = () => rows.forEach((paintRow) => paintRow());
+      update();
+      return { sig, update };
     }
 
     function cameraResult(body, label) {
@@ -351,6 +432,7 @@ export default {
     function crateResult(body, label) {
       const crate = label.ref.crate;
       const ms = materialStatus(state(), crate);
+      const sig = () => { const m = materialStatus(state(), crate); return JSON.stringify([m.fromStore, m.approved, m.rev, m.statusText, m.po, m.poStatus, m.risk ? [m.risk.id, m.risk.code] : null]); };
       body.appendChild(h('p', { class: ['fk-verdict', ms.approved ? 'is-go' : 'is-hold'] }, svgIcon(ms.approved ? 'check-circle' : 'alert-octagon', 18), h('strong', {}, t(ms.approved ? 'fieldkit.material.verdictInstall' : 'fieldkit.material.verdictHold'))));
       body.appendChild(facts([
         [t('fieldkit.material.submittal'), h('span', {}, h('span', { class: 'mono', dir: 'ltr' }, crate.submittal), ' · ', t('fieldkit.material.submittalStatus', { rev: num(ms.rev), status: ms.statusText }))],
@@ -361,48 +443,67 @@ export default {
       const acts = h('div', { class: 'fk-actions' }, button(t('fieldkit.material.openBom'), { variant: 'outline', size: 'sm', icon: 'package', onClick: () => navigate('bom', { item: crate.boqItemId }) }));
       if (ms.risk) acts.appendChild(button(t('fieldkit.material.openRisk'), { variant: 'ghost', size: 'sm', icon: 'shield-alert', onClick: () => navigate('airisks', { risk: ms.risk.id }) }));
       body.appendChild(acts);
+      return { sig };
     }
 
     function permitResult(body, label) {
-      const p = arr(state().permits).find((x) => x && x.id === label.ref.permitId);
-      if (!p) return;
-      const expired = p.expiresAt && Date.parse(p.expiresAt) < now().getTime();
+      const find = () => arr(state().permits).find((x) => x && x.id === label.ref.permitId) || null;
+      const isExpired = (x) => Boolean(x && x.expiresAt && Date.parse(x.expiresAt) < now().getTime());
+      const sig = () => { const x = find(); return x ? JSON.stringify([x.status, x.startsAt, x.expiresAt, isExpired(x)]) : ''; };
+      const p = find();
+      if (!p) return { sig };
+      const expired = isExpired(p);
       body.appendChild(facts([
         [t('fieldkit.permit.validity'), h('span', { dir: 'ltr', class: 'mono' }, `${time(p.startsAt)} – ${time(p.expiresAt)}`)],
         [t('fieldkit.kinds.permit'), h('span', {}, `${i18n.label('permitStatus', p.status)}${expired ? ` · ${t('fieldkit.permit.expired')}` : ''}`)],
       ]));
       body.appendChild(h('div', { class: 'fk-actions' }, button(t('fieldkit.permit.open'), { variant: 'outline', size: 'sm', icon: 'permit', onClick: () => navigate('permits', { id: p.id }) })));
+      return { sig };
     }
 
     /* ── FLD-05 field actions ── */
     const quickBody = h('div', { class: 'fk-quick' });
     const quickCard = card({ code: 'FLD-05', title: t('fieldkit.quick.title'), subtitle: t('fieldkit.quick.sub'), body: quickBody, className: 'fk-quick-card' });
     function quickSite() { const f = (store && store.filters) || state().filters || {}; return f.siteId && f.siteId !== 'all' ? f.siteId : 'S1'; }
+    let quickSig = null;
     function paintQuick() {
       if (!alive) return;
-      clear(quickBody);
       const f = { siteId: quickSite(), range: 30, search: '' };
       let alerts = [];
       let tasks = [];
       try { const q = psel.alertQueue(state(), f); alerts = [...arr(q.immediate), ...arr(q.standard)].filter((a) => !a.acknowledged).slice(0, 3); } catch { alerts = []; }
       try { const col = arr(psel.tasksByStatus(state(), f, now())).find((c) => c.status === 'جديدة'); tasks = col ? arr(col.items).slice(0, 3) : []; } catch { tasks = []; }
-      const row = (code, title, key, label, onAct, doneText) => {
+      const rowsOf = (list, kind, dictNs, keyOf, labelKey, doneKey, actOf) => list.map((rec) => {
+        const key = keyOf(rec);
         const e = entryOf(key);
-        return h('li', { class: 'fk-q-item' },
-          h('div', { class: 'fk-q-main' }, h('span', { class: 'mono text-xs', dir: 'ltr' }, code), h('span', { class: 'text-sm fk-q-title' }, title)),
-          e ? (e.status === 'synced' ? h('span', { class: 'fk-chip', 'data-state': 'synced' }, doneText) : chip(e.status)) : button(label, { variant: 'outline', size: 'sm', onClick: onAct }));
-      };
-      quickBody.appendChild(h('h3', { class: 'fk-h3' }, t('fieldkit.quick.alerts')));
-      quickBody.appendChild(alerts.length ? h('ul', { class: 'fk-q' }, ...alerts.map((a) => {
-        const key = off.idemKey('alert.ack', a.id);
-        return row(a.code, L(a, 'title', 'alerts') || a.title, key, t('fieldkit.quick.ack'), async () => { await off.act('alert.ack', { alertId: a.id, code: a.code, by: FIELD_ACTOR }, { key }); paintAll(); }, t('fieldkit.quick.acked'));
-      })) : h('p', { class: 'text-sm muted fk-m0' }, t('fieldkit.quick.none')));
-      quickBody.appendChild(h('h3', { class: 'fk-h3' }, t('fieldkit.quick.tasks')));
-      quickBody.appendChild(tasks.length ? h('ul', { class: 'fk-q' }, ...tasks.map((task) => {
+        return { key, code: rec.code, title: L(rec, 'title', dictNs) || rec.title, status: e ? e.status : '', label: t(labelKey), done: t(doneKey), act: () => off.act(kind, actOf(rec), { key }) };
+      });
+      const groups = [
+        { id: 'alerts', title: t('fieldkit.quick.alerts'), rows: rowsOf(alerts, 'alert.ack', 'alerts', (a) => off.idemKey('alert.ack', a.id), 'fieldkit.quick.ack', 'fieldkit.quick.acked', (a) => ({ alertId: a.id, code: a.code, by: FIELD_ACTOR })) },
         // The key is shown in the outbox list: a language-neutral token for the intent, not the (Arabic) status value.
-        const key = off.idemKey('task.status', task.id, 'start');
-        return row(task.code, L(task, 'title', 'tasks') || task.title, key, t('fieldkit.quick.start'), async () => { await off.act('task.status', { taskId: task.id, code: task.code, from: task.status, to: 'قيد التنفيذ', by: FIELD_ACTOR }, { key }); paintAll(); }, t('fieldkit.quick.started'));
-      })) : h('p', { class: 'text-sm muted fk-m0' }, t('fieldkit.quick.none')));
+        { id: 'tasks', title: t('fieldkit.quick.tasks'), rows: rowsOf(tasks, 'task.status', 'tasks', (task) => off.idemKey('task.status', task.id, 'start'), 'fieldkit.quick.start', 'fieldkit.quick.started', (task) => ({ taskId: task.id, code: task.code, from: task.status, to: 'قيد التنفيذ', by: FIELD_ACTOR })) },
+      ];
+      // Background repaints arrive every few seconds (live data, outbox, network). The lists are rebuilt only when
+      // what they show changed, and a focus inside them survives the rebuild: on the same row (its button, or the
+      // row itself once the button became a chip); when the row left the list, on the heading of its group — never
+      // on the next row's button, where a second Enter would act on another record.
+      const sig = JSON.stringify(groups.map((g) => g.rows.map((r) => [r.key, r.code, r.title, r.status])));
+      if (sig === quickSig) return;
+      quickSig = sig;
+      const active = document.activeElement;
+      const held = active && quickBody.contains(active) ? { key: (active.closest('[data-key]') || active).getAttribute('data-key'), group: (active.closest('[data-group]') || active).getAttribute('data-group') } : null;
+      clear(quickBody);
+      for (const g of groups) {
+        quickBody.appendChild(h('h3', { class: 'fk-h3', tabindex: '-1', 'data-group': g.id }, g.title));
+        quickBody.appendChild(g.rows.length ? h('ul', { class: 'fk-q', 'data-group': g.id }, ...g.rows.map((r) => h('li', { class: 'fk-q-item', tabindex: '-1', 'data-key': r.key },
+          h('div', { class: 'fk-q-main' }, h('span', { class: 'mono text-xs', dir: 'ltr' }, r.code), h('span', { class: 'text-sm fk-q-title' }, r.title)),
+          r.status ? (r.status === 'synced' ? h('span', { class: 'fk-chip', 'data-state': 'synced' }, r.done) : chip(r.status)) : button(r.label, { variant: 'outline', size: 'sm', onClick: async () => { await r.act(); paintAll(); } })))) : h('p', { class: 'text-sm muted fk-m0' }, t('fieldkit.quick.none')));
+      }
+      if (held) {
+        const row = held.key ? Array.from(quickBody.querySelectorAll('[data-key]')).find((n) => n.getAttribute('data-key') === held.key) : null;
+        const to = row ? (row.querySelector('button') || row) : (quickBody.querySelector(`h3[data-group="${held.group === 'tasks' ? 'tasks' : 'alerts'}"]`) || quickBody.querySelector('h3'));
+        if (to) { try { to.focus({ preventScroll: true }); } catch { /* ignore */ } }
+      }
     }
 
     /* ── FLD-04 labels ── */
@@ -463,7 +564,7 @@ export default {
       labelsCard);
     container.appendChild(root);
 
-    function paintAll() { paintConn(); paintQuick(); if (current) paintResult(); }
+    function paintAll() { paintConn(); paintQuick(); refreshResult(); }
     paintAll();
     // The app starts the offline layer at the end of boot; opened as the first route, the page starts it now
     // (idempotent) so the outbox and the field actions are usable without waiting for the live engines.

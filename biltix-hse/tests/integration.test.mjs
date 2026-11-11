@@ -305,4 +305,24 @@ export const tests = [
       assert.ok(/aria-label="EN — English" aria-pressed="true"/.test(html) && /aria-label="ع — العربية" aria-pressed="false"/.test(html));
     },
   },
+  {
+    name: 'field kit: a background repaint (outbox, network, live data, filters) never rebuilds the open result — an open observation form keeps its input',
+    fn() {
+      const src = read('js/views/fieldkit.js');
+      const paintAll = /function paintAll\(\) \{([^\n]*)\}\n/.exec(src);
+      assert.ok(paintAll, 'paintAll is one line');
+      assert.ok(!/paintResult\(/.test(paintAll[1]) && /refreshResult\(\)/.test(paintAll[1]), 'paintAll refreshes the result in place');
+      const refresh = /function refreshResult\(\) \{([\s\S]*?)\n    \}\n/.exec(src);
+      assert.ok(refresh && /live\.sig\(\) !== live\.built/.test(refresh[1]) && /live\.update\(\)/.test(refresh[1]), 'rebuild only when the facts the block was built from changed');
+      // the zone result (the one that carries the form) has no signature: nothing in the background can rebuild it
+      const zone = /function zoneResult\(body, label, site\) \{([\s\S]*?)\n    \}\n\n    function reportForm/.exec(src);
+      assert.ok(zone && /return \{ update \};/.test(zone[1]) && !/\bsig\b\s*[:,}]/.test(zone[1].replace(/sentSig|const sig = e/g, '')), 'zone result: in-place updates only');
+      // every bus subscription of the page goes through the throttled paintAll
+      for (const ev of ['field:outbox', 'field:network', 'filters:change']) assert.ok(new RegExp(`bus\\.on\\('${ev}', schedule\\)`).test(src), ev);
+      // one idempotency key per opened form: a second observation from the same scan is a new record, not a duplicate
+      assert.ok(/current\.formKey = off\.randomKey\('risk\.add'\)/.test(src) && !/current\.formKey \|\|/.test(src));
+      // a ticked checklist item is locked, not disabled, so it keeps the focus
+      assert.ok(/setAttribute\('aria-disabled', 'true'\)/.test(src) && !/cb\.disabled = true/.test(src));
+    },
+  },
 ];

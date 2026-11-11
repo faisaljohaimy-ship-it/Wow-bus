@@ -67,6 +67,18 @@ Storage: IndexedDB (`biltix-hse-field` / `kv` / `outbox`) → localStorage (`bil
 Actions on other pages save to this browser directly and do not pass through the outbox. The field kit's
 "Simulate an outage" switch queues field-kit actions without touching the real network.
 
+**Repaints on `#/fieldkit`.** The page repaints on `field:outbox`, `field:network`, `filters:change` and on store
+changes of alerts, tasks, AI risks, inspections, risks and permits — the demo's live engine alone causes one every
+minute or two. A repaint never rebuilds what the reader is using: the scan result is built when a code is opened and
+when the observation form opens, is cancelled or is sent (`paintResult`); everything else goes through
+`refreshResult`, which patches the zone counts, the "waiting to sync / saved" line and the checklist chips in place
+and rebuilds a crate or permit block only when the facts it shows changed. An open "Report an observation" form
+therefore keeps its text, selections, caret and focus through a network drop, the outage switch, a field action and
+live data. The field-action lists are rebuilt only when their rows change; a focus inside them stays on its row, or
+moves to the group heading when the row left the list (never to the next row's button). A ticked checklist item is
+locked (`aria-disabled`), not disabled, so it keeps the focus. Each opened form gets its own idempotency key: a
+second observation from the same scan is a new record.
+
 ## QR payloads and labels
 
 `BX1:<K>:<ID>` with K = `Z` zone · `E` equipment (cranes `S1-TC-2`, cameras `CAM-S1-03`) · `M` material (façade
