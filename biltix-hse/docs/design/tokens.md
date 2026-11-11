@@ -278,8 +278,17 @@ wall-clock numbers are noisy; CPU-time numbers use `Performance.enable({ timeDom
 | Unfinished animations / faint elements after print emulation mid-entrance (4 routes) | 9–149 / 0–13 | 0 / 0 |
 | Entrances started by live updates (cockpit, alerts; 7 simulation steps + a near-miss) | 2 ring-gauge updates from zero, 0 enter | identical |
 
-Overview's idle cost is the existing radar canvas; the pass adds one composited halo per critical KPI icon at
-idle and nothing else (no timers, no observers firing without scroll). Interaction cost is the FLIP / drawer
+Overview's idle cost is the existing radar canvas (a requestAnimationFrame loop, so the idle cost follows the frame
+rate the busy machine allows, and wall-clock medians swing by ±100 ms/s between rounds: an independent rerun gave
+380.6 → 414.9 and 414.8 → 369.2, a later 7-round rerun 384.7 → 417 wall and 150.7 → 144.4 CPU). Totals cannot
+resolve a 5 ms/s budget there, so the residue was measured per frame instead, in one page with the pass's residue
+switched on and off in alternating windows (ambient halos removed, the stage and ambient IntersectionObservers
+disconnected; 4 pairs × 2.5 s traces, per-call medians): style recalc 51 vs 49 elements (the two halo pseudo-elements),
+IntersectionObserver computation 0.046 vs 0.026 ms per frame (32 more targets: 29 below-the-fold stage records,
+3 ambient), Commit / PrePaint / Layerize per frame not higher (0.417 / 0.294 / 0.971 vs 0.427 / 0.322 / 1.046 ms).
+That is about 0.03 ms per frame, under 2 ms/s at 60 frames/s. No script of the pass runs at idle (CPU profile, 5 interleaved
+rounds: thread CPU 173.4 → 169.3 ms/s; JS self time is radar.js 68 / 68, store and live ticks; nothing from motion.js,
+edges.js or spotlight.js). Interaction cost is the FLIP / drawer
 cascade animations themselves (+8 to +23 ms of CPU spread over 300 ms); the "first" boxes are read before the
 interaction writes, so the click itself adds no forced layout of its own.
 
