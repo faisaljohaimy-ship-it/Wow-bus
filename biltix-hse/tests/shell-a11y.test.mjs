@@ -3,6 +3,20 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { interactiveWithin, labelInName, nameContains, nameExtra, visibleText } from '../js/ui/components.js';
 import { FONT_STACKS, fontStacksFor } from '../js/ui/charts.js';
+import spatialDict from '../js/i18n/spatial.js';
+import uiDict from '../js/i18n/ui.js';
+import contractsDict from '../js/i18n/contracts.js';
+import incidentsDict from '../js/i18n/incidents.js';
+import inspectionsDict from '../js/i18n/inspections.js';
+
+/** dict[lang] value at a dotted path (first match anywhere in the tree for a leaf pair such as "x.open"). */
+function at(obj, path) { return path.split('.').reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), obj); }
+function findPair(obj, visibleKey, ariaKey) {
+  if (!obj || typeof obj !== 'object') return null;
+  if (typeof obj[visibleKey] === 'string' && typeof obj[ariaKey] === 'string') return [obj[visibleKey], obj[ariaKey]];
+  for (const v of Object.values(obj)) { const hit = findPair(v, visibleKey, ariaKey); if (hit) return hit; }
+  return null;
+}
 
 /** Tiny tree for visibleText: text(s) and node(cls, ...children) with firstChild / nextSibling links. */
 const text = (s) => ({ nodeType: 3, nodeValue: s });
@@ -117,6 +131,32 @@ export const tests = [
       const btn = node('cmdk-btn', node('cmdk-btn-label', text('Search…')), kbd, sr, hid);
       assert.equal(visibleText(btn), 'Search… Ctrl+K');
       assert.equal(visibleText(null), '');
+    },
+  },
+  {
+    name: 'label in name, dictionaries: a button\'s aria-label string contains its visible label, in both languages',
+    fn() {
+      // [dictionary, parent path of the pair, visible key, aria-label key] — controls that set the second as aria-label
+      const pairs = [
+        [spatialDict, 'p360', 'open', 'openAria'], [spatialDict, 'cameras', 'open', 'openAria'],
+        [uiDict, null, 'reset', 'resetAria'], [contractsDict, null, 'engine', 'engineAria'],
+        [incidentsDict, null, 'details', 'detailsAria'], [inspectionsDict, null, 'details', 'detailsAria'],
+      ];
+      for (const [dict, parent, vis, aria] of pairs) for (const lang of ['ar', 'en']) {
+        const scope = parent ? at(dict[lang], parent) : dict[lang];
+        const pair = findPair(scope, vis, aria);
+        assert.ok(pair, `${lang}: ${parent || ''}.${vis} / ${aria} exist`);
+        assert.ok(nameContains(pair[1], pair[0]), `${lang}: "${pair[1]}" contains "${pair[0]}"`);
+      }
+    },
+  },
+  {
+    name: 'integrations view: the URL helpers use window.history (the module has its own `history` map)',
+    fn() {
+      const src = readFileSync(new URL('../js/views/integrations.js', import.meta.url), 'utf8');
+      assert.match(src, /^const history = new Map\(\);$/m, 'the module-level map still shadows the global');
+      assert.ok(!/(?<![.\w])history\.(replaceState|pushState|state)\b/.test(src), 'no bare history.replaceState / history.state');
+      assert.ok((src.match(/window\.history\.replaceState\(/g) || []).length >= 2, '?connector= and ?section= are dropped through window.history');
     },
   },
   {

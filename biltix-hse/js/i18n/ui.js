@@ -47,7 +47,7 @@ export default {
     filter: {
       label: 'عوامل التصفية',
       reset: 'إعادة الضبط',
-      resetAria: 'إعادة ضبط جميع عوامل التصفية',
+      resetAria: 'إعادة الضبط: جميع عوامل التصفية',
       all: 'الكل',
       search: 'بحث',
       clearSearch: 'مسح البحث',

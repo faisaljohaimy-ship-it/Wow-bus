@@ -73,7 +73,7 @@ export default {
       emptyTitle: 'لا توجد تدقيقات مجدولة قادمة',
       emptyText: 'لا شيء مجدول ضمن النافذة الزمنية والموقع المحددين.',
       details: 'عرض التفاصيل',
-      detailsAria: 'عرض تفاصيل {code}',
+      detailsAria: 'عرض التفاصيل: {code}',
     },
     drawer: {
       tabs: { overview: 'نظرة عامة', findings: 'الملاحظات' },

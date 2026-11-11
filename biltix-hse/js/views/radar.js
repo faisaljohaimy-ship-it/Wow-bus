@@ -396,9 +396,10 @@ export default {
     function paintMapLinks(planSite, sensorSite) {
       const name = (id) => siteName(id) || id;
       planMapLink.setAttribute('href', router.href('spatial', { site: planSite }));
-      planMapLink.setAttribute('aria-label', t('radar.spatial.showOnMapAria', { site: name(planSite) }));
+      // Label in name (WCAG 2.5.3): named by the visible text; the site is added as visually hidden text.
+      C.setLabelInName(planMapLink, name(planSite));
       sensorMapLink.setAttribute('href', router.href('spatial', { site: sensorSite }));
-      sensorMapLink.setAttribute('aria-label', t('radar.spatial.sensorsOnMapAria', { site: name(sensorSite) }));
+      C.setLabelInName(sensorMapLink, name(sensorSite));
     }
 
     const cards = [sweepCard, sensorCard, planCard, complianceCard];

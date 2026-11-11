@@ -109,7 +109,7 @@ export default {
     /* ───────────────────────── capability matrix ───────────────────────── */
 
     function summaryBar(r, { compact = false } = {}) {
-      return h('div', { class: ['gl-bar', compact ? 'is-compact' : null], role: 'img', 'aria-label': `${t('matrix.summaryAria')}: ${GL_STATUSES.map((s) => `${t(`status.${s}`)} ${fmt.num(r.counts[s])}`).join('، ')}` },
+      return h('div', { class: ['gl-bar', compact ? 'is-compact' : null], role: 'img', 'aria-label': `${t('matrix.summaryAria')}: ${GL_STATUSES.map((s) => `${t(`status.${s}`)} ${fmt.num(r.counts[s])}`).join(i18n.lang() === 'en' ? ', ' : '، ')}` },
         ...GL_STATUSES.filter((s) => r.counts[s] > 0).map((s) => h('span', { class: ['gl-bar-seg', `is-${s}`], style: { flexGrow: String(r.counts[s]) }, title: `${t(`status.${s}`)}: ${fmt.num(r.counts[s])}` })));
     }
 
@@ -172,14 +172,20 @@ export default {
         const div = document.createElementNS(XHTML_NS, 'div');
         div.setAttribute('class', `gl-arch-node is-${n.today}${n.site ? ' is-site' : ''}`);
         div.setAttribute('dir', i18n.dir());
-        const name = document.createElementNS(XHTML_NS, 'span'); name.setAttribute('class', 'gl-arch-name'); name.textContent = `${fmt.num(i + 1)}. ${t(`arch.nodes.${n.id}.name`)}`;
-        const sub = document.createElementNS(XHTML_NS, 'span'); sub.setAttribute('class', 'gl-arch-sub'); sub.textContent = D(t(`arch.nodes.${n.id}.sub`));
-        const tag = document.createElementNS(XHTML_NS, 'span'); tag.setAttribute('class', 'gl-arch-tag'); tag.textContent = t(`arch.nodes.${n.id}.tag`);
-        div.append(name, sub, tag);
+        const nameText = `${fmt.num(i + 1)}. ${t(`arch.nodes.${n.id}.name`)}`;
+        const subText = D(t(`arch.nodes.${n.id}.sub`));
+        const tagText = t(`arch.nodes.${n.id}.tag`);
+        const name = document.createElementNS(XHTML_NS, 'span'); name.setAttribute('class', 'gl-arch-name'); name.textContent = nameText;
+        const sub = document.createElementNS(XHTML_NS, 'span'); sub.setAttribute('class', 'gl-arch-sub'); sub.textContent = subText;
+        const tag = document.createElementNS(XHTML_NS, 'span'); tag.setAttribute('class', 'gl-arch-tag'); tag.textContent = tagText;
+        // The spaces keep the three texts separate words in the node's text (the column layout ignores them).
+        div.append(name, ' ', sub, ' ', tag);
         fo.appendChild(div);
         const rect = svg('rect', { x: p.x + 0.5, y: p.y + 0.5, width: p.w - 1, height: p.h - 1, rx: 12, class: `gl-arch-box is-${n.today}${n.site ? ' is-site' : ''}`, 'aria-hidden': 'true' });
+        // Label in name (WCAG 2.5.3): an SVG link takes no name from the HTML inside its <foreignObject> (Chromium
+        // leaves it empty), so it is named explicitly — with everything the box shows, in order, then where it leads.
         const group = n.route
-          ? svg('a', { href: href(n.route), class: 'gl-arch-a', 'aria-label': `${t(`arch.nodes.${n.id}.name`)} — ${t(`arch.nodes.${n.id}.tag`)}. ${t('arch.open', { view: viewTitle(n.route) })}` }, rect, fo)
+          ? svg('a', { href: href(n.route), class: 'gl-arch-a', 'aria-label': `${nameText} ${subText} ${tagText} — ${t('arch.open', { view: viewTitle(n.route) })}` }, rect, fo)
           : svg('g', { class: 'gl-arch-g', role: 'img', 'aria-label': `${t(`arch.nodes.${n.id}.name`)} — ${t(`arch.nodes.${n.id}.tag`)}` }, rect, fo);
         el.appendChild(group);
       });

@@ -110,7 +110,7 @@ export default {
       actionsTitle: 'إنجاز الإجراءات التصحيحية',
       actionsAria: 'الإجراءات التصحيحية: {done} من {total}',
       details: 'التفاصيل',
-      detailsAria: 'تفاصيل الحادث {code}',
+      detailsAria: 'التفاصيل: الحادث {code}',
     },
     drawer: {
       tabs: { overview: 'الملخص', investigation: 'التحقيق', actions: 'الإجراءات' },

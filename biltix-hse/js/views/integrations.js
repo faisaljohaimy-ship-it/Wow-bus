@@ -40,7 +40,8 @@ const FIELD_TYPES = new Set(['text', 'url', 'password', 'number', 'select', 'tex
 const ICON_ALIAS = { document: 'dms', watch: 'wearable', users: 'hr', database: 'erp', chat: 'teams', sheet: 'sheets', sensor: 'iot', camera: 'cctv', shield: 'gosi' };
 const CONNECTOR_ICON = { enterprise: 'erp', biltix: 'biltix', external: 'globe' };
 
-/** Rolling eventsPerHour history per integration id (module scope, survives navigation). */
+/** Rolling eventsPerHour history per integration id (module scope, survives navigation). Shadows the global
+ *  `history` in this module: the URL helpers below say `window.history`. */
 const history = new Map();
 /** Presentation and filters, remembered for the session. */
 let viewMode = 'cards';
@@ -463,7 +464,7 @@ export default {
       requestAnimationFrame(() => {
         const entry = cardRefs.get(it.key);
         openDetails(it, entry ? entry.el.querySelector('.int-foot .btn:last-child') : null);
-        try { history.replaceState(history.state, '', router && typeof router.href === 'function' ? router.href('integrations') : '#/integrations'); } catch { /* ignore */ }
+        try { window.history.replaceState(window.history.state, '', router && typeof router.href === 'function' ? router.href('integrations') : '#/integrations'); } catch { /* ignore */ }
       });
     }
 
@@ -618,7 +619,7 @@ export default {
         try { dsCard.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' }); } catch { dsCard.scrollIntoView(); }
         try { dsCard.focus({ preventScroll: true }); } catch { /* ignore */ }
         if (motion && typeof motion.flash === 'function') motion.flash(dsCard);
-        try { history.replaceState(history.state, '', router && typeof router.href === 'function' ? router.href('integrations') : '#/integrations'); } catch { /* ignore */ }
+        try { window.history.replaceState(window.history.state, '', router && typeof router.href === 'function' ? router.href('integrations') : '#/integrations'); } catch { /* ignore */ }
       });
     }
 

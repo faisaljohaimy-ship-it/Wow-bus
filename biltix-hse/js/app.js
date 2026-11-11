@@ -1885,7 +1885,9 @@ function updateBell() {
   }
   if (bell) {
     bell.classList.toggle('has-unread', unreadAlerts > 0);
-    setAttr(bell, 'aria-label', unreadAlerts > 0 ? tn('core.alerts.bellUnread', unreadAlerts) : t('core.alerts.bell'));
+    // Label in name (as the activity toggle): the name contains the count shown on the badge — the Arabic sentence
+    // spells one and two out ("تنبيه واحد"), so the digit is put first when the sentence does not carry it.
+    setAttr(bell, 'aria-label', unreadAlerts > 0 ? labelInName(count && !count.hidden ? count.textContent : '', tn('core.alerts.bellUnread', unreadAlerts)) : t('core.alerts.bell'));
     setAttr(bell, 'title', t('core.alerts.bell'));
   }
 }

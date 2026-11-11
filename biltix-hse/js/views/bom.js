@@ -584,7 +584,7 @@ export default {
         return h('li', { class: ['urgent-item', overdue ? 'is-overdue' : null, overdue ? 'tone-critical' : soon ? 'tone-warning' : 'tone-neutral'] },
           h('span', { class: 'urgent-icon' }, glyph(overdue ? 'critical' : soon ? 'warning' : 'clock', 15)),
           h('div', { class: 'urgent-text' },
-            h('span', { class: 'row gap-2 wrap', style: { alignItems: 'baseline' } }, codeSpan(b.code), h('button', { type: 'button', class: 'link-btn', 'aria-label': t('longLead.openAria', { code: b.code }), onClick: () => openItem(data, b) }, digitsIn(b.description))),
+            h('span', { class: 'row gap-2 wrap', style: { alignItems: 'baseline' } }, codeSpan(b.code), components.setLabelInName(h('button', { type: 'button', class: 'link-btn', onClick: () => openItem(data, b) }, digitsIn(b.description)), t('longLead.openAria', { code: b.code }))),
             h('span', { class: 'urgent-sub' }, h('span', {}, b.supplier ? digitsIn(b.supplier.name) : t('longLead.noSupplier')), b.supplier && b.supplier.singleSource ? badge(t('suppliers.single'), 'critical') : null, h('span', {}, t('longLead.meta', { lead: tn('dom.days', num(b.leadTimeDays)), date: fmt.date(b.orderBy, { style: 'short' }) })))),
           h('div', { class: 'urgent-due' }, dueBadge(b.days)));
       })) : emptyState({ title: t('longLead.emptyTitle'), text: t('longLead.emptyText', { days: fmt.num(LONG_LEAD_DAYS) }) });

@@ -254,7 +254,7 @@ export default {
       subtitle: '{n} — mount position, heading and field of view',
       honest: 'The cameras are demo records: no camera is connected, and the feed shown is a drawn, simulated scene.',
       open: 'View simulated feed',
-      openAria: 'View the simulated feed of camera {code}',
+      openAria: 'View simulated feed of camera {code}',
     },
     viewer: {
       simulated: 'Simulated',
@@ -317,7 +317,7 @@ export default {
       honest: 'Simulated 360° captures: the only picture is AI-generated and the other dates have no image. No 360° camera or capture system is connected.',
       none: 'No 360° capture points on this site in the demo data.',
       open: 'Open the 360° capture',
-      openAria: 'Open 360° capture {code}',
+      openAria: 'Open the 360° capture {code}',
       pointAria: '360° capture point {code}: {label}. Open the viewer.',
       simulated: 'Simulated 360° capture — AI-generated image',
       simulatedDesc: 'Not a photograph of the site: an AI-generated image for demonstration only.',
