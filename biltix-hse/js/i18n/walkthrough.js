@@ -146,7 +146,7 @@ export default {
       },
       site: {
         title: 'On the plan: the lift zone and a 360° capture',
-        body: 'Zone {zone} below crane TC-2: risk R-1009, permit PTW-5529 and camera CAM-S1-03 (simulated). A 360° capture point on the façade edge carries a {code} marker.',
+        body: 'Zone {zone} below crane TC-2: risk R-1009, permit PTW-5529 and camera CAM-S1-03 (simulated). A 360° capture point on the façade edge carries the {code} marker.',
         open360: 'Open the 360° capture',
         note: 'Simulated 360° capture — an AI-generated image, not a photograph of the site.',
       },
