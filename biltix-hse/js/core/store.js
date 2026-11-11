@@ -187,7 +187,7 @@ const SYSTEM_ACTOR = 'النظام';
 const PLATFORM_COLLECTIONS = [
   'projects', 'contracts', 'suppliers', 'commodities', 'boqItems', 'scheduleTasks', 'resources', 'approvals',
   'subcontractors', 'costLines', 'changeOrders', 'currencies', 'labourIndex', 'aiRisks', 'tasks', 'alerts',
-  'pipelines', 'connectors', 'auditLog',
+  'pipelines', 'connectors', 'auditLog', 'submittals',
 ];
 
 /**
@@ -199,21 +199,23 @@ const PLATFORM_COLLECTIONS = [
 const PLATFORM_DATE_FIELDS = {
   projects: { own: ['startDate', 'plannedFinish', 'forecastFinish'], nested: { nextMilestone: ['date'] } },
   contracts: { own: ['signedAt', 'endsAt'], children: { obligations: ['due'] } },
-  boqItems: { own: ['requiredBy', 'orderBy'] },
+  boqItems: { own: ['requiredBy', 'orderBy'], nested: { procurement: ['prApprovedAt', 'slotHoldUntil', 'letterAt'] } },
   scheduleTasks: { own: ['start', 'finish', 'baselineFinish'] },
-  approvals: { own: ['submittedAt'] },
+  approvals: { own: ['submittedAt', 'windowFrom', 'windowTo'] },
   changeOrders: { own: ['submittedAt'] },
   aiRisks: {
     own: ['detectedAt', 'updatedAt', 'dueDate', 'closedAt', 'reopenedAt'],
-    children: { history: ['at'], overrides: ['at'] },
-    nested: { residualAssessment: ['at'] },
-    deepChildren: { 'treatment.evidence': ['addedAt'] },
+    children: { history: ['at'], overrides: ['at'], evidenceChain: ['at'], monitors: ['byDate'], closureCriteria: ['plannedAt', 'plannedTo'] },
+    // v4 worked example: `scenario` holds projected (calendar-dated) steps after the demo clock — never instants
+    nested: { residualAssessment: ['at'], scenario: ['decisionDate', 'riskDueDate'] },
+    deepChildren: { 'treatment.evidence': ['addedAt'], 'scenario.audit': ['date'] },
   },
   tasks: { own: ['dueDate', 'createdAt', 'closedAt', 'updatedAt'], nested: { writeback: ['at'] }, children: { attachments: ['addedAt'] } },
   alerts: { own: ['sentAt', 'ackAt'] },
   pipelines: { own: ['lastRun'] },
   connectors: { own: ['lastSync'] },
   auditLog: { own: ['at'] },
+  submittals: { children: { revisions: ['submittedAt', 'dueAt', 'returnedAt'] } },
 };
 
 export const DEFAULT_FILTERS = deepFreeze({ siteId: 'all', range: 30, search: '' });

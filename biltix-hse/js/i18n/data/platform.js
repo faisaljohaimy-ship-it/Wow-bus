@@ -326,6 +326,7 @@ export default {
     VS11: { name: 'Exchange rates (SAMA)' },
     VS12: { name: 'National Center for Meteorology (NCM)' },
     VS13: { name: 'Sensor gateway (MQTT)' },
+    VS14: { name: 'BILTIX — Documents & submittals (DMS)' },
   },
   validationRules: {
     VR1: { name: 'Record schema validation (mandatory fields and types)' },
@@ -358,8 +359,17 @@ export default {
     VQ12: { reason: 'Model version newer than the approved version (v38) — awaiting approval' },
     VQ13: { reason: 'Item budget changed without a linked change order' },
     VQ14: { reason: 'Critical activity with positive float (3 days) — conflicts with P6' },
+    VQ15: { reason: 'Submittal record without a review-due date' },
   },
   connectors: {
+    'biltix-dms': {
+      name: 'BILTIX — Documents & submittals (DMS)',
+      vendor: 'BILTIX',
+      api: 'BILTIX REST v1 + Webhooks',
+      entities: ['Material submittals', 'Shop drawings', 'Correspondence', 'RFIs'],
+      description: 'Submittal register, review codes and due dates, and incoming correspondence; the source of closure evidence.',
+      configFields: [{ label: 'API URL' }, { label: 'API key' }],
+    },
     'primavera-p6': {
       entities: ['Projects', 'Activities', 'Relationships', 'Resources', 'Baselines'],
       writeback: ['Activity risk codes (Activity Codes)', 'Risk notes on critical activities'],
@@ -517,6 +527,7 @@ export default {
       target: 'Settings — Weights',
       detail: 'Domain weights approved: contracts 0.20, materials 0.20, schedule 0.25, site 0.20, cost 0.15',
     },
+    AU29: { target: 'BILTIX — Documents & submittals (DMS)', detail: 'Record MAR-S1-MEP-021 quarantined: no review-due date' },
   },
   roadmap: {
     _: {

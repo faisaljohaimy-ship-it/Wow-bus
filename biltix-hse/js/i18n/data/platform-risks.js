@@ -76,7 +76,7 @@ export default {
       driverExplanation: 'Activity A1100 is critical with zero float and a planned finish of d+142, but the model forecasts d+170 (28 days late). Main driver: the subcontractor Gulf Façades Company is at 14% progress against 22% planned (scorecard 58/100); second driver: the mock-up is due within 26 days and the glass supplier has not yet been approved. Delay probability 0.71.',
       recommendation: {
         action: 'Split the façade installation into two parallel packages (Floors 8–11 and 12–15) with two crews, and approve the glass supplier within 7 days with conditional sample approval.',
-        rationale: 'Parallel working recovers ~18 of the 28 forecast days; approving the supplier removes the largest open dependency.',
+        rationale: 'Parallel working recovers 12–18 of the 28 forecast days, depending on when the second batch arrives; approving the supplier removes the largest open dependency.',
         impact: 'Reduces the score to ~48',
         alternatives: [
           'Bring the façade start forward to the structurally complete floors (8–10) ahead of schedule',
@@ -1633,6 +1633,35 @@ export default {
         ],
       },
     },
+    AR69: {
+      title: 'Curtain-wall glass approval MAR-S1-CW-014 on hold — threatens supply and the A1100 start on the critical path',
+      driverExplanation: "The curtain-wall glass submittal (MAR-S1-CW-014 Rev 1) is held by the consultant pending the employer's decision on change order CO-034. The latest purchase-order date passed 14 days ago and the supplier's production-slot hold ends on 24 November. If approval comes on the last day of the hold, the first units arrive 28 days after critical activity A1100 (zero float) needs them; if the hold is lost, the delay grows to about 50 days.",
+      evidence: {
+        excerpt: "Material submittal — double-glazed low-E IGUs and aluminium framing · Rev 0: Code C · Rev 1: under review (review period 14 days) · Consultant's note: awaiting the employer's decision on CO-034",
+      },
+      recommendation: {
+        action: 'Urgent review meeting within 24 hours to approve Rev 1 conditionally (Code B) on the contract specification for floors 8–15, deferring CO-034 to after floor 15, and release the PO the same day inside the slot hold; split A1100 into two parallel packages.',
+        rationale: 'Keeps the production slot and brings the A1100 finish from +28 back to about +4 days (illustrative).',
+        impact: 'Reduces the score to ~32',
+        alternatives: [
+          'Pre-qualify an alternative supplier for 30% of the quantity (floors 12–15) as a hedge',
+          'Wait for the CO-034 decision (+28 days, and the slot is lost if the decision is late)',
+        ],
+      },
+      responseParams: {
+        Procurement: {
+          supplier: 'Gulf Façades Company',
+          alternates: ['Architectural Glass Factory — Dammam', 'Modern Façades Company — Jeddah'],
+        },
+        Legal: { clauseRef: 'CT-2026-014 §20.1, §13.1 and §8.4 · CT-2026-021 §5.4' },
+        Site: {
+          location: 'S1-Z2 lift zone below TC-2 + King Fahd Road service lane (AP1)',
+          hazard: 'Compressed façade lifting: night lifts, two crews at height, overlapping crane slewing radii',
+          controls: ['Critical-lift plan per unit type', 'TC-1/TC-2 overlap zoning', 'Night-work permit and extra operators', 'Stop lifting at 38 km/h or a stricter limit'],
+        },
+      },
+      history: [{ text: 'Automatically detected — score 80 (Red), confidence 81%' }],
+    },
   },
   tasks: {
     MT1: {
@@ -1776,6 +1805,7 @@ export default {
     AL34: { title: 'Alert: 90-day payment term with no late-payment compensation — CT-2026-014 §14.2 — score 80' },
     AL35: { title: 'Alert: steel price adjustment gap between the main contract and the subcontract — score 64' },
     AL36: { title: 'Alert: 32 mm reinforcing steel — model quantity 8.5% above the BoQ — score 64' },
+    AL37: { title: 'Alert: curtain-wall glass approval MAR-S1-CW-014 on hold — score 80' },
   },
   terms: {
     // People (owners, managers, inspectors, reporters, approvers, workers)
@@ -1790,6 +1820,7 @@ export default {
     'م. سعود الحارثي — مدير التخطيط': 'Eng. Saud Al-Harthi — Planning Manager',
     'نموذج الجدول الزمني': 'Schedule model',
     'م. سارة القحطاني': 'Eng. Sarah Al-Qahtani',
+    'مهندس الموقع': 'Site engineer',
     'ذكاء الموقع (الصور والتقارير)': 'Site intelligence (images and reports)',
     'م. بدر القرني — مدير المشتريات': 'Eng. Badr Al-Qarni — Procurement Manager',
     'محرك توقع المواد BoM': 'BoM forecasting engine',

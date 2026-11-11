@@ -82,9 +82,9 @@ export default {
         },
         {
           title: 'Submission of shop drawings and samples',
-          excerpt: 'The Subcontractor shall submit shop drawings and visual mock-ups to the Engineer 120 days before the installation start date.',
+          excerpt: 'The Subcontractor shall submit shop drawings and visual mock-ups to the Engineer seventy (70) days before the installation start date.',
           explanation: 'The mock-up is due within 26 days and the glass supplier has not yet been approved; any delay here feeds directly into the critical path for façade close-in.',
-          benchmark: 'Market benchmark: 90–120 days; the current clause is within range but the obligation is at risk.',
+          benchmark: 'Market benchmark 90–120 days; this clause 70 days — shorter than usual, leaving little room for the review cycle.',
         },
       ],
       obligations: [
@@ -589,6 +589,9 @@ export default {
     T30: { name: 'Medical systems acceptance testing and handover documentation', trade: 'Commissioning' },
     T31: { name: 'Antibacterial suspended ceilings — Operating theatres', trade: 'Ceilings' },
     T32: { name: 'Standby generators and fuel tanks installation — Basement', trade: 'Electrical' },
+    T33: { name: 'Façade material approval (MAR-S1-CW-014) and first-batch PO', trade: 'Façade procurement' },
+    T34: { name: 'Fabrication and delivery of the first batch of façade units (floors 8–11)', trade: 'Façade supply' },
+    T35: { name: 'Façade close-in (dry-in), floors 8–15', trade: 'Milestone' },
   },
   resources: {
     RS1: { trade: 'Steel fixers' },
