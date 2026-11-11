@@ -626,6 +626,20 @@ const priorityOf = (col) => (col && PRIORITIES.includes(col.priority) ? col.prio
 const INTERACTIVE = 'button,a[href],input,select,textarea,[tabindex],[role="button"],[contenteditable]';
 
 /**
+ * The interactive element (button, link, field, [tabindex] …) that `target` sits in, looked up only as far as
+ * `boundary` (exclusive). Ancestors outside the boundary never count: a whole-row click must not be swallowed
+ * by <main tabindex="-1"> or another focusable container round the table.
+ */
+export function interactiveWithin(target, boundary) {
+  let el = target && target.nodeType === 1 ? target : (target && target.parentElement) || null;
+  while (el && el !== boundary) {
+    if (typeof el.matches === 'function' && el.matches(INTERACTIVE)) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
+/**
  * Sortable, paged data table.
  *   columns[].priority  'high' (default) | 'medium' | 'low'  → data-priority on th/td so CSS can
  *                       hide low-priority columns in narrow containers (V2/V8).
@@ -759,7 +773,7 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
       });
       if (clickable) {
         // Pointer convenience only: buttons/links inside the row (incl. .row-open) handle themselves.
-        tr.addEventListener('click', (e) => { if (e.target.closest(INTERACTIVE)) return; onRowClick(row, e); });
+        tr.addEventListener('click', (e) => { if (interactiveWithin(e.target, tr)) return; onRowClick(row, e); });
       }
       frag.appendChild(tr);
     });
