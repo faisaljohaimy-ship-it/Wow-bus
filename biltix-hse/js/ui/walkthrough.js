@@ -127,6 +127,10 @@ const STYLE_TEXT = `
 @media (max-width: 640px) {
   .wt-panel, .wt-panel[data-side="end"] { inset-inline: 8px; inset-block-end: 8px; inline-size: auto; max-block-size: 46vh; }
   .wt-foot .wt-hint { display: none; }
+  /* the drawer's launch button takes its own row under the title on phones (the title keeps its width) */
+  .drawer-head:has(> .wt-launch) { flex-wrap: wrap; }
+  .drawer-head:has(> .wt-launch) > .drawer-titles { flex: 1 1 0; min-inline-size: 0; }
+  .drawer-head > .wt-launch { order: 3; flex-basis: 100%; justify-content: center; }
 }
 @media (forced-colors: active) { .wt-ring { box-shadow: none; outline: 3px solid Highlight; } .wt-bar-fill { background: Highlight; } }
 @media print { .wt-panel, .wt-ring { display: none !important; } }
