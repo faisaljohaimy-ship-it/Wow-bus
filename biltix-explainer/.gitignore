@@ -18,3 +18,5 @@ out/showcase-stills/
 # Film v2: AI media (b-roll, panorama, score, narration, UI recordings; ~120 MB, never committed) and review stills
 public/v2/
 out/film-stills/
+# Film v2: screencast frames of scripts/film-ui-capture.mjs (deleted after encoding unless --keep-frames)
+out/ui-frames/

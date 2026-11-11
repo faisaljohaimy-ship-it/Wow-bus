@@ -369,7 +369,7 @@ export const S18: React.FC<SceneProps> = ({ s }) => {
         </div>
         <div dir="rtl" lang="ar" style={{ fontFamily: FONT.ar, fontSize: 50, fontWeight: 500, color: 'rgba(255,255,255,0.9)', ...rise(f, 34, 22), opacity: t2 }}>{c.nameAr}</div>
         <div style={{ width: mix(0, 420, tg), height: 3, background: METAL, borderRadius: 2, marginTop: 8 }} />
-        <div style={{ fontSize: 42, fontWeight: 600, color: '#FFE2C2', ...rise(f, ch[1] ? ch[1].from - 2 : 60, 22) }}>{c.tagline}</div>
+        <div style={{ fontSize: rtl ? 42 : 36, fontWeight: 600, color: '#FFE2C2', textAlign: 'center', whiteSpace: 'nowrap', ...rise(f, ch[1] ? ch[1].from - 2 : 60, 22) }}>{c.tagline}</div>
         <div style={{ marginTop: 14, ...rise(f, s.vTo - 10, 20) }}>
           <LinkPill text={LINK} style={{ opacity: lk }} />
         </div>

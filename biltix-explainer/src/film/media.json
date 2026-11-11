@@ -15,25 +15,43 @@
  },
  "ui": {
   "ui-cockpit-ar": {
-   "dur": 9,
+   "dur": 9.067,
    "w": 1920,
    "h": 1080,
    "fps": 30
   },
   "ui-cockpit-en": {
-   "dur": 8.4,
+   "dur": 9,
+   "w": 1920,
+   "h": 1080,
+   "fps": 30
+  },
+  "ui-register-ar": {
+   "dur": 9.967,
    "w": 1920,
    "h": 1080,
    "fps": 30
   },
   "ui-register-en": {
-   "dur": 10.667,
+   "dur": 10.333,
+   "w": 1920,
+   "h": 1080,
+   "fps": 30
+  },
+  "ui-treatment-ar": {
+   "dur": 8.167,
    "w": 1920,
    "h": 1080,
    "fps": 30
   },
   "ui-treatment-en": {
-   "dur": 6.767,
+   "dur": 6.433,
+   "w": 1920,
+   "h": 1080,
+   "fps": 30
+  },
+  "ui-tasks-ar": {
+   "dur": 7.1,
    "w": 1920,
    "h": 1080,
    "fps": 30
@@ -44,8 +62,20 @@
    "h": 1080,
    "fps": 30
   },
+  "ui-schedule-ar": {
+   "dur": 7.967,
+   "w": 1920,
+   "h": 1080,
+   "fps": 30
+  },
   "ui-schedule-en": {
    "dur": 10.6,
+   "w": 1920,
+   "h": 1080,
+   "fps": 30
+  },
+  "ui-spatial-ar": {
+   "dur": 7.567,
    "w": 1920,
    "h": 1080,
    "fps": 30
@@ -56,10 +86,22 @@
    "h": 1080,
    "fps": 30
   },
+  "ui-integrations-ar": {
+   "dur": 7.933,
+   "w": 1920,
+   "h": 1080,
+   "fps": 30
+  },
   "ui-integrations-en": {
    "dur": 10.833,
    "w": 1920,
    "h": 1080,
+   "fps": 30
+  },
+  "ui-phone-ar": {
+   "dur": 7.167,
+   "w": 1170,
+   "h": 2532,
    "fps": 30
   },
   "ui-phone-en": {
