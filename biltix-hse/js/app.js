@@ -56,7 +56,7 @@ const CODE_TOKEN_RE = /\b[A-Z]{1,5}[-‑][A-Z0-9‑-]*\d[A-Z0-9‑-]*\b/g;
 const STANDALONE_DIGITS_RE = /(?<![A-Za-z0-9.])\d+(?:[.,]\d+)?(?![A-Za-z])/g;
 const ARABIC_RE = /[؀-ۿ]/;
 
-const APP_VERSION = '3.5.1';
+const APP_VERSION = '3.6.0';
 const RIYADH_TZ = 'Asia/Riyadh';
 const FEED_CAP = 200;
 const ALERT_CAP = 30;
