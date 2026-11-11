@@ -1,69 +1,77 @@
 #!/usr/bin/env node
 /**
  * Web exports for biltix-hse/assets/video:
- *   - explainer-<lang>-720p.mp4  H.264 High, yuv420p, +faststart, no audio, ≤ 3.3 MiB
- *     (CRF is raised step by step until the file fits the budget)
+ *   - explainer-<lang>-720p.mp4  H.264 High, yuv420p, +faststart; ≤ 3.3 MiB silent, or ≤ 3.7 MiB with
+ *     the AI narration track (CRF is raised step by step until the file fits the budget)
  *   - explainer-<lang>-poster.webp  1280×720 still of a representative frame, < 120 KB
- * Also remuxes the 1080p masters with +faststart (stream copy, no re-encode).
+ *   - explainer-<lang>.vtt  rewritten from the same cue list as the manifest
+ *   - ../biltix-hse/js/data/explainer-media.js  the app's media manifest (voice: null when silent)
+ * Also remuxes a freshly rendered (silent) 1080p master with +faststart (stream copy, no re-encode).
+ *
+ * Narration: when out/voice/<lang>.json exists (written by scripts/voice-mux.mjs), the same
+ * narration is muxed again onto the master with the same code (lib/media.mjs narrateLanguage), so
+ * a full rebuild (npm run build) keeps it. Without that record the language stays silent.
  *
  *   node scripts/export-web.mjs [--lang ar|en|both] [--poster-frame 420]
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, renameSync, statSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { copyFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { basename, resolve } from 'node:path';
 import { bundle } from '@remotion/bundler';
 import { renderStill, selectComposition } from '@remotion/renderer';
-import { browserExecutable, chromeMode, ffmpegBin, ffprobeBin } from './env.mjs';
+import { browserExecutable, chromeMode, ffprobeBin } from './env.mjs';
+import { encodeWeb, entryFromDisk, ff, layout, masterFile, narrateLanguage, readVoiceStore, requireBundledFfmpeg, silentSource, vttFile, WEB_BUDGET, WEB_SCALE, webFile, writeManifest } from './lib/media.mjs';
+import { ROOT, storyCues, vttText } from './lib/story.mjs';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const WEB = resolve(ROOT, '../biltix-hse/assets/video');
 const arg = (name, def) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > -1 ? process.argv[i + 1] : def;
 };
 const langs = arg('lang', 'both') === 'both' ? ['ar', 'en'] : [arg('lang')];
 const POSTER_FRAME = Number(arg('poster-frame', '420')); // risk analysis: portfolio dial, category dials, likelihood × impact matrix
-// 3.3 MiB (3.46 MB) keeps the recut (a moving camera on every frame) at about the size of the
-// larger of the earlier static cut's web files (3.1 and 3.4 MB).
-const MP4_BUDGET = 3.3 * 1024 * 1024;
 const POSTER_BUDGET = 120 * 1024;
 const kb = (f) => `${(statSync(f).size / 1024).toFixed(0)} KB`;
-const ff = (args) => execFileSync(ffmpegBin, ['-hide_banner', '-v', 'error', '-y', ...args], { stdio: 'inherit' });
+const L = layout();
+requireBundledFfmpeg();
 
 let serveUrl = null;
+const entries = {};
 for (const lang of langs) {
-  const master = resolve(ROOT, `out/biltix-explainer-${lang}-1080p.mp4`);
-  if (!existsSync(master)) throw new Error(`missing ${master} — run npm run render:${lang} first`);
+  const master = masterFile(L, lang);
+  const narration = readVoiceStore(L, lang);
+  const source = silentSource(lang);
 
-  // 1. faststart remux of the 1080p master (moov atom first, streams copied)
-  const tmp = `${master}.faststart.tmp`;
-  ff(['-i', master, '-map', '0:v:0', '-c', 'copy', '-movflags', '+faststart', '-f', 'mp4', tmp]);
-  renameSync(tmp, master);
-  console.log(`1080p ${lang}: ${master} (${kb(master)})`);
-
-  // 2. 720p web version within budget
-  const web = resolve(WEB, `explainer-${lang}-720p.mp4`);
-  for (let crf = 24; crf <= 34; crf += 1) {
-    ff([
-      '-i', master, '-map', '0:v:0', '-an',
-      '-vf', 'scale=1280:720:flags=lanczos',
-      '-c:v', 'libx264', '-preset', 'slow', '-crf', String(crf), '-tune', 'animation',
-      '-profile:v', 'high', '-level', '4.0', '-pix_fmt', 'yuv420p',
-      '-movflags', '+faststart', '-f', 'mp4', web,
-    ]);
-    if (statSync(web).size <= MP4_BUDGET) {
-      console.log(`720p  ${lang}: ${web} (${kb(web)}, crf ${crf})`);
-      break;
-    }
+  // 1. faststart remux of a fresh (silent) master (moov atom first, streams copied)
+  if (source === master) {
+    const tmp = `${master}.faststart.tmp`;
+    ff(['-i', master, '-map', '0:v:0', '-c', 'copy', '-movflags', '+faststart', '-f', 'mp4', tmp]);
+    renameSync(tmp, master);
+  } else if (!narration) {
+    // The master carries a narration whose record is gone: back to the silent original.
+    copyFileSync(source, master);
+    console.log(`1080p ${lang}: no out/voice/${lang}.json, master restored from ${basename(source)}`);
   }
-  const probe = execFileSync(ffprobeBin, ['-v', 'error', '-show_entries', 'stream=codec_name,codec_type,width,height,pix_fmt', '-of', 'csv=p=0', web]).toString().trim();
+
+  const web = webFile(L, lang);
+  if (narration) {
+    // 2a. narration: master with audio, 720p with audio, VTT (see voice-mux.mjs)
+    const { entry } = narrateLanguage({ lang, input: narration.input, voice: narration.voice, L, opts: narration.options || {}, log: (s) => console.log(s) });
+    entries[lang] = entry;
+  } else {
+    // 2b. silent: 720p web version within budget, VTT from the storyboard
+    console.log(`1080p ${lang}: ${master} (${kb(master)})`);
+    const { crf } = encodeWeb({ inputs: ['-i', master], filter: `[0:v:0]${WEB_SCALE}[v]`, out: web, budget: WEB_BUDGET.silent });
+    console.log(`720p  ${lang}: ${web} (${kb(web)}, crf ${crf})`);
+    writeFileSync(vttFile(L, lang), vttText(lang, storyCues(lang)));
+    entries[lang] = entryFromDisk(L, lang);
+  }
+  const probe = execFileSync(ffprobeBin, ['-v', 'error', '-show_entries', 'stream=codec_name,codec_type,width,height,pix_fmt,sample_rate,channels', '-of', 'csv=p=0', web]).toString().trim();
   console.log(`      streams: ${probe.replace(/\n/g, ' | ')}`);
 
   // 3. poster (WebP straight from the composition, 1280×720)
   serveUrl = serveUrl || (await bundle({ entryPoint: resolve(ROOT, 'src/index.ts') }));
   const composition = await selectComposition({ serveUrl, id: lang === 'ar' ? 'ExplainerAR' : 'ExplainerEN', browserExecutable, chromeMode });
-  const poster = resolve(WEB, `explainer-${lang}-poster.webp`);
+  const poster = resolve(L.web, `explainer-${lang}-poster.webp`);
   // Remotion's WebP stills have no quality knob: take Chrome's default encode, and only if it
   // is over budget re-encode a PNG still with Pillow at a decreasing quality.
   await renderStill({ serveUrl, composition, frame: POSTER_FRAME, output: poster, imageFormat: 'webp', scale: 2 / 3, browserExecutable, chromeMode, overwrite: true });
@@ -81,3 +89,7 @@ for (const lang of langs) {
   }
   console.log(`poster ${lang}: ${poster} (${kb(poster)})`);
 }
+
+// 4. the app's media manifest (languages not exported this run are read back from disk)
+const written = writeManifest(L, entries);
+console.log(`manifest: ${L.manifest} (${Object.entries(written).map(([l, e]) => `${l} ${e.duration} s, voice ${e.voice ? e.voice.name : 'none'}`).join(' · ')})`);

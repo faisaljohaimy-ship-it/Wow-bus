@@ -1,13 +1,15 @@
 # BILTIX Risk AI — product explainer (Remotion)
 
-A 41.5-second, silent, captioned explainer of the BILTIX Risk AI workflow, rendered in
-Arabic (RTL) and English from the app's own demo dataset:
+A 41.5-second, captioned explainer of the BILTIX Risk AI workflow, rendered (silent) in
+Arabic (RTL) and English from the app's own demo dataset, with an optional AI-generated
+voice-over muxed on afterwards (see "7. AI narration"):
 
 **Data source → Validation → Risk analysis → Explanation → Human approval → Mitigation → Verified closure**
 
 This is an isolated rendering project. The app in `../biltix-hse` stays a static site with
 plain ES modules: no React and no build step are added to it. The only files this project
-writes into the app are the web exports in `../biltix-hse/assets/video/`.
+writes into the app are the web exports in `../biltix-hse/assets/video/` and their media
+manifest, `../biltix-hse/js/data/explainer-media.js`.
 
 > ## ⚠️ Licence note: Remotion is not free for every company
 >
@@ -242,10 +244,17 @@ npm run export:web       # → ../biltix-hse/assets/video/explainer-{ar,en}-720p
 
 - `write-captions.mjs` uses the same `captionCues()` and caption copy as the compositions. It
   rejects any cue over 9 words or shorter than 1.6 s (the shortest cue is 1.9 s).
-- `export-web.mjs` remuxes the masters with `+faststart`, encodes 1280×720 H.264 (High@4.0,
-  yuv420p, faststart, no audio track), raising the CRF from 24 until each file is ≤ 3.3 MiB (about the
-  size of the larger of the earlier static cut's web files, 3.4 MB), and renders a
-  1280×720 WebP poster (frame 420: the portfolio dial, category dials and matrix), < 120 KB.
+- `export-web.mjs` remuxes a freshly rendered master with `+faststart`, encodes 1280×720 H.264
+  (High@4.0, yuv420p, faststart), raising the CRF from 24 until each file is ≤ 3.3 MiB (about the
+  size of the larger of the earlier static cut's web files, 3.4 MB), renders a
+  1280×720 WebP poster (frame 420: the portfolio dial, category dials and matrix), < 120 KB, and
+  writes the app's media manifest `../biltix-hse/js/data/explainer-media.js` (per language: the
+  files, size, duration, `voice` and the ten cues). When a narration record exists
+  (`out/voice/<lang>.json`, written by `npm run voice`), it muxes that narration again with the
+  same code instead of the silent 720p encode (≤ 3.7 MiB with the audio track), so a full
+  rebuild keeps the voice; without it the language is exported silent and `voice` is `null`.
+- `scripts/lib/story.mjs` builds the cue list, the VTT text and the manifest for all three
+  scripts, so the VTT files, the manifest and the narration placement never disagree.
 
 One command for everything: `npm run build` (extract → captions → render → export:web).
 
@@ -271,6 +280,146 @@ when the frame lies between its neighbours (a dissolve, or an edge sliding acros
 boundary) or when the tile keeps its detail while its neighbours also differ (the rolling record
 counter). It also checks that the inside of the Demo-data pill is on every frame. Run it after
 every render: the drop-outs it guards against were intermittent.
+
+## 7. AI narration
+
+The explainer can carry an **AI-generated voice-over**, muxed onto the rendered videos without
+re-rendering or retiming a single frame. Without it the videos stay silent and captioned.
+
+### Honesty
+
+- **The voice is synthetic.** It is text-to-speech from **ElevenLabs** (model
+  `eleven_multilingual_v2`), using two voices from ElevenLabs' voice library: Arabic
+  "Saadoun Professional Voice" (a Saudi narrator voice) and English "Ryan - American Documentary
+  Narrator". It is not a recording of anyone at BILTIX.
+- **It says only what the captions say.** The narration script is the ten captions of
+  `src/storyboard.ts`, in order and word for word; only `{sources}` (13) is read as a word. So the
+  captions' honesty rules (demo data, demo feeds that are not connected, a simulated camera, a
+  human reviewer deciding) hold for the voice too, and the burned-in captions stay a full
+  transcript.
+- **It is labelled.** The app's media manifest (`../biltix-hse/js/data/explainer-media.js`) gives
+  each language `voice: { name, provider, model }`, or `null` when that language is silent, so
+  the app can say "AI-generated voice (ElevenLabs)". `voice-mux.mjs` has no default labels: the
+  voice name, provider and model must be given on the command line.
+- Before publishing, check that the ElevenLabs plan the files were generated on allows commercial
+  use of the audio.
+
+### Narration script
+
+Generate **one file per language** with the lines below in order, separated by
+`<break time="1.2s"/>` (no other long pauses). MP3 or WAV; any sample rate.
+
+| # | Scene | Arabic (spoken) | English (spoken) |
+|---|---|---|---|
+| 1 | intro | من البيانات الخام إلى إغلاق موثّق | From raw data to verified closure |
+| 2 | source | ثلاثةَ عشرَ مصدراً للبيانات في مسار استيعاب واحد | Thirteen data sources flow into one pipeline |
+| 3 | validate | كل سجل يُتحقَّق منه قبل التحليل | Every record is validated before analysis |
+| 4 | analyze | الذكاء الاصطناعي يقيّم المخاطر عبر خمس فئات | AI scores risk across five categories |
+| 5 | explain | كل درجة مدعومة بتفسير ودليل من المصدر | Every score is explained, with source evidence |
+| 6 | sitecam | كاميرا موقع محاكاة تربط الدليل بمكانه | A simulated site camera ties evidence to place |
+| 7 | approve | القرار للمراجع البشري، لا للنموذج | A human reviewer makes the call |
+| 8 | mitigate | التوصية المعتمدة تصبح مهمة معالجة متتبَّعة | Approved actions become tracked mitigation tasks |
+| 9 | close | سجل تدقيق كامل حتى الإغلاق الموثّق | A full audit trail to verified closure |
+| 10 | outro | قرارات مدعومة بالدليل، بإشراف بشري | Evidence-backed decisions, with humans in control |
+
+`scripts/lib/story.mjs` (`narrationScript`) builds this table from the storyboard; if the
+captions or the source count change, regenerate the audio.
+
+### Run it
+
+```bash
+# report only: split, letter-share check, placement table, loudness, placement check; writes nothing
+npm run voice -- --ar /path/to/narration-ar.mp3 --en /path/to/narration-en.mp3 \
+  --ar-voice "Saadoun" --en-voice "Ryan" --provider ElevenLabs --model eleven_multilingual_v2 --dry-run
+
+# the same without --dry-run writes the files below (one language at a time works too)
+npm run voice -- --ar /path/to/narration-ar.mp3 --en /path/to/narration-en.mp3 \
+  --ar-voice "Saadoun" --en-voice "Ryan" --provider ElevenLabs --model eleven_multilingual_v2
+```
+
+| Written | What |
+|---|---|
+| `out/biltix-explainer-<lang>-1080p.mp4` | master with the narration; video stream copied (re-encoded with the render settings, CRF 20, only when the tail is extended) |
+| `out/biltix-explainer-<lang>-1080p-silent.mp4` | the silent original, kept next to it (never in the web assets) |
+| `out/voice/<lang>.json`, `out/voice/<lang>.mp3` | the narration file and its labels, so a rebuild can mux it again; `out/voice/report-<lang>.txt` is the run's report |
+| `../biltix-hse/assets/video/explainer-<lang>-720p.mp4` | web file with the narration: the same 720p encode as before, CRF raised from 24 until the file with audio is ≤ 3.7 MiB |
+| `../biltix-hse/assets/video/explainer-<lang>.vtt` | cues unchanged, unless the tail was extended and the last line speaks past the last cue (its end then moves to the line's end + 0.1 s) |
+| `../biltix-hse/js/data/explainer-media.js` | manifest: per language the files, 1280×720, the real duration, `voice`, the ten cues (`id`, `start`, `end`, `step`, `text`) |
+
+`--out-dir <dir>` writes the same tree under `<dir>` instead (the silent masters are still read
+from `out/`). Tuning, if a real file needs it: `--min-pause` (0.6 s), `--silence-db` (−45),
+`--share-tolerance` (1.6), `--web-crf` (first CRF tried, 24), `--keep-temp`.
+
+### What it does
+
+1. **Lines.** Decodes the file to 48 kHz mono, finds every silence of ≥ 0.2 s under −45 dBFS
+   (ffmpeg `silencedetect`) and splits at the **9 longest pauses of ≥ 0.6 s** (lead and trail
+   silence excluded). Fewer than 9 → it stops and lists the longest silences it found. Each line's
+   length is then checked against its share of the script by letter count (harakat not counted,
+   13 counted as spoken): a line outside ×/÷ 1.6 of its share stops the run with the lines named
+   (a missed break or a comma pause taken for one shows up as one line too long and one too short).
+2. **Placement** in the line's scene window, from the cue list of `captionCues()`:
+   - preferred start = the cue start, never within 0.15 s of the previous line's end;
+   - each line ends ≥ 0.12 s before the next cue starts (the last line: ≥ 0.4 s before the video ends);
+   - too long → it starts earlier, as late as fits, but not before scene start − the 0.5 s dissolve
+     (scene start after the hard cut into the site camera) and not within 0.15 s of the previous line;
+   - still too long → it starts there and is sped up with `atempo` (≤ 1.08);
+   - the last line still too long → the video's tail is extended by holding its last frame for
+     (line end − video end) + 0.4 s, in whole frames; the masters are re-encoded only then.
+   Every adjustment is listed in the report's placement table. Scenes are never retimed: a middle
+   line that cannot fit even at 1.08 stops the run (regenerate that line a little faster).
+3. **Edges.** Each line keeps 40 ms before its onset and 80 ms after its end, with raised-cosine
+   fades (20 ms in, 30 ms out); between lines the track is digital silence.
+4. **Loudness**, two-pass `loudnorm`: pass 1 measures; if a plain gain to **−16 LUFS** would take
+   the true peak above −2.0 dBTP (the −1.5 dBTP limit minus 0.5 dB of headroom for the AAC
+   encode), a look-ahead true-peak limiter (4× oversampled peaks, 5 ms look-ahead, 80 ms
+   release) trims only those peaks first; pass 2 applies the gain in linear mode. The track is
+   AAC-LC, 48 kHz, mono, 128 kb/s. The decoded AAC is measured again: it must read −16 ±0.5 LUFS
+   and ≤ −1.5 dBTP (if the codec overshoots, the ceiling is lowered and the pass repeated).
+5. **Self-checks** before anything is written: in the decoded track, every line's onset and end
+   within 0.15 s of the plan (and lines kept at their cue within 0.15 s of the cue). After writing:
+   both files have a 48 kHz AAC track as long as the video (±0.05 s) and the expected frame count.
+
+Only the ffmpeg/ffprobe bundled with Remotion (`@remotion/compositor-*`, via `scripts/env.mjs`)
+are used; that build has no `afade`, `tpad` or `ebur128`, so the fades and the limiter are done
+in JavaScript (`scripts/lib/narration.mjs`), the held tail frame is the exact last frame looped
+(`concat`), and loudness is read from `loudnorm`'s own measurement.
+
+### Rebuilds and going back to silent
+
+`npm run export:web` (and so `npm run build`) re-applies a recorded narration with the same code:
+after a re-render the new master is silent, becomes the `-silent.mp4`, and the narration is
+muxed onto it again; the manifest is rewritten either way. To remove a language's voice, delete
+`out/voice/<lang>.json` and run `npm run export:web -- --lang <lang>`: the master is restored from
+its `-silent.mp4`, the web file is encoded silent (≤ 3.3 MiB), the VTT is rewritten from the
+storyboard and the manifest says `voice: null`.
+
+### Proof with a synthetic narration (2026-11-11, before the real files arrived)
+
+The pipeline was run end to end on **synthetic test signals**, not on the real voices:
+`tests/synth-narration.mjs` writes speech-like bursts (voiced harmonics with syllable envelopes,
+1.6–3.4 s per line, a 0.25 s comma gap inside lines 2 and 5, 1.2 s pauses, 0.3 s lead and trail,
+a −70 dBFS noise floor) as 44.1 kHz mono MP3, like the provider's files. Arabic line 1 was made
+long enough to need an earlier start, English line 6 to need `atempo`, English line 10 to need the
+tail rule. Results (`--out-dir` in the build sandbox; nothing in the repository was touched):
+
+| | Arabic (synthetic) | English (synthetic) |
+|---|---|---|
+| Adjustments | intro −0.339 s earlier; source +0.030 s (0.15 s after intro); outro −0.208 s earlier | sitecam −0.267 s earlier + atempo 1.0407; approve +0.030 s; outro −0.833 s earlier + atempo 1.08 (cap) + tail +5 frames (0.167 s) → 41.667 s, last cue end 41.300 → 41.338 s |
+| Placement in the written web file (system ffmpeg `silencedetect`) | worst 0.005 s from plan; the 7 lines at their cue: 0.000 s | worst 0.008 s from plan; the 7 lines at their cue: 0.000 s |
+| Loudness (system ffmpeg 6.1 `ebur128`, both files) | −16.0 LUFS, true peak −1.9 dBTP | −16.0 LUFS, true peak −1.8 dBTP |
+| 1080p master | 11,739,740 B, video stream-copied, 41.500 s | 12,245,775 B, re-encoded CRF 20, 1,250 frames; first 1,245 frames vs the silent master PSNR Y 49.7 dB (min 45.8), held frames vs the last frame 53.6 dB |
+| 720p web file | 3,599,094 B (CRF 26) | 3,827,381 B (CRF 26; budget 3,879,731 B) |
+
+The run (both languages, including the 720p CRF steps and the English 1080p re-encode) took 3 min 17 s on the shared 4-core sandbox (load average 9 to 11). In a copy of the tree,
+`npm run export:web` then re-applied both recorded narrations (Arabic from a silent master, as
+after a re-render; English from its `-silent.mp4`) and wrote masters, web files, VTT and manifest
+byte-identical to `voice-mux.mjs`'s; with `out/voice/en.json` removed, `export:web -- --lang en`
+restored the silent master and reproduced the committed silent web file and poster byte for byte,
+with `voice: null` for English in the manifest. Unit tests:
+`npm test` (23 tests: silence parsing, speech bounds, splitting and the wrong-pause-count error, letter shares,
+placement incl. earlier start, the 0.15 s and dissolve floors, atempo and its cap, the tail rule,
+fades, the limiter, WAV, the VTT round trip and the manifest shape).
 
 ## Last build
 
@@ -305,7 +454,8 @@ the chip (intro 0–65 and the full-frame camera feed 645–680).
 
 The cockpit's "How the platform works" dialog (`biltix-hse/js/views/cockpit.js`,
 `openExplainer`) embeds these files: poster, `preload="none"`, playback only on the viewer's
-click, the version in the page language with a switch to the other one, no audio track, and
+click, the version in the page language with a switch to the other one, no audio track (until a
+narration is muxed, see "7. AI narration"; the manifest says which language has a voice), and
 focus back on the "How the platform works" button when the dialog closes. The captions are burned
 into the picture, so the WebVTT file is attached as a `captions` track in the page language that
 is **off by default** (no `default` attribute): a native cue drawn on top would only cover the
@@ -326,7 +476,13 @@ browser cannot seek an MP4 it serves (every seek lands on 0:00). Use a server wi
 remotion.config.ts        CLI config (browser, codec, CRF, pixel format)
 scripts/extract-data.mjs  dataset → src/data.json
 scripts/write-captions.mjs  storyboard → WebVTT
-scripts/export-web.mjs    720p web encodes + WebP posters + faststart remux
+scripts/export-web.mjs    720p web encodes + WebP posters + faststart remux + media manifest (re-applies a recorded narration)
+scripts/voice-mux.mjs     AI narration → split, placed per scene window, loudness-normalised, muxed (npm run voice)
+scripts/lib/narration.mjs pure helpers: silences → lines, letter-share check, placement, fades, true-peak limiter, WAV
+scripts/lib/story.mjs     storyboard → cue list, narration script, VTT text, manifest text
+scripts/lib/media.mjs     ffmpeg side: layout, silent original, web encode, narration mux, manifest writer
+tests/narration.test.mjs  unit tests (npm test)
+tests/synth-narration.mjs synthetic narration test signal for end-to-end runs
 scripts/contact-sheet.mjs review stills (scripts/sheet.py tiles them)
 scripts/env.mjs           browser + bundled ffmpeg discovery for the Node scripts
 scripts/check-framing.mjs every card's key text through every frame of the camera paths (npm run check:framing)
