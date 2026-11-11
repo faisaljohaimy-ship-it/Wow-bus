@@ -93,21 +93,37 @@ function registerEnums(dict) {
 }
 
 async function loadOptionalModules() {
-  const [c, r, a, l, s, p, pl, en] = await Promise.all([
+  const [c, r, a, s, p, en] = await Promise.all([
     optionalModule('./ui/charts.js', (m) => m.charts || m.default),
     optionalModule('./ui/radar.js', (m) => m),
     optionalModule('./ui/art.js', (m) => m.art || m.default),
-    optionalModule('./data/live.js', (m) => m.live || m.default),
     optionalModule('./data/sources.js', (m) => m.sources || m.default),
     optionalModule('./core/platform-selectors.js', (m) => m.psel || m.default),
-    optionalModule('./data/platform-live.js', (m) => m.platformLive || m.default),
     optionalModule('./i18n/enums.js', (m) => m.default || m.enums),
   ]);
-  charts = c || {}; radar = r || {}; art = a || {}; live = l; sources = s; psel = p; platformLive = pl;
+  charts = c || {}; radar = r || {}; art = a || {}; sources = s; psel = p;
   registerEnums(en);
-  if (missingModules.length) {
-    console.warn(`[BILTIX Risk AI] ${missingModules.length} ${t('core.errors.modulesMissing')}:\n  • ${missingModules.join('\n  • ')}`);
-  }
+  warnMissingModules();
+}
+
+/**
+ * The live engines (js/data/live.js, js/data/platform-live.js: ~190 KB) are not needed to draw the first view:
+ * they load after it, then start (no view reads ctx.live / ctx.platformLive while rendering).
+ */
+async function loadLiveModules() {
+  const [l, pl] = await Promise.all([
+    optionalModule('./data/live.js', (m) => m.live || m.default),
+    optionalModule('./data/platform-live.js', (m) => m.platformLive || m.default),
+  ]);
+  live = l; platformLive = pl;
+  warnMissingModules();
+}
+
+let warnedMissing = 0;
+function warnMissingModules() {
+  if (missingModules.length <= warnedMissing) return;
+  warnedMissing = missingModules.length;
+  console.warn(`[BILTIX Risk AI] ${missingModules.length} ${t('core.errors.modulesMissing')}:\n  • ${missingModules.join('\n  • ')}`);
 }
 
 /* Rating helpers: psel is the single definition of the rating; labels come from the dictionaries. */
@@ -2622,7 +2638,8 @@ async function boot() {
     document.title = `${t('core.app.name')} — ${t('core.app.full')}`;
   }
 
-  await yieldToMain();
+  await loadLiveModules();
+  router.setContext(buildContext());   // later mounts see the engines in ctx as before
   if (live && typeof live.start === 'function') {
     try { live.start({ store, bus }); } catch (err) { reportError(err, 'live.start'); }
   }
