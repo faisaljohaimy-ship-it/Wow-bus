@@ -8,16 +8,20 @@
  *      scale bar and title block. The drawing never mirrors in Arabic; only UI chrome follows direction.
  *      Zone codes, badges and names are placed so they cover no camera, building outline or plant
  *      (SP.layoutZoneLabels); a long name wraps or shortens on the plan and stays whole in the accessible
- *      name and the table. Selecting a zone frames it (one viewBox tween per user action; none under reduced
- *      motion). Nothing on the plan animates continuously.
+ *      name and the table. Selecting a zone frames it: one transform tween of the site drawing (.sp-world) per user
+ *      action (none under reduced motion) into FRAME_PORT, whose margins keep the north arrow, scale bar and title
+ *      block whole; on small plans the framed zone's name is drawn at ≥ 12.5 px. Print always shows the whole site
+ *      (css + beforeprint / afterprint / matchMedia('print')). Nothing on the plan animates continuously.
  *   C. Zone panel (ZONE) — what is linked to the selected zone, from the shared selectors via zoneLinks():
  *      HSE risks, sensors, cameras, open permits, incidents and inspections of the period, each a deep link.
  *      The panel is NOT a live region: one sr-only polite region says a short summary only when the user
  *      selects a zone or opens a camera. Live data that arrives while focus is inside the panel marks it
- *      dirty (counts are patched in place) and the panel re-renders when focus leaves it.
+ *      dirty (counts are patched in place) and the panel re-renders when focus leaves it — not while a dialog opened
+ *      from the panel is open; focus is kept by stable keys (data-key) across re-renders.
  *   D. Cameras (CAM-01) — the site's simulated cameras; each opens the viewer (components.modal) with a
  *      procedural feed (js/ui/camfeed.js) that renders only while the viewer is open and on screen; the
- *      picture opens with a short lens-iris reveal (off under reduced motion and with the Static background).
+ *      picture opens with a short lens-iris reveal on its first real frame (off under reduced motion and with the
+ *      Static background); a slow start shows "Starting the simulated feed…" instead of an empty picture.
  *   E. Zones and links (LIST) — the text alternative of the plan (same numbers, same selection); a table at
  *      every width, stacked into labelled cards on narrow containers.
  *
@@ -42,7 +46,13 @@ const COMPASS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 const TONE_RANK = { critical: 0, serious: 1, warning: 2, good: 3 };
 const PPE_WINDOW_MS = 12 * 3_600_000;
 const FULL_VIEW = Object.freeze({ x: 0, y: 0, w: SP.PLAN.width, h: SP.PLAN.height });
-const FRAME_MIN_W = 470;          // closest framing: about 2.1× the whole-site view
+// Framing draws the zone into this part of the drawing; the right and bottom margins stay a sheet border that
+// keeps the north arrow, the scale bar and the title block clear of the framed picture (never cut, never covering).
+const FRAME_PORT = Object.freeze({ x: 0, y: 0, w: 908, h: 588 });
+const FRAME_MIN_W = 430;          // closest framing: about 2.1× the whole-site view
+const FOCUS_NAME_PX = 12.5;       // a framed zone's name on a small plan is drawn at least this size (CSS px)
+const NARROW_PLAN_PX = 620;       // the container query of css/platform.css (Spatial › narrow plans)
+const FEED_WAIT_MS = 2000;        // no first frame yet after this: the viewer says the simulated feed is starting
 
 /** Sets an attribute only when it changes (live repaints stay free of style invalidations). */
 function setAttr(el, name, value) {
@@ -173,6 +183,7 @@ export default {
     let pendingCamera = params.camera && SP.cameraById(params.camera) && SP.cameraById(params.camera).siteId === siteId ? params.camera : null;
     if (pendingCamera && !zoneId) zoneId = SP.cameraById(pendingCamera).zoneId;
     let openCameraId = null;
+    let panelHold = null;       // { key } while a dialog opened from a zone-panel control is open
 
     function hashFor(extra = {}) {
       return router.href(VIEW_ID, SP.spatialParams({ site: siteId, zone: zoneId, camera: openCameraId, risk: highlightRisk, ...extra }));
@@ -192,8 +203,10 @@ export default {
     let destroyed = false;
     let refreshRaf = 0;
     let viewer = null;          // { api, feed, cam, ppeHost, events, stillBadge, caption }
-    let view = { ...FULL_VIEW }; // current plan viewBox
+    let view = { ...FULL_VIEW }; // part of the site drawing in view (plan units)
+    let port = { ...FULL_VIEW }; // where it is drawn: the whole drawing, or FRAME_PORT while a zone is framed
     let viewRaf = 0;            // framing tween (runs only while moving)
+    let tweenTo = null;         // { view, port } of the running tween
     let planRO = null;          // ResizeObserver for the touch-size hit areas
 
     /* ═════════════ A. head ═════════════ */
@@ -248,24 +261,31 @@ export default {
       const svg = s('svg', { class: 'sp-svg', viewBox: `0 0 ${SP.PLAN.width} ${SP.PLAN.height}`, role: 'group', 'aria-labelledby': titleId, 'aria-describedby': descId, focusable: 'false', direction: 'ltr' });
       svg.appendChild(s('title', { id: titleId, text: t('spatial.plan.aria', { site: siteName(site) }) }));
       svg.appendChild(s('desc', { id: descId, text: t('spatial.plan.desc', { zones: tn('spatial.n.zones', zonesOf(site).length, { count: fmt.num(zonesOf(site).length) }), cameras: tn('spatial.n.cameras', SP.camerasFor(siteId).length, { count: fmt.num(SP.camerasFor(siteId).length) }) }) }));
-      const hatch = `${uid}-hatch`; const dots = `${uid}-dots`; const clip = `${uid}-clip`;
+      const hatch = `${uid}-hatch`; const dots = `${uid}-dots`; const clip = `${uid}-clip`; const portClip = `${uid}-port`;
+      const portRect = s('rect', { x: 0, y: 0, width: SP.PLAN.width, height: SP.PLAN.height });
       svg.appendChild(s('defs', {},
         s('clipPath', { id: clip }, s('rect', { x: inner.x - 18, y: inner.y - 18, width: inner.w + 36, height: inner.h + 30 })),
+        s('clipPath', { id: portClip }, portRect),
         s('pattern', { id: hatch, width: 8, height: 8, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, s('line', { x1: 0, y1: 0, x2: 0, y2: 8, class: 'sp-hatch-line' })),
         s('pattern', { id: dots, width: 10, height: 10, patternUnits: 'userSpaceOnUse' }, s('circle', { cx: 2, cy: 2, r: 0.9, class: 'sp-dot' }))));
+      // The site drawing lives in one group ("world"): framing a zone sets its transform (the viewBox never
+      // changes), so the sheet furniture drawn after it stays put and print can always reset it (css: Spatial › print).
+      const world = s('g', { class: 'sp-world' });
+      const viewport = s('g', { class: 'sp-viewport' }, world);
+      svg.appendChild(viewport);
       // paper + engineering grid
       const paper = s('g', { class: 'sp-paper', 'aria-hidden': 'true' });
       paper.appendChild(s('rect', { x: 0, y: 0, width: SP.PLAN.width, height: SP.PLAN.height, class: 'sp-paper-bg' }));
       for (let x = 0; x <= SP.PLAN.width; x += 25) paper.appendChild(s('line', { x1: x, y1: 0, x2: x, y2: SP.PLAN.height, class: x % 100 === 0 ? 'sp-grid-major' : 'sp-grid-minor' }));
       for (let y = 0; y <= SP.PLAN.height; y += 25) paper.appendChild(s('line', { x1: 0, y1: y, x2: SP.PLAN.width, y2: y, class: y % 100 === 0 ? 'sp-grid-major' : 'sp-grid-minor' }));
-      svg.appendChild(paper);
+      world.appendChild(paper);
       // public road outside the boundary (bottom)
       const ctxG = s('g', { class: 'sp-context', 'aria-hidden': 'true' });
       const roadY = inner.y + inner.h + 14;
       ctxG.appendChild(s('rect', { x: 0, y: roadY, width: SP.PLAN.width, height: 26, class: 'sp-public-road' }));
       ctxG.appendChild(s('line', { x1: 0, y1: roadY + 13, x2: SP.PLAN.width, y2: roadY + 13, class: 'sp-road-center' }));
       ctxG.appendChild(s('text', { x: inner.x + inner.w / 2, y: roadY + 17.5, class: 'sp-ctx-label', 'text-anchor': 'middle', text: t('spatial.plan.publicRoad') }));
-      svg.appendChild(ctxG);
+      world.appendChild(ctxG);
 
       // zones (interactive shapes)
       const zoneG = s('g', { class: 'sp-zones' });
@@ -276,9 +296,9 @@ export default {
         zoneG.appendChild(g);
         zoneEls.set(z.id, g);
       });
-      svg.appendChild(zoneG);
+      world.appendChild(zoneG);
       // boundary (hoarding)
-      svg.appendChild(s('rect', { x: inner.x, y: inner.y, width: inner.w, height: inner.h, class: 'sp-boundary', 'aria-hidden': 'true' }));
+      world.appendChild(s('rect', { x: inner.x, y: inner.y, width: inner.w, height: inner.h, class: 'sp-boundary', 'aria-hidden': 'true' }));
 
       // features (decorative, never intercept the pointer)
       const feat = s('g', { class: 'sp-features', 'aria-hidden': 'true', 'clip-path': `url(#${clip})` });
@@ -363,7 +383,7 @@ export default {
         const p = SP.markerPoint(z, sn.id, i);
         feat.appendChild(s('rect', { x: X(p.x) - 5, y: Y(p.y) - 5, width: 10, height: 10, transform: `rotate(45 ${X(p.x)} ${Y(p.y)})`, class: 'sp-sensor' }));
       });
-      svg.appendChild(feat);
+      world.appendChild(feat);
 
       // zone labels + risk badges (not interactive; the zone button carries the accessible name). Placement is
       // computed by SP.layoutZoneLabels so codes, badges and names cover no camera, outline or plant.
@@ -380,11 +400,16 @@ export default {
       labelG.appendChild(textG);
       badgeEls.forEach((b) => labelG.appendChild(b.g));
       const nameEls = new Map();
+      // the selected zone's name while it is framed on a small plan, drawn at ≥ FOCUS_NAME_PX (paintFocusName)
+      const focusName = s('text', { class: 'sp-zone-name sp-focus-name is-selected', 'text-anchor': 'middle' });
+      let lay = new Map(); let obsNarrow = []; let layoutSeq = 0;
       function layoutLabels() {
         const sensors = arr(state().sensors);
         const names = zonesOf(site).map((z) => zoneName(site, z.id));
         const opts = { sensors, measure: measureText, isEn: isEn() };
-        const lay = SP.layoutZoneLabels(site, names, { obstacles: SP.planObstacles(siteId, site, opts), obstaclesNarrow: SP.planObstacles(siteId, site, { ...opts, narrow: true }), measure: measureText });
+        obsNarrow = SP.planObstacles(siteId, site, { ...opts, narrow: true });
+        lay = SP.layoutZoneLabels(site, names, { obstacles: SP.planObstacles(siteId, site, opts), obstaclesNarrow: obsNarrow, measure: measureText });
+        layoutSeq += 1;
         textG.replaceChildren();
         nameEls.clear();
         zonesOf(site).forEach((z) => {
@@ -406,7 +431,8 @@ export default {
         });
       }
       layoutLabels();
-      svg.appendChild(labelG);
+      labelG.appendChild(focusName);
+      world.appendChild(labelG);
 
       // cameras (interactive): view cone (decorative, no pointer), hit area (resized for touch, split between
       // close neighbours), glyph (scaled up on narrow plans) and code label
@@ -439,11 +465,19 @@ export default {
         camG.appendChild(g);
         camEls.set(cam.id, g);
       });
-      svg.appendChild(camG);
+      world.appendChild(camG);
 
-      // north arrow + scale bar + title block (fixed drawing furniture, never mirrored)
+      // sheet border shown while a zone is framed: the right and bottom margins outside FRAME_PORT
+      const px1 = FRAME_PORT.x + FRAME_PORT.w; const py1 = FRAME_PORT.y + FRAME_PORT.h;
+      const W0 = SP.PLAN.width; const H0 = SP.PLAN.height;
+      svg.appendChild(s('g', { class: 'sp-sheet', 'aria-hidden': 'true' },
+        s('path', { class: 'sp-sheet-band', d: `M${px1} 0 H${W0} V${H0} H0 V${py1} H${px1} Z` }),
+        s('path', { class: 'sp-sheet-edge', d: `M${px1} 0 V${py1} H0` })));
+
+      // north arrow + scale bar + title block (fixed drawing furniture, never mirrored, never framed). The north
+      // arrow sits low enough in the end margin that the "Show whole site" button above it never covers it.
       const furn = s('g', { class: 'sp-furniture', 'aria-hidden': 'true' });
-      const nx = 948; const ny = 92;
+      const nx = 948; const ny = 126;
       const north = s('g', { transform: `translate(${nx} ${ny}) rotate(${plan.trueNorthDeg || 0})` });
       north.appendChild(s('circle', { r: 30, class: 'sp-north-ring' }));
       north.appendChild(s('path', { d: 'M0 -26 L9 8 L0 2 L-9 8 Z', class: 'sp-north-arrow' }));
@@ -451,18 +485,44 @@ export default {
       north.appendChild(s('text', { y: -36, 'text-anchor': 'middle', class: 'sp-north-label', text: t('spatial.plan.north') }));
       furn.appendChild(north);
       furn.appendChild(s('text', { x: nx, y: ny + 52, 'text-anchor': 'middle', class: 'sp-furn-small', text: t('spatial.plan.trueNorth') }));
-      // scale bar: a round length near 18 % of the site width
+      // scale bars: a round length near 18 % of the site width. The whole-site bar is static (and the one print
+      // shows); the framing bar follows the framing scale (one honest bar on screen at a time, css: is-zoomed).
       const metresPerUnit = (plan.widthM || 200) / inner.w;
-      const target = (plan.widthM || 200) * 0.18;
-      const pow = 10 ** Math.floor(Math.log10(target));
-      const nice = [1, 2, 5, 10].map((k) => k * pow).reduce((best, v) => (Math.abs(v - target) < Math.abs(best - target) ? v : best), pow);
-      const barW = nice / metresPerUnit;
       const sx = inner.x; const sy = SP.PLAN.height - 30;
-      for (let i = 0; i < 4; i += 1) furn.appendChild(s('rect', { x: r1(sx + (i * barW) / 4), y: sy, width: r1(barW / 4), height: 8, class: i % 2 ? 'sp-scale-light' : 'sp-scale-dark' }));
-      furn.appendChild(s('rect', { x: sx, y: sy, width: r1(barW), height: 8, class: 'sp-scale-frame' }));
-      furn.appendChild(s('text', { x: sx, y: sy - 6, class: 'sp-furn-small', text: fmt.num(0) }));
-      furn.appendChild(s('text', { x: r1(sx + barW / 2), y: sy - 6, 'text-anchor': 'middle', class: 'sp-furn-small', text: fmt.num(nice / 2) }));
-      furn.appendChild(s('text', { x: r1(sx + barW), y: sy - 6, 'text-anchor': 'middle', class: 'sp-furn-small', text: metres(nice) }));
+      const scaleBar = (cls) => {
+        const g = s('g', { class: ['sp-scale', cls] });
+        const segs = [0, 1, 2, 3].map((i) => g.appendChild(s('rect', { y: sy, height: 8, class: i % 2 ? 'sp-scale-light' : 'sp-scale-dark' })));
+        const frame = g.appendChild(s('rect', { x: sx, y: sy, height: 8, class: 'sp-scale-frame' }));
+        g.appendChild(s('text', { x: sx, y: sy - 6, class: 'sp-furn-small', text: fmt.num(0) }));
+        const tHalf = g.appendChild(s('text', { y: sy - 6, 'text-anchor': 'middle', class: 'sp-furn-small' }));
+        const tEnd = g.appendChild(s('text', { y: sy - 6, 'text-anchor': 'middle', class: 'sp-furn-small' }));
+        let last = '';
+        const update = (k = 1) => {
+          const target = ((plan.widthM || 200) * 0.18) / k;
+          const pow = 10 ** Math.floor(Math.log10(target));
+          const nice = [1, 2, 5, 10].map((m) => m * pow).reduce((best, v) => (Math.abs(v - target) < Math.abs(best - target) ? v : best), pow);
+          const barW = r1((nice * k) / metresPerUnit);
+          const key = `${nice}|${barW}`;
+          if (key === last) return;
+          const niceChanged = !last.startsWith(`${nice}|`);
+          last = key;
+          segs.forEach((r, i) => { setAttr(r, 'x', r1(sx + (i * barW) / 4)); setAttr(r, 'width', r1(barW / 4)); });
+          setAttr(frame, 'width', barW);
+          setAttr(tHalf, 'x', r1(sx + barW / 2));
+          setAttr(tEnd, 'x', r1(sx + barW));
+          if (niceChanged) {
+            tHalf.textContent = fmt.num(nice / 2);
+            const end = metres(nice);
+            tEnd.textContent = end;
+            if (/[\u0600-\u06FF]/.test(end)) setAttr(tEnd, 'direction', 'rtl'); else tEnd.removeAttribute('direction');
+          }
+        };
+        update(1);
+        furn.appendChild(g);
+        return { g, update };
+      };
+      scaleBar('is-full');
+      const scaleZoom = scaleBar('is-zoom');
       // title block (bottom end)
       const tbW = 300; const tbX = inner.x + inner.w - tbW; const tbY = SP.PLAN.height - 46;
       furn.appendChild(s('rect', { x: tbX, y: tbY, width: tbW, height: 34, class: 'sp-titleblock' }));
@@ -485,7 +545,7 @@ export default {
         if (e.key !== 'Enter' && e.key !== ' ') return;
         if (activate(e.target)) e.preventDefault();
       });
-      return { svg, zoneEls, camEls, badgeEls, hitEls, nameEls, layoutLabels };
+      return { svg, world, viewport, portRect, portClip, scaleZoom, focusName, zoneEls, camEls, badgeEls, hitEls, nameEls, layoutLabels, layout: () => lay, obstaclesNarrow: () => obsNarrow, layoutSeq: () => layoutSeq };
     }
 
     function polyPath(pts) {
@@ -517,7 +577,7 @@ export default {
     function riskItem(r) {
       const tier = tierOfRisk(r);
       const overdue = safe(() => sel.isOverdueRisk(r, new Date(nowDate().getFullYear(), nowDate().getMonth(), nowDate().getDate()).getTime()), false);
-      return h('a', { class: ['sp-link', r.id === highlightRisk ? 'is-highlight' : null], href: router.href('risks', { id: r.id }) },
+      return h('a', { class: ['sp-link', r.id === highlightRisk ? 'is-highlight' : null], href: router.href('risks', { id: r.id }), 'data-key': `risk:${r.id}` },
         h('span', { class: 'sp-link-main' }, codeSpan(r.code), dataText(L(r, 'hazard', 'risks') || r.hazard || '', 'sp-link-text')),
         h('span', { class: 'sp-link-meta' },
           tier ? C.badge(label('tier', tier), toneOfRisk(r)) : null,
@@ -529,7 +589,7 @@ export default {
       const value = h('span', { class: 'sp-reading', dir: 'ltr' });
       sensorRefs.set(sn.id, { value, sn });
       paintSensor(sn.id);
-      return h('a', { class: 'sp-link', href: router.href('radar', { site: siteId }) },
+      return h('a', { class: 'sp-link', href: router.href('radar', { site: siteId }), 'data-key': `sensor:${sn.id}` },
         h('span', { class: 'sp-link-main' }, codeSpan(sn.code), h('span', { class: 'sp-link-text' }, label('sensorKind', sn.kind) || sn.kind)),
         h('span', { class: 'sp-link-meta' }, value, C.badge(t('spatial.zone.simulatedReading'), 'accent', { icon: 'flask' })));
     }
@@ -542,22 +602,22 @@ export default {
       if (ref.value.textContent !== text) ref.value.textContent = text;
     }
     function cameraItem(cam) {
-      return h('button', { type: 'button', class: 'sp-link is-button', onClick: (e) => openViewer(cam.id, { returnFocus: e.currentTarget }) },
+      return h('button', { type: 'button', class: 'sp-link is-button', 'data-key': `cam:${cam.id}`, onClick: (e) => openViewer(cam.id, { returnFocus: e.currentTarget }) },
         h('span', { class: 'sp-link-main' }, codeSpan(cam.id), h('span', { class: 'sp-link-text' }, L(cam, 'purpose', 'cameras'))),
         h('span', { class: 'sp-link-meta' }, C.statusBadge('demo', { label: t('spatial.viewer.simulated'), size: 'sm', title: false }), h('span', { class: 'sp-link-cta' }, t('spatial.cameras.open'))));
     }
     function permitItem(p) {
-      return h('a', { class: 'sp-link', href: router.href('permits', { id: p.id }) },
+      return h('a', { class: 'sp-link', href: router.href('permits', { id: p.id }), 'data-key': `permit:${p.id}` },
         h('span', { class: 'sp-link-main' }, codeSpan(p.code), h('span', { class: 'sp-link-text' }, label('permitType', p.type) || p.type)),
         h('span', { class: 'sp-link-meta' }, C.badge(label('permitStatus', p.status) || p.status, p.status === 'نشط' ? 'good' : p.status === 'معلق' ? 'warning' : 'neutral')));
     }
     function incidentItem(i) {
-      return h('a', { class: 'sp-link', href: router.href('incidents', { id: i.id }) },
+      return h('a', { class: 'sp-link', href: router.href('incidents', { id: i.id }), 'data-key': `incident:${i.id}` },
         h('span', { class: 'sp-link-main' }, codeSpan(i.code), dataText(L(i, 'title', 'incidents') || i.title || '', 'sp-link-text')),
         h('span', { class: 'sp-link-meta' }, h('span', { class: 'sp-date' }, fmt.date(i.date, { style: 'short' })), C.badge(label('incidentType', i.type) || i.type, Number(i.severity) >= 4 ? 'serious' : 'neutral')));
     }
     function inspectionItem(n) {
-      return h('a', { class: 'sp-link', href: router.href('inspections', { id: n.id }) },
+      return h('a', { class: 'sp-link', href: router.href('inspections', { id: n.id }), 'data-key': `inspection:${n.id}` },
         h('span', { class: 'sp-link-main' }, codeSpan(n.code), h('span', { class: 'sp-link-text' }, label('inspectionType', n.type) || n.type)),
         h('span', { class: 'sp-link-meta' }, h('span', { class: 'sp-date' }, fmt.date(n.date, { style: 'short' })), C.badge(label('inspectionStatus', n.status) || n.status, n.status === 'متأخر' ? 'critical' : n.status === 'منجز' ? 'good' : 'neutral')));
     }
@@ -581,9 +641,24 @@ export default {
       });
     }
 
+    /** Stable key of a panel control (camera id, risk id …): focus survives a re-render through it. */
+    const panelKeyOf = (el) => { const k = el && el.closest ? el.closest('[data-key]') : null; return k && refs && refs.zoneBody.contains(k) ? k.getAttribute('data-key') : null; };
+    const focusLost = () => { const a = document.activeElement; return !a || a === document.body || a === document.documentElement || !a.isConnected; };
+    /** Focus the panel control with this key, else the panel heading. */
+    function focusPanelKey(key) {
+      if (!refs) return;
+      let target = null;
+      if (key) target = Array.from(refs.zoneBody.querySelectorAll('[data-key]')).find((n) => n.getAttribute('data-key') === key) || null;
+      if (!target) target = refs.zoneCard.querySelector('.card-title');
+      if (target) try { target.focus({ preventScroll: true }); } catch { /* ignore */ }
+    }
     function renderZonePanel() {
       const site = siteById(siteId);
       const host = refs.zoneBody;
+      // a re-render while focus is inside the panel keeps the reader on the same control (or the heading)
+      const hadFocus = host.contains(document.activeElement);
+      const focusKey = hadFocus ? panelKeyOf(document.activeElement) : null;
+      if (hadFocus) queueMicrotask(() => { if (!destroyed && refs && refs.zoneBody === host && focusLost()) focusPanelKey(focusKey); });
       sensorRefs.clear();
       refs.panelSig = panelSignature();
       refs.panelDirty = false;
@@ -613,7 +688,7 @@ export default {
       const riskRows = lk.risks.slice().sort((a, b) => (TONE_RANK[toneOfRisk(a)] ?? 9) - (TONE_RANK[toneOfRisk(b)] ?? 9) || String(a.code).localeCompare(String(b.code)));
       host.replaceChildren(
         h('div', { class: 'sp-zone-meta' }, codeSpan(zoneId), h('span', { class: 't-helper' }, siteName(site)),
-          h('button', { type: 'button', class: 'btn btn-ghost btn-sm sp-clear', onClick: () => selectZone(null, { push: true, user: true, focusPanel: true }) }, t('spatial.zone.clear'))),
+          h('button', { type: 'button', class: 'btn btn-ghost btn-sm sp-clear', 'data-key': 'clear', onClick: () => selectZone(null, { push: true, user: true, focusPanel: true }) }, t('spatial.zone.clear'))),
         counts,
         sectionList('risks', riskRows, riskItem),
         sectionList('sensors', lk.sensors, sensorItem),
@@ -705,6 +780,8 @@ export default {
         el.classList.toggle('in-zone', Boolean(cam && zoneId && cam.zoneId === zoneId));
       });
       refs.planFigure.classList.toggle('has-selection', Boolean(zoneId));
+      // the enlarged name belongs to one zone: a new selection drops it until its own framing settles (afterView)
+      if (refs.focusKey && !refs.focusKey.startsWith(`${zoneId}|`)) { refs.plan.focusName.replaceChildren(); refs.focusKey = ''; }
     }
 
     /* ───────────── build per site ───────────── */
@@ -732,17 +809,21 @@ export default {
       const zt = zoneCard.querySelector('.card-title');
       if (zt) { zt.replaceChildren(zoneTitle); zt.setAttribute('tabindex', '-1'); }
       // live data that arrived while focus was inside the panel is applied once focus leaves it
+      // — except while a dialog opened from the panel (the camera viewer) is open: its return-focus control must
+      // stay in the document, so the panel follows when the dialog closes (openViewer › onClose)
       zoneBody.addEventListener('focusout', () => {
-        if (!refs || !refs.panelDirty) return;
-        setTimeout(() => { if (!destroyed && refs && refs.zoneBody === zoneBody && refs.panelDirty && !zoneBody.contains(document.activeElement)) renderZonePanel(); }, 0);
+        if (!refs || !refs.panelDirty || panelHold) return;
+        setTimeout(() => { if (!destroyed && refs && refs.zoneBody === zoneBody && refs.panelDirty && !panelHold && !zoneBody.contains(document.activeElement)) renderZonePanel(); }, 0);
       });
       const camCard = C.card({ code: 'CAM-01', title: t('spatial.cameras.title'), subtitle: t('spatial.cameras.subtitle', { n: tn('spatial.n.cameras', SP.camerasFor(siteId).length, { count: fmt.num(SP.camerasFor(siteId).length) }) }), body: h('div', {}, h('p', { class: 'sp-honest-line' }, ico('flask', 16), h('span', {}, t('spatial.cameras.honest'))), buildCameras(site)), className: 'sp-cam-card' });
       const listParts = buildList(site);
       const listCard = C.card({ code: 'LIST', title: t('spatial.list.title'), subtitle: t('spatial.list.subtitle'), body: listParts.wrap, className: 'sp-list-card' });
       const grid = h('div', { class: 'sp-grid' }, planCard, zoneCard);
       bodyHost.replaceChildren(grid, camCard, listCard);
-      refs = { plan: planRefs, planFigure, fitBtn, zoneBody, zoneTitle, zoneCard, listBody: listParts.tbody, panelSig: '', panelDirty: false, hitKey: '' };
+      refs = { plan: planRefs, planFigure, fitBtn, zoneBody, zoneTitle, zoneCard, listBody: listParts.tbody, panelSig: '', panelDirty: false, hitKey: '', focusKey: '' };
       view = { ...FULL_VIEW };
+      port = { ...FULL_VIEW };
+      printSaved = null;
       listSig = '';
       paintPlan();
       renderZonePanel();
@@ -773,7 +854,7 @@ export default {
       try {
         if (document.fonts && document.fonts.status !== 'loaded') {
           const planAtBuild = planRefs;
-          document.fonts.ready.then(() => { if (!destroyed && refs && refs.plan === planAtBuild) { planAtBuild.layoutLabels(); paintPlan(); } });
+          document.fonts.ready.then(() => { if (!destroyed && refs && refs.plan === planAtBuild) { planAtBuild.layoutLabels(); paintPlan(); refs.hitKey = ''; updateHits(); } });
         }
       } catch { /* ignore */ }
       if (animate && motion && typeof motion.enter === 'function') motion.enter([planCard, zoneCard, camCard, listCard], { y: 10 });
@@ -785,19 +866,49 @@ export default {
       const fig = refs.planFigure;
       const widthPx = fig.clientWidth || fig.getBoundingClientRect().width || 0;
       if (!widthPx) return;
-      const scale = widthPx / view.w;                     // CSS px per plan unit
+      const scale = (widthPx / FULL_VIEW.w) * zoomOf();    // CSS px per plan unit (framing included)
       let coarse = false;
       try { coarse = matchMedia('(pointer: coarse)').matches; } catch { /* ignore */ }
       const touch = coarse || widthPx < 640;
-      // radius in CSS px: 13 → a 26 px target on touch / small plans; 11 → 22 px otherwise (never under 22 units)
-      const r = Math.max(22, (touch ? 13 : 11) / scale);
-      const key = `${Math.round(r)}`;
-      if (key === refs.hitKey) return;
-      refs.hitKey = key;
-      const cams = Array.from(refs.plan.hitEls.entries()).map(([id, v]) => ({ id, x: v.x, y: v.y }));
-      const polys = SP.hitPolygons(cams, r);
-      refs.plan.hitEls.forEach((v, id) => setAttr(v.el, 'd', polyPath(polys.get(id))));
-      fig.classList.toggle('is-touch', touch);
+      // half-size in CSS px of a rounded square: 14 → a 28 px target on touch / small plans, 13 → 26 px otherwise
+      // (never under 22 plan units); either holds a 24 × 24 px square (WCAG 2.5.8; SP.roundedSquare)
+      const r = Math.max(22, (touch ? 14 : 13) / scale);
+      const key = `${Math.round(r * 2)}`;
+      if (key !== refs.hitKey) {
+        refs.hitKey = key;
+        const cams = Array.from(refs.plan.hitEls.entries()).map(([id, v]) => ({ id, x: v.x, y: v.y }));
+        const polys = SP.hitPolygons(cams, r);
+        refs.plan.hitEls.forEach((v, id) => setAttr(v.el, 'd', polyPath(polys.get(id))));
+        fig.classList.toggle('is-touch', touch);
+      }
+      paintFocusName(widthPx, scale);
+    }
+
+    /** A framed zone on a small plan shows its own name again, sized so it renders at ≥ FOCUS_NAME_PX. */
+    function paintFocusName(widthPx, scale) {
+      if (!refs || !refs.plan) return;
+      const el = refs.plan.focusName;
+      const narrow = widthPx > 0 && widthPx <= NARROW_PLAN_PX;
+      const site = siteById(siteId);
+      const z = zoneId ? zoneById(site, zoneId) : null;
+      if (!z || !narrow || isFull(view) || !(scale > 0)) {
+        if (refs.focusKey) { el.replaceChildren(); refs.focusKey = ''; }
+        return;
+      }
+      const size = Math.max(SP.LABEL.name.size, Math.ceil((FOCUS_NAME_PX / scale) * 2) / 2);
+      const key = `${z.id}|${size}|${I.lang()}|${refs.plan.layoutSeq()}`;
+      if (key === refs.focusKey) return;
+      refs.focusKey = key;
+      const L0 = refs.plan.layout().get(z.id);
+      const nm = SP.layoutFocusName(z, zoneName(site, z.id), { size, obstacles: refs.plan.obstaclesNarrow(), reserve: L0 ? [L0.codeNarrowRect, L0.badgeRect] : [], measure: measureText });
+      el.replaceChildren();
+      if (!nm) return;
+      setAttr(el, 'x', r1(nm.cx));
+      setAttr(el, 'y', r1(nm.baseline));
+      if (/[\u0600-\u06FF]/.test(nm.full)) setAttr(el, 'direction', 'rtl'); else el.removeAttribute('direction');
+      el.style.fontSize = `${nm.size}px`;
+      setAttr(el, 'data-zone', z.id);
+      nm.lines.forEach((ln, li) => el.appendChild(s('tspan', { x: r1(nm.cx), dy: li ? r1(nm.line) : 0, 'text-anchor': 'middle', text: ln })));
     }
 
     /* ───────────── framing: the plan frames the selected zone (one tween per user action) ───────────── */
@@ -813,24 +924,63 @@ export default {
       const { inner } = SP.PLAN;
       const zx = inner.x + z.x * inner.w; const zy = inner.y + z.y * inner.h;
       const zw = z.w * inner.w; const zh = z.h * inner.h;
-      const ar = FULL_VIEW.w / FULL_VIEW.h;
+      const ar = FRAME_PORT.w / FRAME_PORT.h;
       let w = Math.max(zw + Math.max(80, zw * 0.5), (zh + Math.max(70, zh * 0.5)) * ar, FRAME_MIN_W);
       if (w >= FULL_VIEW.w * 0.9) return { ...FULL_VIEW };
-      const hh = w / ar;
-      const x = Math.min(Math.max(0, zx + zw / 2 - w / 2), FULL_VIEW.w - w);
-      const y = Math.min(Math.max(0, zy + zh / 2 - hh / 2), FULL_VIEW.h - hh);
-      return { x, y, w, h: hh };
+      const place = (cx, cy, ww) => {
+        const hh = ww / ar;
+        return { x: Math.min(Math.max(0, cx - ww / 2), FULL_VIEW.w - ww), y: Math.min(Math.max(0, cy - hh / 2), FULL_VIEW.h - hh), w: ww, h: hh };
+      };
+      let f = place(zx + zw / 2, zy + zh / 2, w);
+      // a camera whose target would straddle the frame edge is taken in whole (never a half-cut target): grow the
+      // frame around it, keeping the aspect, a few times at most
+      const widthPx = refs && refs.planFigure ? refs.planFigure.clientWidth : 0;
+      const cams = SP.camerasFor(siteId).map((c) => SP.toPlan(c.x, c.y));
+      for (let pass = 0; pass < 4 && widthPx; pass += 1) {
+        const scale = (widthPx / FULL_VIEW.w) * (FRAME_PORT.w / f.w);
+        const m = Math.max(22, 14 / scale) + 3;
+        let x0 = f.x; let y0 = f.y; let x1 = f.x + f.w; let y1 = f.y + f.h;
+        for (const p of cams) {
+          const inX = p.x + m > f.x && p.x - m < f.x + f.w; const inY = p.y + m > f.y && p.y - m < f.y + f.h;
+          const whole = p.x - m >= f.x && p.x + m <= f.x + f.w && p.y - m >= f.y && p.y + m <= f.y + f.h;
+          if (inX && inY && !whole) { x0 = Math.min(x0, p.x - m); y0 = Math.min(y0, p.y - m); x1 = Math.max(x1, p.x + m); y1 = Math.max(y1, p.y + m); }
+        }
+        if (x0 === f.x && y0 === f.y && x1 === f.x + f.w && y1 === f.y + f.h) break;
+        w = Math.max(x1 - x0, (y1 - y0) * ar);
+        if (w >= FULL_VIEW.w * 0.9) return { ...FULL_VIEW };
+        f = place((x0 + x1) / 2, (y0 + y1) / 2, w);
+      }
+      return f;
     }
     const isFull = (v) => Math.abs(v.w - FULL_VIEW.w) < 0.5 && Math.abs(v.x) < 0.5 && Math.abs(v.y) < 0.5;
-    function writeView(v) {
+    const zoomOf = (v = view, p = port) => p.w / v.w;
+    const lerpRect = (a, b, e) => ({ x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e, w: a.w + (b.w - a.w) * e, h: a.h + (b.h - a.h) * e });
+    /** Draws the world rect `v` into the drawing rect `p` (uniform scale): one transform, one clip, the framing scale bar. */
+    function writeView(v, p) {
       if (!refs) return;
-      setAttr(refs.plan.svg, 'viewBox', `${r1(v.x)} ${r1(v.y)} ${r1(v.w)} ${r1(v.h)}`);
+      const P = refs.plan;
+      const k = p.w / v.w;
+      const tx = p.x - v.x * k; const ty = p.y - v.y * k;
+      if (Math.abs(k - 1) < 1e-4 && Math.abs(tx) < 0.05 && Math.abs(ty) < 0.05) {
+        if (P.world.hasAttribute('transform')) P.world.removeAttribute('transform');
+        if (P.viewport.hasAttribute('clip-path')) P.viewport.removeAttribute('clip-path');
+      } else {
+        setAttr(P.world, 'transform', `matrix(${+k.toFixed(5)} 0 0 ${+k.toFixed(5)} ${r1(tx)} ${r1(ty)})`);
+        setAttr(P.portRect, 'x', r1(p.x)); setAttr(P.portRect, 'y', r1(p.y));
+        setAttr(P.portRect, 'width', r1(p.w)); setAttr(P.portRect, 'height', r1(p.h));
+        setAttr(P.viewport, 'clip-path', `url(#${P.portClip})`);
+      }
+      P.scaleZoom.update(k);
+      // the part of the site in view, for probes and tests (the viewBox itself never changes)
+      setAttr(P.svg, 'data-view', `${r1(v.x)} ${r1(v.y)} ${r1(v.w)} ${r1(v.h)}`);
     }
-    function stopView() { if (viewRaf) { cancelAnimationFrame(viewRaf); viewRaf = 0; } }
+    function setZoomed(on) { if (refs) refs.planFigure.classList.toggle('is-zoomed', Boolean(on)); }
+    function stopView() { if (viewRaf) { cancelAnimationFrame(viewRaf); viewRaf = 0; } tweenTo = null; if (refs) refs.planFigure.classList.remove('is-moving'); }
     function afterView() {
       if (!refs) return;
       const framed = !isFull(view);
       refs.planFigure.classList.toggle('is-framed', framed);
+      setZoomed(framed);
       refs.fitBtn.hidden = !framed;
       updateHits();
     }
@@ -839,25 +989,58 @@ export default {
       if (!refs) return;
       stopView();
       const lvl = framingLevel();
-      const from = { ...view };
-      const same = Math.abs(from.x - target.x) + Math.abs(from.y - target.y) + Math.abs(from.w - target.w) < 0.5;
+      const from = { ...view }; const fromPort = { ...port };
+      const toPort = isFull(target) ? { ...FULL_VIEW } : { ...FRAME_PORT };
+      const same = Math.abs(from.x - target.x) + Math.abs(from.y - target.y) + Math.abs(from.w - target.w) + Math.abs(fromPort.w - toPort.w) + Math.abs(fromPort.h - toPort.h) < 0.5;
       if (same) { afterView(); return; }
-      if (!animate || !lvl) { view = { ...target }; writeView(view); afterView(); return; }
+      if (!animate || !lvl) { view = { ...target }; port = toPort; writeView(view, port); afterView(); return; }
       const dur = lvl === 2 ? 640 : 480;
       const t0 = performance.now();
       const ease = (k) => (k < 0.5 ? 4 * k * k * k : 1 - ((-2 * k + 2) ** 3) / 2);   // ease-in-out (cubic)
       refs.planFigure.classList.add('is-moving');
+      if (!isFull(target)) setZoomed(true);   // the sheet border appears as the framing starts, leaves when it ends
+      tweenTo = { view: { ...target }, port: toPort };
       const step = (now) => {
         if (destroyed || !refs) { viewRaf = 0; return; }
         const k = Math.min(1, (now - t0) / dur);
         const e = ease(k);
-        view = { x: from.x + (target.x - from.x) * e, y: from.y + (target.y - from.y) * e, w: from.w + (target.w - from.w) * e, h: from.h + (target.h - from.h) * e };
-        writeView(view);
+        view = lerpRect(from, target, e);
+        port = lerpRect(fromPort, toPort, e);
+        writeView(view, port);
         if (k < 1) viewRaf = requestAnimationFrame(step);
-        else { viewRaf = 0; view = { ...target }; writeView(view); refs.planFigure.classList.remove('is-moving'); afterView(); }
+        else { viewRaf = 0; tweenTo = null; view = { ...target }; port = toPort; writeView(view, port); refs.planFigure.classList.remove('is-moving'); afterView(); }
       };
       viewRaf = requestAnimationFrame(step);
     }
+
+    /* ───────────── print: always the whole site plan ─────────────
+       css (Spatial › print) resets the world transform, the clip and the sheet border on its own; this also puts the
+       DOM back to the whole site while printing (and restores the framing after), so script-read state matches. */
+    let printSaved = null;
+    function beforePrint() {
+      if (destroyed || !refs || printSaved) return;
+      const settled = tweenTo || { view: { ...view }, port: { ...port } };
+      stopView();
+      view = settled.view; port = settled.port;
+      printSaved = { view: { ...view }, port: { ...port } };
+      writeView(FULL_VIEW, FULL_VIEW);
+      refs.planFigure.classList.remove('is-framed', 'is-zoomed');
+      refs.planFigure.classList.add('is-printing');
+    }
+    function afterPrint() {
+      const saved = printSaved;
+      printSaved = null;
+      if (!saved || destroyed || !refs) return;
+      refs.planFigure.classList.remove('is-printing');
+      view = saved.view; port = saved.port;
+      writeView(view, port);
+      afterView();
+    }
+    window.addEventListener('beforeprint', beforePrint);
+    window.addEventListener('afterprint', afterPrint);
+    let printMq = null;
+    const onPrintMq = (e) => { if (e.matches) beforePrint(); else afterPrint(); };
+    try { printMq = matchMedia('print'); if (printMq && typeof printMq.addEventListener === 'function') printMq.addEventListener('change', onPrintMq); else printMq = null; } catch { printMq = null; }
     /** Frames the selected zone when motion is on; under reduced motion the whole site stays in view. */
     function frameSelection({ animate = false } = {}) {
       const target = zoneId && framingLevel() ? frameFor(zoneId) : { ...FULL_VIEW };
@@ -950,6 +1133,10 @@ export default {
       const cam = SP.cameraById(id);
       if (!cam || cam.siteId !== siteId || destroyed) return;
       if (viewer) closeViewer('swap');
+      // opened from the zone panel: hold the panel as it is until the viewer closes (focus returns to that control)
+      const fromPanel = Boolean(returnFocus && refs && refs.zoneBody.contains(returnFocus));
+      const hold = fromPanel ? { key: panelKeyOf(returnFocus) } : null;
+      if (hold) panelHold = hold;
       const site = siteById(siteId);
       const zoneChanged = cam.zoneId !== zoneId;
       if (zoneChanged) { zoneId = cam.zoneId; paintPlan(); renderZonePanel(); paintList(); frameSelection({ animate: false }); }
@@ -1010,9 +1197,13 @@ export default {
         ],
         onClose: (reason) => {
           if (viewer && viewer.api === api) teardownViewer();
+          if (hold && panelHold === hold) panelHold = null;
           if (!destroyed && reason !== 'swap' && reason !== 'site' && reason !== 'route') {
             openCameraId = null; writeUrl('replace'); paintPlan();
-            // runs after the dialog handed focus back, so the panel keeps it
+            // runs after the dialog handed focus back; if that control has gone, land on its equivalent in the panel
+            if (hold && refs && focusLost()) focusPanelKey(hold.key);
+            // live data held while the viewer was open: the panel follows now (or on focusout if focus is inside)
+            if (hold && refs && refs.panelDirty && !refs.zoneBody.contains(document.activeElement)) renderZonePanel();
             if (showZoneAfterClose) selectZone(cam.zoneId, { focusPanel: true, user: true });
           }
         },
@@ -1053,27 +1244,47 @@ export default {
       viewer.caption = caption;
       feed.start();
       caption();
-      irisReveal(feedHost, feed);
+      feedStartup(feedShell, feedHost, feed);
       announce(t('spatial.announce.camera', { code: cam.id, zone: zName }));
     }
 
+    /** Until the feed's first frame is really on screen (feed.ready: the worker's 'first-frame' message, or the
+     *  fallback's first presented picture) the picture stays closed behind the lens iris over a dark frame — never
+     *  an empty picture. The iris clips feed.picture (the layers inside the frame), never the frame the feed's
+     *  IntersectionObserver watches: a clipped frame reads as off screen and would pause the feed before its first
+     *  frame (the cause of the old empty-frame iris). If that takes longer than FEED_WAIT_MS (slow device, worker start-up, frame off screen), a
+     *  neutral "Starting the simulated feed…" line shows in the shell; the iris opens whenever the frame arrives. */
+    function feedStartup(shell, el, feed) {
+      const wait = h('p', { class: 'sp-feed-wait', hidden: true }, h('span', {}, t('spatial.viewer.starting')));
+      shell.appendChild(wait);
+      const open = irisPrepare((feed && feed.picture) || el);
+      let ready = false;
+      const timer = setTimeout(() => { if (!ready && !destroyed && wait.isConnected) wait.hidden = false; }, FEED_WAIT_MS);
+      timers.push(timer);
+      Promise.resolve(feed && feed.ready).then(() => {
+        ready = true;
+        clearTimeout(timer);
+        requestAnimationFrame(() => { wait.hidden = true; if (open) open(); });
+      });
+    }
+
     /** Lens-iris reveal of the picture (one shot, ≈ 0.5 s): an eight-blade aperture opens while turning. Off under
-     *  reduced motion and with the Static background; the Cinematic background adds a short focus pull. */
-    function irisReveal(el, feed) {
+     *  reduced motion and with the Static background; the Cinematic background adds a short focus pull. Returns the
+     *  opener (the aperture stays closed until it is called), or null when the iris is off. */
+    function irisPrepare(el) {
       const lvl = framingLevel();
-      if (!lvl || document.documentElement.getAttribute('data-bg') === 'static' || typeof el.animate !== 'function') return;
+      if (!lvl || document.documentElement.getAttribute('data-bg') === 'static' || typeof el.animate !== 'function') return null;
       const r = el.getBoundingClientRect();
-      if (!r.width || !r.height) return;
+      if (!r.width || !r.height) return null;
       const cx = r.width / 2; const cy = r.height / 2;
       const R = Math.hypot(cx, cy) * 1.1;
       const N = 8; const STEPS = 8;
       const poly = (rad, rot) => `polygon(${Array.from({ length: N }, (_, k) => { const a = rot + (k * 2 * Math.PI) / N; return `${(cx + rad * Math.cos(a)).toFixed(1)}px ${(cy + rad * Math.sin(a)).toFixed(1)}px`; }).join(', ')})`;
       const frames = Array.from({ length: STEPS + 1 }, (_, i) => { const k = i / STEPS; return { clipPath: poly(Math.max(1, R * k), (Math.PI / 3) * k) }; });
-      // closed aperture until the first frame is drawn (worker start-up), then it opens; never waits > 0.9 s
       el.style.clipPath = frames[0].clipPath;
       el.classList.add('is-iris');
       let opened = false;
-      const open = () => {
+      return () => {
         if (opened) return;
         opened = true;
         if (destroyed || !el.isConnected) { el.style.clipPath = ''; el.classList.remove('is-iris'); return; }
@@ -1083,14 +1294,10 @@ export default {
           const done = () => el.classList.remove('is-iris');
           anim.finished.then(done, done);
           if (lvl === 2) {
-            const frameEl = el.querySelector('.cf-frame');
-            if (frameEl) frameEl.animate([{ filter: 'blur(5px) brightness(1.18)' }, { filter: 'blur(0) brightness(1)' }], { duration: 900, easing: 'cubic-bezier(.16,1,.3,1)' });
+            el.animate([{ filter: 'blur(5px) brightness(1.18)' }, { filter: 'blur(0) brightness(1)' }], { duration: 900, easing: 'cubic-bezier(.16,1,.3,1)' });
           }
         } catch { el.style.clipPath = ''; el.classList.remove('is-iris'); }
       };
-      const wait = setTimeout(open, 900);
-      timers.push(wait);
-      Promise.resolve(feed && feed.ready).then(() => { clearTimeout(wait); requestAnimationFrame(open); });
     }
     function teardownViewer() {
       if (!viewer) return;
@@ -1119,7 +1326,7 @@ export default {
           // is inside the panel it is marked dirty instead: counts are patched in place now, the lists and links
           // follow on focusout, so the reader keeps their place and nothing stays stale.
           if (panelSignature() !== refs.panelSig) {
-            if (refs.zoneBody.contains(document.activeElement)) { refs.panelDirty = true; patchCounts(); }
+            if (refs.zoneBody.contains(document.activeElement) || panelHold) { refs.panelDirty = true; patchCounts(); }
             else renderZonePanel();
           }
         } finally { linkMemo = null; }
@@ -1182,6 +1389,9 @@ export default {
       timers.splice(0).forEach((x) => { clearInterval(x); clearTimeout(x); });
       if (refreshRaf) { cancelAnimationFrame(refreshRaf); refreshRaf = 0; }
       stopView();
+      window.removeEventListener('beforeprint', beforePrint);
+      window.removeEventListener('afterprint', afterPrint);
+      if (printMq) { try { printMq.removeEventListener('change', onPrintMq); } catch { /* ignore */ } }
       clearTimeout(liveTimer);
       if (planRO) { try { planRO.disconnect(); } catch { /* ignore */ } planRO = null; }
       sensorRefs.clear();

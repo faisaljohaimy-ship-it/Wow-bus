@@ -200,10 +200,11 @@ export const CAMERAS = Object.freeze([
     purpose: 'شبكة الصرف وغرفة التفتيش MH-14', purposeEn: 'Drainage network and manhole MH-14' }),
   CAM({ id: 'CAM-S2-04', siteId: 'S2', zoneId: 'S2-Z1', x: 0.31, y: 0.47, heading: 322, fov: 78, mountHeight: 9, scene: 'midrise',
     purpose: 'أعمال التشطيبات في المبنى أ', purposeEn: 'Building A finishing works' }),
-  /* S3 — NEOM solar plant */
-  CAM({ id: 'CAM-S3-01', siteId: 'S3', zoneId: 'S3-Z1', x: 0.48, y: 0.43, heading: 300, fov: 96, mountHeight: 8, lensMm: 2.8, range: 0.24, scene: 'solar',
+  /* S3 — NEOM solar plant (01 / 02: one pole each at the inner corner of its array, either side of the spine road,
+     far enough apart that each keeps a full touch target on a 360 px phone plan) */
+  CAM({ id: 'CAM-S3-01', siteId: 'S3', zoneId: 'S3-Z1', x: 0.4, y: 0.43, heading: 300, fov: 96, mountHeight: 8, lensMm: 2.8, range: 0.24, scene: 'solar',
     purpose: 'حقل الألواح الشمالي وتركيب المتتبعات', purposeEn: 'North array and tracker installation' }),
-  CAM({ id: 'CAM-S3-02', siteId: 'S3', zoneId: 'S3-Z2', x: 0.52, y: 0.43, heading: 58, fov: 96, mountHeight: 8, lensMm: 2.8, range: 0.24, scene: 'solar',
+  CAM({ id: 'CAM-S3-02', siteId: 'S3', zoneId: 'S3-Z2', x: 0.6, y: 0.43, heading: 58, fov: 96, mountHeight: 8, lensMm: 2.8, range: 0.24, scene: 'solar',
     purpose: 'حقل الألواح الجنوبي — الصف 48', purposeEn: 'South array, row 48' }),
   CAM({ id: 'CAM-S3-03', siteId: 'S3', zoneId: 'S3-Z4', x: 0.68, y: 0.97, heading: 318, fov: 86, mountHeight: 7, scene: 'yard',
     purpose: 'ساحة التجميع ومسار الشاحنات', purposeEn: 'Assembly yard and truck route' }),
@@ -350,7 +351,7 @@ export function planObstacles(siteId, site, { sensors = [], measure = null, isEn
   const body = narrow ? LABEL.cam.bodyNarrow : LABEL.cam.body;
   for (const cam of camerasFor(siteId)) {
     const cx = X(cam.x); const cy = Y(cam.y);
-    add(cx - body, cy - body, cx + body, cy + body, 4);
+    add(cx - body, cy - body, cx + body, cy + body, 4, 'cam');
     if (!narrow) {
       const o = camLabelOffset(cam);
       const lw = mw(cam.id, LABEL.cam.labelSize, 600, true);
@@ -375,6 +376,8 @@ function overlapCost(rect, obstacles, weights = null) {
   }
   return c;
 }
+/** A framed zone's enlarged name never sits on a camera glyph (a control). */
+const FOCUS_WEIGHTS = Object.freeze({ cam: 80 });
 /** Zone codes are two characters with a halo: they may sit on a building outline, never on a camera. */
 const CODE_WEIGHTS = Object.freeze({ edge: 0.5, inside: 0.1 });
 
@@ -413,6 +416,60 @@ function twoLines(text, measureLine) {
   return best;
 }
 
+/** Name metrics at a font size (plan units): the drawing default is LABEL.name (14). */
+function nameMetrics(size = LABEL.name.size) {
+  const N = LABEL.name;
+  const k = size / N.size;
+  return { size, weight: N.weight, line: N.line * k, ascent: N.ascent * k, pad: N.pad, padY: N.padY * Math.max(1, k * 0.8) };
+}
+
+/**
+ * Best place for one zone name inside the zone rectangle `zr` (plan units) at the metrics `N`: full → two lines →
+ * specific part (after " — ") → two lines → ellipsis, each scored over candidate boxes (bottom first, centred, start,
+ * end, quarter positions, a few units upwards) against weighted obstacles. Returns null when nothing fits.
+ */
+function placeName(zr, full, obstacles, mw, N, weights = null, hardKinds = null) {
+  const hard = hardKinds ? obstacles.filter((o) => hardKinds.includes(o.k)) : [];
+  const lineW = (s) => mw(s, N.size, N.weight) + 6 * (N.size / LABEL.name.size);
+  const maxW = zr.x1 - zr.x0 - 2 * N.pad;
+  const options = [];
+  const push = (lines, pen, shortened) => { const w = Math.max(...lines.map(lineW)); if (w <= maxW) options.push({ lines, w, h: lines.length * N.line + 1, pen, shortened }); };
+  push([full], 0, false);
+  const two = twoLines(full, lineW); if (two) push(two.lines, 0.35, false);
+  const dash = full.indexOf(' — ');
+  const specific = dash > 0 ? full.slice(dash + 3).trim() : '';
+  if (specific) { push([specific], 0.9, true); const two2 = twoLines(specific, lineW); if (two2) push(two2.lines, 1.2, true); }
+  {
+    const base = specific || full;
+    let n = base.length;
+    while (n > 3 && lineW(`${base.slice(0, n).trim()}…`) > maxW) n -= 1;
+    push([`${base.slice(0, n).trim()}…`], 2.5, true);
+  }
+  let best = null;
+  const zh = zr.y1 - zr.y0;
+  for (const opt of options) {
+    const ys = [];
+    for (let y = zr.y1 - N.padY - opt.h; y >= zr.y0 + N.padY - 0.01; y -= 3) ys.push(y);
+    if (zr.y1 - N.padY - opt.h >= zr.y0 + N.padY) ys.push(zr.y0 + N.padY);   // flush with the top as well
+    for (const y0 of ys) {
+      for (const align of ['center', 'start', 'end', 'q1', 'q3']) {
+        const zw = zr.x1 - zr.x0;
+        const cx = align === 'center' ? (zr.x0 + zr.x1) / 2
+          : align === 'start' ? zr.x0 + N.pad + opt.w / 2
+            : align === 'end' ? zr.x1 - N.pad - opt.w / 2
+              : zr.x0 + zw * (align === 'q1' ? 0.25 : 0.75);
+        const rect = { x0: cx - opt.w / 2, y0, x1: cx + opt.w / 2, y1: y0 + opt.h };
+        if (rect.x0 < zr.x0 + N.pad - 0.5 || rect.x1 > zr.x1 - N.pad + 0.5) continue;
+        if (hard.length && hard.some((o) => rectOverlap(rect, o) > 0)) continue;
+        const pos = ((zr.y1 - N.padY - opt.h - y0) / Math.max(1, zh)) * 0.7 + (align === 'center' ? 0 : 0.12);
+        const cost = overlapCost(rect, obstacles, weights) * 10 + opt.pen + pos;
+        if (!best || cost < best.cost) best = { cx, y0, lines: opt.lines, shortened: opt.shortened, cost, rect };
+      }
+    }
+  }
+  return best ? { cx: best.cx, y0: best.y0, baseline: best.y0 + N.ascent, lines: best.lines, line: N.line, size: N.size, full, shortened: best.shortened, cost: best.cost, rect: best.rect } : null;
+}
+
 /**
  * Places the open-risk badge, the zone code (normal and narrow-plan sizes) and the zone name of every zone so
  * that nothing important is covered. The name falls back to two lines, then to its specific part (after " — "),
@@ -420,11 +477,12 @@ function twoLines(text, measureLine) {
  * @param {object} site   store site
  * @param {string[]} names  display names per zone (same order as site.zones)
  * @param {{ obstacles: object[], obstaclesNarrow?: object[], measure?: Function }} opts
- * @returns {Map<string, { badge: {cx,cy}, code: {x,y}, codeNarrow: {x,y}, name: { cx, y0, lines: string[], full: string, shortened: boolean, cost: number } }>}
+ * @returns {Map<string, { badge: {cx,cy}, badgeRect, code: {x,y}, codeNarrow: {x,y}, codeNarrowRect, name: { cx, y0, baseline, lines: string[], line, size, full: string, shortened: boolean, cost: number, rect } }>}
  */
 export function layoutZoneLabels(site, names, { obstacles = [], obstaclesNarrow = null, measure = null } = {}) {
   const mw = (text, size, weight, mono = false) => (measure ? measure(text, size, weight, mono) : approxWidth(text, size, mono));
-  const N = LABEL.name; const Cd = LABEL.code; const Cn = LABEL.codeNarrow; const B = LABEL.badge;
+  const Cd = LABEL.code; const Cn = LABEL.codeNarrow; const B = LABEL.badge;
+  const N = nameMetrics();
   const out = new Map();
   arr(site && site.zones).forEach((z, zi) => {
     const zr = zoneRectPlan(z);
@@ -445,52 +503,36 @@ export function layoutZoneLabels(site, names, { obstacles = [], obstaclesNarrow 
     const nameObs = obs.concat([{ ...b0, w: 1.2 }]);
     // 3. name: full → two lines → specific part → two lines → ellipsis
     const full = String(names[zi] || z.name || z.id);
-    const lineW = (s) => mw(s, N.size, N.weight) + 6;
-    const maxW = zr.x1 - zr.x0 - 2 * N.pad;
-    const options = [];
-    const push = (lines, pen, shortened) => { const w = Math.max(...lines.map(lineW)); if (w <= maxW) options.push({ lines, w, h: lines.length * N.line + 1, pen, shortened }); };
-    push([full], 0, false);
-    const two = twoLines(full, lineW); if (two) push(two.lines, 0.35, false);
-    const dash = full.indexOf(' — ');
-    const specific = dash > 0 ? full.slice(dash + 3).trim() : '';
-    if (specific) { push([specific], 0.9, true); const two2 = twoLines(specific, lineW); if (two2) push(two2.lines, 1.2, true); }
-    {
-      const base = specific || full;
-      let n = base.length;
-      while (n > 3 && lineW(`${base.slice(0, n).trim()}…`) > maxW) n -= 1;
-      push([`${base.slice(0, n).trim()}…`], 2.5, true);
-    }
-    let best = null;
-    const zh = zr.y1 - zr.y0;
-    for (const opt of options) {
-      const ys = [];
-      for (let y = zr.y1 - N.padY - opt.h; y >= zr.y0 + N.padY - 0.01; y -= 3) ys.push(y);
-      if (zr.y1 - N.padY - opt.h >= zr.y0 + N.padY) ys.push(zr.y0 + N.padY);   // flush with the top as well
-      for (const y0 of ys) {
-        for (const align of ['center', 'start', 'end', 'q1', 'q3']) {
-          const zw = zr.x1 - zr.x0;
-          const cx = align === 'center' ? (zr.x0 + zr.x1) / 2
-            : align === 'start' ? zr.x0 + N.pad + opt.w / 2
-              : align === 'end' ? zr.x1 - N.pad - opt.w / 2
-                : zr.x0 + zw * (align === 'q1' ? 0.25 : 0.75);
-          const rect = { x0: cx - opt.w / 2, y0, x1: cx + opt.w / 2, y1: y0 + opt.h };
-          if (rect.x0 < zr.x0 + N.pad - 0.5 || rect.x1 > zr.x1 - N.pad + 0.5) continue;
-          const pos = ((zr.y1 - N.padY - opt.h - y0) / Math.max(1, zh)) * 0.7 + (align === 'center' ? 0 : 0.12);
-          const cost = overlapCost(rect, nameObs) * 10 + opt.pen + pos;
-          if (!best || cost < best.cost) best = { cx, y0, lines: opt.lines, shortened: opt.shortened, cost, rect };
-        }
-      }
-    }
-    const b = cornerSpot(zr, bs, bs, B.pad, badgePrefs, best ? obs.concat([{ ...best.rect, w: 5 }]) : obs);
+    const name = placeName(zr, full, nameObs, mw, N);
+    const b = cornerSpot(zr, bs, bs, B.pad, badgePrefs, name ? obs.concat([{ ...name.rect, w: 5 }]) : obs);
     const badge = { cx: (b.x0 + b.x1) / 2, cy: (b.y0 + b.y1) / 2 };
     out.set(z.id, {
       badge,
+      badgeRect: { x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 },
       code: { x: c.x0 + 2, y: c.y0 + Cd.ascent },
       codeNarrow: { x: cn.x0 + 3, y: cn.y0 + Cn.ascent },
-      name: best ? { cx: best.cx, y0: best.y0, baseline: best.y0 + N.ascent, lines: best.lines, full, shortened: best.shortened, cost: best.cost, rect: best.rect } : null,
+      codeNarrowRect: { x0: cn.x0, y0: cn.y0, x1: cn.x1, y1: cn.y1 },
+      name,
     });
   });
   return out;
+}
+
+/**
+ * The name of ONE zone at a larger font size (plan units), for a zone framed on a small plan where the drawing-size
+ * name would render under 12 CSS px. Placed like layoutZoneLabels' names, against `obstacles` (the narrow-plan
+ * obstacles: camera glyphs at their doubled size) plus `reserve` (the zone's own narrow code and badge, weight 5).
+ * Cameras are a hard rule here: when no candidate clears them the result is null (the plan then shows no name; the
+ * full name stays in the zone panel, the table and the zone button's accessible name).
+ * @returns {{ cx, y0, baseline, lines: string[], line, size, full, shortened, cost, rect } | null}
+ */
+export function layoutFocusName(zone, name, { size = LABEL.name.size, obstacles = [], reserve = [], measure = null } = {}) {
+  if (!zone) return null;
+  const mw = (text, sz, weight, mono = false) => (measure ? measure(text, sz, weight, mono) : approxWidth(text, sz, mono));
+  const N = nameMetrics(Math.max(LABEL.name.size, Number(size) || LABEL.name.size));
+  const obs = obstacles.concat(arr(reserve).filter(Boolean).map((r) => ({ ...r, w: 5 })));
+  // drawn larger, the name would rather shorten, wrap or stay off the plan than touch a camera (a control)
+  return placeName(zoneRectPlan(zone), String(name || zone.name || zone.id), obs, mw, N, FOCUS_WEIGHTS, ['cam']);
 }
 
 /** Sutherland–Hodgman: keeps the part of a polygon where n·p ≤ c. */
@@ -515,21 +557,36 @@ export function clipToRect(poly, x0, y0, x1, y1) {
   return out;
 }
 
+/** A square of half-size r with rounded corners (radius 0.2 r): it contains an axis-aligned square of side
+ *  2 · (0.8 + 0.2 / √2) r ≈ 1.883 r, so a half-size of 13 CSS px always holds a 24 × 24 px target (WCAG 2.5.8). */
+export function roundedSquare(r, perCorner = 5) {
+  const cr = r * 0.2;
+  const c = r - cr;
+  const pts = [];
+  for (const [sx, sy, a0] of [[1, 1, 0], [-1, 1, 90], [-1, -1, 180], [1, -1, 270]]) {
+    for (let i = 0; i <= perCorner; i += 1) {
+      const a = ((a0 + (90 * i) / perCorner) * Math.PI) / 180;
+      pts.push([sx * c + cr * Math.cos(a), sy * c + cr * Math.sin(a)]);
+    }
+  }
+  return pts;
+}
+
 /**
- * Camera hit areas: a circle of radius r around each camera, cut by the perpendicular bisector to every
+ * Camera hit areas: a rounded square of half-size r around each camera, cut by the perpendicular bisector to every
  * neighbour closer than 2r, so two close cameras split the space between them instead of stacking.
  * @param {{ id: string, x: number, y: number }[]} cams  plan coordinates
- * @param {number} r  radius in plan units
+ * @param {number} r  half-size in plan units
  * @returns {Map<string, number[][]>} polygon per camera, relative to the camera
  */
-export function hitPolygons(cams, r, segments = 28) {
+export function hitPolygons(cams, r) {
   const out = new Map();
   for (const a of cams) {
-    let poly = Array.from({ length: segments }, (_, k) => { const t = (k / segments) * Math.PI * 2; return [r * Math.cos(t), r * Math.sin(t)]; });
+    let poly = roundedSquare(r);
     for (const b of cams) {
       if (b === a) continue;
       const dx = b.x - a.x; const dy = b.y - a.y; const d = Math.hypot(dx, dy);
-      if (!(d > 0) || d >= 2 * r) continue;
+      if (!(d > 0) || Math.abs(dx) >= 2 * r || Math.abs(dy) >= 2 * r) continue;   // the two squares cannot touch
       poly = clipHalfPlane(poly, dx / d, dy / d, d / 2 - 1);   // keep 1 unit of gap between neighbours
     }
     out.set(a.id, poly);
@@ -674,4 +731,4 @@ export function spatialParams({ site, zone, camera, risk } = {}) {
   return { site: site || null, zone: zone || null, camera: camera || null, risk: risk || null };
 }
 
-export default { PLAN, SCENES, SITE_PLANS, CAMERAS, LABEL, camerasFor, cameraById, camerasInZone, planFor, toPlan, inZone, markerPoint, camLabelOffset, planObstacles, layoutZoneLabels, hitPolygons, clipToRect, zoneLinks, zoneTone, ppeEventsFor, ppeItemOf, spatialTargetForAiRisk, spatialParams };
+export default { PLAN, SCENES, SITE_PLANS, CAMERAS, LABEL, camerasFor, cameraById, camerasInZone, planFor, toPlan, inZone, markerPoint, camLabelOffset, planObstacles, layoutZoneLabels, layoutFocusName, hitPolygons, roundedSquare, clipToRect, zoneLinks, zoneTone, ppeEventsFor, ppeItemOf, spatialTargetForAiRisk, spatialParams };

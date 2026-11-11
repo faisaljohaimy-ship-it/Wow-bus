@@ -2,7 +2,9 @@
  * Spatial view, plan furniture and feed linking (js/data/spatial-seed.js, js/data/live.js):
  *   - zone codes, badges and names are placed inside their zone and cover no camera, building outline or plant
  *     (both languages; widths approximated here, measured with the page fonts in the browser);
- *   - camera hit areas meet the touch size and close neighbours split the space instead of stacking;
+ *   - camera hit areas meet the touch size and close neighbours split the space instead of stacking; on phone plans
+ *     (360 / 390 / 430 px viewports) every camera keeps a whole 24 × 24 px target and no camera glyph overlaps another;
+ *   - a framed zone's enlarged name (small plans) stays inside its zone and clear of every camera glyph;
  *   - live-engine feed events carry the zoneId of the zone their sentence names, and PPE matching uses it first.
  */
 import { assert, freshStore, store, bus } from './helpers.mjs';
@@ -51,7 +53,7 @@ export const tests = [
     },
   },
   {
-    name: 'camera hit areas: the full radius for lone cameras; close neighbours split along the bisector',
+    name: 'camera hit areas: the full rounded square for lone cameras; close neighbours split along the bisector',
     fn() {
       const r = 40;
       const cams = [{ id: 'a', x: 100, y: 100 }, { id: 'b', x: 133, y: 100 }, { id: 'c', x: 400, y: 300 }];
@@ -71,6 +73,79 @@ export const tests = [
           const d = Math.hypot(B.x - A.x, B.y - A.y);
           const ux = (B.x - A.x) / d; const uy = (B.y - A.y) / d;
           for (const p of P.get(A.id)) assert.ok(p[0] * ux + p[1] * uy <= d / 2 + 1e-6, `${A.id} hit area crosses into ${B.id}`);
+        }
+      }
+    },
+  },
+  {
+    name: 'phone plans (360 / 390 / 430 px): every camera keeps a whole 24 × 24 px target, no glyph overlaps another (CAM-S3-01 / 02 included)',
+    fn() {
+      // plan widths measured in the browser for 360 / 390 / 430 px viewports (css: .sp-plan inside the card)
+      const PLAN_PX = [292, 322, 362];
+      const inside = (poly, x, y) => {
+        let sign = 0;
+        for (let i = 0; i < poly.length; i += 1) {
+          const a = poly[i]; const b = poly[(i + 1) % poly.length];
+          const c = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
+          if (Math.abs(c) < 1e-9) continue;
+          if (!sign) sign = Math.sign(c); else if (Math.sign(c) !== sign) return false;
+        }
+        return true;
+      };
+      const holdsSquare = (poly, side) => {
+        const h = side / 2;
+        for (let ox = -h; ox <= h; ox += side / 24) for (let oy = -h; oy <= h; oy += side / 24) {
+          if ([[-h, -h], [h, -h], [h, h], [-h, h]].every(([dx, dy]) => inside(poly, ox + dx, oy + dy))) return true;
+        }
+        return false;
+      };
+      // the camera glyph (body + lens, css: drawn at 2x on narrow plans) as a box in plan units
+      const glyphBox = (cam, p, k = 2) => {
+        const a = (cam.heading * Math.PI) / 180; const cos = Math.cos(a); const sin = Math.sin(a);
+        const pts = [[-7, -5], [7, -5], [7, 10], [-7, 10], [-4, -10], [4, -10]].map(([x, y]) => [p.x + k * (x * cos - y * sin), p.y + k * (x * sin + y * cos)]);
+        return { x0: Math.min(...pts.map((q) => q[0])), y0: Math.min(...pts.map((q) => q[1])), x1: Math.max(...pts.map((q) => q[0])), y1: Math.max(...pts.map((q) => q[1])) };
+      };
+      assert.ok(holdsSquare(SP.roundedSquare(13), 24), 'a 13 px half-size rounded square holds a 24 px square');
+      for (const px of PLAN_PX) {
+        const scale = px / SP.PLAN.width;                       // CSS px per plan unit, whole site in view
+        const r = Math.max(22, 14 / scale);                     // spatial.js updateHits, touch
+        for (const site of ['S1', 'S2', 'S3', 'S4', 'S5', 'S6']) {
+          const cams = SP.camerasFor(site);
+          const list = cams.map((c) => { const p = SP.toPlan(c.x, c.y); return { id: c.id, x: p.x, y: p.y }; });
+          const P = SP.hitPolygons(list, r);
+          for (const c of list) assert.ok(holdsSquare(P.get(c.id), 24 / scale), `${px} px plan: ${c.id} holds a 24 px square`);
+          const boxes = cams.map((c) => ({ id: c.id, b: glyphBox(c, SP.toPlan(c.x, c.y)) }));
+          for (let i = 0; i < boxes.length; i += 1) for (let j = i + 1; j < boxes.length; j += 1) {
+            assert.equal(overlap(boxes[i].b, boxes[j].b), 0, `${px} px plan: glyphs of ${boxes[i].id} and ${boxes[j].id} overlap`);
+          }
+        }
+      }
+    },
+  },
+  {
+    name: 'framed zone names on small plans: enlarged (to render at >= 12.5 px) and still inside the zone, clear of cameras (ar, en)',
+    fn() {
+      const st = freshStore();
+      for (const site of st.sites) {
+        for (const lang of ['ar', 'en']) {
+          const names = site.zones.map((z, i) => (lang === 'en' ? (enZoneNames(site)[i] || {}).name : null) || z.name);
+          const obstaclesNarrow = SP.planObstacles(site.id, site, { sensors: st.sensors, isEn: lang === 'en', narrow: true });
+          const lay = SP.layoutZoneLabels(site, names, { obstacles: SP.planObstacles(site.id, site, { sensors: st.sensors, isEn: lang === 'en' }), obstaclesNarrow });
+          const cams = obstaclesNarrow.filter((o) => o.k === 'cam');
+          site.zones.forEach((z, i) => {
+            const L0 = lay.get(z.id);
+            for (const size of [18, 22, 26, 30]) {
+              const nm = SP.layoutFocusName(z, names[i], { size, obstacles: obstaclesNarrow, reserve: [L0.codeNarrowRect, L0.badgeRect] });
+              // placed at the sizes most framings need; above that a crowded zone may show no plan name (never a covered camera)
+              if (size <= 22) assert.ok(nm, `${site.id}/${lang} ${z.id} @${size}: placed`);
+              if (!nm) continue;
+              assert.equal(nm.size, size);
+              const zr = zoneRect(z);
+              assert.ok(nm.rect.x0 >= zr.x0 && nm.rect.x1 <= zr.x1 && nm.rect.y0 >= zr.y0 && nm.rect.y1 <= zr.y1, `${site.id}/${lang} ${z.id} @${size}: inside the zone`);
+              for (const c of cams) assert.equal(overlap(nm.rect, c), 0, `${site.id}/${lang} ${z.id} @${size}: "${nm.lines.join(' / ')}" on a camera`);
+              assert.equal(nm.full, names[i]);
+            }
+          });
         }
       }
     },

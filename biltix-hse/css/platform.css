@@ -928,8 +928,9 @@
    Spatial — SEC-12 site spatial view (js/views/spatial.js) + simulated camera feed (js/ui/camfeed.js)
    Owner: spatial view. Design: docs/design/spatial.md. Logical properties only; the plan and the feed are
    drawings (direction: ltr, never mirrored). Nothing here animates continuously: hover / selection use
-   short colour transitions; the plan's zone framing (viewBox tween) and the viewer's lens iris are one-shot
-   Web Animations / rAF moves started by a user action in spatial.js, and never run under reduced motion.
+   short colour transitions; the plan's zone framing (a transform tween of the .sp-world group; the viewBox never
+   changes) and the viewer's lens iris are one-shot Web Animations / rAF moves started by a user action in
+   spatial.js, and never run under reduced motion. Print always shows the whole site (see Spatial › print).
    ========================================================================== */
 
 .view-spatial .sp-head-actions { align-items: flex-end; gap: var(--space-3); flex-wrap: wrap; }
@@ -1018,8 +1019,9 @@
 .sp-cam { cursor: pointer; outline: none; }
 /* the view cone is a picture, not a target: taps inside it reach the zone underneath */
 .sp-cam-cone { fill: color-mix(in srgb, var(--accent) 15%, transparent); stroke: color-mix(in srgb, var(--accent) 60%, transparent); stroke-width: 1; pointer-events: none; transition: fill var(--dur-micro) var(--ease-out); }
-/* hit area: ≥ 22 CSS px with a fine pointer, ≥ 26 CSS px on touch / small plans (radius set in spatial.js from
-   the rendered scale; split along the bisector between close cameras) */
+/* hit area: a rounded square of 26 CSS px with a fine pointer, 28 CSS px on touch / small plans (it always holds a
+   24 × 24 px square; size set in spatial.js from the rendered scale and framing; split along the bisector between
+   close cameras, which the seed keeps apart on phone plans) */
 .sp-cam-hit { fill: transparent; stroke: none; vector-effect: non-scaling-stroke; }
 .sp-cam-glyph { transition: transform var(--dur-micro) var(--ease-out); }
 .sp-cam-body { fill: var(--ink-1); stroke: var(--bg-1); stroke-width: 1.5; }
@@ -1045,6 +1047,17 @@
 .sp-titleblock-rule { stroke: var(--line-strong); stroke-width: 1; }
 .sp-titleblock-code { font-family: var(--font-mono); font-size: 13px; font-weight: 600; fill: var(--ink-1); }
 
+/* sheet border while a zone is framed: the drawing's end and bottom margins keep the north arrow, the scale bar and
+   the title block clear of the framed picture */
+.sp-sheet { pointer-events: none; opacity: 0; transition: opacity var(--dur-main) var(--ease-out); }
+.sp-plan.is-zoomed .sp-sheet { opacity: 1; }
+.sp-sheet-band { fill: var(--bg-1); }
+.sp-sheet-edge { fill: none; stroke: var(--line-2); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+/* one honest scale bar at a time: the whole-site bar, or the bar of the framing scale */
+.sp-plan:not(.is-zoomed) .sp-scale.is-zoom, .sp-plan.is-zoomed .sp-scale.is-full { display: none; }
+/* the framed zone's own name on small plans (sized in spatial.js to render at ≥ 12.5 CSS px) */
+.sp-focus-name { display: none; }
+
 /* narrow plans: names move to the table; codes and counts grow */
 @container (max-width: 620px) {
   .sp-zone-name, .sp-feature-label, .sp-gate-label, .sp-code-label, .sp-cam-label, .sp-ctx-label, .sp-footprint-label, .sp-label-plate, .sp-furn-small, .sp-titleblock, .sp-titleblock-rule, .sp-titleblock-code { display: none; }
@@ -1054,8 +1067,8 @@
   .sp-north-label { font-size: 22px; }
   /* camera glyphs double on small plans (their placement keeps zone codes clear at this size) */
   .sp-cam-glyph { transform: scale(2); }
-  /* a framed zone is drawn larger: its own name returns */
-  .sp-plan.is-framed .sp-zone-name.is-selected { display: inline; }
+  /* a framed zone is drawn larger: its own name returns, at a size that renders ≥ 12.5 CSS px */
+  .sp-plan.is-framed .sp-focus-name { display: inline; }
   /* small plans: the button sits under the drawing, never over the framed zone */
   .sp-fit-dock { position: static; display: flex; justify-content: flex-end; padding: 6px 8px 8px; border-block-start: 1px solid var(--line); }
   .sp-plan:not(.is-framed) .sp-fit-dock { display: none; }
@@ -1152,9 +1165,13 @@ dialog.modal.sp-viewer-dialog { inline-size: min(1080px, 100%); }
 .sp-viewer-honest { display: flex; gap: var(--space-2); align-items: flex-start; margin: 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--warning) 50%, transparent); border-radius: var(--radius-md); background: color-mix(in srgb, var(--warning) 11%, var(--bg-1)); color: var(--ink-1); font-size: var(--fs-sm); line-height: var(--lh-body); }
 .sp-viewer-honest .icon { flex: none; margin-block-start: 3px; color: var(--warning-text); }
 .sp-feed-figure { margin: 0; }
-/* the dark shell shows behind the lens iris while the picture opens */
-.sp-feed-shell { border-radius: 14px; background: radial-gradient(circle at 50% 50%, #1A1F24 0, #07090B 70%); }
-.sp-feed.is-iris { will-change: clip-path; }
+/* the dark shell shows behind the lens iris until the first frame is on screen, then while the picture opens */
+.sp-feed-shell { position: relative; border-radius: 14px; background: radial-gradient(circle at 50% 50%, #1A1F24 0, #07090B 70%); }
+/* neutral start-up line (no first frame after 2 s): the shell is dark in both themes, so the colours are fixed */
+.sp-feed-wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; margin: 0; padding: var(--space-3); pointer-events: none; }
+.sp-feed-wait > span { padding: 6px 14px; border: 1px solid rgba(255, 255, 255, .22); border-radius: var(--radius-pill); background: rgba(255, 255, 255, .06); color: #E8EDF2; font-size: var(--fs-sm); line-height: 1.4; text-align: center; }
+.sp-feed-wait[hidden] { display: none; }
+.cf-layers.is-iris { will-change: clip-path; }
 .sp-feed-caption { margin-block-start: 6px; }
 .sp-viewer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 @media (max-width: 760px) { .sp-viewer-grid { grid-template-columns: minmax(0, 1fr); } }
@@ -1165,6 +1182,7 @@ dialog.modal.sp-viewer-dialog { inline-size: min(1080px, 100%); }
 .sp-ppe-note { margin: 0; }
 
 .cf-frame { position: relative; inline-size: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 14px; background: #101214; isolation: isolate; box-shadow: 0 0 0 1px rgba(0, 0, 0, .35), var(--elev-2); }
+.cf-layers { position: absolute; inset: 0; border-radius: inherit; }
 .cf-frame canvas, .cf-frame .cf-video { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; display: block; }
 /* main-thread fallback: the composed picture arrives as a muted stream (no controls, no pointer) */
 .cf-frame .cf-video { object-fit: fill; pointer-events: none; background: #101214; }
@@ -1194,8 +1212,8 @@ dialog.modal.sp-viewer-dialog { inline-size: min(1080px, 100%); }
   .view-spatial .sp-head-actions { inline-size: 100%; }
 }
 
-@media (prefers-reduced-motion: reduce) { .sp-zone-shape, .sp-cam-cone, .sp-cam-label, .sp-link, .sp-cam-glyph { transition: none; } }
-:root[data-motion="reduce"] .sp-zone-shape, :root[data-motion="reduce"] .sp-cam-cone, :root[data-motion="reduce"] .sp-cam-label, :root[data-motion="reduce"] .sp-link, :root[data-motion="reduce"] .sp-cam-glyph { transition: none; }
+@media (prefers-reduced-motion: reduce) { .sp-zone-shape, .sp-cam-cone, .sp-cam-label, .sp-link, .sp-cam-glyph, .sp-sheet { transition: none; } }
+:root[data-motion="reduce"] .sp-zone-shape, :root[data-motion="reduce"] .sp-cam-cone, :root[data-motion="reduce"] .sp-cam-label, :root[data-motion="reduce"] .sp-link, :root[data-motion="reduce"] .sp-cam-glyph, :root[data-motion="reduce"] .sp-sheet { transition: none; }
 @media (forced-colors: active) {
   .sp-zone-shape { stroke: CanvasText; }
   .sp-zone.is-selected .sp-zone-shape, .sp-zone:focus-visible .sp-zone-shape { stroke: Highlight; }
@@ -1204,6 +1222,13 @@ dialog.modal.sp-viewer-dialog { inline-size: min(1080px, 100%); }
 @media print {
   .sp-cam-card .btn, .sp-clear, .sp-fit { display: none; }
   .sp-plan { break-inside: avoid; }
+  /* print is always the whole site plan, even with a zone framed on screen (spatial.js also resets the DOM on
+     beforeprint / matchMedia('print') and restores the framing afterwards): CSS beats the transform and clip-path
+     attributes, and the framing furniture hides */
+  .sp-world { transform: none !important; }
+  .sp-viewport { clip-path: none !important; }
+  .sp-sheet, .sp-focus-name, .sp-scale.is-zoom { display: none !important; }
+  .sp-scale.is-full { display: inline !important; }
   /* print is always the real table, numbers aligned under their headers */
   .sp-table-wrap { container-type: normal; overflow: visible; border-color: #C5D2E1; }
   .sp-table { display: table; }

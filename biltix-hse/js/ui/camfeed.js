@@ -32,7 +32,12 @@
  *   feed.stats() → { frames, avgDrawMs, running, mode: 'live-sim'|'still'|'paused', backend: 'worker'|'main', fps, res,
  *                    present: 'offscreen'|'video'|'canvas', phase }
  *   onMode(stats) is called whenever the mode, backend or frame rate changes (the viewer's caption follows it).
+ *   feed.ready resolves when the first frame can be seen: the worker posts 'first-frame' from the task after the one
+ *   that drew it (OffscreenCanvas frames commit when their task ends); the fallback waits for the video's first
+ *   picture (or the first frame on in-page canvases). The viewer keeps its lens iris closed until then.
  *
+ * DOM: host > .cf-frame (watched by the IntersectionObserver; never clip it) > .cf-layers (feed.picture: plate + dyn
+ * canvases or the fallback video, .cf-fx, .cf-osd). A reveal effect clips feed.picture.
  * Geometry is a picture: the frame is dir="ltr" and never mirrors in Arabic; only text inside follows its language.
  */
 
@@ -1118,7 +1123,7 @@ function makeLoop(renderer, { useRaf = false, onFrame = null, now = () => Date.n
 const IS_WORKER = typeof document === 'undefined' && typeof WorkerGlobalScope !== 'undefined' && typeof self !== 'undefined' && self instanceof WorkerGlobalScope;
 
 if (IS_WORKER) {
-  let renderer = null; let loop = null; let lastPost = 0; let lastIr = null;
+  let renderer = null; let loop = null; let lastPost = 0; let lastIr = null; let firstSent = false;
   let pendingMode = null; let pendingEvents = null;   // messages that arrive while the fonts load
   let clockOffset = 0;                                // the page's clock minus this worker's (tests freeze the page clock)
   const sync = (msg) => { if (msg && Number.isFinite(msg.sentAt)) clockOffset = msg.sentAt - Date.now(); };
@@ -1145,8 +1150,14 @@ if (IS_WORKER) {
           ? { mono: '"CF Mono", ui-monospace, monospace', sans: '"CF Arabic", "CF Sans", sans-serif' }
           : { mono: 'ui-monospace, monospace', sans: 'sans-serif' };
         renderer = makeRenderer(msg.plate, msg.dyn, { ...msg.cfg, fonts });
-        // the 2nd frame is reported at once: the page opens its lens iris on it (the 1st is then on screen)
-        loop = makeLoop(renderer, { onFrame: () => post(renderer.stats().frames === 2), now: () => Date.now() + clockOffset });
+        // 'first-frame': an OffscreenCanvas frame is committed when the task that drew it ends, so the message is sent
+        // from the next task — the page opens its lens iris on it and never on an empty canvas
+        const firstFrame = () => {
+          if (firstSent) return;
+          firstSent = true;
+          setTimeout(() => { try { self.postMessage({ type: 'first-frame' }); } catch { /* closing */ } }, 0);
+        };
+        loop = makeLoop(renderer, { onFrame: () => { post(); firstFrame(); }, now: () => Date.now() + clockOffset });
         if (pendingEvents) renderer.setEvents(pendingEvents);
         const m0 = pendingMode || { type: msg.mode, at: msg.at };
         if (m0.type === 'run') loop.run(); else if (m0.type === 'still') loop.still(m0.at);
@@ -1219,7 +1230,12 @@ export function createCamFeed(host, opts = {}) {
   const bl = mk('cf-osd-bl');
   bl.append(mk('cf-osd-bl-text', labels.simulated || 'SIMULATED', { dir: opts.rtlLabels ? 'rtl' : 'ltr' }));
   osd.append(tl, tr, bl);
-  frame.append(plate, dyn, fx, osd);
+  // the picture layers sit in one wrapper inside the frame: a reveal (the viewer's lens iris) clips the wrapper,
+  // never the frame, because the frame is what the IntersectionObserver watches — a clipped frame reads as off
+  // screen and the feed would pause before drawing its first frame
+  const layers = document.createElement('div'); layers.className = 'cf-layers';
+  layers.append(plate, dyn, fx, osd);
+  frame.append(layers);
   host.appendChild(frame);
 
   const cssVar = (name, fallback) => { try { return getComputedStyle(host).getPropertyValue(name).trim() || fallback; } catch { return fallback; } };
@@ -1244,7 +1260,8 @@ export function createCamFeed(host, opts = {}) {
   let pageVisible = document.visibilityState !== 'hidden';
   let stillAt = null;
   let events = [];
-  // resolves once the first frame is on the canvases (the viewer opens its lens iris on it)
+  // resolves once the first frame can be seen: the worker's 'first-frame' message (sent after the frame's commit),
+  // the fallback video's first picture, or the first frame on in-page canvases (the viewer opens its lens iris on it)
   let readyResolve = null;
   const ready = new Promise((r) => { readyResolve = r; });
   const markReady = () => { if (readyResolve) { const r = readyResolve; readyResolve = null; r(); } };
@@ -1286,8 +1303,11 @@ export function createCamFeed(host, opts = {}) {
           video.srcObject = stream;
           // a frame pushed before the element was ready (a still frame) is pushed again once it plays
           video.addEventListener('playing', () => { try { if (track) track.requestFrame(); } catch { /* ignore */ } }, { once: true });
+          // ready = the video element has a picture to show (not merely a frame drawn on the detached canvas)
+          video.addEventListener('loadeddata', markReady, { once: true });
+          if (typeof video.requestVideoFrameCallback === 'function') { try { video.requestVideoFrameCallback(() => markReady()); } catch { /* ignore */ } }
           plate.remove(); dyn.remove();
-          frame.insertBefore(video, fx);
+          layers.insertBefore(video, fx);
           const played = video.play();
           if (played && typeof played.catch === 'function') played.catch(() => { /* muted autoplay refused: stays on the last frame */ });
           present = () => { outCtx.drawImage(plate, 0, 0); outCtx.drawImage(dyn, 0, 0); track.requestFrame(); };
@@ -1297,7 +1317,9 @@ export function createCamFeed(host, opts = {}) {
     renderer = makeRenderer(plate, dyn, { ...cfg, fps, res: FALLBACK_RES, fonts: { mono: cssVar('--font-mono', 'monospace'), sans: cssVar('--font-sans', 'sans-serif') } });
     renderer.setEvents(events);
     // with the video path no requestAnimationFrame is needed (nothing in the document changes per frame)
-    loop = makeLoop(renderer, { useRaf: !present, onFrame: () => { if (present) { try { present(); } catch { /* ignore */ } } paintMode(renderer.stats().ir); markReady(); } });
+    // canvases in the page: the drawn frame is painted with the next document frame; the video path reports
+    // readiness from the element itself (above)
+    loop = makeLoop(renderer, { useRaf: !present, onFrame: () => { if (present) { try { present(); } catch { /* ignore */ } } else markReady(); paintMode(renderer.stats().ir); } });
   }
   const notify = () => { if (typeof opts.onMode === 'function') { try { opts.onMode(api.stats()); } catch { /* ignore */ } } };
 
@@ -1313,7 +1335,8 @@ export function createCamFeed(host, opts = {}) {
       };
       worker.onmessage = (e) => {
         const msg = e.data || {};
-        if (msg.type === 'stats') { remoteStats = msg.stats; paintMode(Boolean(msg.stats.ir)); if (msg.stats.frames > 1 || (msg.stats.frames > 0 && !msg.stats.running)) markReady(); }   // the 2nd frame: the 1st is on screen
+        if (msg.type === 'first-frame') markReady();
+        else if (msg.type === 'stats') { remoteStats = msg.stats; paintMode(Boolean(msg.stats.ir)); }
         else if (msg.type === 'error') fallBack();
       };
       worker.onerror = (e) => { if (e && typeof e.preventDefault === 'function') e.preventDefault(); fallBack(); };
@@ -1385,6 +1408,8 @@ export function createCamFeed(host, opts = {}) {
 
   const api = {
     el: frame,
+    /** The picture layers (canvases or video, vignette, OSD): clip THIS for a reveal, not the frame. */
+    picture: layers,
     get backend() { return backend; },
     start() { wanted = true; applyMode(); return api; },
     stop() { wanted = false; applyMode(); return api; },
@@ -1396,7 +1421,7 @@ export function createCamFeed(host, opts = {}) {
       return api;
     },
     isRunning: () => runningState === 'run',
-    /** Promise: the first frame has been drawn. */
+    /** Promise: the first frame is on screen (resolves on destroy too). */
     ready,
     /** Which drawn worker carries each PPE event (main-thread renderer only; probes and tests). */
     assignment: () => (backend === 'main' && renderer && typeof renderer.assignment === 'function' ? renderer.assignment() : null),
