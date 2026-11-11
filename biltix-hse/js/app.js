@@ -587,6 +587,64 @@ function applyPrune(plan) {
 }
 const routeFx = { pending: null, ghost: null, same: false, timer: 0 };
 
+/**
+ * Settle the outgoing view before it is measured: a page entrance still rising (motion.page translateY, header
+ * parts) would otherwise be read mid-flight and then keep moving inside the afterimage (2–10 px off at phone
+ * width on quick double navigations). Finite animations jump to their end; endless decorations are left alone.
+ */
+function settleOutgoing(kids) {
+  for (const k of kids) {
+    let anims = [];
+    try { anims = typeof k.getAnimations === 'function' ? k.getAnimations({ subtree: true }) : []; } catch { anims = []; }
+    for (const a of anims) {
+      try {
+        const end = a.effect && typeof a.effect.getComputedTiming === 'function' ? a.effect.getComputedTiming().endTime : Infinity;
+        if (Number.isFinite(end) && a.playState !== 'finished') a.finish();
+      } catch { /* an animation that cannot finish keeps running */ }
+    }
+  }
+}
+
+/**
+ * Sticky elements of the outgoing view, with how far they are stuck from their place in flow. In the afterimage
+ * (a fixed, clipped layer) stickiness would resolve against another scroller, so they are pinned there with
+ * position: relative and the same offset instead (read with two style flips and two layout reads).
+ */
+function stuckOffsets(kids, band) {
+  const stuck = [];
+  const at = [];
+  for (const k of kids) {
+    for (const el of k.querySelectorAll('*')) {
+      if (stuck.length >= 40) break;
+      if (getComputedStyle(el).position !== 'sticky') continue;
+      const r = el.getBoundingClientRect();
+      if (!r.height || r.bottom <= band.top || r.top >= band.bottom) continue;   // off screen: not in the still
+      stuck.push(el); at.push(r);
+    }
+  }
+  if (!stuck.length) return [];
+  const prev = stuck.map((el) => el.style.position);
+  stuck.forEach((el) => { el.style.position = 'static'; });
+  const flow = stuck.map((el) => el.getBoundingClientRect());
+  stuck.forEach((el, i) => { el.style.position = prev[i]; });
+  const out = [];
+  stuck.forEach((el, i) => {
+    const dx = Math.round((at[i].left - flow[i].left) * 100) / 100;
+    const dy = Math.round((at[i].top - flow[i].top) * 100) / 100;
+    out.push([el, dx, dy]);
+  });
+  return out;
+}
+
+/** In the afterimage: stuck elements keep the offset they had on screen, as plain relative boxes. */
+function pinStuck(list) {
+  for (const [el, dx, dy] of list || []) {
+    el.style.position = 'relative';
+    el.style.inset = 'auto';
+    el.style.translate = dx || dy ? `${dx}px ${dy}px` : 'none';
+  }
+}
+
 function dropRouteGhost() {
   clearTimeout(routeFx.timer);
   if (routeFx.ghost) { routeFx.ghost.remove(); routeFx.ghost = null; }
@@ -603,6 +661,7 @@ function captureOutgoing(payload) {
   const kids = main ? Array.from(main.children) : [];
   if (!kids.length) return;
   try {
+    settleOutgoing(kids);
     const rect = kids[0].getBoundingClientRect();
     if (!rect.width || !rect.height) return;
     const cs = getComputedStyle(main);
@@ -616,7 +675,7 @@ function captureOutgoing(payload) {
     let kept = kids.reduce((n, k) => n + 1 + k.getElementsByTagName('*').length, 0);
     for (const [el] of plan) kept -= 1 + el.getElementsByTagName('*').length;
     if (kept > GHOST_MAX_ELEMENTS) return;
-    const pending = { kids, rect, contentWidth, marginTop, plan, sync: true };
+    const pending = { kids, rect, contentWidth, marginTop, plan, stuck: stuckOffsets(kids, band), sync: true };
     routeFx.pending = pending;
     queueMicrotask(() => { pending.sync = false; });
   } catch { routeFx.pending = null; }
@@ -655,6 +714,7 @@ function playOutgoing(payload) {
     stage.style.setProperty('inset-block-start', `${p.rect.top - p.marginTop - top}px`);
     stage.style.setProperty('inset-inline-start', `${rtl ? right - (stageLeft + p.contentWidth) : stageLeft - left}px`);
     applyPrune(p.plan || []);
+    pinStuck(p.stuck);
     kids.forEach((k) => stage.appendChild(k));
     ghost.appendChild(stage);
     document.body.appendChild(ghost);
@@ -950,6 +1010,23 @@ function syncRailIndicator({ animate = false } = {}) {
   rail.classList.add('has-indicator');
   if (from && motion && typeof motion.glide === 'function') motion.glide(ind, from, to);
   railFx.id = id; railFx.y = y; railFx.h = hgt;
+}
+
+/**
+ * Webfonts change label widths, so a wrap can move the active item after the plates were placed (the first
+ * language switch loads the other script's fonts). Every finished font load places both plates again where
+ * they rest: no glide, a running one is replaced by the resting transform.
+ */
+let fontPlaceFrame = 0;
+function placeIndicatorsAfterFonts() {
+  if (fontPlaceFrame) return;
+  fontPlaceFrame = requestAnimationFrame(() => { fontPlaceFrame = 0; syncRailIndicator(); syncTabIndicator(); });
+}
+function watchFontsForIndicators() {
+  const fonts = document.fonts;
+  if (!fonts) return;
+  try { fonts.addEventListener('loadingdone', placeIndicatorsAfterFonts); } catch { /* old FontFaceSet */ }
+  if (fonts.ready && typeof fonts.ready.then === 'function') fonts.ready.then(placeIndicatorsAfterFonts, () => {});
 }
 
 function syncTabIndicator({ animate = false } = {}) {
@@ -2024,6 +2101,8 @@ function onLangChange() {
   if (dataUi.open) closeDataPopover();
   document.querySelectorAll('#toasts .toast').forEach((el) => el.remove());
   renderShellChrome();
+  // The new language's webfonts may still be loading: place the plates again once they are ready.
+  try { if (document.fonts && document.fonts.ready) document.fonts.ready.then(placeIndicatorsAfterFonts, () => {}); } catch { /* no FontFaceSet */ }
   toast(t('core.lang.changed'), { tone: 'neutral', timeout: 2400 });
 }
 
@@ -2482,6 +2561,7 @@ async function boot() {
   buildToggles();
   buildCommandPalette();
   watchScrollDepth();
+  watchFontsForIndicators();
 
   views.forEach((view) => { try { router.register(view); } catch (err) { reportError(err, `router.register(${view && view.id})`); } });
   router.setContainer(main);

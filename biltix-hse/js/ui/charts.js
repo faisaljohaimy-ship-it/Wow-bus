@@ -3172,8 +3172,10 @@ export function radarTrend(opts = {}) {
     clear(gridSvg);
     layerViewBox(gridSvg, g);
     // The stage is direction: ltr (the dial is the same in both languages); labels read in the document direction.
+    // `direction` goes on the rim label group only: on the root svg it would flip the layer's own logical inset
+    // (inset-inline-start) and pin it to the other edge while a resize redraw is pending (Arabic misalignment).
     const rtl = isRTL(el);
-    gridSvg.setAttribute('direction', rtl ? 'rtl' : 'ltr');
+    gridSvg.removeAttribute('direction');
     const defs = svgEl('defs', {}, gridSvg);
     const bgId = uid('rt-bg');
     const bg = svgEl('radialGradient', { id: bgId, gradientUnits: 'userSpaceOnUse', cx: r2(g.cx), cy: r2(g.cy), r: r2(g.R) }, defs);
@@ -3204,7 +3206,7 @@ export function radarTrend(opts = {}) {
       const tg = svgEl('g', { class: 'rt-ticks' }, gridSvg);
       g.ticks.forEach((k) => svgEl('text', { x: r2(k.x), y: r2(k.y), 'text-anchor': 'start', direction: 'ltr', class: 'rt-tick num', text: k.text }, tg));
     }
-    const rim = svgEl('g', { class: 'rt-rim' }, gridSvg);
+    const rim = svgEl('g', { class: 'rt-rim', direction: rtl ? 'rtl' : 'ltr' }, gridSvg);
     const last = g.n - 1;
     const A = anchors(rtl);
     g.picks.forEach((i) => {
@@ -3528,8 +3530,8 @@ export function radarTrend(opts = {}) {
 
   /**
    * Visibility from the radar observer: `enough` = about 40 % of the chart (or 160 px of it) is on screen, which is
-   * when the entrance plays; a chart that stays only partly visible plays it after a short wait; one off screen shows
-   * its final state until it is scrolled to.
+   * when the entrance plays; a chart that stays only partly visible plays it after a short wait; one off screen stays
+   * in the pending (hidden) state until it is scrolled to.
    */
   function onVisible(isVisible, enough = isVisible) {
     if (st.dead) return;
@@ -3545,10 +3547,12 @@ export function radarTrend(opts = {}) {
     if (st.mode !== 'wait' || !st.model || st.model.state === 'empty') return;
     if (!gaugeMotionOn()) { settle(); return; }
     if (enough) { shell.remeasure(); entrance(); return; }
+    // Still pending, on screen or off it: the layers stay in the pre-entrance state (never the finished chart
+    // first, then a vanish and regrow) until the entrance starts them; print and reduced motion settle at once.
+    stage.setAttribute('data-enter', 'wait');
     if (isVisible) {
-      stage.setAttribute('data-enter', 'wait');
       st.partTimer = setTimeout(() => { if (!st.dead && st.mode === 'wait' && st.visible) { shell.remeasure(); entrance(); } }, 450);
-    } else stage.removeAttribute('data-enter');
+    }
   }
 
   /* ---- interaction ---- */
