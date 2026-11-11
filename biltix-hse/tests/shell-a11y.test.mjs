@@ -1,6 +1,8 @@
 /** Final-verification fixes: whole-row clicks (interactiveWithin) and label in name (labelInName, visibleText). */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { interactiveWithin, labelInName, nameContains, nameExtra, visibleText } from '../js/ui/components.js';
+import { FONT_STACKS, fontStacksFor } from '../js/ui/charts.js';
 
 /** Tiny tree for visibleText: text(s) and node(cls, ...children) with firstChild / nextSibling links. */
 const text = (s) => ({ nodeType: 3, nodeValue: s });
@@ -115,6 +117,21 @@ export const tests = [
       const btn = node('cmdk-btn', node('cmdk-btn-label', text('Search…')), kbd, sr, hid);
       assert.equal(visibleText(btn), 'Search… Ctrl+K');
       assert.equal(visibleText(null), '');
+    },
+  },
+  {
+    name: 'charts FONT_STACKS: the same stacks as css/tokens.css (--font-ar, --font-en, --font-mono-mixed)',
+    fn() {
+      const css = readFileSync(new URL('../css/tokens.css', import.meta.url), 'utf8');
+      const token = (name) => new RegExp(`--${name}:\\s*([^;]+);`).exec(css)[1].trim();
+      assert.equal(FONT_STACKS.ar, token('font-ar'));
+      assert.equal(FONT_STACKS.en, token('font-en'));
+      assert.equal(token('font-mono-mixed'), `${FONT_STACKS.monoHead}, var(--font-sans)`);
+      assert.equal(fontStacksFor('en').sans, FONT_STACKS.en);
+      assert.equal(fontStacksFor('en-GB').sans, FONT_STACKS.en);
+      assert.equal(fontStacksFor('ar').sans, FONT_STACKS.ar);
+      assert.equal(fontStacksFor('').sans, FONT_STACKS.ar, 'Arabic-first by default, like :root');
+      assert.equal(fontStacksFor('ar').mono, `${FONT_STACKS.monoHead}, ${FONT_STACKS.ar}`);
     },
   },
 ];

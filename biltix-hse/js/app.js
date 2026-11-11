@@ -2528,6 +2528,24 @@ function renderShellEmpty(main) {
 // Arabic session never shows the English placeholders of index.html for long (they are English, the default language).
 try { localizeStaticChrome(); } catch { /* DOM not ready: boot() localises again */ }
 
+/** Let the browser paint and handle input between boot phases (scheduler.yield where available). */
+function yieldToMain() {
+  try {
+    if (typeof scheduler !== 'undefined' && scheduler && typeof scheduler.yield === 'function') return scheduler.yield();
+  } catch { /* fall back */ }
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * The first route's view module, loaded with the boot modules so the first mount renders in the same task as the
+ * router starts: the pre-view drawn by index.html is replaced by the real header in one frame (no empty <main>).
+ */
+function loadFirstView() {
+  const m = /^#\/([a-z]+)/.exec(location.hash || '');
+  const id = m && navViews.some((v) => v && v.id === m[1]) ? m[1] : DEFAULT_VIEW;
+  return typeof loadView === 'function' ? loadView(id).catch(() => null) : null;
+}
+
 async function boot() {
   const main = $('main');
   document.body.classList.add('is-booting');
@@ -2541,6 +2559,7 @@ async function boot() {
   await Promise.all([
     loadOptionalModules(),
     i18n.lang() === 'en' ? i18n.loadData().catch(() => false) : null,
+    loadFirstView(),
   ]);
   views = navViews.filter((v) => v && typeof v.id === 'string' && (typeof v.load === 'function' || typeof v.render === 'function'));
 
@@ -2563,6 +2582,9 @@ async function boot() {
   watchScrollDepth();
   watchFontsForIndicators();
 
+  // Boot runs in a few tasks, not one: shell chrome, then the first view, then the live engines (shorter main-thread
+  // blocks on slow phones; the pre-view from index.html stays on screen until the view replaces it in one frame).
+  await yieldToMain();
   views.forEach((view) => { try { router.register(view); } catch (err) { reportError(err, `router.register(${view && view.id})`); } });
   router.setContainer(main);
   router.setContext(buildContext());
@@ -2600,9 +2622,11 @@ async function boot() {
     document.title = `${t('core.app.name')} — ${t('core.app.full')}`;
   }
 
+  await yieldToMain();
   if (live && typeof live.start === 'function') {
     try { live.start({ store, bus }); } catch (err) { reportError(err, 'live.start'); }
   }
+  await yieldToMain();
   if (platformLive && typeof platformLive.start === 'function') {
     try { platformLive.start({ store, bus }); } catch (err) { reportError(err, 'platformLive.start'); }
   }

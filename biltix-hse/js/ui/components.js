@@ -115,7 +115,7 @@ export function clear(el) { while (el && el.firstChild) el.removeChild(el.firstC
 
 /** Words of a string the way a label-in-name check compares them: lower case, letters and digits only. */
 function nameWords(s) {
-  return String(s ?? '').normalize('NFKC').replace(/\([^()]*\)/g, ' ').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  return String(s ?? '').replace(/\([^()]*\)/g, ' ').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 }
 const collapseWs = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
@@ -139,7 +139,8 @@ export function labelInName(visible, label) {
   const v = collapseWs(visible);
   const l = collapseWs(label);
   if (!v) return l;
-  if (!l || nameContains(l, v)) return l || v;
+  if (!l) return v;
+  if (l.startsWith(`${v} `) || l === v || nameContains(l, v)) return l;
   const rest = nameExtra(v, l);
   return rest ? `${v} — ${rest}` : v;
 }
@@ -947,7 +948,9 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
   function update(nextRows, { preserve = false, resetPage = false, flash = false, flip = false } = {}) {
     const before = flash ? new Map(data.map((r) => [keyOf(r), signature(r)])) : null;
     let saved = null;
-    if (preserve) {
+    // Nothing to keep before the table's first measured frame (wasConnected): skipping it there spares a forced
+    // style read up the ancestors while a view is still being built (boot profile).
+    if (preserve && wasConnected) {
       const sp = scrollParent();
       saved = { top: wrap.scrollTop, left: wrap.scrollLeft, sp, spTop: sp ? sp.scrollTop : 0, focus: captureFocus() };
     }

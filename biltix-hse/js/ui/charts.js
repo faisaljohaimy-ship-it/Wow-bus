@@ -111,10 +111,17 @@ function htmlEl(tag, { class: cls, text, attrs = {}, style = {} } = {}, parent =
 
 function clear(el) { while (el && el.firstChild) el.removeChild(el.firstChild); return el; }
 
-/** Whether the element renders right-to-left (default for this app). */
+/**
+ * Whether the element renders right-to-left (default for this app). Read from the nearest dir attribute (html[dir]
+ * follows the language): a computed-style read here forced a full style recalculation on every chart draw while a
+ * view was being built (boot profile). Computed style only when no dir attribute says it.
+ */
 function isRTL(el) {
   try {
     const node = el && el.isConnected ? el : document.documentElement;
+    const host = typeof node.closest === 'function' ? node.closest('[dir]') : null;
+    const dir = (host || document.documentElement).getAttribute('dir');
+    if (dir === 'rtl' || dir === 'ltr') return dir === 'rtl';
     return getComputedStyle(node).direction !== 'ltr';
   } catch { return true; }
 }
@@ -159,25 +166,32 @@ function tween(from, to, ms, onFrame) {
 let measureCtx = null;
 let fontCache = { sans: '', mono: '', at: 0, lang: '' };
 
+/**
+ * The app's font stacks, as css/tokens.css defines them (--font-ar, --font-en; --font-mono-mixed = the mono faces,
+ * then the language's sans stack). Constants, not a computed-style read: reading custom properties off <html> in
+ * the middle of a view build forced a style recalculation of the whole document (~40 ms in the cockpit boot
+ * profile). tests/shell-a11y.test.mjs keeps them equal to tokens.css.
+ */
+export const FONT_STACKS = Object.freeze({
+  ar: '"IBM Plex Sans Arabic", "Plex Arabic Fallback", "Plex Arabic Fallback Naskh", system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif',
+  en: '"IBM Plex Sans", "Plex Sans Fallback", "IBM Plex Sans Arabic", "Plex Arabic Fallback Naskh", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+  monoHead: '"IBM Plex Mono", "Plex Mono Fallback"',
+});
+/** Sans and mixed-mono stacks for a document language (en* → Latin-first, otherwise Arabic-first). */
+export function fontStacksFor(lang) {
+  const sans = /^en/i.test(String(lang || '')) ? FONT_STACKS.en : FONT_STACKS.ar;
+  return { sans, mono: `${FONT_STACKS.monoHead}, ${sans}` };
+}
+
 /** App font stacks; --font-sans resolves per html[lang] (Arabic-first / Latin-first), so the cache is per language. */
 function fontFamilies() {
   const now = Date.now();
   let lang = '';
   try { lang = document.documentElement.getAttribute('lang') || ''; } catch { lang = ''; }
-  if (fontCache.sans && fontCache.lang === lang && now - fontCache.at < 2000) return fontCache;
-  let sans = '';
-  let mono = '';
-  try {
-    const cs = getComputedStyle(document.documentElement);
-    sans = cs.getPropertyValue('--font-sans').trim();
-    mono = (cs.getPropertyValue('--font-mono-mixed') || cs.getPropertyValue('--font-mono')).trim();
-  } catch { /* fall through */ }
-  fontCache = {
-    sans: sans || '"IBM Plex Sans Arabic", system-ui, sans-serif',
-    mono: mono || '"IBM Plex Mono", ui-monospace, monospace',
-    at: now,
-    lang,
-  };
+  // The stacks only change with html[lang]: cached per language.
+  if (fontCache.sans && fontCache.lang === lang) return fontCache;
+  const { sans, mono } = fontStacksFor(lang);
+  fontCache = { sans, mono, at: now, lang };
   return fontCache;
 }
 

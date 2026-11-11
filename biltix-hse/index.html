@@ -62,13 +62,19 @@
       else document.title = 'بلتكس Risk AI';
       var meta = document.querySelector('meta[name="theme-color"]:not([media])');
       if (meta) meta.setAttribute('content', theme === 'light' ? '#F4F7FB' : '#080F1B');
-      var font = document.createElement('link');
-      font.rel = 'preload';
-      font.as = 'font';
-      font.type = 'font/woff2';
-      font.crossOrigin = 'anonymous';
-      font.href = lang === 'en' ? 'assets/fonts/plex-sans-latin-400.woff2' : 'assets/fonts/plex-arabic-arabic-400.woff2';
-      document.head.appendChild(font);
+      // Regular weight of the UI face: the pre-view's lead (the largest text of the first screen) waits for it, so
+      // it is fetched first. Arabic needs both subsets of IBM Plex Sans Arabic: the space and Latin letters /
+      // digits come from its latin subset (a fallback space would change the line widths, see index.html <main>).
+      var fonts = lang === 'en' ? ['plex-sans-latin-400'] : ['plex-arabic-arabic-400', 'plex-arabic-latin-400'];
+      for (var fi = 0; fi < fonts.length; fi++) {
+        var font = document.createElement('link');
+        font.rel = 'preload';
+        font.as = 'font';
+        font.type = 'font/woff2';
+        font.crossOrigin = 'anonymous';
+        font.href = 'assets/fonts/' + fonts[fi] + '.woff2';
+        document.head.appendChild(font);
+      }
       // Home route (#/cockpit): start the explainer hero's poster now (it is the likely LCP image), with the same
       // srcset / sizes as its <img> (js/ui/explainer-hero.js POSTER_SIZES, js/data/explainer-media.js posters).
       // Skipped when the reader minimised the hero.
@@ -96,39 +102,6 @@
   <link rel="stylesheet" href="css/charts.css">
   <link rel="stylesheet" href="css/platform.css">
   <link rel="stylesheet" href="css/print.css" media="print">
-  <!-- Module preloads: the whole static graph of js/app.js (core, i18n runtime + shell/UI dictionaries, status,
-       motion, components, view registry), the boot-time dynamic imports (enum labels, charts, radar, art, both
-       seeds, platform selectors) and the home view with its explainer hero (component + media manifest). The English data dictionaries (js/i18n/data/) are NOT
-       preloaded: English sessions (the default) load them at boot in parallel with the optional modules (a modulepreload
-       measured no gain), Arabic sessions only on a switch to English. Other views load on first navigation. -->
-  <link rel="modulepreload" href="js/app.js">
-  <link rel="modulepreload" href="js/core/bus.js">
-  <link rel="modulepreload" href="js/core/i18n.js">
-  <link rel="modulepreload" href="js/i18n/core.js">
-  <link rel="modulepreload" href="js/core/status.js">
-  <link rel="modulepreload" href="js/core/fmt.js">
-  <link rel="modulepreload" href="js/core/store.js">
-  <link rel="modulepreload" href="js/core/selectors.js">
-  <link rel="modulepreload" href="js/data/vocab-en.js">
-  <link rel="modulepreload" href="js/core/router.js">
-  <link rel="modulepreload" href="js/views/index.js">
-  <link rel="modulepreload" href="js/ui/components.js">
-  <link rel="modulepreload" href="js/ui/i18n-bridge.js">
-  <link rel="modulepreload" href="js/i18n/ui.js">
-  <link rel="modulepreload" href="js/i18n/charts.js">
-  <link rel="modulepreload" href="js/i18n/radar.js">
-  <link rel="modulepreload" href="js/ui/motion.js">
-  <link rel="modulepreload" href="js/vendor/motion.js">
-  <link rel="modulepreload" href="js/ui/art.js">
-  <link rel="modulepreload" href="js/i18n/enums.js">
-  <link rel="modulepreload" href="js/core/platform-selectors.js">
-  <link rel="modulepreload" href="js/ui/charts.js">
-  <link rel="modulepreload" href="js/ui/radar.js">
-  <link rel="modulepreload" href="js/data/seed.js">
-  <link rel="modulepreload" href="js/data/platform-seed.js">
-  <link rel="modulepreload" href="js/views/cockpit.js">
-  <link rel="modulepreload" href="js/ui/explainer-hero.js">
-  <link rel="modulepreload" href="js/data/explainer-media.js">
 </head>
 <body class="app" data-view="cockpit">
   <a class="skip-link" href="#main" data-i18n="core.shell.skip">Skip to content</a>
@@ -270,6 +243,142 @@
   </script>
 
   <main id="main" class="main" tabindex="-1"></main>
+  <script>
+    /*
+     * Pre-view and app loader (tools/stamp-shell.mjs).
+     * 1. Before any JavaScript module loads, draw the page header the route's view renders first (code tag, h1,
+     *    lead; on the cockpit the explainer poster) with the same classes, so the largest element of the first
+     *    screen paints with the HTML and CSS (mobile LCP). The view replaces it in the same frame it mounts.
+     *    Strings are stamped from the dictionaries by tools/stamp-shell.mjs (tests/shell-pre.test.mjs checks them).
+     *    The header waits for the lead's webfont (the regular weight, preloaded above; capped at 1.5 s), so the lead
+     *    is painted once at its final size and the view's identical lead is not a larger, later LCP candidate. Only
+     *    that face: the other weights load with the shell text and do not hold the first screen back.
+     * 2. Start the app only once that element has been painted (its largest-contentful-paint entry; on the cockpit
+     *    the poster; capped at 2.5 s; one frame where the API is missing), with module preloads for the boot graph
+     *    and the first route's view, so scripts never compete with the first paint. DOM built with createElement /
+     *    textContent only. The English data dictionaries (js/i18n/data/) are not in the preload list: English
+     *    sessions (the default) load them at boot in parallel with the optional modules (a modulepreload measured
+     *    no gain), Arabic sessions only on a switch to English.
+     */
+    (function () {
+      var PRE = /*@pre-begin*/{"v":1,"ids":["cockpit","airisks","tasks","alerts","contracts","bom","schedule","cost","overview","radar","spatial","risks","incidents","permits","inspections","training","compliance","engine","dataquality","integrations","reports","roadmap","settings"],"routes":{"airisks":{"c":"AIR-01","h":"t-page","l":"t-lead","ar":["سجل المخاطر الذكي","كل مخاطرة رصدها محرك الذكاء الاصطناعي أو سُجّلت يدوياً، مع شدتها (الاحتمالية × الأثر) وثقة النموذج وجودة بيانات الإدخال كمفاهيم منفصلة. افتح أي صف لمراجعة الدليل واتخاذ القرار ومتابعة المعالجة حتى الإغلاق."],"en":["AI risk register","Every risk the AI engine detected or that was registered manually, with its severity (likelihood × impact), model confidence and input-data quality shown as separate measures. Open any row to review the evidence, decide, and follow the treatment through to closure."]},"tasks":{"c":"AIR-02","h":"t-page","l":"t-lead","ar":["مهام المعالجة","كل مهمة تنشأ من قبول توصية المحرك أو تعديلها، أو تُضاف يدوياً، وتُسند إلى مسؤول وتُكتب عكسياً إلى BILTIX PM (محاكاة في النسخة التجريبية). إغلاق المهمة يتطلب تسجيل النتيجة."],"en":["Mitigation tasks","Every task comes from accepting or editing an engine recommendation, or is added by hand; it is assigned to an owner and written back to BILTIX PM (simulated in the demo). Closing a task requires its outcome."]},"alerts":{"c":"AIR-03","h":"t-page","l":"t-lead","ar":["التنبيهات والتصعيد","المخاطر التي تتجاوز عتبة التنبيه تدخل القائمة القياسية، والتي تبلغ عتبة التصعيد تُصعَّد فوراً. في النسخة التجريبية تُسجَّل التنبيهات ومسار قنواتها فقط — لا يُرسل بريد أو رسائل فعلية."],"en":["Alerts & escalation","Risks above the alert threshold enter the standard queue; risks at the escalation threshold are escalated at once. In the demo only the alerts and their channel routing are recorded — no email or messages are actually sent."]},"contracts":{"c":"DOM-01","ar":["مخاطر العقود","تحليل بنود العقود بمحرك المعالجة اللغوية للعقود: البنود الغامضة وشروط الدفع وغرامات التأخير وبنود التأمين والتعويض، مع تقويم الالتزامات وتركّز المقاولين من الباطن."],"en":["Contract risk","Contract clauses analysed by the contract NLP engine — ambiguous wording, payment terms, delay damages, insurance and indemnity — together with the obligations calendar and subcontractor concentration."]},"bom":{"c":"DOM-02","ar":["مخاطر المواد والتوريد (BoM)","توقعات أسعار السلع والتعرض لها، تركّز الموردين والمصادر الوحيدة، فروقات الكميات بين جدول الكميات ونموذج BIM، والبنود طويلة التوريد."],"en":["Materials & supply risk (BoM)","Commodity price forecasts and exposure, supplier concentration and single sources, quantity differences between the bill of quantities and the BIM model, and long-lead items."]},"schedule":{"c":"DOM-03","ar":["مخاطر الجدول الزمني","نموذج الجدول الزمني: احتمالات تأخير الأنشطة الحرجة، محاكاة مونت كارلو لتاريخ الإنجاز، استغلال الموارد، أثر الطقس، الموافقات التنظيمية وأداء مقاولي الباطن."],"en":["Schedule risk","The schedule model: delay probabilities of critical activities, a Monte Carlo simulation of the finish date, resource utilisation, weather impact, regulatory approvals and subcontractor performance."]},"cost":{"c":"DOM-04","ar":["مخاطر التكلفة","القيمة المكتسبة، اتجاه التكلفة، التعرض للعملات والسلع، أوامر التغيير وانحراف بنود التكلفة — تغذّيها خط «توقع التكلفة» في محرك الذكاء الاصطناعي."],"en":["Cost risk","Earned value, cost trend, currency and commodity exposure, change orders and cost-line variance — fed by the AI engine’s cost forecasting pipeline."]},"overview":{"c":"SEC-01","ar":["نظرة عامة على السلامة","صورة لحظية لأداء السلامة والصحة المهنية عبر المواقع: المخاطر المتأخرة والحرجة، الحوادث، مؤشر السلامة، رادار المخاطر، والإجراءات التي تحتاج تدخلاً اليوم."],"en":["Safety overview","A live picture of health and safety performance across sites: overdue and critical risks, incidents, the safety index, the risk radar and the actions that need attention today."]},"radar":{"c":"SEC-02","ar":["رادار المخاطر","أربعة رادارات: مسح المخاطر المفتوحة حسب فئة الخطر، قراءات الحساسات، حركة العمال والمعدات على مخطط الموقع، ودرجات الامتثال لمعيار ISO 45001. القراءات والحركة محاكاة داخل المتصفح في هذه النسخة."],"en":["Risk radar","Four radars: open risks swept by hazard category, sensor readings, workers and equipment moving on the site plan, and ISO 45001 compliance scores. Readings and movement are simulated in the browser in this version."]},"spatial":{"c":"SEC-12","ar":["الربط المكاني للموقع","مخطط هندسي لكل موقع يربط المناطق بالمخاطر والحساسات والكاميرات والتصاريح والحوادث وعمليات التفتيش. اختر منطقة لعرض ما يرتبط بها، أو كاميرا لعرض بثّ محاكى. لا توجد أي كاميرا متصلة في هذه النسخة."],"en":["Site spatial view","An engineering-style plan of each site that links zones to risks, sensors, cameras, permits, incidents and inspections. Select a zone to see what is linked to it, or a camera to view a simulated feed. No camera is connected in this version."]},"risks":{"c":"SEC-03","ar":["سجل مخاطر السلامة","تقييم مخاطر السلامة والصحة المهنية لكل موقع: الاحتمالية × الشدة، هرمية الضوابط، الدرجة المتبقية بعد المعالجة، والمالك المسؤول وموعد الاستحقاق. يُحفظ كل تعديل في هذا المتصفح فوراً."],"en":["Safety risk register","Occupational health and safety risk assessments for every site: likelihood × severity, the hierarchy of controls, the residual score after treatment, and the accountable owner and due date. Every change is saved in this browser straight away."]},"incidents":{"c":"SEC-04","ar":["الحوادث والحوادث الوشيكة","تسجيل الحوادث والحوادث الوشيكة ومتابعة التحقيق فيها حتى إغلاق الإجراءات التصحيحية، مع مؤشرات الفترة المحددة وتحليل الأسباب الجذرية."],"en":["Incidents & near misses","Record incidents and near misses and follow each investigation through to closed corrective actions, with the period’s indicators and a root-cause analysis."]},"permits":{"c":"SEC-05","h":"t-page","ar":["تصاريح العمل","تصاريح العمل الخطرة من المسودة حتى الإغلاق: الاعتماد والتعليق، والعدّ التنازلي لانتهاء الصلاحية، وقراءات فحص الغازات للأماكن المغلقة والأعمال الساخنة."],"en":["Permits to work","High-risk permits from draft to close-out: approval and suspension, a countdown to expiry, and gas-test readings for confined spaces and hot work."]},"inspections":{"c":"SEC-06","h":"t-page","ar":["التفتيش والتدقيق","جولات السلامة والتفتيشات الفنية والتدقيقات الداخلية: ما هو مستحق أو متأخر، ونسب الإنجاز حسب الموقع، والملاحظات المفتوحة، وتسجيل النتائج فور اكتمال الجولة."],"en":["Inspections & audits","Safety walks, technical inspections and internal audits: what is due or overdue, completion by project, open findings, and recording results as soon as a walk is done."]},"dataquality":{"c":"PLT-02","ar":["جودة البيانات وطبقة التحقق","الطبقة الثانية من المعمارية: فحص المخطط وإزالة التكرار والاكتمال والاتساق لكل سجل وارد من موصلات التكامل قبل إيداعه في بحيرة بيانات المخاطر."],"en":["Data quality & validation","The second layer of the architecture: schema checks, deduplication, completeness and consistency for every record arriving from the integration connectors, before it is stored in the risk data lake."]},"integrations":{"c":"SEC-09","ar":["التكاملات والأنظمة","أنظمة الموقع والسلامة والموصلات المؤسسية التي ستغذي المنصة، مع حالة صريحة لكل منها. في هذا الإصدار لا توجد مزامنة حقيقية؛ الأرقام المعروضة سيناريو توضيحي."],"en":["Integrations & systems","The site and safety systems and enterprise connectors that would feed the platform, each with an honest status. This version has no real synchronisation; the figures shown are an illustrative scenario."]},"roadmap":{"c":"PLT-03","ar":["خارطة الطريق والمقترح التفصيلي","منصة إدارة المخاطر بالذكاء الاصطناعي — الإصدار الثاني: المعمارية بخمس طبقات، نطاق العمل، الافتراضات، المعالم من M0 إلى M4، وجدول الدفعات الذي يُستكمل مع العميل."],"en":["Roadmap & detailed proposal","AI risk management platform — version 2: the five-layer architecture, scope of work, assumptions, milestones M0 to M4, and the payment schedule to be completed with the client."]},"settings":{"c":"SEC-11","ar":["الإعدادات","اللغة والمظهر وقواعد احتساب المخاطر ومصدر البيانات. تُحفظ الإعدادات في هذا المتصفح فقط وتُطبَّق فوراً."],"en":["Settings","Language, appearance, risk scoring rules and the data source. Settings are stored in this browser only and apply immediately."]}}}/*@pre-end*/;
+      var BOOT = ['js/app.js', 'js/core/bus.js', 'js/core/i18n.js', 'js/i18n/core.js', 'js/core/status.js', 'js/core/fmt.js',
+        'js/core/store.js', 'js/core/selectors.js', 'js/data/vocab-en.js', 'js/core/router.js', 'js/views/index.js',
+        'js/ui/components.js', 'js/ui/i18n-bridge.js', 'js/i18n/ui.js', 'js/i18n/charts.js', 'js/i18n/radar.js', 'js/ui/motion.js',
+        'js/vendor/motion.js', 'js/ui/art.js', 'js/i18n/enums.js', 'js/core/platform-selectors.js', 'js/ui/charts.js',
+        'js/ui/radar.js', 'js/data/seed.js', 'js/data/platform-seed.js'];
+      var VIEW_MODS = { cockpit: ['js/views/cockpit.js', 'js/ui/explainer-hero.js', 'js/data/explainer-media.js'] };
+      var main = document.getElementById('main');
+      var lang = document.documentElement.getAttribute('lang') === 'ar' ? 'ar' : 'en'; // English is the default
+      var m = /^#\/([a-z]+)/.exec(location.hash || '');
+      var id = m ? m[1] : 'cockpit';
+      if (PRE.ids.indexOf(id) === -1) id = '';
+      function el(tag, cls, text) {
+        var e = document.createElement(tag);
+        if (cls) e.className = cls;
+        if (text) e.textContent = text;
+        return e;
+      }
+      var poster = null;
+      var texts = [];
+      var view = null;
+      try {
+        view = el('section', 'view view-pre view-' + (id || 'none'));
+        view.setAttribute('aria-busy', 'true');
+        if (id === 'cockpit') {
+          var collapsed = false;
+          try { collapsed = localStorage.getItem('biltix-hse:explainer:collapsed') === '1'; } catch (e) { /* storage blocked */ }
+          if (!collapsed) {
+            // Same box and image as js/ui/explainer-hero.js (srcset / sizes = POSTER_SIZES): the preload is reused.
+            var base = 'assets/video/explainer-' + lang + '-poster';
+            var card = el('section', 'card is-framed is-hero ckh');
+            var media = el('div', 'ckh-media');
+            var stage = el('div', 'ckh-stage');
+            poster = el('img', 'ckh-poster');
+            poster.alt = '';
+            poster.width = 1280;
+            poster.height = 720;
+            poster.decoding = 'async';
+            poster.setAttribute('fetchpriority', 'high');
+            poster.setAttribute('sizes', '(min-width: 1024px) 560px, calc(100vw - 54px)');
+            poster.setAttribute('srcset', base + '-640.webp 640w, ' + base + '.webp 1280w');
+            poster.src = base + '.webp';
+            stage.appendChild(poster);
+            media.appendChild(stage);
+            card.appendChild(media);
+            view.appendChild(card);
+          }
+        } else if (id && PRE.routes[id]) {
+          var r = PRE.routes[id];
+          var head = el('div', 'view-head');
+          var text = el('div', 'view-head-text');
+          text.appendChild(el('span', 'code-tag', r.c));
+          texts.push(text.appendChild(el('h1', r.h || '', r[lang][0])));
+          texts.push(text.appendChild(el('p', 'view-lead' + (r.l ? ' ' + r.l : ''), r[lang][1])));
+          head.appendChild(text);
+          view.appendChild(head);
+        }
+        if (main && view.firstChild) main.appendChild(view); else { view = null; texts = []; }
+      } catch (e) { view = null; texts = []; /* the app renders the page anyway */ }
+
+      var started = false;
+      function start() {
+        if (started) return;
+        started = true;
+        var list = BOOT.concat(VIEW_MODS[id] || (id ? ['js/views/' + id + '.js'] : []));
+        for (var i = 0; i < list.length; i++) {
+          var l = document.createElement('link');
+          l.rel = 'modulepreload';
+          l.href = list[i];
+          document.head.appendChild(l);
+        }
+        var s = document.createElement('script');
+        s.type = 'module';
+        s.src = 'js/app.js';
+        document.body.appendChild(s);
+      }
+      // The element whose paint lets the app start: the poster, else the lead (the largest text), else any first paint.
+      var target = poster || (texts.length ? texts[texts.length - 1] : null);
+      var cap = setTimeout(start, 2500);
+      var watching = false;
+      try {
+        if (typeof PerformanceObserver === 'function' && PerformanceObserver.supportedEntryTypes && PerformanceObserver.supportedEntryTypes.indexOf('largest-contentful-paint') !== -1) {
+          var po = new PerformanceObserver(function (list) {
+            var es = list.getEntries();
+            for (var j = 0; j < es.length; j++) {
+              if (!target || es[j].element === target) { po.disconnect(); clearTimeout(cap); setTimeout(start, 0); return; }
+            }
+          });
+          po.observe({ type: 'largest-contentful-paint', buffered: true });
+          watching = true;
+        }
+      } catch (e) { watching = false; }
+      function afterFirstFrame() {
+        if (watching) return;
+        if (typeof requestAnimationFrame !== 'function') { setTimeout(start, 0); return; }
+        requestAnimationFrame(function () { setTimeout(start, 0); });
+      }
+      if (poster && !poster.complete) {
+        poster.addEventListener('load', afterFirstFrame);
+        poster.addEventListener('error', function () { clearTimeout(cap); start(); });
+      } else if (view && texts.length && document.fonts && typeof document.fonts.load === 'function' && typeof Promise === 'function') {
+        var shown = false;
+        var show = function () {
+          if (shown) return;
+          shown = true;
+          view.style.visibility = '';
+          afterFirstFrame();
+        };
+        try {
+          view.style.visibility = 'hidden';
+          var leadEl = texts[texts.length - 1];
+          var cs = getComputedStyle(leadEl);
+          document.fonts.load(cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily, leadEl.textContent).then(show, show);
+          setTimeout(show, 1500);
+        } catch (e) { show(); }
+      } else afterFirstFrame();
+    })();
+  </script>
 
   <!-- Activity panel (closed by default below 1680 px; pinnable from 1680 px). A log, not a live region:
        critical alerts are announced once through #liveAnnouncer. -->
@@ -334,6 +443,5 @@
     </div>
   </noscript>
 
-  <script type="module" src="js/app.js"></script>
 </body>
 </html>
