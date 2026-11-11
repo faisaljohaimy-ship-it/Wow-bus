@@ -5,9 +5,16 @@
  * Spec: docs/specs/v3-precision/spec.md AC-08; contract: CONTRACT.md §4–§8.
  *
  * Hierarchy (one reading order, top to bottom):
+ *   0  explainer hero (js/ui/explainer-hero.js, media from js/data/explainer-media.js) — the first card: the
+ *      "How the platform works" video (poster paints at once; src after load + idle, then muted autoplay unless
+ *      reduced motion / settings.motion 'reduce' / Save-Data / collapsed / already watched this session), with
+ *      custom controls, a seven-step progress rail and the chapters / transcript. Phones: full width, video first;
+ *      laptops: one band (video on the inline-start side, chapters on the inline-end side, ≤ ~420 px tall).
+ *      It never re-renders on live updates; its playback state survives a language switch (module state).
  *   A  heading — title, scope chips (project + period from the global filters, active cockpit filters),
  *      data freshness from status.js ("Data updated 2 hours ago · Demo data"), primary "Register risk"
- *      (shared/risk-form.js) and "How the platform works" (explainer dialog, lazy <video preload=none>).
+ *      (shared/risk-form.js) and "How the platform works" (scrolls to the hero, expands it if minimised and
+ *      plays it from the start with sound when the file has a voice — the click is the reader's gesture).
  *      Under it the cockpit filter bar (domain, rating, status, owner, search) — it scopes every section.
  *   B  four executive metrics (psel.metrics): open, critical, overdue mitigation, completion (n of N),
  *      deltas vs the previous period with the right good/bad direction, a ring gauge for the tile's headline ratio
@@ -35,8 +42,10 @@
 
 import {
   h, clear, glyph, svgIcon, badge, button, card, segmented, dataTable, emptyState, errorState,
-  loadingState, offlineState, filterBar, statusBadge, modal, toast,
+  filterBar, statusBadge, toast,
 } from '../ui/components.js';
+import { createExplainerHero } from '../ui/explainer-hero.js';
+import { EXPLAINER } from '../data/explainer-media.js';
 import { motion as motionLib } from '../ui/motion.js';
 import { charts as chartsLib, gaugeRatio } from '../ui/charts.js';
 import { fmt as fmtLib } from '../core/fmt.js';
@@ -258,8 +267,6 @@ const STYLE_TEXT = `
 }
 .view-cockpit .code { white-space: nowrap; }
 .view-cockpit .ck-state-wrap[hidden], .view-cockpit [data-ck-host][hidden] { display: none !important; }
-.video-dialog .ck-video-state { min-block-size: 220px; display: grid; place-items: center; }
-.video-dialog .video-langs .badge { font-size: var(--fs-xs); }
 @media (pointer: coarse) {
   .view-cockpit .ck-chip.is-filter .btn, .view-cockpit .ck-cellchip .btn { block-size: 40px; }
   .view-cockpit .ck-cell { min-block-size: 44px; }
@@ -691,11 +698,31 @@ export default {
     const root = h('section', { class: 'view view-cockpit', 'data-view': VIEW_ID });
     container.appendChild(root);
 
+    /* ================================================================ */
+    /* 0 — explainer hero (first card; independent of the risk data)      */
+    /* ================================================================ */
+
+    let hero = null;
+    try {
+      hero = createExplainerHero({
+        manifest: EXPLAINER,
+        uiLang: i18n.lang() === 'en' ? 'en' : 'ar',
+        t: (key, params) => t(`hero.${key}`, params),
+        digits: (s) => fmt.digits(s),
+        num: (n) => fmt.num(n),
+        settings: () => (stateOf() && stateOf().settings) || {},
+        motion,
+      });
+      hero.el.id = `ck-hero-${Math.random().toString(36).slice(2, 7)}`;
+      root.appendChild(hero.el);
+    } catch (err) { hero = null; warnOnce(warned, 'explainer hero', err); }
+    const destroyHero = () => { if (hero) { try { hero.destroy(); } catch { /* noop */ } } };
+
     const first = derive();
     if (!first) {
       root.appendChild(h('div', { class: 'ck-head' }, h('div', { class: 'ck-head-main' }, h('span', { class: 'code-tag' }, 'CPT-00'), h('h1', { class: 't-page' }, t('title')))));
       root.appendChild(errorState({ title: t('states.noDataTitle'), text: t('states.noDataText'), retry: () => { if (router && typeof router.refresh === 'function') router.refresh(); } }));
-      return () => { alive = false; };
+      return () => { alive = false; destroyHero(); };
     }
     let d = first;
 
@@ -715,7 +742,8 @@ export default {
       const meta = h('ul', { class: 'ck-meta', 'aria-label': t('head.scopeAria') }, projectChip, periodChip, filterChip, fresh, statusHost);
       const h1 = h('h1', { class: 't-page' }, t('title'));
       const formBtn = button(t('head.registerRisk'), { variant: 'primary', icon: 'plus', onClick: (e) => openForm(e.currentTarget), attrs: { title: t('head.registerRiskAria'), 'aria-haspopup': 'dialog' } });
-      const videoBtn = button(t('head.explainer'), { variant: 'outline', icon: 'play', onClick: (e) => openExplainer(e.currentTarget), attrs: { title: t('head.explainerAria'), 'aria-haspopup': 'dialog' } });
+      const videoBtn = button(t('head.explainer'), { variant: 'outline', icon: 'play', onClick: () => { if (hero) hero.playFromStart({ focus: true }); }, attrs: { title: t('head.explainerAria'), 'aria-controls': hero ? hero.el.id : undefined } });
+      if (!hero) videoBtn.hidden = true;
       const el = h('header', { class: 'ck-head' },
         h('div', { class: 'ck-head-main' }, h('span', { class: 'code-tag', 'aria-hidden': 'true' }, 'CPT-00'), h1, meta),
         h('div', { class: 'ck-actions' }, formBtn, videoBtn));
@@ -1512,90 +1540,6 @@ export default {
     }
 
     /* ---------------------------------------------------------------- */
-    /* Explainer dialog                                                   */
-    /* ---------------------------------------------------------------- */
-
-    function openExplainer(trigger) {
-      const langName = (l) => (l === 'en' ? t('video.langEn') : t('video.langAr'));
-      const files = (l) => ({ mp4: `assets/video/explainer-${l}-720p.mp4`, poster: `assets/video/explainer-${l}-poster.webp`, vtt: `assets/video/explainer-${l}.vtt` });
-      const host = h('div', { class: 'ck-video-host' });
-      const durationEl = h('span', { class: 'video-duration', hidden: true });
-      const langsEl = h('span', { class: 'video-langs', 'aria-label': t('video.langs') });
-      const meta = h('div', { class: 'video-meta' }, durationEl, langsEl, h('span', { class: 'video-note' }, t('video.note')));
-      let video = null;
-      let open = true;
-      let token = 0;
-      const stop = () => {
-        if (!video) return;
-        try { video.pause(); } catch { /* noop */ }
-        try { video.removeAttribute('src'); Array.from(video.querySelectorAll('source')).forEach((s) => s.removeAttribute('src')); video.load(); } catch { /* noop */ }
-        video = null;
-      };
-      const dlg = modal({
-        title: t('video.title'), subtitle: t('video.sub'), size: 'lg', returnFocus: trigger,
-        body: h('div', { class: 'stack gap-3' }, host, meta),
-        onClose: () => { open = false; token += 1; stop(); },
-      });
-      dlg.el.classList.add('video-dialog');
-      dlg.open();
-
-      const exists = async (url) => {
-        const res = await fetch(url, { method: 'HEAD', cache: 'no-cache' });
-        return res.ok;
-      };
-      const show = (node) => { clear(host); host.appendChild(node); };
-
-      async function load(l) {
-        const my = ++token;
-        stop();
-        show(h('div', { class: 'ck-video-state' }, loadingState({ title: t('video.checking'), text: '', inline: true })));
-        setText(durationEl, '');
-        durationEl.hidden = true;
-        const f = files(l);
-        const otherLang = l === 'ar' ? 'en' : 'ar';
-        let mp4 = false; let poster = false; let vtt = false; let other = false;
-        try {
-          [mp4, poster, vtt, other] = await Promise.all([exists(f.mp4), exists(f.poster).catch(() => false), exists(f.vtt).catch(() => false), exists(files(otherLang).mp4).catch(() => false)]);
-        } catch (err) {
-          if (!open || my !== token) return;
-          const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-          show(h('div', { class: 'ck-video-state' }, offline
-            ? offlineState({ text: t('video.offlineText'), retry: () => load(l) })
-            : errorState({ title: t('video.errorTitle'), text: t('video.errorText'), retry: () => load(l) })));
-          return;
-        }
-        if (!open || my !== token) return;
-        clear(langsEl);
-        langsEl.append(badge(langName(l), mp4 ? 'accent' : 'neutral', { icon: mp4 ? 'check' : 'minus' }));
-        if (mp4 && other) langsEl.append(button(t('video.watchOther', { lang: langName(otherLang) }), { variant: 'ghost', size: 'sm', icon: 'play', onClick: () => load(otherLang) }));
-        if (!mp4) {
-          show(h('div', { class: 'ck-video-state' }, emptyState({
-            icon: 'play', title: t('video.missingTitle', { lang: langName(l) }), text: t('video.missingText'),
-            action: other ? { label: t('video.watchOther', { lang: langName(otherLang) }), icon: 'play', onClick: () => load(otherLang) } : null,
-          })));
-          return;
-        }
-        const v = h('video', { controls: true, preload: 'none', playsinline: true, 'aria-label': t('video.videoAria'), lang: l, poster: poster ? f.poster : undefined });
-        v.appendChild(h('source', { src: f.mp4, type: 'video/mp4' }));
-        // The captions are burned into the picture, so the text track is offered but off by default:
-        // a native cue drawn on top would only cover the burned-in caption (or, on a small player,
-        // the scene's own text). Viewers who want it turn it on from the player's captions menu.
-        if (vtt) v.appendChild(h('track', { kind: 'captions', src: f.vtt, srclang: l, label: l === 'en' ? t('video.captionsEn') : t('video.captions') }));
-        v.addEventListener('loadedmetadata', () => {
-          const s = Math.round(Number(v.duration) || 0);
-          if (s > 0) { setText(durationEl, t('video.duration', { time: fmt.digits(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`) })); durationEl.hidden = false; }
-        });
-        v.addEventListener('error', () => {
-          if (!open || my !== token) return;
-          show(h('div', { class: 'ck-video-state' }, errorState({ title: t('video.errorTitle'), text: t('video.errorText'), retry: () => load(l) })));
-        }, true);
-        video = v;
-        show(h('div', { class: 'video-frame' }, v));
-      }
-      load(i18n.lang() === 'en' ? 'en' : 'ar');
-    }
-
-    /* ---------------------------------------------------------------- */
     /* Refresh & live updates                                             */
     /* ---------------------------------------------------------------- */
 
@@ -1653,6 +1597,7 @@ export default {
 
     return () => {
       alive = false;
+      destroyHero();
       if (liveTimer) clearTimeout(liveTimer);
       if (seriesHandle) cancelIdle(seriesHandle);
       timers.forEach((id) => clearInterval(id));

@@ -76,7 +76,10 @@
   .card-actions, .card-view-toggle, .view-actions, .toolbar, .chip-group, .filter-bar, .pager,
   .form-actions, .btn, .noscript, .print-hide, .feed-open, .feed-close, .rail-toggle, .kanban-move,
   .kanban-grip, .sort-ic, .chip-remove, .countdown-icon, .chips.is-scroll, .kanban-hint,
-  .video-dialog, .video-teaser, .state-actions, .empty-action, .evidence-actions { display: none !important; }
+  .state-actions, .empty-action, .evidence-actions { display: none !important; }
+  /* Cockpit explainer hero (js/ui/explainer-hero.js): not printed. A printed cockpit is a risk report; the
+     product tour adds a poster and a transcript that say nothing about the risks, and a video cannot play on paper. */
+  .ckh { display: none !important; }
   .sort-btn { pointer-events: none; }
 
   .report-only { display: block !important; }

@@ -48,7 +48,7 @@ artefacts are in the session scratchpad, not in the repository.
 | Escalation | Not connected | "Simulated — not sent" | P |
 | Evidence attachments | Partial | Stored on this device only, labelled | P |
 | Register risk form (required L / I, no preselection, due not in past) | Complete | | P |
-| Explainer video (AR / EN, captions, poster, lazy, user-initiated) | Complete | Silent by design; see Q2 on the Remotion licence | R |
+| Explainer hero at the top of the cockpit (AR / EN versions, poster first, muted autoplay after load + idle with the reduced-motion / Save-Data / minimised / already-watched exceptions, custom controls, seven-step progress rail, chapters + transcript, minimise remembered) | Complete | Today's files are silent ("Silent — captions in picture"); the AI-narrated files and `voice` in `js/data/explainer-media.js` come from the narration pipeline, and the UI then offers sound with an "AI-generated voice" disclosure. See Q2 on the Remotion licence | U P Q |
 | Model confidence values | Demo | Labelled "Illustrative" | R |
 
 ## Tasks and alerts

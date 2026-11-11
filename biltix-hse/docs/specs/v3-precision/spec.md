@@ -61,7 +61,7 @@ filled during verification), `baseline.md` (measured "before" state).
 | D6 | Status taxonomy in one module (`status.js`) used by shell, settings, integrations, engine, data quality | One definition, no contradictory claims |
 | D7 | Activity feed becomes a collapsible panel (closed by default below 1680 px) | Content width |
 | D8 | Preview deployments only, created manually at milestones; automatic deploys disabled for `claude/**` (vercel.json) | Free-plan deployment limit was exhausted by per-push deploys |
-| D9 | Remotion explainer silent by design with burned-in captions + WebVTT; user-initiated playback | No autoplay audio; accessibility |
+| D9 | Remotion explainer with burned-in captions + WebVTT. v3.6 (BILTIX request, 2026-11-11): shown at the top of the cockpit and autoplayed **muted** after load + idle (not under reduced motion, Save-Data, when minimised or after one viewing per tab session); sound only after a gesture; an AI voice is always disclosed | No autoplay audio; accessibility; honest labelling of synthetic voices |
 
 ## 5. Acceptance criteria (summary — evidence goes to acceptance.md)
 

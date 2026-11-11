@@ -1,7 +1,8 @@
 // QA harness for Biltix HSE. Usage:
 //   node tools/qa.mjs --routes cockpit,airisks --viewport 1440x900,390x844 --theme dark,light --lang ar,en --out ./qa-out [--clock 2026-11-10T09:00:00+03:00] [--tall true] [--wait 3000] [--port 8131]
-// Serves this folder with python3 http.server when nothing listens on --port. Exits 1 on console errors, failed requests,
-// blank canvases, horizontal overflow, an empty main region, or visible Arabic text on a non-Arabic page. Requires Playwright + Chromium (preinstalled in cloud sessions).
+// Serves this folder with python3 http.server when nothing listens on --port. Exits 1 on console errors, failed requests (media
+// downloads cancelled by the page excepted), blank canvases, horizontal overflow, an empty main region, or visible Arabic text on
+// a non-Arabic page. Requires Playwright + Chromium (preinstalled in cloud sessions).
 import { createRequire } from 'node:module';
 // CommonJS resolution honours NODE_PATH and global installs; a bare ESM import would not.
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -39,7 +40,9 @@ for (const lang of langs) for (const theme of themes) for (const vp of viewports
   const errors = [], pageErrors = [], failedReqs = [], warnings = [];
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); else if (m.type() === 'warning') warnings.push(m.text()); });
   page.on('pageerror', e => pageErrors.push(String(e && e.message || e)));
-  page.on('requestfailed', r => { const u = r.url(); if (!u.includes('fonts.g')) failedReqs.push(`${u} :: ${r.failure()?.errorText}`); });
+  // A media download the page cancels (the cockpit hero's <video> is unmounted on navigation) is ERR_ABORTED by design,
+  // not a failed request; media that answers 4xx/5xx is still reported by the 'response' listener below.
+  page.on('requestfailed', r => { const u = r.url(); const why = r.failure()?.errorText || ''; if (u.includes('fonts.g') || (r.resourceType() === 'media' && why.includes('ERR_ABORTED'))) return; failedReqs.push(`${u} :: ${why}`); });
   page.on('response', r => { if (r.status() >= 400 && !r.url().includes('fonts.g')) failedReqs.push(`${r.url()} :: HTTP ${r.status()}`); });
   for (const route of routes) {
     errors.length = 0; pageErrors.length = 0; failedReqs.length = 0; warnings.length = 0;
