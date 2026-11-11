@@ -5,8 +5,8 @@
  * The "How the platform works" video as the first card of #/cockpit:
  *   section.card.is-framed.is-hero.ckh[data-state][data-frame]   (region, labelled by its h2)
  *     .ckh-media   > .ckh-stage (16:9: poster <img>, <video playsinline muted preload=none>, vignette, big play,
- *                    sound pill, buffering spinner, error/empty/offline state) + .ckh-controls (progress slider with the
- *                    seven step ticks and a glowing playhead, play/pause, time, sound, captions, language version, full screen)
+ *                    buffering spinner, error/empty/offline state) + .ckh-controls (progress slider with the seven step
+ *                    ticks and a glowing playhead; play/pause, sound, time, captions, language version, full screen)
  *     header.ckh-head  kicker, h2, one-line lead, the voice disclosure (or the honest "silent" note), collapse toggle
  *     aside.ckh-chapters  current-step chip + the ten cue lines (transcript = text alternative; a line seeks)
  * Phones stack video → title → chapters (transcript folded behind a toggle); when `main` is ≥ 880 px wide the video
@@ -17,23 +17,27 @@
  *     an idle callback, then autoplays when autoplayDecision() allows it (reduced motion, settings.motion 'reduce',
  *     Save-Data, a collapsed hero or one finished viewing in this tab session all say no).
  *   - Sound: with a narrated file (manifest voice ≠ null) and a page that has already had a user gesture, unmuted play
- *     is tried first; a NotAllowedError falls back to muted play and a prominent "Turn sound on" pill. Silent files show
- *     no sound control at all, only the note "Silent — captions in picture".
+ *     is tried first; a NotAllowedError falls back to muted play, and the sound control next to play/pause becomes a
+ *     prominent labelled "Turn sound on" pill — under the picture, so it never covers the burned-in captions. Silent
+ *     files show no sound control at all, only the note "Silent — captions in picture".
  *   - It plays only while ≥ 35 % of the stage is on screen and the tab is visible; it resumes by itself only when it was
  *     playing (automatically or by the reader) and the reader had not paused it. No loop: the end shows a replay state.
  *   - Playback position, the chosen language version and the play/pause intent survive a re-mount (language or numeral
  *     switch, leaving and re-entering the cockpit) through module state; live store updates never touch the hero.
+ *     A stretch that started by itself is still autoplay after a re-mount: resumeDecision() runs the policy again (the
+ *     motion setting may have been turned down on #/settings meanwhile); a stretch the reader started carries on.
  *
  * Motion and cost: compositor-only. The playhead and progress fill run as one linear Web Animation per playing stretch,
  * and the clock digits are strips stepped by steps() transform animations — all re-synced from the media clock on
  * play / pause / seek / rate change — so the running time writes nothing per frame or per second. The main thread wakes
  * only at cue boundaries (≈ every 4 s: transcript highlight, step chip, slider value; there is no timeupdate listener).
- * The title light sweep runs once per page load; the sound pill's equaliser bars move only while sound is playing.
- * All of it is off under reduced motion (OS unless the setting forces motion on, or the setting) and forced colours;
- * print hides the hero (css/print.css).
+ * The title light sweep runs once per page load; the sound button's equaliser bars move only while sound is playing.
+ * All of it is off under reduced motion (OS unless the setting forces motion on, or the setting) and forced colours
+ * (motionOn(); the rail and clock then step once per second); print hides the hero (css/print.css). The video itself
+ * is content, not decoration: forced colours alone do not stop it (the autoplay policy above decides).
  *
- * Pure helpers (node tests: tests/explainer-hero.test.mjs): autoplayDecision, cueIndexAt, stepStarts, stepAt,
- * formatClock, seekTarget, checkExplainerManifest, posterVariant.
+ * Pure helpers (node tests: tests/explainer-hero.test.mjs): autoplayDecision, resumeDecision, cueIndexAt, stepStarts,
+ * stepAt, formatClock, seekTarget, checkExplainerManifest, posterVariant.
  */
 
 import { h, clear, svgIcon, button, emptyState, errorState, offlineState } from './components.js';
@@ -43,8 +47,12 @@ export const STEP_COUNT = 7;
 export const VISIBLE_RATIO = 0.35;
 export const SEEK_STEP = 5;
 export const STORAGE_KEYS = Object.freeze({ collapsed: 'biltix-hse:explainer:collapsed', finished: 'biltix-hse:explainer:finished' });
-/** <img sizes> for the poster: ≤ 560 px wide beside the chapters from 1024 px, full width below. Keep in sync with index.html. */
-export const POSTER_SIZES = '(min-width: 1024px) 560px, 100vw';
+/**
+ * <img sizes> for the poster: ≤ 560 px wide beside the chapters from 1024 px; below, the content column minus the page
+ * gutters and the card padding (measured: 360 → 306, 390 → 336, 430 → 376, 768 → 710 px), so a 1.75× phone takes the
+ * 640 px file instead of the 1280 px one. Keep in sync with index.html.
+ */
+export const POSTER_SIZES = '(min-width: 1024px) 560px, calc(100vw - 54px)';
 const CUE_IDS = ['intro', 'source', 'validate', 'analyze', 'explain', 'sitecam', 'approve', 'mitigate', 'close', 'outro'];
 
 /* ------------------------------------------------------------------ */
@@ -65,6 +73,21 @@ export function autoplayDecision({ reducedMotion = false, motion = 'auto', saveD
   return { autoplay: true, reason: null };
 }
 export const shouldAutoplay = (env) => autoplayDecision(env).autoplay;
+
+/**
+ * Whether a re-mounted hero (language / numeral switch, return to the cockpit) carries on playing.
+ * `prev` is what the previous mount handed over: { wantPlay, auto }. A stretch the reader started is theirs and carries
+ * on (unless the hero is minimised); one that started by itself is still autoplay, so autoplayDecision() decides again
+ * with the current environment (motion turned down on #/settings meanwhile, Save-Data, the OS preference).
+ * @returns {{ resume: boolean, reason: null|'collapsed'|'motion-setting'|'reduced-motion'|'save-data'|'finished' }}
+ */
+export function resumeDecision({ wantPlay = false, auto = false } = {}, env = {}) {
+  if (!wantPlay) return { resume: false, reason: null };
+  if (env && env.collapsed) return { resume: false, reason: 'collapsed' };
+  if (!auto) return { resume: true, reason: null };
+  const d = autoplayDecision(env);
+  return { resume: d.autoplay, reason: d.reason };
+}
 
 /** Index of the cue on screen at `time`: the last cue that has started (gaps keep the previous line); -1 before the first. */
 export function cueIndexAt(cues, time) {
@@ -264,7 +287,12 @@ let seq = 0;
  */
 export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) => s, num = (n) => String(n), settings = () => ({}), motion = null } = {}) {
   const uid = `ckh${++seq}${Math.random().toString(36).slice(2, 6)}`;
-  const motionOn = () => { try { return !!(motion && typeof motion.enabled === 'function' ? motion.enabled() : false); } catch { return false; } };
+  // Decorative / progress motion: off under reduced motion (motion.enabled(): OS unless the setting forces it on, the
+  // setting, hidden tab) and under forced colours (as charts.js gaugeIdleOn) — the rail and clock then step per second.
+  let fcMq = null;
+  try { fcMq = window.matchMedia('(forced-colors: active)'); } catch { /* old engine */ }
+  const forcedColors = () => !!(fcMq && fcMq.matches);
+  const motionOn = () => { if (forcedColors()) return false; try { return !!(motion && typeof motion.enabled === 'function' ? motion.enabled() : false); } catch { return false; } };
   const langs = (manifest && manifest.langs) || {};
   const valid = checkExplainerManifest(manifest);
   const okLang = (l) => !!(langs[l] && typeof langs[l].mp4 === 'string' && Array.isArray(langs[l].cues) && !valid.errors.some((e) => e.startsWith(`${l}:`)));
@@ -316,13 +344,9 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
   const shade = h('span', { class: 'ckh-shade', 'aria-hidden': 'true' });
   const bigIcons = iconSet(['play', 'replay'], 30);
   const bigBtn = h('button', { type: 'button', class: 'ckh-big', 'aria-label': t('playVideo') }, bigIcons.el);
-  const eq = h('span', { class: 'ckh-eq', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'), h('i'));
-  const pillIcons = iconSet(['sound', 'muted'], 18);
-  const pillLabel = h('span', { class: 'ckh-pill-label' });
-  const pill = h('button', { type: 'button', class: 'ckh-pill', hidden: true }, pillIcons.el, eq, pillLabel);
   const spinner = h('span', { class: ['spinner', 'ckh-spin'], 'aria-hidden': 'true', hidden: true });
   const stateHost = h('div', { class: 'ckh-state', hidden: true });
-  const stage = h('div', { class: 'ckh-stage' }, poster, video, shade, bigBtn, pill, spinner, stateHost);
+  const stage = h('div', { class: 'ckh-stage' }, poster, video, shade, bigBtn, spinner, stateHost);
 
   const fill = h('span', { class: 'ckh-fill' });
   const track = h('span', { class: 'ckh-track' }, fill);
@@ -345,16 +369,22 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
   const odoOnes = odo(10);
   const totalEl = h('span', { class: 'ckh-total' });
   const timeEl = h('span', { class: 'ckh-time', dir: 'ltr', 'aria-hidden': 'true' }, odoMin.el, ':', odoTens.el, odoOnes.el, totalEl);
+  // Sound (narrated files only): an icon button; while it plays muted it becomes the prominent labelled "Turn sound on"
+  // pill (.is-prompt) — in the control row, never over the picture's burned-in captions; while sound plays the
+  // speaker glyph gives way to equaliser bars (they move only while sound is playing).
   const soundIcons = iconSet(['sound', 'muted'], 18);
-  const soundBtn = button('', { variant: 'ghost', icon: soundIcons.el, attrs: { class: 'ckh-btn', 'aria-label': t('soundOn'), title: t('soundOn') } });
-  const ccBtn = button('', { variant: 'ghost', icon: ICON.cc(18), attrs: { class: 'ckh-btn', 'aria-label': t('captions'), title: t('captionsTitle'), 'aria-pressed': 'false' } });
+  soundIcons.el.classList.add('btn-ic');
+  const eq = h('span', { class: 'ckh-eq', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'), h('i'));
+  const soundLabel = h('span', { class: 'ckh-sound-label', hidden: true });
+  const soundBtn = h('button', { type: 'button', class: ['btn', 'btn-ghost', 'btn-icon', 'ckh-btn', 'ckh-sound'], 'aria-label': t('soundOn'), title: t('soundOn') }, soundIcons.el, eq, soundLabel);
+  const ccBtn = button('', { variant: 'ghost', icon: ICON.cc(18), attrs: { class: 'ckh-btn ckh-cc', 'aria-label': t('captions'), title: t('captionsTitle'), 'aria-pressed': 'false' } });
   const langCode = h('span', { class: 'ckh-lang-code' });
   const langSr = h('span', { class: 'sr-only' });
   const langBtn = h('button', { type: 'button', class: ['btn', 'btn-ghost', 'ckh-btn', 'ckh-lang'] }, ICON.globe(16), langCode, langSr);
   const fsIcons = iconSet(['expand', 'shrink'], 18);
   const fsBtn = button('', { variant: 'ghost', icon: fsIcons.el, attrs: { class: 'ckh-btn', 'aria-label': t('fullscreen'), title: t('fullscreen') } });
   const row = h('div', { class: 'ckh-row' },
-    playBtn, timeEl, h('span', { class: 'ckh-spacer' }), soundBtn, ccBtn, langBtn, fsBtn);
+    playBtn, soundBtn, timeEl, h('span', { class: 'ckh-spacer' }), ccBtn, langBtn, fsBtn);
   const controls = h('div', { class: 'ckh-controls', role: 'group', 'aria-label': t('controls') }, rail, row);
   const media = h('div', { class: 'ckh-media', id: mediaId }, stage, controls);
 
@@ -417,20 +447,23 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
 
   function renderSound() {
     const sounding = !!voice && !video.muted && state === 'playing';
+    // Prominent "Turn sound on" while a narrated file plays (or is about to) without sound.
+    const prompt = !!voice && video.muted && !errored && (state === 'playing' || state === 'loading' || (state === 'paused' && wantPlay));
+    el.classList.toggle('has-voice', !!voice);
     el.classList.toggle('is-sounding', sounding);
+    el.classList.toggle('is-prompting', prompt);
     soundBtn.hidden = !voice;
-    if (voice) {
-      soundIcons.show(video.muted ? 'muted' : 'sound');
-      const label = video.muted ? t('soundOn') : t('soundOff');
-      soundBtn.setAttribute('aria-label', label);
-      soundBtn.setAttribute('title', label);
-      // The pill: prominent "Turn sound on" while it plays muted; a small equaliser chip while sound plays.
-      const show = (video.muted && (state === 'playing' || state === 'loading' || (state === 'paused' && wantPlay))) || sounding;
-      pill.hidden = !show;
-      pill.classList.toggle('is-on', !video.muted);
-      pillIcons.show(video.muted ? 'muted' : 'sound');
-      pillLabel.textContent = video.muted ? t('soundOn') : t('soundOff');
-    } else pill.hidden = true;
+    soundBtn.classList.toggle('is-prompt', prompt);
+    soundBtn.classList.toggle('btn-primary', prompt);
+    soundBtn.classList.toggle('btn-ghost', !prompt);
+    soundBtn.classList.toggle('btn-icon', !prompt);
+    if (!voice) return;
+    soundIcons.show(video.muted ? 'muted' : 'sound');
+    const label = video.muted ? t('soundOn') : t('soundOff');
+    soundBtn.setAttribute('aria-label', label);
+    soundBtn.setAttribute('title', label);
+    soundLabel.textContent = prompt ? label : '';
+    soundLabel.hidden = !prompt;
   }
 
   function renderNote() {
@@ -833,7 +866,7 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
     stateHost.appendChild(node);
     stateHost.hidden = false;
     bigBtn.hidden = true;
-    pill.hidden = true;
+    renderSound();
   }
   function clearError() {
     errored = false;
@@ -881,7 +914,6 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
   on(bigBtn, 'click', () => { if (state === 'ended') seek(0); userPlay({ sound: 'auto' }); });
   on(playBtn, 'click', togglePlay);
   on(soundBtn, 'click', () => setMuted(!video.muted));
-  on(pill, 'click', () => setMuted(!video.muted));
   on(ccBtn, 'click', toggleCaptions);
   on(langBtn, 'click', () => switchLang(otherOf(vlang)));
   on(fsBtn, 'click', toggleFullscreen);
@@ -1026,16 +1058,19 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
     if (destroyed || started) return;
     started = true;
     if (session.saved) {
-      // Re-mount: carry on as before (the reader's own pause, the position and the version are kept).
+      // Re-mount: carry on as before (the reader's own pause, the position and the version are kept) — but a stretch
+      // that started by itself goes through the autoplay policy again (resumeDecision).
       userPaused = session.userPaused;
-      if (session.wantPlay && !collapsed && okLang(vlang)) {
+      const decision = resumeDecision({ wantPlay: session.wantPlay, auto: session.auto }, policyEnv());
+      if (decision.resume && okLang(vlang)) {
         wantPlay = true;
         auto = session.auto;
         if (voice) video.muted = !(session.soundPref === 'on' || (session.soundPref === null && hasActivation() && !session.auto));
         setState('loading');
         apply();
       }
-      el.setAttribute('data-autoplay', 'resumed');
+      // Not resumed because of the policy: the position is kept and the big play button waits for the reader.
+      el.setAttribute('data-autoplay', decision.resume || !decision.reason ? 'resumed' : decision.reason);
       return;
     }
     const decision = autoplayDecision(policyEnv());
@@ -1070,6 +1105,8 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
     motionMo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-motion'] });
   }
   try { const mq = window.matchMedia('(prefers-reduced-motion: reduce)'); if (mq && mq.addEventListener) on(mq, 'change', onMotionChange); } catch { /* old engine */ }
+  // Forced colours switched on / off while it plays: the rail and clock move to (or back from) stepwise updates.
+  try { if (fcMq && fcMq.addEventListener) on(fcMq, 'change', onMotionChange); } catch { /* old engine */ }
 
   const ric = typeof requestIdleCallback === 'function' ? (fn) => requestIdleCallback(fn, { timeout: 2500 }) : (fn) => setTimeout(fn, 200);
   const cancelRic = typeof cancelIdleCallback === 'function' ? (id) => cancelIdleCallback(id) : (id) => clearTimeout(id);

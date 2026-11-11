@@ -4,7 +4,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
-  autoplayDecision, shouldAutoplay, cueIndexAt, stepStarts, stepAt, formatClock, seekTarget,
+  autoplayDecision, shouldAutoplay, resumeDecision, cueIndexAt, stepStarts, stepAt, formatClock, seekTarget,
   checkExplainerManifest, posterVariant, STEP_COUNT, POSTER_SIZES, STORAGE_KEYS,
 } from '../js/ui/explainer-hero.js';
 import EXPLAINER_DEFAULT, { EXPLAINER } from '../js/data/explainer-media.js';
@@ -117,6 +117,26 @@ export const tests = [
       // precedence: the reader's collapse is reported first
       assert.equal(autoplayDecision({ collapsed: true, reducedMotion: true, saveData: true }).reason, 'collapsed');
       assert.equal(shouldAutoplay(), true);
+    },
+  },
+  {
+    name: 're-mount: a stretch that started by itself goes through the autoplay policy again; the reader\'s own playback carries on',
+    fn() {
+      // nothing was playing: nothing resumes (no reason to report)
+      assert.deepEqual(resumeDecision({ wantPlay: false, auto: true }, {}), { resume: false, reason: null });
+      assert.deepEqual(resumeDecision({}, {}), { resume: false, reason: null });
+      // automatic stretch: the policy decides with the current environment (e.g. motion turned down on #/settings)
+      assert.deepEqual(resumeDecision({ wantPlay: true, auto: true }, {}), { resume: true, reason: null });
+      assert.deepEqual(resumeDecision({ wantPlay: true, auto: true }, { motion: 'reduce' }), { resume: false, reason: 'motion-setting' });
+      assert.deepEqual(resumeDecision({ wantPlay: true, auto: true }, { reducedMotion: true }), { resume: false, reason: 'reduced-motion' });
+      assert.deepEqual(resumeDecision({ wantPlay: true, auto: true }, { reducedMotion: true, motion: 'full' }), { resume: true, reason: null });
+      assert.deepEqual(resumeDecision({ wantPlay: true, auto: true }, { saveData: true }), { resume: false, reason: 'save-data' });
+      assert.deepEqual(resumeDecision({ wantPlay: true, auto: true }, { finished: true }), { resume: false, reason: 'finished' });
+      // the reader pressed play: their playback carries on whatever the motion preference (it is not autoplay) …
+      assert.deepEqual(resumeDecision({ wantPlay: true, auto: false }, { motion: 'reduce', reducedMotion: true, saveData: true }), { resume: true, reason: null });
+      // … unless the hero is minimised
+      assert.deepEqual(resumeDecision({ wantPlay: true, auto: false }, { collapsed: true }), { resume: false, reason: 'collapsed' });
+      assert.deepEqual(resumeDecision({ wantPlay: true, auto: true }, { collapsed: true, motion: 'reduce' }), { resume: false, reason: 'collapsed' });
     },
   },
   {

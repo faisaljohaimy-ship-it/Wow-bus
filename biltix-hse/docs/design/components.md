@@ -94,10 +94,12 @@ caption text); never hard-code file names or captions in the view.
 
 Structure: `.ckh-media` (`.ckh-stage` 16:9 box: `img.ckh-poster` (width/height set, `srcset` 640 w / 1280 w,
 `fetchpriority=high`, also preloaded by the pre-paint script on the home route), `video.ckh-video[playsinline][muted]
-[preload=none]`, `.ckh-shade` vignette, `.ckh-big` play / replay, `.ckh-pill` sound pill, `.ckh-spin`, `.ckh-state`
-for the empty / error / offline states) + `.ckh-controls` (`.ckh-rail[role=slider]` with seven `.ckh-tick` step
-marks and the glowing `.ckh-dot` playhead; `.ckh-row`: play/pause, the odometer clock `.ckh-time`, sound (narrated
-files only), captions (`aria-pressed`, off by default — captions are burned in), language version, full screen)),
+[preload=none]` (its box 1 px inside the poster's, so the poster stays the LCP element), `.ckh-shade` vignette,
+`.ckh-big` play / replay, `.ckh-spin`, `.ckh-state` for the empty / error / offline states — nothing else sits over
+the picture, so the burned-in captions are never covered) + `.ckh-controls` (`.ckh-rail[role=slider]` with seven
+`.ckh-tick` step marks and the glowing `.ckh-dot` playhead; `.ckh-row`: play/pause, `.ckh-sound` (narrated files
+only), the odometer clock `.ckh-time`, `.ckh-cc` captions (`aria-pressed`, off by default — captions are burned in),
+language version, full screen)),
 then `header.ckh-head` (kicker + duration, `h2`, lead, the voice note, collapse toggle) and `.ckh-chapters` (`h3`,
 current-step `.ckh-chip`, `ol.ckh-cues` of ten `button.ckh-cue` — `aria-current` on the line on screen; a line seeks).
 The transcript list carries `lang`/`dir` of the video version (it is the video's text alternative).
@@ -107,7 +109,10 @@ Layout: `main` < 880 px → stacked (video, then title, then the chip with the t
 inline-end side, the chapters list scrolling inside the video's height (`contain: size`), so the band stays about
 410 px tall and the executive metrics still show above the fold at 1440 × 900. The progress rail runs left → right
 in both languages (media timelines are not mirrored); everything else mirrors. Targets: 38 px buttons, 44 px on
-coarse pointers (rail, buttons, cue lines, pill). Collapsed (`.is-collapsed`, remembered in `localStorage`
+coarse pointers (rail, buttons including the sound prompt, cue lines). On phones (`main` ≤ 520 px) with a narrated
+file the clock drops its "/ total" (the kicker shows the length), and while the sound prompt shows the clock and
+the captions toggle step out of the row. The big play button's focus ring is white between two dark rings (visible
+over light and dark frames). Collapsed (`.is-collapsed`, remembered in `localStorage`
 `biltix-hse:explainer:collapsed`): a slim bar with "Play the video" and "Show video".
 
 Playback: the `src` is attached only after `load` + an idle callback; muted autoplay unless `autoplayDecision()` says
@@ -115,19 +120,23 @@ no (reduced motion — `settings.motion: 'full'` overrides the OS —, `settings
 or finished once in this tab: `sessionStorage` `biltix-hse:explainer:finished`). It plays only while ≥ 35 % of the stage
 is visible and the tab is visible, and resumes by itself only when it was playing and the reader had not paused it.
 No loop; the end shows the replay state. Position, version and play intent survive a re-mount (language switch,
-leaving and re-entering the cockpit). The header button "How the platform works" scrolls to the hero, expands it and
+leaving and re-entering the cockpit); a stretch that started by itself goes through the policy again on re-mount
+(`resumeDecision()`: motion turned down on `#/settings`, Save-Data …), one the reader started carries on. The header button "How the platform works" scrolls to the hero, expands it and
 plays from the start with sound (a gesture). Sound: with a voice, unmuted play is tried when the page has had a gesture
-(`navigator.userActivation.hasBeenActive`); a refusal falls back to muted play and the prominent "Turn sound on" pill;
-while sound plays the pill shrinks to an equaliser chip. The note always says what the audio is: "AI-generated voice ·
+(`navigator.userActivation.hasBeenActive`); a refusal falls back to muted play, and the sound button next to play/pause
+becomes the prominent labelled pill "Turn sound on" (`.is-prompt`, primary look; under the picture, never over the
+captions); one tap unmutes and it returns to an icon button whose speaker glyph gives way to equaliser bars while
+sound plays. The note always says what the audio is: "AI-generated voice ·
 <name> · <provider>" or "Silent — captions in picture". Errors: a missing file (HEAD 404) shows the "not available"
 empty state offering the other version, a failed load the error state with retry, no network the offline state.
 
 Motion (all compositor-only, all off under reduced motion — OS unless the setting forces it on — the motion setting
-and forced colours): progress fill and playhead as one linear Web Animation per playing stretch; clock digits as
+and forced colours, also when forced colours switch on while it plays; the video itself is content and follows the
+autoplay policy): progress fill and playhead as one linear Web Animation per playing stretch; clock digits as
 strips stepped by `steps()` transform animations; both re-synced from the media clock on play / pause / seek / rate
 change and checked for drift at cue boundaries (the only main-thread wake-ups while playing, about every 4 s — no
 `timeupdate` listener). One title light sweep per page load; equaliser bars only while sound plays. Under reduced
-motion the rail and clock step once per second instead. Print hides the hero (css/print.css).
+motion and forced colours the rail and clock step once per second instead. Print hides the hero (css/print.css).
 
 **Do** keep captions burned in and the transcript complete; label any synthetic voice. **Don't** autoplay with
 sound, loop, or put controls over the picture (they would cover the burned-in captions).

@@ -81,7 +81,7 @@
           pre.type = 'image/webp';
           pre.setAttribute('fetchpriority', 'high');
           pre.setAttribute('imagesrcset', base + '-640.webp 640w, ' + base + '.webp 1280w');
-          pre.setAttribute('imagesizes', '(min-width: 1024px) 560px, 100vw');
+          pre.setAttribute('imagesizes', '(min-width: 1024px) 560px, calc(100vw - 54px)');
           pre.href = base + '.webp';
           document.head.appendChild(pre);
         }

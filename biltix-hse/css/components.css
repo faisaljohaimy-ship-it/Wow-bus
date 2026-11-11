@@ -1491,13 +1491,16 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
 /* --------------------------------------------------------------------------
    Explainer hero (js/ui/explainer-hero.js) — the first card of the cockpit
    section.card.is-framed.is-hero.ckh[data-state][data-frame] >
-     .ckh-media (.ckh-stage: img.ckh-poster + video.ckh-video + .ckh-shade + .ckh-big + .ckh-pill + .ckh-spin + .ckh-state;
-                 .ckh-controls: .ckh-rail[role=slider] + .ckh-row) + header.ckh-head + .ckh-chapters (.ckh-chap-head + ol.ckh-cues)
+     .ckh-media (.ckh-stage: img.ckh-poster + video.ckh-video + .ckh-shade + .ckh-big + .ckh-spin + .ckh-state;
+                 .ckh-controls: .ckh-rail[role=slider] + .ckh-row (play, .ckh-sound, .ckh-time, spacer, .ckh-cc, .ckh-lang, full screen))
+     + header.ckh-head + .ckh-chapters (.ckh-chap-head + ol.ckh-cues)
+   Nothing sits over the picture while it plays: the burned-in captions stay clear (the sound prompt lives in the row).
    Narrow `main` (< 880 px): stacked — video first, then title, then the step chip with a folded transcript.
    Wide: one band — video on the inline-start side (≤ 560 px), title + chapters on the inline-end side; the
    chapters list takes the video's height (contain: size) and scrolls inside it, so the band stays ≤ ~420 px.
    The progress rail runs left → right in both languages (media timelines are not mirrored).
-   Motion (compositor only): playhead/fill (WAAPI from the module), title sweep (once), equaliser bars (sound on).
+   Motion (compositor only): playhead/fill (WAAPI from the module), title sweep (once), equaliser bars (sound on);
+   all off under reduced motion and forced colours.
    -------------------------------------------------------------------------- */
 
 .ckh {
@@ -1539,7 +1542,10 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
     0 0 42px -18px var(--beam-glow);
 }
 .ckh-poster, .ckh-video { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: cover; }
-.ckh-video { opacity: 0; transition: opacity var(--dur-main) var(--ease-out); }
+/* The video box sits 1 px inside the poster's (the poster stays underneath, so the edge shows the same picture): the
+   first video frame paints over the poster's picture seconds later, and without the inset sub-pixel rounding can make
+   it a few px² larger than the poster, so Largest Contentful Paint would move from the poster to that later frame. */
+.ckh-video { inset: 1px; inline-size: calc(100% - 2px); block-size: calc(100% - 2px); opacity: 0; transition: opacity var(--dur-main) var(--ease-out); }
 .ckh[data-frame="video"] .ckh-video { opacity: 1; }
 .ckh-shade {
   position: absolute;
@@ -1570,39 +1576,38 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
 }
 .ckh-big:hover { transform: scale(1.05); }
 .ckh-big .ckh-ic-one[data-ic="play"] { margin-inline-start: 4px; }
-.ckh-big:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 4px; }
+/* Focus: a white ring between two dark rings, so it shows (≥ 3:1 against what is next to it, and a large change from
+   the unfocused look) over both the light poster / frames and dark ones. */
+.ckh-big:focus-visible {
+  outline: 3px solid #FFFFFF;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 9px rgba(4, 7, 13, .9), 0 18px 40px -12px rgba(2, 6, 14, .65);
+}
 .ckh-ic { display: inline-grid; place-items: center; line-height: 0; }
 .ckh-ic-one { grid-area: 1 / 1; display: inline-grid; place-items: center; }
 .ckh-ic svg { display: block; }
 
-/* Sound pill (narrated files only): prominent while muted; a small equaliser chip while sound plays. */
-.ckh-pill {
-  position: absolute;
-  z-index: 2;
-  inset-block-end: 12px;
-  inset-inline-start: 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-block-size: 40px;
-  padding: 6px 16px 6px 12px;
-  padding-inline: 12px 16px;
-  border: 0;
+/* Sound (narrated files only), in the control row next to play/pause — never over the picture, whose burned-in
+   captions stay clear. While it plays muted it is the prominent labelled pill "Turn sound on" (.is-prompt: primary
+   look, brand halo); while sound plays the speaker glyph gives way to equaliser bars. */
+.ckh-sound.is-prompt {
+  gap: 7px;
+  padding-inline: 11px 14px;
   border-radius: var(--radius-pill);
-  font: inherit;
   font-size: var(--fs-sm);
-  font-weight: 600;
-  color: #FFFFFF;
-  background: color-mix(in srgb, var(--brand) 92%, black);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, .22), 0 10px 26px -10px rgba(2, 6, 14, .7), 0 0 26px -4px color-mix(in srgb, var(--brand) 70%, transparent);
-  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent), 0 6px 16px -8px color-mix(in srgb, var(--brand) 80%, transparent);
 }
-.ckh-pill.is-on { min-block-size: 34px; padding-inline: 10px 12px; font-size: var(--fs-xs); font-weight: 500; background: rgba(4, 7, 13, .72); box-shadow: 0 0 0 1px rgba(255, 255, 255, .16); }
-.ckh-pill:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 3px; }
+.ckh-sound.is-prompt .btn-ic { inline-size: 18px; block-size: 18px; }
+.ckh-sound-label { white-space: nowrap; }
 .ckh-eq { display: none; align-items: flex-end; gap: 2px; block-size: 14px; }
-.ckh-pill.is-on .ckh-eq { display: inline-flex; }
-.ckh-pill.is-on .ckh-ic { display: none; }
-.ckh-eq > i { inline-size: 3px; block-size: 100%; border-radius: 1px; background: currentColor; transform-origin: 50% 100%; transform: scaleY(.35); }
+.ckh.is-sounding .ckh-sound { color: var(--brand-text); }
+.ckh.is-sounding .ckh-sound .ckh-eq { display: inline-flex; }
+.ckh.is-sounding .ckh-sound .ckh-ic { display: none; }
+/* Still bars (reduced motion, forced colours) read as a level meter; the animation runs only while sound plays. */
+.ckh-eq > i { inline-size: 3px; block-size: 100%; border-radius: 1px; background: currentColor; transform-origin: 50% 100%; transform: scaleY(.45); }
+.ckh-eq > i:nth-child(2) { transform: scaleY(.9); }
+.ckh-eq > i:nth-child(3) { transform: scaleY(.6); }
+.ckh-eq > i:nth-child(4) { transform: scaleY(.75); }
 .ckh.is-sounding .ckh-eq > i { animation: ckh-eq .82s cubic-bezier(.65, 0, .35, 1) infinite alternate; will-change: transform; }
 .ckh.is-sounding .ckh-eq > i:nth-child(2) { animation-duration: .64s; animation-delay: -.3s; }
 .ckh.is-sounding .ckh-eq > i:nth-child(3) { animation-duration: .9s; animation-delay: -.5s; }
@@ -1834,7 +1839,11 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
   .ckh-head .ckh-collapse { margin-inline-start: auto; }
   /* Minimised on a phone: one row of play + show (the audio note returns with the video). */
   .ckh.is-collapsed .ckh-note { display: none; }
-  .ckh-pill { inset-block-end: 8px; inset-inline-start: 8px; }
+  /* Room for the labelled sound prompt next to play/pause: the clock and the captions toggle (captions are burned in)
+     step out while it shows; the rail still shows the position. */
+  .ckh.is-prompting .ckh-time, .ckh.is-prompting .ckh-cc { display: none; }
+  /* With the sound button the row is one control fuller: the clock drops its "/ total" (the kicker shows the length). */
+  .ckh.has-voice .ckh-total { display: none; }
 }
 @media (pointer: coarse) {
   .ckh .ckh-btn, .ckh .ckh-btn.btn-icon { inline-size: 44px; block-size: 44px; min-block-size: 44px; }
@@ -1842,7 +1851,7 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
   .ckh .ckh-collapse, .ckh .ckh-barplay, .ckh .ckh-tx { min-block-size: 44px; }
   .ckh-rail { block-size: 44px; }
   .ckh-cue { min-block-size: 44px; align-items: center; }
-  .ckh-pill { min-block-size: 44px; }
+  .ckh .ckh-sound.is-prompt { inline-size: auto; min-inline-size: 44px; }
 }
 
 /* Full screen: the stage and its controls, on black. */
@@ -1859,7 +1868,7 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
 /* Decoration off: reduced motion (OS unless the setting forces it on, or the setting), forced colours. */
 :root[data-motion="reduce"] .ckh-sweep, :root[data-motion="reduced"] .ckh-sweep { display: none; }
 :root[data-motion="reduce"] .ckh .ckh-eq > i, :root[data-motion="reduced"] .ckh .ckh-eq > i { animation: none; }
-:root[data-motion="reduce"] .ckh-video, :root[data-motion="reduced"] .ckh-video, :root[data-motion="reduce"] .ckh-big { transition: none; }
+:root[data-motion="reduce"] .ckh-video, :root[data-motion="reduced"] .ckh-video, :root[data-motion="reduce"] .ckh-big, :root[data-motion="reduced"] .ckh-big { transition: none; }
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-motion="full"]) .ckh-sweep { display: none; }
   :root:not([data-motion="full"]) .ckh .ckh-eq > i { animation: none; }
@@ -1868,7 +1877,10 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
 @media (forced-colors: active) {
   .ckh-sweep, .ckh-shade { display: none; }
   .ckh-stage { box-shadow: none; border: 1px solid CanvasText; }
-  .ckh-big, .ckh-pill { forced-color-adjust: none; background: ButtonFace; color: ButtonText; border: 2px solid ButtonText; box-shadow: none; }
+  .ckh-big { forced-color-adjust: none; background: ButtonFace; color: ButtonText; border: 2px solid ButtonText; box-shadow: none; }
+  .ckh-big:focus-visible { outline: 3px solid Highlight; box-shadow: none; }
+  .ckh-video, .ckh-big { transition: none; }
+  .ckh-sound.is-prompt { border: 2px solid ButtonText; box-shadow: none; }
   .ckh-track { background: GrayText; forced-color-adjust: none; }
   .ckh-fill, .ckh-dot { forced-color-adjust: none; background: Highlight; box-shadow: none; }
   .ckh-tick { forced-color-adjust: none; background: CanvasText; box-shadow: none; }
