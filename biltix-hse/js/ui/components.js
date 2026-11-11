@@ -1482,7 +1482,8 @@ function overlayHost() {
   return document.getElementById('modals') || document.body;
 }
 
-function focusables(root) {
+/** The tab stops inside `root`, in order — the list a modal / drawer cycles through (also used by the tour panel). */
+export function focusables(root) {
   // Roving-tabindex children (tabindex="-1": inactive tabs, chart marks) are not tab stops.
   return Array.from(root.querySelectorAll(FOCUSABLE)).filter((n) => ((!n.hasAttribute('hidden') && n.getClientRects().length > 0 && n.tabIndex >= 0) || n === document.activeElement));
 }
@@ -2329,6 +2330,6 @@ export const components = {
   h, clear, glyph, svgIcon, card, statTile, badge, tierBadge, button, segmented, tabs, dataTable,
   modal, drawer, menu, toast, kanban, formField, readForm, emptyState, progress, countdown, liveDot, kv, reducedMotion,
   parseDelta, statusBadge, filterBar, loadingState, errorState, offlineState, skeleton, motion,
-  labelInName, nameExtra, setLabelInName, visibleText,
+  labelInName, nameExtra, setLabelInName, visibleText, focusables,
 };
 export default components;

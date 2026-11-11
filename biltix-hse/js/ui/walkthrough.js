@@ -19,6 +19,12 @@
  * Accessibility: a non-modal dialog (role="dialog", aria-modal="false") with a labelled heading that takes focus
  * on each step; Back / Next / Close buttons; Esc closes and returns focus to the opener. The page is never made
  * inert by the tour; when a drawer makes the page inert, the tour panel keeps itself usable (inert guard).
+ * Keyboard: while the risk drawer is open, Tab runs through the drawer and the panel as one cycle (the drawer's own
+ * cycle would never reach the panel), and Esc closes the tour first — from the panel, from the drawer and from the
+ * page — and leaves the drawer open. Any other dialog on top (the 360° viewer the last step opens, a shell drawer)
+ * hides the panel and the ring until it closes, so the panel never covers it.
+ * Language: on bus 'lang:change' the panel takes the new language and direction and puts the step's screen back
+ * (the router re-mounts the view, and the risk drawer closes with it).
  * Motion: one opacity/transform entrance of the panel and an opacity fade of the highlight ring — compositor
  * only, nothing replays on live updates (content renders on step change only), off under reduced motion,
  * the Static setting, forced colours and print (hidden in print).
@@ -27,6 +33,7 @@
 
 import { components } from './components.js';
 import { i18n } from '../core/i18n.js';
+import { bus } from '../core/bus.js';
 import { fmt } from '../core/fmt.js';
 import { store as defaultStore } from '../core/store.js';
 import dict from '../i18n/walkthrough.js';
@@ -124,6 +131,7 @@ const STYLE_TEXT = `
   box-shadow: 0 0 0 3px var(--brand), 0 0 0 7px color-mix(in srgb, var(--brand) 22%, transparent); opacity: 0; }
 .wt-ring.is-on { opacity: 1; }
 .wt-anim .wt-ring { transition: opacity 180ms ease-out; }
+.wt-panel[data-away], .wt-ring[data-away] { display: none; }
 .wt-launch { gap: 6px; }
 @media (max-width: 640px) {
   .wt-panel, .wt-panel[data-side="end"] { inset-inline: 8px; inset-block-end: 8px; inline-size: auto; max-block-size: 46vh; }
@@ -255,7 +263,11 @@ function content(stepId, risk, ctx) {
       nodes.push(h('p', {}, P('body', { zone: `${risk.zoneId} ${zl && zl.name ? `— ${zl.name}` : ''}`.trim(), code: risk.code })));
       const pano = arr(risk.links && risk.links.captures360)[0];
       if (pano) {
-        nodes.push(components.button(P('open360'), { variant: 'outline', size: 'sm', icon: 'eye', attrs: { 'data-wt-action': 'open360' }, onClick: () => { location.hash = `#/spatial?site=${encodeURIComponent(risk.projectId)}&zone=${encodeURIComponent(risk.zoneId)}&pano=${encodeURIComponent(pano)}`; } }));
+        nodes.push(components.button(P('open360'), { variant: 'outline', size: 'sm', icon: 'eye', attrs: { 'data-wt-action': 'open360' }, onClick: () => {
+          // the viewer hides the panel while it is open (syncOverlays); the focus comes back to this button after it
+          if (active) active.resume = '[data-wt-action="open360"]';
+          location.hash = `#/spatial?site=${encodeURIComponent(risk.projectId)}&zone=${encodeURIComponent(risk.zoneId)}&pano=${encodeURIComponent(pano)}`;
+        } }));
       }
       nodes.push(h('p', { class: 'wt-note' }, P('note')));
       nodes.push(h('div', { class: 'wt-tags' }, tag('simulated', 'accent'), tag('illustrative')));
@@ -280,6 +292,11 @@ async function waitFor(fn, timeout = 4000) {
   }
 }
 const openDrawerEl = () => document.querySelector('dialog.risk-drawer[open]');
+function arrived(dlg) { const r = dlg.getBoundingClientRect(); return r.width > 0 && r.left >= -1 && r.right <= window.innerWidth + 1; }
+function unsettled() {
+  const m = document.querySelector('main');
+  return Boolean(document.querySelector('.drawer-backdrop.is-closing, .modal-backdrop.is-closing')) || Boolean(m && (m.getAttribute('aria-busy') === 'true' || !m.childElementCount));
+}
 function drawerRiskCode(el) { const c = el && el.querySelector('.drawer-sub .code'); return c ? c.textContent.trim() : ''; }
 
 async function ensureScreen(stepId) {
@@ -287,6 +304,9 @@ async function ensureScreen(stepId) {
   if (!a) return;
   const risk = riskOf(a.ctx, a.riskId);
   if (!risk) return;
+  // A view that is being re-mounted (language change) and a drawer that is sliding out (still [open]) are not the
+  // screen yet: wait for both before deciding what this step needs.
+  if (unsettled()) await waitFor(() => !unsettled(), 2000);
   if (stepId === 'site') {
     const want = `#/spatial?site=${encodeURIComponent(risk.projectId)}&zone=${encodeURIComponent(risk.zoneId)}`;
     if (routeId() !== 'spatial') location.hash = want;
@@ -346,7 +366,12 @@ function findTarget(stepId) {
 function placeRing() {
   const a = active;
   if (!a) return;
-  const el = a.target && a.target.isConnected ? a.target : null;
+  // keep the panel off the drawer: the drawer sits at the inline end, the panel goes to the inline start
+  a.root.setAttribute('data-side', openDrawerEl() ? 'start' : 'end');
+  // The view re-renders its rows (live data, language) and a drawer can close under the tour: look the target up
+  // again when its node is gone, and drop the ring when the step's target is not on screen any more.
+  if (a.target && !a.target.isConnected) a.target = a.busy ? null : findTarget(STEPS[a.step]);
+  const el = a.target;
   if (!el) { a.ring.classList.remove('is-on'); return; }
   const r = el.getBoundingClientRect();
   if (!r.width || !r.height) { a.ring.classList.remove('is-on'); return; }
@@ -359,9 +384,6 @@ function placeRing() {
   a.ring.style.insetInlineStart = '0px';
   a.ring.style.transform = `translate(${document.dir === 'rtl' ? x - window.innerWidth + w : x}px, ${y}px)`;
   a.ring.classList.add('is-on');
-  // keep the panel off the drawer: the drawer sits at the inline end, the panel goes to the inline start
-  const drawer = openDrawerEl();
-  a.root.setAttribute('data-side', drawer ? 'start' : 'end');
 }
 /**
  * The panel lies over the bottom of the screen (on phones across its whole width). When the step's target is in
@@ -415,26 +437,39 @@ function scheduleRing() {
   a.ringRaf = requestAnimationFrame(() => { if (active) { active.ringRaf = 0; placeRing(); } });
 }
 
-async function go(index) {
+/** Shows step `index`. `focus: false` puts the step's screen back without moving the focus (language change). */
+async function go(index, { focus = true } = {}) {
   const a = active;
   if (!a) return;
   const n = Math.max(0, Math.min(STEPS.length - 1, index));
   const seq = ++a.seq;
   a.step = n;
+  a.busy = true;
   const stepId = STEPS[n];
   paint(stepId, { loading: true });
   await ensureScreen(stepId);
   if (!active || active !== a || seq !== a.seq) return;
   const target = await waitFor(() => findTarget(stepId), 1500);
   if (!active || active !== a || seq !== a.seq) return;
+  // A drawer the tour has just opened is still sliding in: until it stops its boxes are off to the side, the target
+  // looks "beside" the panel and no room is made for it (on a phone it then stays under the panel). Measure after.
+  const dlg = target ? target.closest('dialog[open]') : null;
+  if (dlg && !arrived(dlg)) {
+    await waitFor(() => arrived(dlg), 800);
+    if (!active || active !== a || seq !== a.seq) return;
+  }
+  a.busy = false;
+  a.resume = null;
   a.target = target;
   paint(stepId, { loading: false });   // first: the panel takes its height for this step, then the target is placed
   dock(target);
   if (target) { try { target.scrollIntoView({ block: 'nearest', behavior: reduced() ? 'auto' : 'smooth' }); } catch { /* ignore */ } }
   scheduleRing();
   setTimeout(scheduleRing, reduced() ? 0 : 360);
-  try { a.title.focus({ preventScroll: true }); } catch { /* ignore */ }
+  if (focus) { try { a.title.focus({ preventScroll: true }); } catch { /* ignore */ } }
 }
+
+function setButtonText(btn, text) { const l = btn.querySelector('.btn-label'); if (l) l.textContent = text; else btn.textContent = text; }
 
 function paint(stepId, { loading }) {
   const a = active;
@@ -446,11 +481,86 @@ function paint(stepId, { loading }) {
   Array.from(a.progress.children).forEach((seg, i) => { seg.className = i < n ? 'is-done' : i === n ? 'is-current' : ''; });
   a.progress.setAttribute('aria-valuenow', String(n + 1));
   a.progress.setAttribute('aria-valuetext', t('step', { n: fmt.num(n + 1), total: fmt.num(STEPS.length) }));
-  if (!loading || !a.body.childElementCount) a.body.replaceChildren(...(risk ? content(stepId, risk, a.ctx) : [h('p', {}, t('unavailable'))]), h('p', { class: 'wt-note' }, t('honest')));
+  if (!loading || !a.body.childElementCount) {
+    const held = a.body.contains(document.activeElement);   // a control of the step text (the 360° button) has the focus
+    a.body.replaceChildren(...(risk ? content(stepId, risk, a.ctx) : [h('p', {}, t('unavailable'))]), h('p', { class: 'wt-note' }, t('honest')));
+    if (held) { try { a.title.focus({ preventScroll: true }); } catch { /* ignore */ } }
+  }
   a.prev.disabled = n === 0;
-  const last = n === STEPS.length - 1;
-  a.next.querySelector('.btn-label') ? (a.next.querySelector('.btn-label').textContent = last ? t('finish') : t('next')) : (a.next.textContent = last ? t('finish') : t('next'));
+  setButtonText(a.next, n === STEPS.length - 1 ? t('finish') : t('next'));
   a.root.setAttribute('aria-busy', loading ? 'true' : 'false');
+}
+
+/** The panel's fixed labels, language and direction (set at start and again when the language changes). */
+function paintChrome() {
+  const a = active;
+  if (!a) return;
+  a.root.setAttribute('dir', i18n.dir());
+  a.root.setAttribute('lang', i18n.lang());
+  a.closeX.setAttribute('aria-label', t('close'));
+  a.progress.setAttribute('aria-label', t('progress'));
+  a.hint.textContent = t('closeHint');
+  setButtonText(a.prev, t('prev'));
+}
+
+/* ───────────────────────── other overlays, keyboard ───────────────────────── */
+
+/** The topmost open dialog when it is not the risk drawer the tour explains (the 360° viewer, a form, a shell drawer). */
+function dialogOnTop() {
+  const list = document.querySelectorAll('dialog[open]');
+  const top = list.length ? list[list.length - 1] : null;
+  return top && !top.classList.contains('risk-drawer') ? top : null;
+}
+
+/**
+ * Runs when a dialog opens or closes. Another dialog on top: the panel and the ring step aside (hidden) until it
+ * closes — the panel is drawn above every dialog and would cover it (on a phone: most of the 360° picture and all
+ * of its controls). The explained drawer closed under the tour: the ring leaves with its target.
+ */
+function syncOverlays() {
+  const a = active;
+  if (!a) return;
+  const away = Boolean(dialogOnTop());
+  if (away !== a.away) {
+    a.away = away;
+    a.root.toggleAttribute('data-away', away);
+    a.ring.toggleAttribute('data-away', away);
+    if (!away) {
+      // Back from a dialog the panel's own button opened (the 360° viewer): the focus returns to that button. Else,
+      // when the dialog handed the focus to nothing (a node hidden with the panel), the step heading takes it.
+      const back = a.resume ? a.body.querySelector(a.resume) : null;
+      a.resume = null;
+      const lost = !document.activeElement || document.activeElement === document.body;
+      const to = back || (lost ? a.title : null);
+      if (to) { try { to.focus({ preventScroll: true }); } catch { /* ignore */ } }
+    }
+  }
+  scheduleRing();
+}
+
+/**
+ * Tab between the open risk drawer and the panel. The drawer cycles Tab inside itself (components.js overlay), so
+ * a focus that left the panel could not come back: here the two form one cycle — drawer … last → panel first …
+ * last → drawer first, and the reverse with Shift+Tab.
+ */
+function bridgeTab(e) {
+  const a = active;
+  const drawer = openDrawerEl();
+  if (!a || !drawer) return;
+  const inPanel = components.focusables(a.root);
+  const inDrawer = components.focusables(drawer);
+  if (!inPanel.length || !inDrawer.length) return;
+  const at = document.activeElement;
+  let to = null;
+  if (!e.shiftKey) {
+    if (at === inDrawer[inDrawer.length - 1]) to = inPanel[0];
+    else if (at === inPanel[inPanel.length - 1]) to = inDrawer[0];
+  } else if (at === inDrawer[0] || at === drawer) to = inPanel[inPanel.length - 1];
+  else if (at === inPanel[0] || at === a.title) to = inDrawer[inDrawer.length - 1];
+  if (!to) return;
+  e.preventDefault();
+  e.stopPropagation();
+  try { to.focus(); } catch { /* ignore */ }
 }
 
 /* ───────────────────────── public API ───────────────────────── */
@@ -471,16 +581,18 @@ export function startWalkthrough(ctx = {}, { riskId = WORKED_RISK, step = 0, ret
   const uid = `wt-${Date.now().toString(36)}`;
   const kicker = h('span', { class: 'wt-kicker' });
   const title = h('h2', { class: 'wt-title', id: `${uid}-t`, tabindex: '-1' });
+  // Labels, language and direction are written by paintChrome() (now and on every language change).
   const closeX = components.button('', { variant: 'ghost', size: 'sm', icon: 'close', onClick: () => stopWalkthrough('close'), attrs: { 'aria-label': t('close'), class: 'wt-x' } });
-  const progress = h('div', { class: 'wt-progress', role: 'progressbar', 'aria-label': t('progress'), 'aria-valuemin': '1', 'aria-valuemax': String(STEPS.length) }, ...STEPS.map(() => h('span', {})));
+  const progress = h('div', { class: 'wt-progress', role: 'progressbar', 'aria-valuemin': '1', 'aria-valuemax': String(STEPS.length) }, ...STEPS.map(() => h('span', {})));
   // The step text scrolls when it is longer than the panel: focusable, so the keyboard can scroll it.
   const body = h('div', { class: 'wt-body', id: `${uid}-b`, tabindex: '0' });
   const prev = components.button(t('prev'), { variant: 'outline', size: 'sm', onClick: () => go(active.step - 1) });
   const next = components.button(t('next'), { variant: 'primary', size: 'sm', onClick: () => { if (active.step >= STEPS.length - 1) stopWalkthrough('finish'); else go(active.step + 1); } });
-  const root = h('section', { class: 'wt-panel', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': `${uid}-t`, 'aria-describedby': `${uid}-b`, 'data-side': 'end', dir: i18n.dir(), lang: i18n.lang() },
+  const hint = h('span', { class: 'wt-hint' });
+  const root = h('section', { class: 'wt-panel', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': `${uid}-t`, 'aria-describedby': `${uid}-b`, 'data-side': 'end' },
     h('div', { class: 'wt-head' }, h('div', { class: 'wt-head-text' }, kicker, title), closeX),
     progress, body,
-    h('div', { class: 'wt-foot' }, h('span', { class: 'wt-hint' }, t('closeHint')), prev, next));
+    h('div', { class: 'wt-foot' }, hint, prev, next));
   const ring = h('div', { class: 'wt-ring', 'aria-hidden': 'true' });
   const animOn = !reduced();
   if (animOn) document.documentElement.classList.add('wt-anim');
@@ -488,18 +600,60 @@ export function startWalkthrough(ctx = {}, { riskId = WORKED_RISK, step = 0, ret
   // a drawer / modal makes the rest of the page inert while it is open; the tour panel stays usable
   const inertGuard = new MutationObserver(() => { if (root.inert) root.inert = false; if (root.hasAttribute('inert')) root.removeAttribute('inert'); });
   inertGuard.observe(root, { attributes: true, attributeFilter: ['inert'] });
-  const onKey = (e) => {
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); stopWalkthrough('escape'); }
+  // Keyboard. Capture phase on the document: the open risk drawer handles Tab and Escape on its own backdrop and
+  // stops them there, so the tour has to see the key first. Esc closes the tour (as the panel says) from the panel,
+  // from the drawer it explains and from <body>; the drawer stays open and takes the next Esc itself.
+  const onKeyCapture = (e) => {
+    const a = active;
+    if (!a || a.away || e.defaultPrevented || e.isComposing) return;
+    if (e.key === 'Tab' && !e.altKey && !e.ctrlKey && !e.metaKey) { bridgeTab(e); return; }
+    if (e.key !== 'Escape') return;
+    const drawer = openDrawerEl();
+    const tg = e.target;
+    const here = root.contains(tg) || (drawer && (drawer.contains(tg) || tg === document.body || tg === document.documentElement));
+    if (!here) return;
+    e.preventDefault();
+    e.stopPropagation();
+    stopWalkthrough('escape');
   };
-  root.addEventListener('keydown', onKey);
+  // An Escape nothing else used (focus somewhere on the page, no menu / palette / field took it) closes the tour too.
+  const onKeyLate = (e) => {
+    if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing || !active || active.away) return;
+    e.preventDefault();
+    stopWalkthrough('escape');
+  };
+  document.addEventListener('keydown', onKeyCapture, true);
+  window.addEventListener('keydown', onKeyLate);
   const onMove = () => scheduleRing();
   window.addEventListener('resize', onMove);
   document.addEventListener('scroll', onMove, true);
   const onHash = () => { setTimeout(scheduleRing, 250); };
   window.addEventListener('hashchange', onHash);
+  // Dialogs open and close in the overlay host: another dialog on top hides the panel, a closed drawer frees the ring.
+  const overlayWatch = new MutationObserver(() => syncOverlays());
+  overlayWatch.observe(document.getElementById('modals') || document.body, { childList: true });
+  // Language: new labels, text and direction at once. The router re-mounts the current view in the new language and
+  // the risk drawer closes with it, so when the step lives on this route its screen is put back afterwards (drawer,
+  // target, ring) without moving the focus; ensureScreen() waits for the re-mount and the closing drawer.
+  const offLang = bus.on('lang:change', () => {
+    const a = active;
+    if (!a) return;
+    paintChrome();
+    paint(STEPS[a.step], { loading: false });
+    scheduleRing();
+    if (routeId() !== (STEPS[a.step] === 'site' ? 'spatial' : 'airisks')) return;
+    const seq = ++a.seq;   // a step change still on its way is replaced by this one
+    setTimeout(() => { if (active === a && seq === a.seq) go(a.step, { focus: false }); }, 0);
+  });
   const opener = returnFocus || (document.activeElement && document.activeElement !== document.body ? document.activeElement : null);
-  active = { ctx: ctx || {}, riskId: risk.id, step: 0, seq: 0, root, ring, kicker, title, progress, body, prev, next, target: null, ringRaf: 0, opener, docked: null,
-    cleanup: () => { inertGuard.disconnect(); window.removeEventListener('resize', onMove); document.removeEventListener('scroll', onMove, true); window.removeEventListener('hashchange', onHash); } };
+  active = { ctx: ctx || {}, riskId: risk.id, step: 0, seq: 0, root, ring, kicker, title, progress, body, prev, next, closeX, hint, target: null, ringRaf: 0, opener, docked: null, away: false, busy: false, resume: null,
+    cleanup: () => {
+      inertGuard.disconnect(); overlayWatch.disconnect(); offLang();
+      document.removeEventListener('keydown', onKeyCapture, true); window.removeEventListener('keydown', onKeyLate);
+      window.removeEventListener('resize', onMove); document.removeEventListener('scroll', onMove, true); window.removeEventListener('hashchange', onHash);
+    } };
+  paintChrome();
+  syncOverlays();
   if (animOn && typeof root.animate === 'function') {
     try { root.animate([{ opacity: 0, transform: 'translateY(12px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.16,1,.3,1)' }); } catch { /* ignore */ }
   }
@@ -516,11 +670,15 @@ export function stopWalkthrough(reason = 'close') {
   a.seq += 1;
   if (a.ringRaf) cancelAnimationFrame(a.ringRaf);
   a.cleanup();
+  const at = document.activeElement;
+  const keepFocus = Boolean(at && at !== document.body && at !== document.documentElement && at.isConnected && !a.root.contains(at) && !at.closest('[inert]'));
   a.root.remove();
   a.ring.remove();
   document.documentElement.classList.remove('wt-anim');
   // Focus goes back to the opener; when that is gone, into the dialog that is open (the page behind it is inert:
-  // the risk drawer's selected tab, the 360° viewer's close button), else to the page heading.
+  // the risk drawer's selected tab, the 360° viewer's close button), else to the page heading. A focus that is
+  // already on a live control outside the panel (inside the drawer, on the page) stays where the reader put it.
+  if (keepFocus) return reason;
   const dialogs = document.querySelectorAll('dialog[open]');
   const dlg = dialogs.length ? dialogs[dialogs.length - 1] : null;
   const back = a.opener && a.opener.isConnected && !a.opener.closest('[inert]') ? a.opener

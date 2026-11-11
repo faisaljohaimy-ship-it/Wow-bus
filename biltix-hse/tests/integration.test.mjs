@@ -325,4 +325,27 @@ export const tests = [
       assert.ok(/setAttribute\('aria-disabled', 'true'\)/.test(src) && !/cb\.disabled = true/.test(src));
     },
   },
+  {
+    name: 'walkthrough: the panel follows the language, shares one Tab cycle with the risk drawer, takes Esc first and steps aside for other dialogs',
+    async fn() {
+      const src = read('js/ui/walkthrough.js');
+      // language and direction are painted by one function, at start and on lang:change (not once at creation)
+      const chrome = /function paintChrome\(\) \{([\s\S]*?)\n\}\n/.exec(src);
+      assert.ok(chrome, 'paintChrome');
+      for (const part of ["setAttribute('dir', i18n.dir())", "setAttribute('lang', i18n.lang())", "t('close')", "t('progress')", "t('closeHint')", "t('prev')"]) assert.ok(chrome[1].includes(part), part);
+      assert.ok(/bus\.on\('lang:change'/.test(src) && !/dir: i18n\.dir\(\), lang: i18n\.lang\(\)/.test(src));
+      const wt = (await import('../js/i18n/walkthrough.js')).default;
+      for (const lang of ['ar', 'en']) for (const k of ['prev', 'next', 'finish', 'close', 'closeHint', 'progress', 'step']) assert.ok(wt[lang][k], `${lang}.${k}`);
+      // keyboard: the key is seen before the drawer's own handler, and the listeners are removed with the tour
+      assert.ok(/document\.addEventListener\('keydown', onKeyCapture, true\)/.test(src) && /document\.removeEventListener\('keydown', onKeyCapture, true\)/.test(src));
+      assert.ok(/window\.addEventListener\('keydown', onKeyLate\)/.test(src) && /window\.removeEventListener\('keydown', onKeyLate\)/.test(src));
+      // the Tab cycle uses the same list of tab stops as the drawer's own cycle
+      const C = await import('../js/ui/components.js');
+      assert.equal(typeof C.focusables, 'function');
+      assert.equal(C.components.focusables, C.focusables);
+      assert.ok(/components\.focusables\(a\.root\)/.test(src) && /components\.focusables\(drawer\)/.test(src));
+      // another dialog on top hides the panel and the ring
+      assert.ok(/\.wt-panel\[data-away\], \.wt-ring\[data-away\] \{ display: none; \}/.test(src) && /function dialogOnTop\(\)/.test(src));
+    },
+  },
 ];
