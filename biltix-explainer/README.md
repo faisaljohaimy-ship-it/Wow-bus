@@ -421,6 +421,116 @@ with `voice: null` for English in the manifest. Unit tests:
 placement incl. earlier start, the 0.15 s and dissolve floors, atempo and its cap, the tail rule,
 fades, the limiter, WAV, the VTT round trip and the manifest shape).
 
+## MVP film bookends and final assembly
+
+A cinematic open and close around the MVP showcase film (the core film, about 68 s with AI narration),
+and the script that joins the three with a music bed. Compositions **OpenAR / OpenEN** and
+**CloseAR / CloseEN** (`src/bookends/`): 1920 × 1080, 30 fps, 225 frames (7.5 s) each, silent.
+
+**Footage.** Four AI-generated b-roll clips (Higgsfield, Veo 3.1 Fast; 1920 × 1080, 24 fps, 4.0 s, silent)
+in `public/broll/` (about 25 MB, **not in git**; `public/broll/` is ignored): `aerial.mp4` (golden-hour aerial
+of a site with tower cranes and a skyline), `engineer.mp4` (safety engineer in a white hard hat and orange
+vest reviewing a tablet), `ops-room.mp4` (bright safety operations room, curved display wall), `hardhat.mp4`
+(white hard hat on a steel beam, skyline bokeh). They are illustrations, not footage of a BILTIX site, and
+every frame they are on carries the tag **«لقطات توضيحية مولّدة بالذكاء الاصطناعي» / "AI-generated
+illustrative footage"** (lower letterbox bar, inline-end corner). The footage is never mirrored for Arabic.
+Clips play through `<OffthreadVideo muted>`; a clip that must stay on screen longer than 4.0 s is slowed to
+0.94× (never frozen). At 30 fps every fifth output frame repeats a 24 fps source frame (the usual
+24 → 30 cadence); the slow push and drift drawn on top stay smooth.
+
+| | Open (7.5 s) | Close (7.5 s) |
+|---|---|---|
+| 0–0.8 s | aerial site, letterbox opening from a slit to 2.39:1, first frames up from a dim exposure | from `#F4F7FB` dissolving into the operations room |
+| 0.5–2.3 s | the laser comet draws the nickel-orange frame (fast first lap, then the app's cruise speed; clockwise in English, counter-clockwise in Arabic), emblem builds, name lines rise | — |
+| 3.3–4.0 s | cross-dissolve aerial → engineer (centre 3.65 s) | cross-dissolve operations room → hard hat; end card starts: frame drawn by the comet, emblem, wordmark |
+| title / card | AR: «بلتكس للمخاطر بالذكاء الاصطناعي» (lead) + BILTIX Risk AI + «من الموقع… إلى القرار، بالدليل»; EN: BILTIX Risk AI (lead) + Arabic name + "From the site to the decision — with evidence" | wordmark + Arabic name, AR «قرارات مدعومة بالدليل، / بإشراف بشري» / EN "Evidence-backed decisions, / with humans in control", link pill `biltix-risk-ai.vercel.app` |
+| 6.7–7.5 s | dissolve to `#F4F7FB` (the app plane and the core film's first frame); the last frame is flat `#F4F7FB` | fade back to `#F4F7FB` |
+
+Look: a soft grade (multiply cream on the highlights, soft-light warmth from the sun side, slightly cooler
+deeper shadows, a warm lens vignette), a local warm-black shade behind the text, and the text on a
+smoked-glass plate inside the metal frame (white text: names 56–84 px, tagline and closing line 36–46 px,
+secondary lines 32–42 px, the tag 21 px; IBM Plex Sans / IBM Plex Sans Arabic, no letter-spacing on Arabic). The open's title sits left of centre, clear of the engineer; the close's card
+right of centre, clear of the hard hat. 2D transforms only (no `perspective`, `preserve-3d` or
+`translateZ`), all motion eased with `EASE` from `theme.ts`.
+
+```bash
+# render (JPEG frames, CRF 18; each took 8–12 min on the shared 4-core sandbox, concurrency 2)
+for id in OpenAR OpenEN CloseAR CloseEN; do
+  npx remotion render src/index.ts $id out/bookends/remotion/$id.mp4 --concurrency=2 --image-format=jpeg \
+    --jpeg-quality=95 --crf=18 --pixel-format=yuv420p --codec=h264 --muted
+done
+# Remotion's JPEG path writes full-range BT.601 YUV (ffprobe: yuvj420p, bt470bg); deliver standard
+# yuv420p, BT.709, limited range (0.9 grey levels from the render on average):
+for id in OpenAR OpenEN CloseAR CloseEN; do
+  ffmpeg -i out/bookends/remotion/$id.mp4 -an -c:v libx264 -profile:v high -preset slow -crf 18 -pix_fmt yuv420p \
+    -vf colorspace=ispace=bt470bg:iprimaries=bt709:itrc=bt709:irange=pc:space=bt709:primaries=bt709:trc=bt709:range=tv:format=yuv420p \
+    -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv -movflags +faststart out/bookends/$id.mp4
+done
+node scripts/bookend-stills.mjs --ids OpenAR,CloseEN --frames 20,90,160   # review stills from the compositions
+```
+
+### Final assembly: `scripts/showcase-final.mjs`
+
+```bash
+node scripts/showcase-final.mjs --lang ar \
+  --core BILTIX-MVP-Arabic.mp4 --open open-ar.mp4 --close close-ar.mp4 \
+  --music score.mp3 --out BILTIX-MVP-Cinematic-Arabic.mp4 [--xfade 0.5] [--hold 1.0] [--music-start 0] \
+  [--stems dir] [--report plan.json] [--dry-run]
+```
+
+- **Picture**: open + core + close joined with two 0.5 s `xfade` dissolves (smoothstep-eased custom
+  transition). The core starts at open − 0.5 s, the close at open + core − 1.0 s; total = open + core +
+  close − 1.0 s. Inputs are normalised to 1920 × 1080, 30 fps, yuv420p, SAR 1 and cut to their exact frame
+  counts.
+- **Narration**: the core film's own audio track, cut to the core's picture length and delayed by
+  open − crossfade (`adelay` in samples), so each line stays on the frame it was rendered with. Use the
+  narration-only core (the Remotion master): the script warns when the core audio has no silences
+  (music already mixed in).
+- **Music**: trimmed to the film (looped only if shorter), 1.5 s fade-in and 3 s fade-out (quarter-sine),
+  set to −16 LUFS ("full level", measured with `ebur128`), then gain-automated from the narration: speech
+  spans from `silencedetect` (−45 dB, 0.3 s) on the core audio; full level in the open and the close,
+  −7 dB between lines, −15 dB under a line (0.3 s attack, 0.5 s release), smoothstep ramps, gain updated
+  every 10 ms (`asetnsamples` 480 + `volume` `eval=frame`). A gap shorter than `--hold` (default 1.0 s)
+  keeps the duck: the showcase's lines are about 0.77 s apart, and letting the bed swell 7 dB and drop
+  back inside each breath is audible pumping, so the bed sits at −15 dB through the narration and comes
+  up to −7 dB in real pauses (the 1.9 s lead-in and the 2.4 s tail). `--hold 0` ducks every line on its own.
+- **Loudness**: the sum is measured (`ebur128`), one gain brings it to −16 LUFS integrated, and a
+  look-ahead limiter at 4× sample rate (−2 dBFS) keeps the true peak under −1.5 dBTP after AAC encoding.
+- **Colour**: Remotion writes full-range YUV with the BT.601 matrix (`yuvj420p`, tagged `bt470bg`). Each input
+  goes through the `colorspace` filter to the BT.709 matrix, limited range (primaries and transfer untouched):
+  a frame decoded from the final file differs from the same frame decoded from the render by 0.5 grey levels
+  on average (a plain `format=yuv420p` would keep the BT.601 matrix under BT.709 tags: up to 14 levels off).
+- **Encode**: H.264 High, CRF 21, preset slow, yuv420p, BT.709 tags, 30 fps, keyframe every 4 s,
+  `+faststart`; AAC-LC 192 kb/s, 48 kHz stereo. Exact frame count (`-frames:v`).
+- **Check** (printed, and exit 1 on failure): durations and offsets, frame count, `ebur128` integrated
+  loudness / LRA / true peak of the written file, and `blackdetect` (≥ 0.04 s, 98 % of pixels below 10 %).
+  Needs a full ffmpeg (`/usr/bin/ffmpeg` 6.1 or `$FFMPEG`): Remotion's bundled ffmpeg lacks these filters.
+- **Music**: `score.mp3`, an 85.5 s cinematic instrumental generated with Lyria 3 Pro through
+  Higgsfield / Artlist (not in git; check the generator's licence terms before publishing).
+
+### Bookend build and assembly tests (2026-11-11)
+
+| File | Frames | Size | Notes |
+|---|---|---|---|
+| `open-ar.mp4` / `open-en.mp4` | 225 (7.5 s) | 7,357,377 / 7,229,689 B | rendered 9.7 / 7.7 min, then converted to yuv420p BT.709 |
+| `close-ar.mp4` / `close-en.mp4` | 225 (7.5 s) | 6,908,231 / 6,908,993 B | rendered 8.0 / 11.5 min |
+
+- Stills every 0.75 s of all four renders reviewed: Arabic joined and ordered correctly in the title, the
+  tagline (ellipsis and Arabic comma at the right ends), the closing lines and the tag (with its shadda);
+  no text clipped; the plates keep white text readable over the sky. Frame-to-frame change: no one-frame
+  pop in any bookend (largest changes are the eased dissolves, ≤ 21 grey levels per frame at 480 × 270).
+- Stand-in assembly (both languages): stand-in core = `explainer-<lang>-720p.mp4` upscaled to 1080p
+  (41.5 s) with a synthetic narration of nine tone "lines" at −16 LUFS, at frame-aligned times, and a
+  magenta box drawn exactly while each line sounds; music = `score.mp3`. Result 55.5 s, 1,665 frames
+  (7.5 + 41.5 + 7.5 − 2 × 0.5) as computed; −16.1 LUFS integrated, LRA 5.6 LU, true peak −2.0 dBFS;
+  `blackdetect`: none; mean luma never dips at either joint (it rises from the footage to the light plane).
+- Sync: the same assembly with silent music; box onsets (`signalstats`) and line onsets (`silencedetect`
+  on the final audio) coincide on all nine lines in both languages (offset 0.0 ms).
+- Ducking, measured from the `--stems` music stem against the same music with only the static gains:
+  open 0.0 dB, core lead-in −7.0 dB, under the lines −15.0 dB, core tail −7.0 dB, close 0.0 dB.
+- Colour: frames of the final file differ from the same frames of the bookend and core files by about
+  1 grey level on average, with no channel bias.
+
 ## Last build
 
 2026-11-11, data extracted from this tree's `biltix-hse` (anchor day 2026-11-09; `src/data.json`

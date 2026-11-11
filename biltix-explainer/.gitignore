@@ -1,3 +1,7 @@
+# MVP film bookends: AI-generated b-roll (Higgsfield; about 25 MB, kept out of git) and review stills
+public/broll/
+out/bookend-stills/
+out/bookends/
 node_modules/
 out/*.tmp
 out/stills/
