@@ -297,10 +297,45 @@ toasts) · `--dur-slow 420ms` · `--stagger 32ms` · `--ease-out cubic-bezier(.1
   hover / focus micro-motion on icons; a scroll shade fades in under the filters row (≥ 960 px) or the
   fixed app bar (phones) once the reader leaves the top (`body.is-scrolled`, opacity only).
 - **Infinite loops** (all compositor-only, transform/opacity on their own layers): the live dot, the edge
-  laser (§3.1), the app-bar glint (Subtle and Cinematic), and the Cinematic background (§6). None runs under
-  reduced motion; the glint and the background stop under Static; print shows none of them.
+  laser (§3.1), the app-bar glint (Subtle and Cinematic), the Cinematic background (§6), and (v3.6) the
+  ambient halo / float, which run only while their element is on screen. None runs under reduced motion; the
+  glint, the background, the laser and the ambient loops stop under Static; print shows none of them.
 - **Budget**: idle main-thread cost per route ≤ base + 5 ms/s (CDP `Performance.getMetrics` TaskDuration,
   5 s, 1440×900). Nothing replays on live updates: views patch in place and may `flash` a changed node.
+
+**Stage motion (v3.6 motion pass)** — tokens in `css/tokens.css`, mirrored by `motion.stageTiming`:
+
+| Token | Value | Used by |
+|---|---|---|
+| `--dur-reveal` | 520ms | scroll reveal: rise 18 px + scale .985 → 1 + fade (ease-out); cards revealed together 50 ms apart (`--stagger-reveal`, capped at the 5th) |
+| `--dur-grow` | 700ms | bar fills and HTML segmented bars (scaleX from the inline-start, 30 ms apart, cap 10); chart bars 620 ms (40 ms apart), heatmap cells 420 ms (+26 ms per diagonal), segmented SVG sweep 700 ms, dumbbell 560 ms, line rise 720 ms, spider 700 ms |
+| `--dur-count` | 850ms | KPI count-up (ease-out cubic) |
+| `--dur-overlay` | 280ms | modal and toast entrances, scrim fade; exits use `--dur-micro` (160 ms) |
+| `--spot-size`, `--spot-core`, `--spot-mid` | 380px, warm rgba per theme | pointer spotlight on the hovered card |
+| table rows | 340 ms, 28 ms apart, first 12 only | `motion.stageTiming.rows / rowStagger / rowCap` |
+| FLIP | 300 ms (`--ease-glide`), moved kanban card 420 ms with a 3 % lift | table sort, register filters, kanban moves |
+
+- **Stage** (`motion.stageBegin` on `ui:route-leave`, `motion.stage` on `route:change`, both from `js/app.js`):
+  a new route (or the first one) arms the stage; refreshes and language changes do not. One flush in the
+  next frame, before the view's first paint, reads every candidate's box once and then decides: `enter()`
+  calls made during render animate if on screen, else wait for the scroll reveal; top-level cards below the
+  fold wait for the reveal; on screen, KPI figures count, fills grow, HTML segmented bars sweep and table rows
+  stagger; below the fold the same happens when they scroll in. The reveal observer's root is the real
+  scroller (`<main>` on desktop, the document on phones) with a +12 % bottom root margin, so motion starts
+  just before an element appears; an element already in view when it is reported is left alone (no flash).
+- **Draw-ins** (`motion.intro`, `js/ui/charts.js`): only charts built while the stage is armed get one; they
+  are held at the start state (a paused Web Animation, released after 1.5 s at the latest or when found
+  off screen) and play once when seen. Live updates never arm the stage, so nothing replays.
+- **Count-up** (`motion.countIn`): parses the displayed figure (`parseFigure`: Latin, Arabic-Indic or Persian
+  digits, grouping and decimal marks, units and bidi marks kept), holds the host's width, ends at once if
+  anything else rewrites the text, and always finishes on the exact original string. Skipped inside
+  `aria-live` / status regions.
+- **Ambient loops** (`js/ui/edges.js` sets `data-amb` while on screen): halo on live / error capsules and on a
+  critical KPI's icon, float on empty / error icons. Same switches as the edge laser.
+- **Spotlight** (`js/ui/spotlight.js`): mouse pointers with hover only; one leaf element per lit card,
+  custom properties written once per frame, the light moved with transform.
+- **Off**: reduced motion (OS unless Settings forces motion on; Settings), forced colours, print (print
+  also finishes every running finite animation, releases held draw-ins and completes count-ups).
 
 ## 5. Density and layout
 

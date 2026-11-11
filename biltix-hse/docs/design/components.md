@@ -259,6 +259,9 @@ update: accent wash + inline-start accent bar; any other node gets an accent hai
 own opaque background). Wrappers: `.is-paged`, `.is-scroll`, `.is-overflowing`
 (scroll-edge shadows), `.table.has-sticky-first`, `[data-priority=low|medium]` columns, `.pager`.
 `.table.is-dense` for embedded tables.
+Motion (v3.6): the first ≤ 12 rows rise 8 px and fade in, 28 ms apart, when the table is first seen; a
+sort glides rows to their new places (FLIP, 300 ms) and fades in rows new to the page; the AI register
+does the same on filter changes (`update(rows, { flip: true })`). Live updates (`preserve`) never move rows.
 
 ## Drawer — `dialog.drawer` (components.drawer)
 
@@ -268,13 +271,15 @@ own opaque background). Wrappers: `.is-paged`, `.is-scroll`, `.is-overflowing`
 `.drawer-body` (container `drawer`; `.drawer-panel` tabpanels; `.drawer-section` +
 `.drawer-section-title`) + `.drawer-foot` (sticky; `.is-start` pushes an action to the start).
 Slides from the inline-end; `motion.drawer()` owns the transform (`[data-motion-owned]`). Phones: full
-width. Bottom sheet: `.is-sheet`.
+width. Bottom sheet: `.is-sheet`. The first five content blocks follow the panel in (rise 8 px, 25 ms apart,
+150 ms each, all done within 280 ms); switching tabs fades the new panel up (200 ms). The backdrop fades in 280 ms, out 160 ms.
 **Do** keep Overview / Evidence / Treatment / History as tabs; **don't** stack two drawers.
 
 ## Dialogs
 
 `.modal-backdrop` > `dialog.modal[.is-sm|.is-lg|.is-xl]` > `.modal-head` + `.modal-body` +
-`.modal-foot`. Elevation 3, radius 14, enters with a 10 px rise. Phones: bottom-aligned.
+`.modal-foot`. Elevation 3, radius 14, enters with a 16 px rise and scale .965 → 1 (280 ms, glide ease) and
+leaves in 160 ms. Phones: bottom-aligned.
 Escape closes the topmost modal or drawer, also when focus has fallen to `<body>`.
 
 The explainer video is no longer a dialog: see "Explainer hero (cockpit)" (v3.6).
@@ -285,7 +290,9 @@ The explainer video is no longer a dialog: see "Explainer hero (cockpit)" (v3.6)
 - Chart tooltip `#tooltip` (charts.css): bg-3 dark / white light. Static hints: `[data-tip]`
   (pure CSS, not inside scrolling containers). Collapsed rail: `.rail-tip`.
 - `.toast-stack` > `.toast.tone-*.is-in` (`.toast-icon`, `.toast-text`: `.toast-title`,
-  `.toast-msg`; `.toast-action`, `.toast-close`). Tone capsule light at inline-start. Toasts never claim a
+  `.toast-msg`; `.toast-action`, `.toast-close`, `.toast-timer`). Tone capsule light at inline-start. Enters
+  with a 12 px rise and scale .96 → 1 (280 ms), leaves in 160 ms; the decorative `.toast-timer` hairline
+  drains over the auto-dismiss time and rests full while the toast is hovered or focused. Toasts never claim a
   success that did not happen; simulated operations say "Simulated". While a modal or drawer is open,
   components.js docks `#toasts` inside the topmost dialog (`.toast-stack.is-docked`, in flow between the
   body and the footer): a toast never covers the dialog's controls and stays outside the inert page.
@@ -304,7 +311,9 @@ The explainer video is no longer a dialog: see "Explainer hero (cockpit)" (v3.6)
 `.kanban` > `.kanban-col` (`.kanban-col-head`: a tapered capsule light in the column tone set into the
 top frame over a faint tonal wash, live dot, `.kanban-col-title`, `.kanban-count` pill)
 > `.kanban-cards` > `.kanban-card[.tone-*]` (`.kanban-card-bar`, `.kanban-card-title`,
-`.kanban-card-meta`, `.kanban-card-foot`; a 22 px capsule light by the card head). States: `.is-over` (drop target), `.is-dragging`;
+`.kanban-card-meta`, `.kanban-card-foot`; a 22 px capsule light by the card head). States: `.is-over` (drop target, glows), `.is-dragging`,
+`.is-lifted` (pressed: rises 3 px, scale 1.015, warmer shadow); a card that changes column or order glides
+there from its old place (FLIP, `update()` measures only when places changed), the moved card slightly lifted;
 overflow fade via `.is-overflowing` + `.is-scroll-start|end`; `.kanban-hint`.
 
 ## States — empty, loading, error, offline, skeleton
@@ -313,7 +322,8 @@ overflow fade via `.is-overflowing` + `.is-scroll-start|end`; `.kanban-hint`.
 critical on error, dashed neutral offline) + `.state-title` + `.state-text`
 (+ `.state-detail` mono, `.state-actions` > `.state-action`). Variants: `.is-compact`, `.is-inline`
 (row, for inside cards), `.is-cancelled`. Legacy `.empty` shares the look. `.skeleton` >
-`.skeleton-line` (finite pulse, static under reduced motion; `.skeleton.is-card`, `.skeleton-block`).
+`.skeleton-line` (finite pulse plus a light sheen in the reading direction, static under reduced motion;
+`.skeleton.is-card`, `.skeleton-block`). Empty and error icons float 4 px (5.2 s) while on screen.
 `.spinner` (`.is-lg`) exists only while busy.
 **Do** write an empty state that says why it is empty and what to do. **Don't** show a spinner
 for data that is already local.
@@ -351,7 +361,9 @@ links, `.evidence-meta`) + `.evidence-local` ("Local only", dashed pill) + `.evi
 ## Charts (charts.css)
 
 Text in ink tokens only (never series colours); hairline grid; tooltips on hover + focus; every
-chart has a table twin (`.chart-table`). Heatmap: `.matrix` / SVG `rect.cell` with
+chart has a table twin (`.chart-table`). Draw-in (v3.6): a chart built while a route mounts is held at its
+start state until it is on screen, then grows once from its own baseline (see "Motion — what moves");
+a redraw during the draw-in (first real width, theme) carries it over; `update()` never replays it. Heatmap: `.matrix` / SVG `rect.cell` with
 `.is-selected` / `[aria-pressed]` focus ring; legend `.matrix-legend` or `.heatmap-legend`
 (`.heatmap-legend-item` > `.heatmap-legend-swatch[--key]` + label, or `.heatmap-legend-ramp`).
 Dumbbell (inherent → residual, one axis): `g.dumbbell-row` > `line.dumbbell-link` +
@@ -443,6 +455,38 @@ and the same return value (`{ el, update(data), table(), destroy() }`), so a cal
 Legend keys (`.legend-key`) are soft rounded markers: a 10 px rounded square with a top-light sheen and a
 faint halo in the series colour; `.is-line` is a 16 × 4 px pill, `.is-dot` a 9 px dot; table key cells
 use the same marker. The label beside each key always carries the identity.
+
+## Motion — what moves (v3.6 motion pass)
+
+Everything below uses transform and opacity only, runs once per element, never replays on a live store
+update, and is off under reduced motion (OS unless Settings forces motion on, or Settings), forced colours
+and print. No rule hides content: start states live only inside running Web Animations (`fill: backwards`).
+Code: `js/ui/motion.js` (stage, reveal, intros, count-up, FLIP), `js/ui/charts.js` (draw-ins),
+`js/ui/components.js` (tables, kanban, overlays, toasts), `js/ui/spotlight.js`, `js/ui/edges.js` (ambient).
+Inventory per route: v3 scratch `out/motion/inventory.md`. Costs: tokens.md §3.2.
+
+| What | Motion | Duration | When |
+|---|---|---|---|
+| View sections on screen at mount | existing `motion.enter` / `motion.page` | 260–300 ms | route mount |
+| Cards / tiles / sections below the fold | rise 18 px + scale .985 + fade, siblings 50 ms apart (cap 5) | 520 ms | scrolled to (+12 % bottom margin), once |
+| KPI figures | count up from 0 in their own digits, separators and units; width held | 850 ms | first appearance; a live write wins |
+| Bar / column charts | grow from the baseline, 40 ms apart; values fade in | 620 ms | first seen after a mount |
+| Heatmap | cells cascade from the first corner | 420 ms + 26 ms per diagonal | same |
+| Segmented bars (SVG and HTML) | sweep from the inline-start | 700 ms | same |
+| Dumbbell | from-dot, link extends, to-dot travels | 560 ms | same |
+| Line / spider | rise from the axis / open from the centre | 720 / 700 ms | same |
+| Progress, meter, feature, confidence fills | grow from the inline-start, 30 ms apart | 700 ms | same |
+| Table rows | first 12 rise 8 px + fade, 28 ms apart | 340 ms | first seen; sort / filter: FLIP 300 ms |
+| Kanban | FLIP on column / order change; lift on press | 300 / 420 ms | user move or live move |
+| Hovered top-level card (mouse) | warm spotlight follows the pointer; tile-like and clickable surfaces lift 2 px | 260 ms fade | fine pointer + hover only |
+| Buttons | press sinks 1 px + scale .97; icon nudges 2 px forward (icon-only: scale 1.1); tucks in on press | 160 ms | hover / press |
+| Live / error capsules, critical KPI icon | soft halo | 2.6 s loop | only while on screen; off under Static background |
+| Empty / error states | icon float 4 px | 5.2 s loop | only while on screen; off under Static background |
+| Modal, toast, drawer content | rise + scale in, faster out | ≤ 280 ms in, 160 ms out | open / close |
+
+**Do** let a component draw in through `motion.intro` (charts) or the stage selectors (fills, figures, rows)
+so it inherits the guards. **Don't** add `opacity: 0` start states in CSS, replay an entrance from a store
+subscription, or animate layout properties (width, height, top, background-position) per frame.
 
 ## Print (css/print.css)
 

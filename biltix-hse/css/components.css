@@ -2355,7 +2355,7 @@ dialog > .toast-stack.is-docked .toast { box-shadow: none; }
 @keyframes countdown-blink { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 
 /* --------------------------------------------------------------------------
-   Live dot (8px, 1.8s pulse ring) — the one permitted infinite UI animation
+   Live dot (8px, 1.8s pulse ring) — infinite UI loops: this ring, and the ambient halo / float ("Motion pass", on screen only)
    -------------------------------------------------------------------------- */
 
 .live-dot {

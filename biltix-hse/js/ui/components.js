@@ -1546,9 +1546,9 @@ function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', 
       dialog.addEventListener('cancel', onCancel);
       // Drawers: Motion drives the panel (CSS transition suspended for the run); modals keep their CSS transition.
       if (!isModal) motion.drawer(dialog, true);
-      // Content follows the panel in: the first few blocks rise 10 px, 35 ms apart (≤ 280 ms in all).
-      const blocks = Array.from((currentTab !== null && tabMap.get(currentTab) ? tabMap.get(currentTab).panel : bodyEl).children).filter((n) => !n.hidden && !n.classList.contains('toast-stack')).slice(0, 6);
-      if (blocks.length) motion.enter(blocks, { y: 10, stagger: 0.035, delay: isModal ? 0.05 : 0.08, duration: 0.24, force: true });
+      // Content follows the panel in: the first five blocks rise 8 px, 25 ms apart; all done within 280 ms.
+      const blocks = Array.from((currentTab !== null && tabMap.get(currentTab) ? tabMap.get(currentTab).panel : bodyEl).children).filter((n) => !n.hidden && !n.classList.contains('toast-stack')).slice(0, 5);
+      if (blocks.length) motion.enter(blocks, { y: 8, stagger: 0.025, delay: 0.03, duration: 0.15, force: true });
       requestAnimationFrame(() => {
         backdrop.classList.add('is-open');
         // Tabbed drawers land on the selected tab (announces "Overview, tab 1 of 4"); others on the first control.
