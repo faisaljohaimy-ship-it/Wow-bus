@@ -199,7 +199,7 @@ export const tests = [
       };
       const a = await outbox.enqueue('alert.ack', { alertId: 'AL7' }, { key: off.idemKey('alert.ack', 'AL7') });
       await outbox.enqueue('risk.add', { risk: { hazard: 'x' } }, { key: 'risk.add:one' });
-      await outbox.enqueue('task.status', { taskId: 'MT3', to: 'قيد التنفيذ' }, { key: off.idemKey('task.status', 'MT3', 'قيد التنفيذ') });
+      await outbox.enqueue('task.status', { taskId: 'MT3', to: 'قيد التنفيذ' }, { key: off.idemKey('task.status', 'MT3', 'start') });
       await outbox.enqueue('checklist.tick', { inspectionId: 'N15', item: 0 }, { key: off.idemKey('checklist.tick', 'N15', 0) });
       assert.equal(a.duplicate, false);
       assert.equal(a.entry.key, 'alert.ack:AL7');

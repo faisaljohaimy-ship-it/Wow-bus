@@ -399,7 +399,8 @@ export default {
       })) : h('p', { class: 'text-sm muted fk-m0' }, t('fieldkit.quick.none')));
       quickBody.appendChild(h('h3', { class: 'fk-h3' }, t('fieldkit.quick.tasks')));
       quickBody.appendChild(tasks.length ? h('ul', { class: 'fk-q' }, ...tasks.map((task) => {
-        const key = off.idemKey('task.status', task.id, 'قيد التنفيذ');
+        // The key is shown in the outbox list: a language-neutral token for the intent, not the (Arabic) status value.
+        const key = off.idemKey('task.status', task.id, 'start');
         return row(task.code, L(task, 'title', 'tasks') || task.title, key, t('fieldkit.quick.start'), async () => { await off.act('task.status', { taskId: task.id, code: task.code, from: task.status, to: 'قيد التنفيذ', by: FIELD_ACTOR }, { key }); paintAll(); }, t('fieldkit.quick.started'));
       })) : h('p', { class: 'text-sm muted fk-m0' }, t('fieldkit.quick.none')));
     }

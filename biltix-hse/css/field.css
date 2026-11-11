@@ -25,6 +25,17 @@
 @media (max-width: 959.98px) {
   .net-ind-label { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .net-ind-link { padding-inline: 8px; }
+  /* The pill is the offline sign at these widths: the data chip next to it drops its "Offline" suffix so the bar
+     keeps its width (the chip's name and its popover still say offline). Without this the end group grew over
+     the search button on phones. */
+  .net-ind:has(.net-ind-link:not([hidden])) ~ .data-status .data-chip-offline { display: none; }
+}
+@media (max-width: 389.98px) {
+  /* Narrow phones: the bar has no room for one more control. The pill becomes a small badge on the start corner
+     of the data chip (as the bell and activity counts sit on their buttons) and takes no width in the row. */
+  .net-ind { position: relative; inline-size: 0; margin-inline-end: calc(-1 * var(--space-1)); z-index: 1; }
+  .net-ind-link { position: absolute; inset-block-start: -22px; inset-inline-start: -6px; min-block-size: 16px; padding: 0 4px; gap: 3px; box-shadow: 0 0 0 2px var(--bg-1); }
+  .net-ind-count { min-inline-size: 0; padding-inline: 0; background: none; box-shadow: none; line-height: 14px; }
 }
 
 /* ── Field kit page ── */

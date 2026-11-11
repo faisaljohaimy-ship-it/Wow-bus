@@ -399,7 +399,7 @@ function mountIndicator() {
   const count = document.createElement('span');
   count.className = 'net-ind-count mono';
   count.hidden = true;
-  link.append(dot, label, count);
+  link.append(dot, label, ' ', count);   // the space keeps "Offline" and the count two words in the link's text
   // Polite live text (one sentence per state change); the pill itself is a plain link.
   const sr = document.createElement('span');
   sr.className = 'sr-only';
@@ -427,7 +427,9 @@ export function paintIndicator() {
   const full = [sentence, field.simulated ? t('fieldkit.net.simulatedNote') : ''].filter(Boolean).join(' ');
   if (show) {
     ind.link.title = full;
-    ind.link.setAttribute('aria-label', `${short}${waiting ? ` · ${tn('fieldkit.net.waitingSentence', waiting)}` : ''} — ${t('fieldkit.net.open')}`);
+    // Label in name (WCAG 2.5.3): the name starts with what the pill shows (the state and, when there is one, the
+    // count as a digit — the Arabic sentence spells small counts out), then says it in full and where the link leads.
+    ind.link.setAttribute('aria-label', `${short}${waiting ? ` ${waiting} — ${tn('fieldkit.net.waitingSentence', waiting)}` : ''} — ${t('fieldkit.net.open')}`);
   }
   // Speak only when the state sentence changes (not on every repaint).
   const speak = !online ? full : '';

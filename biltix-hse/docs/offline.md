@@ -14,7 +14,7 @@ Status: **demo**. Offline work and QR workflows are not in the approved scope ye
 | `js/views/fieldkit.js` | The page: connectivity + outbox, scan, field actions, label sheet, on-site needs |
 | `js/views/shared/offline-panel.js` | Status panel used by Settings SET-08 "Offline" and the field kit |
 | `js/i18n/fieldkit.js` | All strings (AR/EN) |
-| `css/field.css` | Indicator, page, A4 print sheet |
+| `css/field.css` | Indicator, page, A4 print sheet. Below 960 px the indicator is a dot (+ count) and the data chip next to it drops its "Offline" suffix; below 390 px there is no room for another control in the bar, so the indicator sits as a small badge on the data chip's corner |
 | `tests/field.test.mjs` | Encoder vectors, payload parser, outbox ordering / idempotency, precache drift |
 | `tests/sw.test.mjs` | The worker's behaviour (install, activate, shell, other documents, precache, runtime cache, bypasses, newer build) in a `vm` context |
 
@@ -57,7 +57,7 @@ Status: **demo**. Offline work and QR workflows are not in the approved scope ye
 
 Kinds: `risk.add` (field observation from a zone label), `alert.ack`, `task.status` (start), `checklist.tick`
 (crane pre-use check). Each entry has an idempotency key — deterministic per intent (`alert.ack:AL7`,
-`task.status:MT3:قيد التنفيذ`, `checklist.tick:N15:0`) or random per form (`risk.add:<uuid>`). The queue is FIFO;
+`task.status:MT3:start`, `checklist.tick:N15:0`) or random per form (`risk.add:<uuid>`). The queue is FIFO;
 `replay()` applies pending entries in order, records applied keys (a key is never applied twice, even after the
 list is cleared), keeps failures visible as "needs attention" and retries them on the next replay. A task
 transition queued from status A is refused if the task is no longer in A (conflict — nothing overwritten).
