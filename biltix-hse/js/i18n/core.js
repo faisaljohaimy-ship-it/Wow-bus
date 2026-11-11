@@ -28,6 +28,7 @@ const NAV_AR = {
   integrations: { title: 'التكاملات والأنظمة', short: 'التكاملات' },
   reports: { title: 'التقارير', short: 'التقارير' },
   roadmap: { title: 'خارطة الطريق والمقترح التفصيلي', short: 'خارطة الطريق' },
+  golive: { title: 'الجاهزية للتشغيل', short: 'الجاهزية' },
   settings: { title: 'الإعدادات', short: 'الإعدادات' },
 };
 
@@ -54,6 +55,7 @@ const NAV_EN = {
   integrations: { title: 'Integrations & systems', short: 'Integrations' },
   reports: { title: 'Reports', short: 'Reports' },
   roadmap: { title: 'Roadmap & proposal', short: 'Roadmap' },
+  golive: { title: 'Go-live readiness', short: 'Go-live' },
   settings: { title: 'Settings', short: 'Settings' },
 };
 
