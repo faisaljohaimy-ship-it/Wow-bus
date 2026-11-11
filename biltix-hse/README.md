@@ -20,16 +20,18 @@
   Unit tests 104/104; QA matrix 552/552 (23 routes × AR/EN × light/dark × 6 widths, Chromium only).
   Details: `docs/specs/v3-precision/acceptance.md`. Status of every function:
   `docs/specs/v3-precision/inventory.md`.
-- **v3.8 (integrated, not yet re-verified in a browser):** two new routes — `#/golive` (PLT-04, go-live
+- **v3.8 (integrated; browser-checked on the integrated tree, Chromium only):** two new routes — `#/golive` (PLT-04, go-live
   readiness) and `#/fieldkit` (FLD-01, offline copy + outbox, QR labels and scanning) — a worked example
   (submittal MAR-S1-CW-014 → risk AIR-1069, with a guided walkthrough: `#/airisks?risk=AIR-1069&tour=1`), a 360°
   viewer with one simulated capture point on `#/spatial`, and a first paint that draws the page header before
   any script loads. 25 routes. All of it is demo data in this browser; the offline, QR and 360° parts are demos
   of a proposed design and are not in the approved scope (Q1). The acceptance figures above were measured on
-  v3.5.1 with 23 routes.
+  v3.5.1 with 23 routes. On the integrated tree: `tools/qa.mjs` on all 25 routes (AR/EN, light, 1440 and 390 px)
+  and on the changed routes in dark, plus scripted runs of the new flows; Lighthouse and Safari / Firefox were
+  not run. See "v3.8 additions" in `docs/specs/v3-precision/inventory.md`.
 - **عطل معروف | Known broken (v3.5.1–v3.7.2):** clicking a table row outside its first-cell opener does not
-  open the drawer. Fixed in the v3.8 code (`interactiveWithin` in `js/ui/components.js`, unit-tested); to be
-  confirmed in a browser. Until then use the row's open button or the keyboard.
+  open the drawer. Fixed in the v3.8 code (`interactiveWithin` in `js/ui/components.js`, unit-tested and
+  checked in Chromium on every table with a row opener, mouse and touch).
 
 The section tables below describe the product scope; where they differ from `inventory.md`, the
 inventory is authoritative.
