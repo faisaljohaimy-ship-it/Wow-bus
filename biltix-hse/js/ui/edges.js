@@ -19,6 +19,11 @@
  *   the Static background and forced colours. The CSS shows comets only on lit hosts
  *   (data-edge="lit", an attribute so views that rewrite className keep it).
  * Decoration only: no ARIA content, no focusable element, no layout change.
+ *
+ * Ambient loops (v3.6) share these rules: a soft halo on genuinely live or failing status capsules and on the
+ * icon of a critical KPI tile, and a slow float on resting empty / error states. They run only while the element
+ * is on screen: a second IntersectionObserver sets data-amb on it, and the CSS animates [data-amb] only
+ * (css/components.css "Ambient"). Same switches as the laser: reduced motion, Static background, forced colours.
  */
 
 const HOSTS = '.card:not(.is-plain), .tile, .metric-tile, .domain-card, .int-card, .connector-card, .kanban-card, .summary-strip';
@@ -29,11 +34,13 @@ const MAX_K = 12;
 const MIN_MS = 5000;          // shortest lap
 const MAX_MS = 22000;         // longest lap
 const ARC_STEPS = 6;          // samples per rounded corner
+const AMBIENT = '.status-badge[data-status="live"], .status-badge[data-status="error"], .metric-tile.tone-critical .metric-icon, .empty-icon, .state:not(.state-loading) .state-icon';
 
 const state = new WeakMap();  // host -> { anims, w, h, rtl, k, phase, watched }
 let io = null;
 let ro = null;
 let mo = null;
+let aio = null;               // ambient loops: on-screen switch
 let enabled = false;
 let seq = 0;
 const pendingRebuild = new Set();
@@ -233,6 +240,17 @@ function scan(node) {
   if (!node || node.nodeType !== 1) return;
   if (node.matches(HOSTS)) watch(node);
   if (node.firstElementChild) for (const el of node.querySelectorAll(HOSTS)) watch(el);
+  if (aio) {
+    if (node.matches(AMBIENT)) aio.observe(node);
+    if (node.firstElementChild) for (const el of node.querySelectorAll(AMBIENT)) aio.observe(el);
+  }
+}
+
+function onAmbient(entries) {
+  for (const e of entries) {
+    if (e.isIntersecting && enabled) e.target.setAttribute('data-amb', '');
+    else e.target.removeAttribute('data-amb');
+  }
 }
 
 function forget(node) {
@@ -240,6 +258,10 @@ function forget(node) {
   const drop = (el) => { const s = state.get(el); if (!s) return; cancelAll(s); io.unobserve(el); ro.unobserve(el); state.delete(el); };
   if (node.matches(HOSTS)) drop(node);
   if (node.firstElementChild) for (const el of node.querySelectorAll(HOSTS)) drop(el);
+  if (aio) {
+    if (node.matches(AMBIENT)) aio.unobserve(node);
+    if (node.firstElementChild) for (const el of node.querySelectorAll(AMBIENT)) aio.unobserve(el);
+  }
 }
 
 /** A view cleared a lit host's children (its comet row went with them): rebuild after this task. */
@@ -272,12 +294,17 @@ function setEnabled(on) {
     // Re-observe so IntersectionObserver reports the current visibility again.
     for (const el of document.querySelectorAll(HOSTS)) { if (state.has(el)) { io.unobserve(el); io.observe(el); } }
   }
+  if (aio) {
+    if (!on) for (const el of document.querySelectorAll('[data-amb]')) el.removeAttribute('data-amb');
+    else for (const el of document.querySelectorAll(AMBIENT)) { aio.unobserve(el); aio.observe(el); }
+  }
 }
 
 /** Start the edge laser. Safe to call more than once. */
 export function initEdges() {
   if (io || typeof IntersectionObserver !== 'function' || typeof ResizeObserver !== 'function' || typeof MutationObserver !== 'function') return;
   io = new IntersectionObserver(onIntersect, { rootMargin: '48px' });
+  aio = new IntersectionObserver(onAmbient);
   ro = new ResizeObserver(onResize);
   enabled = allowed();
   scan(document.body);

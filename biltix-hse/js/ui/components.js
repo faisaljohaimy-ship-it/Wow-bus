@@ -832,7 +832,8 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     if (Number.isFinite(s.scrollLeft)) wrap.scrollLeft = s.scrollLeft;
     updateScrollEdges();
   }
-  function update(nextRows, { preserve = false, resetPage = false, flash = false } = {}) {
+  /** `flip` (user filter changes, never live updates): rows that stay glide to their new places, new rows fade in. */
+  function update(nextRows, { preserve = false, resetPage = false, flash = false, flip = false } = {}) {
     const before = flash ? new Map(data.map((r) => [keyOf(r), signature(r)])) : null;
     let saved = null;
     if (preserve) {
@@ -841,7 +842,8 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     }
     data = Array.isArray(nextRows) ? nextRows.slice() : [];
     if (resetPage) page = 0;
-    renderBody();
+    if (flip && !preserve) motion.flip(() => tbody.rows, renderBody, { key: (tr) => tr.getAttribute('data-key'), fadeNew: true, within: table });
+    else renderBody();
     if (saved) {
       wrap.scrollTop = saved.top;
       wrap.scrollLeft = saved.left;
@@ -862,7 +864,9 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
     else { sortKey = key; sortDir = 'asc'; }
     page = 0;
-    paintHead(); renderBody();
+    paintHead();
+    // Rows glide to their new places (FLIP, transform only); rows new to this page fade in.
+    motion.flip(() => tbody.rows, renderBody, { key: (tr) => tr.getAttribute('data-key'), fadeNew: true, within: table });
   }
 
   /* ---- overflow affordance + auto page size (measured) ---- */
@@ -1462,6 +1466,8 @@ function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', 
     }
     renderPanel(key);
     if (changed) bodyEl.scrollTop = tabScroll.get(key) || 0;
+    // Switching tabs (not the initial one): the new panel fades up quickly.
+    if (changed && isOpen) motion.enter(tabMap.get(key).panel, { y: 6, duration: 0.2, force: true });
     if (tabsKind) lastDrawerTab.set(String(tabsKind), key);
     if (focus) tabMap.get(key).tab.focus();
     if (changed && typeof api.onTabChange === 'function') { try { api.onTabChange(key); } catch { /* never break the drawer */ } }
@@ -1540,6 +1546,9 @@ function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', 
       dialog.addEventListener('cancel', onCancel);
       // Drawers: Motion drives the panel (CSS transition suspended for the run); modals keep their CSS transition.
       if (!isModal) motion.drawer(dialog, true);
+      // Content follows the panel in: the first few blocks rise 10 px, 35 ms apart (≤ 280 ms in all).
+      const blocks = Array.from((currentTab !== null && tabMap.get(currentTab) ? tabMap.get(currentTab).panel : bodyEl).children).filter((n) => !n.hidden && !n.classList.contains('toast-stack')).slice(0, 6);
+      if (blocks.length) motion.enter(blocks, { y: 10, stagger: 0.035, delay: isModal ? 0.05 : 0.08, duration: 0.24, force: true });
       requestAnimationFrame(() => {
         backdrop.classList.add('is-open');
         // Tabbed drawers land on the selected tab (announces "Overview, tab 1 of 4"); others on the first control.
@@ -1836,17 +1845,29 @@ export function toast(message, { tone = 'neutral', timeout = 4500, action = null
     el.classList.add('is-leaving');
     el.inert = true; // a leaving toast takes no focus and drops out of the accessibility tree at once
     const done = () => el.remove();
-    if (reducedMotion()) done(); else setTimeout(done, 220);
+    if (reducedMotion()) done(); else setTimeout(done, 180);
   };
   if (action && action.label) {
     el.appendChild(button(action.label, { variant: 'ghost', size: 'sm', onClick: () => { if (typeof action.onClick === 'function') action.onClick(); dismiss(); }, attrs: { class: 'toast-action' } }));
   }
   el.appendChild(button('', { variant: 'ghost', size: 'sm', icon: glyph('close', 16), onClick: dismiss, attrs: { 'aria-label': t('ui.closeToast'), class: 'toast-close' } }));
-  const arm = () => { if (gone || !(timeout > 0)) return; if (timer) clearTimeout(timer); timer = setTimeout(dismiss, timeout); };
-  el.addEventListener('pointerenter', () => { if (timer) { clearTimeout(timer); timer = null; } });
+  // Auto-dismiss hairline (decorative): drains over the timeout, restarts with it, rests full while paused.
+  const bar = timeout > 0 ? h('span', { class: 'toast-timer', 'aria-hidden': 'true' }) : null;
+  if (bar) el.appendChild(bar);
+  let barAnim = null;
+  const stopBar = () => { if (barAnim) { try { barAnim.cancel(); } catch { /* gone */ } barAnim = null; } };
+  const arm = () => {
+    if (gone || !(timeout > 0)) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(dismiss, timeout);
+    stopBar();
+    if (bar && motion.enabled()) { try { barAnim = bar.animate([{ transform: 'scaleX(1)' }, { transform: 'scaleX(0)' }], { duration: timeout, easing: 'linear', fill: 'forwards' }); } catch { barAnim = null; } }
+  };
+  el.addEventListener('pointerenter', () => { if (timer) { clearTimeout(timer); timer = null; } stopBar(); });
   el.addEventListener('pointerleave', arm);
   el.addEventListener('focusin', (e) => {
     if (timer) { clearTimeout(timer); timer = null; }
+    stopBar();
     const from = e.relatedTarget;
     if (!(from instanceof Element && from.closest('.toast-stack'))) toastFocusOrigin = from instanceof Element ? from : null;
   });
@@ -2003,7 +2024,13 @@ export function kanban({ columns = [], items = [], onMove = null, headingLevel =
       try { e.dataTransfer.setData('text/plain', String(item.id)); } catch { /* some engines refuse */ }
       card.classList.add('is-dragging'); el.classList.add('is-dragging');
     });
-    card.addEventListener('dragend', () => { dragId = null; card.classList.remove('is-dragging'); el.classList.remove('is-dragging'); el.querySelectorAll('.is-over').forEach((n) => n.classList.remove('is-over')); });
+    card.addEventListener('dragend', () => { dragId = null; card.classList.remove('is-dragging', 'is-lifted'); el.classList.remove('is-dragging'); el.querySelectorAll('.is-over').forEach((n) => n.classList.remove('is-over')); });
+    // Pick-up: the card lifts while pressed (css .kanban-card.is-lifted; transform + shadow, none under reduced motion).
+    card.addEventListener('pointerdown', (e) => { if (e.button === 0 && !e.target.closest('button, a, input, select, textarea')) card.classList.add('is-lifted'); });
+    const drop = () => card.classList.remove('is-lifted');
+    card.addEventListener('pointerup', drop);
+    card.addEventListener('pointercancel', drop);
+    card.addEventListener('lostpointercapture', drop);
     card.addEventListener('keydown', (e) => {
       if (e.target !== card) return;
       const idx = columns.findIndex((c) => String(c.id) === String(item.columnId));
@@ -2075,10 +2102,26 @@ export function kanban({ columns = [], items = [], onMove = null, headingLevel =
   render();
   return {
     el,
-    update(next) { current = Array.isArray(next) ? next.slice() : []; render(); },
+    update(next) {
+      const prev = current;
+      current = Array.isArray(next) ? next.slice() : [];
+      // A card that changed column (or order) glides there from its old place (FLIP); nothing is measured otherwise.
+      if (placesChanged(prev, current)) motion.flip(() => el.querySelectorAll('.kanban-card'), render, { key: (c) => c.getAttribute('data-id'), lift: true, within: el });
+      else render();
+    },
     focusCard(id) { const c = el.querySelector(`.kanban-card[data-id="${cssEscape(String(id))}"]`); if (c) c.focus(); return !!c; },
     destroy: teardown,
   };
+}
+
+/** Whether any item changed column or position between two kanban item lists. */
+function placesChanged(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return true;
+  const where = (list) => { const m = new Map(); const n = new Map(); for (const it of list) { const c = String(it.columnId); const i = n.get(c) || 0; n.set(c, i + 1); m.set(String(it.id), `${c}:${i}`); } return m; };
+  const pa = where(a);
+  const pb = where(b);
+  for (const [k, v] of pb) if (pa.get(k) !== v) return true;
+  return false;
 }
 
 /* ------------------------------------------------------------------ */

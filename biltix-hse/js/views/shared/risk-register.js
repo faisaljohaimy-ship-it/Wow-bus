@@ -388,7 +388,7 @@ export function riskRegister(ctx = {}, {
     if (rows === null) return;
     if (!table) { table = buildTable(rows); tableHost.appendChild(table.el); }
     else if (live) table.update(rows, { preserve: true, flash: true });
-    else table.update(rows, { resetPage });
+    else table.update(rows, { resetPage, flip: true });   // filter change: rows glide (FLIP), new ones fade in
     select(selectedId);
   }
 

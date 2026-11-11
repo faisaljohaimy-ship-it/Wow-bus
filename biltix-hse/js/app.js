@@ -2476,6 +2476,8 @@ async function boot() {
 
   // Before the view changes: close menus, drawers, the "More" sheet, the palette and the data popover.
   on('ui:route-leave', (payload) => {
+    // Motion stage (js/ui/motion.js): a new route (or the first one) arms reveals and intros for the view about to render.
+    if (motion && typeof motion.stageBegin === 'function') motion.stageBegin({ fresh: !payload || payload.from !== payload.to });
     captureOutgoing(payload);
     closeTransientUi();
     if (payload && payload.to) markActive(payload.to);
@@ -2483,6 +2485,7 @@ async function boot() {
   // Scroll position is owned by the router (top for new navigations, restored on back / forward / language change).
   on('route:change', (payload) => {
     const id = payload && payload.id;
+    if (motion && typeof motion.stage === 'function') motion.stage(main, { fresh: !payload || payload.previousId !== id });
     playOutgoing(payload);
     markActive(id);
     setRailOpen(false);
@@ -2516,7 +2519,11 @@ async function boot() {
   document.body.classList.remove('is-booting');
   document.body.classList.add('is-ready');
   // Edge laser (css "Edges"): decoration, loaded after the first render and off the critical path.
-  const startEdges = () => import('./ui/edges.js').then((m) => m.initEdges()).catch((err) => reportError(err, 'edges'));
+  const startEdges = () => {
+    import('./ui/edges.js').then((m) => m.initEdges()).catch((err) => reportError(err, 'edges'));
+    // Pointer spotlight on the hovered card (fine pointers with hover only; js/ui/spotlight.js).
+    import('./ui/spotlight.js').then((m) => m.initSpotlight()).catch((err) => reportError(err, 'spotlight'));
+  };
   if (typeof requestIdleCallback === 'function') requestIdleCallback(startEdges, { timeout: 1500 }); else setTimeout(startEdges, 500);
 }
 

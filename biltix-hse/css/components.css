@@ -186,8 +186,8 @@
   opacity: var(--corner-rest);
   transition: opacity var(--dur-main) var(--ease-out);
 }
-/* js/ui/edges.js appends span.edge-run as the card's last child, so "last" and "only" skip it. */
-.card.is-framed:has(> .card-body.is-flush:nth-last-child(1 of :not(.edge-run))) {
+/* js/ui/edges.js appends span.edge-run and js/ui/spotlight.js span.spot as the card's last children, so "last" and "only" skip them. */
+.card.is-framed:has(> .card-body.is-flush:nth-last-child(1 of :not(.edge-run, .spot))) {
   --corner-mask:
     radial-gradient(circle at 0 0, #000 var(--corner-a), transparent var(--corner-b)),
     radial-gradient(circle at 100% 0, #000 var(--corner-a), transparent var(--corner-b));
@@ -197,7 +197,7 @@
     radial-gradient(circle at 0 100%, #000 var(--corner-a), transparent var(--corner-b)),
     radial-gradient(circle at 100% 100%, #000 var(--corner-a), transparent var(--corner-b));
 }
-.card.is-framed:has(> .card-body.is-flush:first-child:nth-last-child(1 of :not(.edge-run)))::after, .card .card.is-framed::after { content: none; }
+.card.is-framed:has(> .card-body.is-flush:first-child:nth-last-child(1 of :not(.edge-run, .spot)))::after, .card .card.is-framed::after { content: none; }
 .card.is-clickable, a.card, button.card { cursor: pointer; color: inherit; text-decoration: none; text-align: start; }
 .card.is-clickable:hover, a.card:hover, button.card:hover, .card.is-interactive:hover { border-color: var(--line-2); }
 :is(.card.is-clickable, a.card, button.card, .card.is-interactive):is(:hover, :focus-visible)::after { opacity: 1; }
@@ -2278,6 +2278,18 @@ dialog > .toast-stack.is-docked .toast { box-shadow: none; }
 .skeleton.is-card { padding: var(--card-pad); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg-1); }
 :root[data-theme="light"] .skeleton-line, :root[data-theme="light"] .skeleton > span, :root[data-theme="light"] .skeleton-block { background: var(--bg-3); }
 @keyframes skeleton-pulse { from { opacity: 1; } to { opacity: .5; } }
+/* v3.6: a light sheen crosses each line in the reading direction, as many times as the pulse (finite). */
+.skeleton-line, .skeleton > span, .skeleton-block { position: relative; overflow: hidden; }
+.skeleton-line::after, .skeleton > span::after, .skeleton-block::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ink-1) 8%, transparent) 50%, transparent);
+  transform: translateX(calc(var(--dir) * -100%));
+  animation: skeleton-sheen 1.4s var(--ease-in-out) 4;
+}
+@keyframes skeleton-sheen { to { transform: translateX(calc(var(--dir) * 100%)); } }
+@media print, (forced-colors: active) { .skeleton-line::after, .skeleton > span::after, .skeleton-block::after { content: none; } }
 
 /* --------------------------------------------------------------------------
    Progress bars (tone fill)
@@ -3505,4 +3517,143 @@ button.domain-card:hover, .domain-card.is-clickable:hover, .int-card:hover, .kan
   .tile[class*="tone-"]::before, .metric-tile::before, .domain-card::before, .int-card::before, .kanban-card::before,
   .kanban-col-head::before, .alert-item::before, .urgent-item::before { box-shadow: none; }
   .seg-btn:is(.is-active, [aria-pressed="true"], [aria-checked="true"], [aria-selected="true"])::before { outline: 1px solid #7888A0; }
+}
+
+/* --------------------------------------------------------------------------
+   Motion pass (v3.6) — interaction feedback, overlays, ambient loops, spotlight
+   Entrances, scroll reveals, chart draw-ins, count-ups and FLIP moves are Web Animations in js/ui/motion.js
+   and js/ui/charts.js (transform / opacity, fill: backwards): no rule here hides content, so print, a script
+   failure or reduced motion always show the final state. Offsets below scale with --shell-fx (0 under
+   reduced motion). Measured costs: docs/design/tokens.md §3.2.
+   -------------------------------------------------------------------------- */
+
+/* Buttons: press sinks and shrinks a little; the icon nudges forward on hover and tucks in on press. */
+.btn:active:not(:disabled):not([aria-disabled="true"]) { transform: translateY(calc(var(--shell-fx) * 1px)) scale(calc(1 - var(--shell-fx) * .03)); }
+.btn > svg, .btn > .btn-ic { transition: transform var(--dur-micro) var(--ease-out); }
+.btn:not(.btn-icon):hover:not(:disabled):not([aria-disabled="true"]) > svg:first-child,
+.btn:not(.btn-icon):hover:not(:disabled):not([aria-disabled="true"]) > .btn-ic:first-child { transform: translateX(calc(var(--dir) * var(--shell-fx) * 2px)); }
+.btn.btn-icon:hover:not(:disabled):not([aria-disabled="true"]) > svg,
+.btn.btn-icon:hover:not(:disabled):not([aria-disabled="true"]) > .btn-ic { transform: scale(calc(1 + var(--shell-fx) * .1)); }
+.btn:active:not(:disabled):not([aria-disabled="true"]) > svg,
+.btn:active:not(:disabled):not([aria-disabled="true"]) > .btn-ic { transform: scale(calc(1 - var(--shell-fx) * .08)); }
+.sort-btn .sort-ic { transition: transform var(--dur-micro) var(--ease-out); }
+.sort-btn:hover .sort-ic { transform: translateY(calc(var(--shell-fx) * -1px)); }
+.row-open-aux > svg { transition: transform var(--dur-micro) var(--ease-out); }
+tr:hover .row-open-aux > svg, .row-open-aux:hover > svg { transform: translateX(calc(var(--dir) * var(--shell-fx) * 2px)); }
+
+/* Status capsules and badges: a 1 px rise under a fine pointer (they are often filters or links). */
+@media (hover: hover) and (pointer: fine) {
+  .status-badge, .badge { transition: transform var(--dur-micro) var(--ease-out); }
+  :is(a, button) > .status-badge:hover, button.badge:hover, a.badge:hover { transform: translateY(calc(var(--shell-fx) * -1px)); }
+}
+
+/* Gentle lift for the hovered tile-like surface (fine pointers; the spotlight below adds the light). */
+@media (hover: hover) and (pointer: fine) {
+  .int-card, .connector-card, .domain-card, .tile, .metric-tile { transition: border-color var(--dur-micro) var(--ease-out), box-shadow var(--dur-main) var(--ease-out), transform var(--dur-main) var(--ease-glide); }
+  .int-card:hover, .connector-card:hover, .kanban-card:hover:not(.is-dragging):not(.is-lifted),
+  .card.is-clickable:hover, a.card:hover, button.card:hover { transform: translateY(calc(var(--shell-fx) * -2px)); }
+  .tile.is-clickable:hover, a.metric-tile:hover, button.metric-tile:hover, .metric-tile.is-clickable:hover,
+  a.domain-card:hover, button.domain-card:hover, .domain-card.is-clickable:hover { transform: translateY(calc(var(--shell-fx) * -2px)); }
+}
+
+/* Kanban: pick-up lifts the card under the pointer (pressed), the drop target column glows. */
+.kanban-card.is-lifted {
+  transform: translateY(calc(var(--shell-fx) * -3px)) scale(calc(1 + var(--shell-fx) * .015));
+  box-shadow: var(--elev-2), var(--edge-glow-hover);
+  cursor: grabbing;
+  z-index: 1;
+}
+.kanban-col { transition: box-shadow var(--dur-main) var(--ease-out); }
+.kanban-col.is-over { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--focus) 55%, transparent), 0 10px 30px -18px color-mix(in srgb, var(--focus) 60%, transparent); }
+
+/* Modal: rises from a little lower and smaller (280 ms, glide ease); leaves faster (160 ms). */
+dialog.modal { transform: translateY(16px) scale(.965); transition: transform var(--dur-overlay) var(--ease-glide); }
+.modal-backdrop.is-closing dialog.modal { transform: translateY(8px) scale(.985); transition-duration: var(--dur-micro); }
+.modal-backdrop, .drawer-backdrop { transition-duration: var(--dur-overlay); }
+.modal-backdrop.is-closing, .drawer-backdrop.is-closing { transition-duration: var(--dur-micro); }
+
+/* Toasts: enter with a short rise and scale; leave faster; a hairline drains over the auto-dismiss time. */
+.toast { transform: translateY(12px) scale(.96); transition: opacity var(--dur-overlay) var(--ease-out), transform var(--dur-overlay) var(--ease-glide); }
+.toast.is-leaving { transition-duration: var(--dur-micro); }
+.toast-timer {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  block-size: 2px;
+  background: var(--tone, var(--brand));
+  opacity: .5;
+  pointer-events: none;
+  transform-origin: calc(50% - var(--dir) * 50%) 50%;
+}
+
+/* Ambient loops (js/ui/edges.js sets data-amb while the element is on screen; same switches as the laser):
+   a soft halo on live or failing capsules and on a critical KPI's icon, a slow float on resting empty states. */
+.status-badge[data-amb], .metric-icon[data-amb] { position: relative; }
+.status-badge[data-amb]::after, .metric-icon[data-amb]::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 1.5px solid var(--tone, var(--critical));
+  pointer-events: none;
+  animation: amb-halo 2.6s var(--ease-out) infinite;
+}
+.metric-icon[data-amb]::after { border-color: var(--critical); }
+@keyframes amb-halo {
+  0% { opacity: .6; transform: scale(1); }
+  70%, 100% { opacity: 0; transform: scale(1.22); }
+}
+.empty-icon[data-amb], .state-icon[data-amb] { animation: amb-float 5.2s var(--ease-in-out) infinite; }
+@keyframes amb-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+/* Spotlight (js/ui/spotlight.js): span.spot over the hovered top-level card's border box, clipped to its corners;
+   its light is a fixed-size radial gradient moved with transform (compositor), shown with opacity. */
+.spot {
+  position: absolute !important;
+  inset: calc(-1 * var(--edge-w, 1px)) !important;
+  z-index: 2 !important;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-main) var(--ease-out);
+  contain: layout paint style;
+}
+.spot[data-on] { opacity: 1; }
+.spot::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: var(--spot-size);
+  block-size: var(--spot-size);
+  margin-block-start: calc(var(--spot-size) / -2);
+  margin-inline-start: calc(var(--spot-size) / -2);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--spot-core), var(--spot-mid) 55%, transparent);
+  transform: translate(calc(var(--dir) * var(--si, -999px)), var(--sy, -999px));
+  will-change: transform;
+}
+.card .card > .spot { display: none; }
+
+/* Off: reduced motion (OS unless forced on, or the setting), forced colours, print. */
+:root[data-motion="reduce"] .spot, :root[data-motion="reduced"] .spot { display: none; }
+:root[data-motion="reduce"] [data-amb], :root[data-motion="reduced"] [data-amb],
+:root[data-motion="reduce"] [data-amb]::after, :root[data-motion="reduced"] [data-amb]::after { animation: none !important; }
+:root[data-motion="reduce"] .kanban-card.is-lifted, :root[data-motion="reduced"] .kanban-card.is-lifted { transform: none; }
+:root[data-bg="static"] [data-amb], :root[data-bg="static"] [data-amb]::after { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .spot { display: none; }
+  :root:not([data-motion="full"]) [data-amb], :root:not([data-motion="full"]) [data-amb]::after { animation: none !important; }
+}
+@media (forced-colors: active) {
+  .spot, .toast-timer, [data-amb]::after { display: none; }
+  [data-amb] { animation: none; }
+}
+@media print {
+  .spot, .toast-timer, [data-amb]::after { display: none !important; }
+  [data-amb] { animation: none !important; }
 }

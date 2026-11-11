@@ -46,6 +46,7 @@
 import { fmt } from '../core/fmt.js';
 import { bus } from '../core/bus.js';
 import { t } from './i18n-bridge.js';
+import { intro as stageIntro, track as trackMotion } from './motion.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const TAU = Math.PI * 2;
@@ -403,7 +404,7 @@ function widthOf(el) {
  * Shared chart shell: <div class="chart"> + <svg> + legend host. Wires resize +
  * theme re-render and exposes destroy().
  */
-function chartShell({ className = '', ariaLabel = '', role = 'group', render }) {
+function chartShell({ className = '', ariaLabel = '', role = 'group', render, intro = null }) {
   const el = htmlEl('div', { class: ['chart', className] });
   const svg = svgEl('svg', { xmlns: SVG_NS, role, 'aria-label': ariaLabel || null, 'aria-roledescription': t('charts.roles.chart') }, el);
   const legendHost = htmlEl('div', { class: 'chart-legend-host' }, el);
@@ -432,6 +433,12 @@ function chartShell({ className = '', ariaLabel = '', role = 'group', render }) 
     width = w || width || widthOf(el);
     try { render(width); } catch (err) { console.error('[biltix-hse] chart render failed:', err); }
     if (typeof shell.onRendered === 'function') { try { shell.onRendered(); } catch { /* never break a render */ } }
+    // A redraw while the draw-in is held or running (first real width, theme) carries it over to the new marks.
+    if (shell.intro) {
+      const st = shell.intro.state;
+      if (st === 'held') introRun(shell, 'hold');
+      else if (st === 'playing') introRun(shell, 'play', shell.intro.elapsed);
+    }
   }
   function destroy() {
     if (destroyed) return;
@@ -442,6 +449,11 @@ function chartShell({ className = '', ariaLabel = '', role = 'group', render }) 
     tooltip.hideIfOwner(el);
   }
   dispose = observeWidth(el, draw, () => width);
+  // Draw-in (v3.6): only charts built while a route mounts; held at the start state until on screen.
+  if (intro) {
+    shell.introKind = intro;
+    shell.intro = stageIntro(el, { hold: () => { introRun(shell, 'hold'); }, play: () => introRun(shell, 'play'), release: () => introCancel(shell) });
+  }
   const redrawLater = () => {
     if (!el.isConnected) { destroy(); return; }
     requestAnimationFrame(() => draw(0));
@@ -455,6 +467,119 @@ function chartShell({ className = '', ariaLabel = '', role = 'group', render }) 
     requestAnimationFrame(() => draw(0));
   });
   return shell;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Draw-in (v3.6 motion pass)                                                 */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Each chart kind grows from its own baseline, once, the first time it is seen after a route mount
+ * (js/ui/motion.js intro(): never on live updates, never under reduced motion, forced colours or print):
+ *   bars      bars grow from the baseline (scaleX from the inline-start / scaleY from the axis), 40 ms apart;
+ *             value labels fade in as each bar lands
+ *   grouped   columns grow from the axis, group by group, series 30 ms apart
+ *   heatmap   cells cascade from the first corner (scale .55 → 1 + fade, 26 ms per diagonal step)
+ *   segbar    the whole bar sweeps from the inline-start; segment labels follow
+ *   dumbbell  the "from" dot appears, the link extends and the "to" dot travels along it to its value
+ *   line      the series rise from the x axis (scaleY about the baseline); direct labels follow
+ *   spider    the polygon opens from the centre
+ * Transform and opacity only, fill: backwards (the start state exists only while the animation runs).
+ */
+const INTRO_EASE = 'cubic-bezier(.16,1,.3,1)';
+const FADE_IN = [{ opacity: 0 }, { opacity: 1 }];
+
+function introPlan(shell) {
+  const svg = shell.svg;
+  const out = [];
+  const add = (el, frames, duration, delay, style = null) => { if (el) out.push({ el, frames, duration, delay, style }); };
+  const rtl = isRTL(shell.el);
+  const kind = shell.introKind;
+  if (kind === 'bars') {
+    const horizontal = Boolean(svg.querySelector('g.bar-row'));
+    svg.querySelectorAll('g.bar-row, g.bar-col').forEach((g, i) => {
+      const d = 120 + Math.min(i, 10) * 40;
+      add(g.querySelector('.bar'), horizontal ? [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }] : [{ transform: 'scaleY(0)' }, { transform: 'scaleY(1)' }], 620, d,
+        { transformBox: 'fill-box', transformOrigin: horizontal ? (rtl ? 'right center' : 'left center') : 'center bottom' });
+      g.querySelectorAll('.bar-value').forEach((tx) => add(tx, FADE_IN, 260, d + 380));
+    });
+  } else if (kind === 'grouped') {
+    svg.querySelectorAll('g.bar-group').forEach((g, i) => {
+      const d = 120 + Math.min(i, 10) * 45;
+      g.querySelectorAll('.bar').forEach((b, j) => add(b, [{ transform: 'scaleY(0)' }, { transform: 'scaleY(1)' }], 600, d + Math.min(j, 4) * 30, { transformBox: 'fill-box', transformOrigin: 'center bottom' }));
+      g.querySelectorAll('.value-label').forEach((tx) => add(tx, FADE_IN, 260, d + 420));
+    });
+  } else if (kind === 'heatmap') {
+    let last = 100;
+    const matrix = svg.querySelector('g.matrix');
+    if (matrix) {
+      for (const node of matrix.children) {
+        if (node.classList.contains('cell')) {
+          last = 100 + Math.min((Number(node.getAttribute('data-i')) || 0) + (Number(node.getAttribute('data-j')) || 0), 16) * 26;
+          add(node, [{ opacity: 0, transform: 'scale(.55)' }, { opacity: 1, transform: 'none' }], 420, last, { transformBox: 'fill-box', transformOrigin: 'center' });
+        } else add(node, FADE_IN, 240, last + 200);
+      }
+    }
+  } else if (kind === 'segbar') {
+    svg.querySelectorAll('.segbar-part').forEach((p) => add(p, [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], 700, 120, { transformBox: 'view-box', transformOrigin: rtl ? '100% 50%' : '0% 50%' }));
+    svg.querySelectorAll('.segbar-parts .cell-label, .segbar-parts .cell-plate').forEach((n) => add(n, FADE_IN, 260, 560));
+  } else if (kind === 'dumbbell') {
+    svg.querySelectorAll('g.dumbbell-row').forEach((g, i) => {
+      const d = 120 + Math.min(i, 10) * 45;
+      const link = g.querySelector('.dumbbell-link');
+      const from = g.querySelector('.dumbbell-from');
+      const to = g.querySelector('.dumbbell-to');
+      add(from, [{ opacity: 0, transform: 'scale(.4)' }, { opacity: 1, transform: 'none' }], 260, d, { transformBox: 'fill-box', transformOrigin: 'center' });
+      const x1 = link ? num(link.getAttribute('x1')) : (from ? num(from.getAttribute('cx')) : null);
+      if (link) add(link, [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], 560, d + 80, { transformBox: 'view-box', transformOrigin: `${x1}px ${num(link.getAttribute('y1'))}px` });
+      if (to) {
+        const cx = num(to.getAttribute('cx'));
+        const dx = x1 === null ? 0 : r2(x1 - cx);
+        add(to, [{ opacity: 0, transform: `translateX(${dx}px)` }, { opacity: 1, offset: 0.25 }, { opacity: 1, transform: 'none' }], 560, d + 80);
+      }
+      g.querySelectorAll('.bar-value').forEach((tx) => add(tx, FADE_IN, 240, d + 520));
+    });
+  } else if (kind === 'line') {
+    svg.querySelectorAll('g.series-layer').forEach((sg) => {
+      add(sg, [{ opacity: 0, transform: 'scaleY(0)' }, { opacity: 1, offset: 0.3 }, { opacity: 1, transform: 'scaleY(1)' }], 720, 120,
+        { transformBox: 'view-box', transformOrigin: `0px ${num(sg.getAttribute('data-base'))}px` });
+    });
+    svg.querySelectorAll('g.direct-labels').forEach((g) => add(g, FADE_IN, 300, 700));
+  } else if (kind === 'spider') {
+    const sg = svg.querySelector('g.spider-series');
+    if (sg) add(sg, [{ opacity: 0, transform: 'scale(0)' }, { opacity: 1, transform: 'none' }], 700, 140, { transformBox: 'view-box', transformOrigin: `${num(sg.getAttribute('data-cx'))}px ${num(sg.getAttribute('data-cy'))}px` });
+  }
+  return out;
+}
+
+function introCancel(shell) {
+  for (const a of shell.introAnims || []) { try { a.cancel(); } catch { /* gone */ } }
+  shell.introAnims = [];
+}
+
+/** Hold (paused at the start), or play from `elapsed` ms; returns the draw-in length in ms. */
+function introRun(shell, mode, elapsed = 0) {
+  introCancel(shell);
+  const anims = [];
+  let end = 0;
+  for (const p of introPlan(shell)) {
+    if (p.style) { p.el.style.transformBox = p.style.transformBox; p.el.style.transformOrigin = p.style.transformOrigin; }
+    let a = null;
+    try { a = p.el.animate(p.frames, { duration: p.duration, delay: p.delay, easing: INTRO_EASE, fill: 'backwards' }); } catch { a = null; }
+    if (!a) continue;
+    if (mode === 'hold') a.pause();
+    else {
+      if (elapsed > 0) { try { a.currentTime = Math.min(elapsed, p.delay + p.duration); } catch { /* noop */ } }
+      trackMotion(a);   // print finishes it
+    }
+    anims.push(a);
+    end = Math.max(end, p.delay + p.duration);
+  }
+  shell.introAnims = anims;
+  if (mode !== 'hold' && anims.length) {
+    Promise.all(anims.map((a) => a.finished.catch(() => null))).then(() => { if (shell.introAnims === anims) shell.introAnims = []; });
+  }
+  return Math.max(0, end - elapsed);
 }
 
 /** Size the svg: viewBox follows the measured width, height is fixed per call. */
@@ -790,7 +915,7 @@ export function lineChart(opts = {}) {
   let hoverLayer = null;
   let rovingIndex = 0; // the one x-column in the tab order (RTL-9)
 
-  const shell = chartShell({ className: 'chart-line', ariaLabel: o.ariaLabel, render });
+  const shell = chartShell({ className: 'chart-line', ariaLabel: o.ariaLabel, render, intro: 'line' });
   const { svg, el } = shell;
   svg.setAttribute('aria-roledescription', t('charts.roles.line'));
   shell.role = 'line';
@@ -857,7 +982,7 @@ export function lineChart(opts = {}) {
     const xs = Array.from({ length: n }, (_, i) => x(i));
     const ys = series.map((s) => Array.from({ length: n }, (_, i) => (isNum(s.values[i]) ? y(s.values[i]) : null)));
     const baseY = y(Math.max(scale.min, 0));
-    const sg = svgEl('g', { class: 'series-layer' }, svg);
+    const sg = svgEl('g', { class: 'series-layer', 'data-base': r2(top + plotH) }, svg);
     series.forEach((s, si) => {
       let d = '';
       let area = '';
@@ -1039,7 +1164,7 @@ export function barChart(opts = {}) {
     ...opts,
   };
   let view = [];
-  const shell = chartShell({ className: 'chart-bars', ariaLabel: o.ariaLabel, render });
+  const shell = chartShell({ className: 'chart-bars', ariaLabel: o.ariaLabel, render, intro: 'bars' });
   const { svg, el } = shell;
   svg.setAttribute('aria-roledescription', t('charts.roles.bars'));
   shell.role = 'bars';
@@ -1209,7 +1334,7 @@ export function groupedBars(opts = {}) {
   const o = { groups: [], series: [], height: 220, valueFormat: fmt.num, ariaLabel: '', groupLabel: T.group, ...opts };
   let series = [];
   let groups = [];
-  const shell = chartShell({ className: 'chart-grouped', ariaLabel: o.ariaLabel, render });
+  const shell = chartShell({ className: 'chart-grouped', ariaLabel: o.ariaLabel, render, intro: 'grouped' });
   const { svg, el } = shell;
   svg.setAttribute('aria-roledescription', t('charts.roles.grouped'));
   shell.role = 'grouped';
@@ -1326,7 +1451,7 @@ export function heatmap(opts = {}) {
     ...opts,
   };
   let model = null;
-  const shell = chartShell({ className: 'chart-heatmap', ariaLabel: o.ariaLabel, render });
+  const shell = chartShell({ className: 'chart-heatmap', ariaLabel: o.ariaLabel, render, intro: 'heatmap' });
   const { svg, el } = shell;
   svg.setAttribute('aria-roledescription', t('charts.roles.matrix'));
   shell.role = 'matrix';
@@ -1498,7 +1623,7 @@ export function segmentedBar(opts = {}) {
   const o = { parts: [], tall: true, valueFormat: fmt.num, ariaLabel: '', showShare: false, ...opts };
   let parts = [];
   let total = 0;
-  const shell = chartShell({ className: 'chart-segbar', ariaLabel: o.ariaLabel, render });
+  const shell = chartShell({ className: 'chart-segbar', ariaLabel: o.ariaLabel, render, intro: 'segbar' });
   const { svg, el } = shell;
   svg.setAttribute('aria-roledescription', t('charts.roles.segbar'));
   shell.role = 'segbar';
@@ -1607,7 +1732,7 @@ export function dumbbell(opts = {}) {
     ...opts,
   };
   let view = [];
-  const shell = chartShell({ className: 'chart-dumbbell', ariaLabel: o.ariaLabel, render });
+  const shell = chartShell({ className: 'chart-dumbbell', ariaLabel: o.ariaLabel, render, intro: 'dumbbell' });
   const { svg, el } = shell;
   svg.setAttribute('aria-roledescription', t('charts.roles.dumbbell'));
   shell.role = 'dumbbell';
@@ -2604,7 +2729,7 @@ export function ringGauge(opts = {}) {
  */
 export function spider(opts = {}) {
   const o = { axes: [], series: [], max: 100, size: 260, ariaLabel: '', target: null, rings: 4, ...opts };
-  const shell = chartShell({ className: 'chart-spider', ariaLabel: o.ariaLabel, role: 'img', render });
+  const shell = chartShell({ className: 'chart-spider', ariaLabel: o.ariaLabel, role: 'img', render, intro: 'spider' });
   const { svg, el } = shell;
   svg.setAttribute('aria-roledescription', t('charts.roles.spider'));
   shell.role = 'spider';
@@ -2645,7 +2770,7 @@ export function spider(opts = {}) {
     axes.forEach((_, k) => { const [x, y] = pt(k, R); svgEl('line', { x1: cx, y1: cy, x2: r2(x), y2: r2(y), class: 'spider-axis' }, grid); });
     if (isNum(o.target)) svgEl('polygon', { points: poly((clamp(o.target, 0, max) / max) * R), class: 'spider-target' }, grid);
     const series = seriesOf(n);
-    const sg = svgEl('g', { class: 'spider-series' }, svg);
+    const sg = svgEl('g', { class: 'spider-series', 'data-cx': r2(cx), 'data-cy': r2(cy) }, svg);
     series.forEach((s) => {
       const points = s.values.map((v, k) => pt(k, (v / max) * R).map(r2).join(',')).join(' ');
       svgEl('polygon', { points, class: 'spider-area', style: { fill: s.color, stroke: s.color } }, sg);
