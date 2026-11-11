@@ -228,7 +228,7 @@ npm run render:en -- --concurrency=4     # out/biltix-explainer-en-1080p.mp4
 
 `remotion.config.ts` sets H.264, yuv420p, CRF 20, x264 `slow` and PNG intermediate frames. The
 output is 1920×1080, 30 fps, 1,245 frames (41.5 s), silent. On the 4-core build sandbox, shared
-with other jobs, one language takes 13 to 30 minutes depending on the load (see "Last build"
+with other jobs, one language takes 13 to 37 minutes depending on the load (see "Last build"
 below); lower `--concurrency` when the machine is busy. The Chromium compositor can crash under
 memory pressure ("The browser crashed while rendering frame …"); Remotion retries the frame in a
 new browser, and a lower concurrency avoids it.
@@ -243,8 +243,8 @@ npm run export:web       # → ../biltix-hse/assets/video/explainer-{ar,en}-720p
 - `write-captions.mjs` uses the same `captionCues()` and caption copy as the compositions. It
   rejects any cue over 9 words or shorter than 1.6 s (the shortest cue is 1.9 s).
 - `export-web.mjs` remuxes the masters with `+faststart`, encodes 1280×720 H.264 (High@4.0,
-  yuv420p, faststart, no audio track), raising the CRF from 24 until each file is ≤ 3.3 MiB (at or
-  below the earlier cut's web files), and renders a
+  yuv420p, faststart, no audio track), raising the CRF from 24 until each file is ≤ 3.3 MiB (about the
+  size of the larger of the earlier static cut's web files, 3.4 MB), and renders a
   1280×720 WebP poster (frame 420: the portfolio dial, category dials and matrix), < 120 KB.
 
 One command for everything: `npm run build` (extract → captions → render → export:web).
@@ -274,21 +274,32 @@ every render: the drop-outs it guards against were intermittent.
 
 ## Last build
 
-2026-11-10, data extracted from this tree's `biltix-hse` (anchor day 2026-11-09). 4-core build
-sandbox shared with other jobs (load average about 6 during the renders), `--concurrency=4`,
-PNG frames, CRF 20, x264 `slow`:
+2026-11-11, data extracted from this tree's `biltix-hse` (anchor day 2026-11-09; `src/data.json`
+and both VTT files are byte-identical to the v3.1 build). 4-core build sandbox shared with other
+jobs (load average 3 to 9 during the renders), `--concurrency=3`, PNG frames, CRF 20, x264
+`slow`, one language after the other:
 
 | Step | Time | Output |
 |---|---|---|
-| `render:ar` | 771 s | `out/biltix-explainer-ar-1080p.mp4` 11,579,131 B (1920×1080, 1,245 frames, 41.5 s, H.264 High, no audio) |
-| `render:en` | 761 s | `out/biltix-explainer-en-1080p.mp4` 12,182,626 B |
-| `export:web` (both) | 80 s | `explainer-ar-720p.mp4` 3,196,167 B (CRF 25) · `explainer-en-720p.mp4` 3,428,511 B (CRF 25) · posters 46,634 B / 49,752 B |
-| `captions` | < 1 s | `explainer-ar.vtt` 1,317 B · `explainer-en.vtt` 1,026 B (10 cues each, shortest 1.9 s) |
-| `stills` | 27 s | `out/contact/{ar,en}-sheet.png` + 12 stills per language |
+| `render:ar` | 1,612 s | `out/biltix-explainer-ar-1080p.mp4` 11,162,092 B (1920×1080, 1,245 frames, 41.5 s, H.264 High, no audio) |
+| `render:en` | 2,220 s | `out/biltix-explainer-en-1080p.mp4` 11,808,210 B |
+| `export:web` (both) | 111 s | `explainer-ar-720p.mp4` 3,422,152 B (CRF 25) · `explainer-en-720p.mp4` 3,238,518 B (CRF 26) · posters 46,644 B / 49,656 B |
+| `captions` | < 1 s | `explainer-ar.vtt` 1,317 B · `explainer-en.vtt` 1,026 B (10 cues each, shortest 1.9 s; unchanged) |
+| `check:framing` | < 1 s | 5,744 box-frames, both languages: all key text inside the safe area |
+| `check:frames` | 39 s | all four files: 0 single-frame drop-outs, Demo-data chip on 1,245 / 1,245 frames |
 
-The earlier static cut's web files were 3,106,141 B (ar) and 3,437,302 B (en). The moving camera
-changes every frame, so the 1080p masters grew from 8.8 / 9.4 MB to 11.6 / 12.2 MB; the web files
-stay within 3 % of the old ones.
+The v3.1 files were 11,579,131 / 12,182,626 B (masters) and 3,196,167 / 3,428,511 B (web, both
+CRF 25). The English web file now needs CRF 26 to stay within the 3.3 MiB budget; the Arabic one
+is 7.1 % larger than before, the English one 5.5 % smaller. No browser crash or retried frame in
+either render.
+
+Frame check details. `check:frames` dismissed (and listed) these flags: the rolling record counter
+(Arabic frame 143, one tile, in the master and the web file) and the lowest frame of the
+"dip through the canvas" entrances (frames 206, 742, 744, 881 and 1012, depending on the file:
+the frame sits between its two neighbours, the bottom of a fade-out followed by a fade-in). Run against the v3.1
+files, the same script reports every known drop-out and nothing else: English 233, 765, 811, 812,
+813, 902 and Arabic 44, 112, 345, in the masters and in the web files, plus the 102 frames without
+the chip (intro 0–65 and the full-frame camera feed 645–680).
 
 ## In the app
 

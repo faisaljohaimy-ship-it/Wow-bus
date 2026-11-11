@@ -9,13 +9,16 @@ Needs python3 + numpy and ffmpeg/ffprobe on PATH (or FFMPEG / FFPROBE set). Exit
 Every frame is scaled to 480 x 270 grey and compared with its neighbours, three ways:
   A. whole frame: the frame differs from the mean of its neighbours by more than 1.3x the neighbours'
      own difference, with > 0.15 % of pixels off by > 25 grey levels in the same direction from both;
-  B. three horizontal bands: the band's edge energy is below 0.55x both neighbours' (one-frame hole);
+  B. three horizontal bands: the band's edge energy is below 0.55x both neighbours' (one-frame hole)
+     and the band's pixels do not lie between its neighbours' (see C);
   C. an 8 x 6 tile grid: a tile loses (< 0.5x) or gains (> 2x) edge energy while its neighbours agree
-     (within 1.6x), or its pixels jump away from both neighbours. A tile flag is dismissed only when
-     the frame lies between its neighbours (|this - mean(prev, next)| <= |prev - next|: a dissolve or
-     an edge sliding across the tile boundary) or, for a pixel jump, when the tile keeps its edge energy
-     and the neighbours also differ from each other (content that changes on every frame, like the
-     rolling record counter). Dismissed flags are listed, so nothing is hidden.
+     (within 1.6x), or its pixels jump away from both neighbours.
+A band or tile flag is dismissed only when the frame lies between its neighbours (mean |this - mean(prev,
+next)| <= mean |prev - next|: the bottom of a dissolve that dips through the canvas, or an edge sliding
+across a tile boundary) or, for a tile's pixel jump, when the tile keeps its edge energy and the
+neighbours also differ from each other (content that changes on every frame, like the rolling record
+counter). A real drop-out has neighbours that agree with each other and a frame that is far from both.
+Dismissed flags are listed, so nothing is hidden.
 Chip: the inside of the Demo-data pill (screen-fixed, top bar, inline-end) is compared with its median over
 the file; a frame whose crop differs by > 8 grey levels on average, is not mostly white, or has no label
 ink is reported.
@@ -74,10 +77,16 @@ def check(path, lang):
     bands = [(35, 110), (110, 185), (185, 230)]
     EB = np.stack([energy(F[:, a:b]) for a, b in bands], axis=1)
     for i in range(1, n - 1):
-        for k in range(len(bands)):
+        for k, (y0, y1) in enumerate(bands):
             lo = min(EB[i - 1, k], EB[i + 1, k])
             if lo > 0.6 and EB[i, k] < 0.55 * lo:
-                found.setdefault(i, []).append(f'band {k} energy {EB[i, k]:.2f} vs {EB[i - 1, k]:.2f}/{EB[i + 1, k]:.2f}')
+                P, A, N = F[i, y0:y1], F[i - 1, y0:y1], F[i + 1, y0:y1]
+                dev, nd = np.abs(P - (A + N) / 2).mean(), np.abs(A - N).mean()
+                txt = f'band {k} energy {EB[i - 1, k]:.2f}/{EB[i, k]:.2f}/{EB[i + 1, k]:.2f}, dev {dev:.2f} vs neighbours {nd:.2f}'
+                if dev <= nd:
+                    dismissed.append((i, txt + ' -> between its neighbours (transition)'))
+                else:
+                    found.setdefault(i, []).append(txt)
     # C: tiles
     T = F.reshape(n, GY, TH, GX, TW).transpose(0, 1, 3, 2, 4)  # n, gy, gx, th, tw
     ET = energy(T)
@@ -121,7 +130,7 @@ def check(path, lang):
         print(f'  DROP-OUT frame {i} ({where(i)}): ' + '; '.join(found[i]))
     for i, t in dismissed:
         print(f'  dismissed frame {i} ({where(i)}): {t}')
-    print(f'  single-frame drop-outs: {len(found)}' + (f' {sorted(found)}' if found else '') + f' · tile flags dismissed: {len(dismissed)}')
+    print(f'  single-frame drop-outs: {len(found)}' + (f' {sorted(found)}' if found else '') + f' · flags dismissed: {len(dismissed)}')
     print(f'  Demo-data chip: max diff {cd.max():.2f}, white >= {white.min():.2f}, ink >= {ink.min():.3f}; frames without it: {len(nochip)}' + (f' {nochip[:20]}' if nochip else ''))
     return not found and not nochip
 

@@ -24,8 +24,8 @@ const arg = (name, def) => {
 };
 const langs = arg('lang', 'both') === 'both' ? ['ar', 'en'] : [arg('lang')];
 const POSTER_FRAME = Number(arg('poster-frame', '420')); // risk analysis: portfolio dial, category dials, likelihood × impact matrix
-// 3.3 MiB keeps the v3.1 recut (a moving camera on every frame) at or below the size of the
-// earlier static cut's web files (3.1 and 3.4 MB).
+// 3.3 MiB (3.46 MB) keeps the recut (a moving camera on every frame) at about the size of the
+// larger of the earlier static cut's web files (3.1 and 3.4 MB).
 const MP4_BUDGET = 3.3 * 1024 * 1024;
 const POSTER_BUDGET = 120 * 1024;
 const kb = (f) => `${(statSync(f).size / 1024).toFixed(0)} KB`;
