@@ -186,7 +186,8 @@
   opacity: var(--corner-rest);
   transition: opacity var(--dur-main) var(--ease-out);
 }
-.card.is-framed:has(> .card-body.is-flush:last-child) {
+/* js/ui/edges.js appends span.edge-run as the card's last child, so "last" and "only" skip it. */
+.card.is-framed:has(> .card-body.is-flush:nth-last-child(1 of :not(.edge-run))) {
   --corner-mask:
     radial-gradient(circle at 0 0, #000 var(--corner-a), transparent var(--corner-b)),
     radial-gradient(circle at 100% 0, #000 var(--corner-a), transparent var(--corner-b));
@@ -196,7 +197,7 @@
     radial-gradient(circle at 0 100%, #000 var(--corner-a), transparent var(--corner-b)),
     radial-gradient(circle at 100% 100%, #000 var(--corner-a), transparent var(--corner-b));
 }
-.card.is-framed:has(> .card-body.is-flush:only-child)::after, .card .card.is-framed::after { content: none; }
+.card.is-framed:has(> .card-body.is-flush:first-child:nth-last-child(1 of :not(.edge-run)))::after, .card .card.is-framed::after { content: none; }
 .card.is-clickable, a.card, button.card { cursor: pointer; color: inherit; text-decoration: none; text-align: start; }
 .card.is-clickable:hover, a.card:hover, button.card:hover, .card.is-interactive:hover { border-color: var(--line-2); }
 :is(.card.is-clickable, a.card, button.card, .card.is-interactive):is(:hover, :focus-visible)::after { opacity: 1; }
@@ -776,6 +777,10 @@ a.domain-card:hover, button.domain-card:hover, .domain-card.is-clickable:hover {
   max-inline-size: 100%;
   overflow-x: auto;
   scrollbar-width: none;
+  /* Hidden thumbs rest one button-width away; when a view lets the group wrap (overflow: visible), the
+     thumb at the end of a row would reach past the track and widen the page. Paint containment keeps
+     every thumb inside the track whatever overflow a view sets. */
+  contain: paint;
 }
 .seg::-webkit-scrollbar { display: none; }
 .seg-btn {
