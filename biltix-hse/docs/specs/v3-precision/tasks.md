@@ -63,13 +63,31 @@ Status as of 2026-11-11, tree `da1fbc3` (v3.5.1). Evidence for every acceptance 
 - [!] T7.10 Higgsfield camera stills — generated, download blocked; not integrated
 
 ## Phase 8 — Open fixes from the final verification (acceptance.md, "Defects")
-- [ ] T8.1 D1 Whole-row click in clickable tables (`main[tabindex]` matches `INTERACTIVE`)
-- [ ] T8.2 D2 Mobile LCP / Performance (static largest element or earlier first view paint)
-- [ ] T8.3 D3 axe serious/critical: label-content-name-mismatch (shell controls, tiles), roadmap Gantt roles
-- [ ] T8.4 D4 Rail plate re-placement after webfonts load on a language switch
-- [ ] T8.5 D5 Radar Arabic layer drift (`direction` on `g.rt-rim`, not the root svg)
-- [ ] T8.6 D6 Radar final-state flash before the entrance
-- [ ] T8.7 D7 Route afterimage offsets at 390 px
+Round 5 (v3.8 integration) landed code for D1–D7. They stay `[~]` until the integrated tree has been re-measured
+in a browser (QA matrix, axe, Lighthouse mobile): the probes quoted in the commits were run on v3.7.0, before the
+English default and before the other v3.8 additions.
+- [~] T8.1 D1 Whole-row click in clickable tables — `interactiveWithin` stops at the row (unit-tested)
+- [~] T8.2 D2 Mobile LCP / Performance — static pre-view header, scripts after the first paint, live engines after
+      the first view (`tools/stamp-shell.mjs`, loader in `index.html`); not re-measured
+- [~] T8.3 D3 axe serious/critical — label in name on shell and view controls (and the v3.8 controls), roadmap grid
+      roles, unique pagers; axe not re-run
+- [~] T8.4 D4 Rail plate re-placement after webfonts load on a language switch
+- [~] T8.5 D5 Radar Arabic layer drift (`direction` on `g.rt-rim`, not the root svg)
+- [~] T8.6 D6 Radar final-state flash before the entrance
+- [~] T8.7 D7 Route afterimage offsets at 390 px
 - [ ] T8.8 D8 App-bar activity count and avatar contrast
 - [ ] T8.9 D9 Spatial: table header overflow on phones, zoom-fit over zone names, palette focus return
 - [!] T8.10 Publish v3.5.1 (Vercel daily limit)
+
+## Phase 9 — v3.8 additions (four parallel branches on v3.7.0, integrated on v3.7.2)
+- [~] T9.1 Round 5: D1–D7 above, mobile first paint (pre-view + paint-first loader)
+- [~] T9.2 Worked example: submittal MAR-S1-CW-014 → AIR-1069 seed, guided walkthrough (`?tour=1`), 360° viewer and
+      plan layers on `#/spatial`
+- [~] T9.3 Go-live readiness `#/golive` (PLT-04), connector details drawer, cockpit strip
+- [~] T9.4 Field kit `#/fieldkit` (FLD-01): service worker, outbox, QR labels and scanning — demo, not in scope (Q1)
+- [x] T9.5 Integration: one registry (25 routes), loader preloads = import graph, go-live "today" follows the demo,
+      label in name on the new controls, service worker never stores another document as the shell, offline layer
+      start order; `tests/integration.test.mjs`, `tests/sw.test.mjs` (node suite green)
+- [ ] T9.6 Browser verification of the integrated tree: `tools/qa.mjs` on 25 routes × ar/en × light/dark × widths,
+      axe, Lighthouse mobile, service worker install / offline start / update, QR scan, 360° viewer, walkthrough
+- [ ] T9.7 Version bump to 3.8.0, stamps (`stamp-shell` → `stamp-build` → `sw-precache`), publish (needs Q3)

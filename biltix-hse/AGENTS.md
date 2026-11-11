@@ -81,7 +81,9 @@ graph).
 
 ## Rules that are easy to break
 
-- **No build step, no npm runtime dependencies.** Vendored code lives in `js/vendor/` with its licence header.
+- **No build step, no npm runtime dependencies.** Vendored code lives in `js/vendor/` with its licence header
+  (today: the Motion mini build, and `qrcode-generator` 2.0.4 for the field kit's labels — both MIT). Do not add another
+  without asking.
 - **Bilingual.** Every user-visible string goes through `t()` / `tn()` / `L()` from `js/core/i18n.js`.
   UI strings live in `js/i18n/<namespace>.js` (`{ ar, en }`); seed-data English mirrors live in
   `js/i18n/data/*.js`, keyed by record id; enum values in `js/i18n/enums.js`.
