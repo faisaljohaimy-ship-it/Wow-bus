@@ -50,8 +50,10 @@ captions. All are fixed in the code and both languages were re-rendered ("Last b
   Chromium to composite. The ≤ 1.6° orbit keeps its parallax and loses only its keystone (a few px
   at the frame corners): six sample frames rendered with the old and the new camera differ by
   0.3–0.6 grey levels on average (2.4 on a rack-focus frame, where the blurred plane sits a few px
-  over). Every frame of the new masters and web files was checked with three detectors: no drop-out
-  (see "Last build").
+  over). Every frame of both new masters and both web files was checked with
+  `scripts/check-frames.py` (three drop-out detectors and the chip check): no drop-out, and the
+  chip on every frame (see "Last build"). The same script finds every drop-out listed above in
+  the v3.1 files.
 - **Arabic honesty tag.** The Arabic feed's OSD reads `بث محاكى · لا كاميرا متصلة`, the app's own
   wording (`biltix-hse/js/i18n/spatial.js`), set in IBM Plex Sans Arabic with no letter-spacing
   (letter-spacing breaks Arabic joining) and isolated right-to-left inside the left-to-right OSD
@@ -70,8 +72,10 @@ captions. All are fixed in the code and both languages were re-rendered ("Last b
   the camera for every frame of both languages; the only allowed exits are named in the script
   (the far ring gauges and the entering matrix during the validation → portfolio match).
 - **Write-back.** The *Simulated* tag and "No real connection to BILTIX PM in this version" are
-  part of the write-back card, on screen for as long as the card is (about 3.3 s); before, the arc
-  ran untagged from about frame 913 to 965 and the note was readable for about 1.2 s.
+  part of the write-back card, so they are on screen whenever the arc is: the card fades in from
+  frame 903, is fully opaque from 927 to 1004 (2.6 s) and dissolves out with the scene by 1015
+  (3.7 s in all). Before, the arc ran untagged from about frame 913 to 965 and the note was
+  readable for about 1.2 s.
 - **Embed.** The caption track is offered but off by default (see "In the app").
 
 ## What changed in the v3.1 recut
@@ -175,7 +179,9 @@ Honesty notes:
   `/opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell`.
   To use another browser, set `REMOTION_BROWSER=/path/to/chrome-headless-shell`.
 - ffmpeg/ffprobe come from Remotion's compositor package (`@remotion/compositor-*`). No
-  system ffmpeg is needed. The review contact sheet uses `python3` + Pillow (optional).
+  system ffmpeg is needed. The review contact sheet uses `python3` + Pillow (optional); the frame
+  check (`scripts/check-frames.py`) uses `python3` + numpy and an `ffmpeg`/`ffprobe` on `PATH`
+  (or set `FFMPEG` / `FFPROBE`).
 
 ```bash
 npm ci
@@ -222,8 +228,10 @@ npm run render:en -- --concurrency=4     # out/biltix-explainer-en-1080p.mp4
 
 `remotion.config.ts` sets H.264, yuv420p, CRF 20, x264 `slow` and PNG intermediate frames. The
 output is 1920×1080, 30 fps, 1,245 frames (41.5 s), silent. On the 4-core build sandbox, shared
-with other jobs, one language takes about 13 minutes (see "Last build" below); lower
-`--concurrency` when the machine is busy.
+with other jobs, one language takes 13 to 30 minutes depending on the load (see "Last build"
+below); lower `--concurrency` when the machine is busy. The Chromium compositor can crash under
+memory pressure ("The browser crashed while rendering frame …"); Remotion retries the frame in a
+new browser, and a lower concurrency avoids it.
 
 ## 4. Captions and web exports
 
@@ -247,6 +255,22 @@ One command for everything: `npm run build` (extract → captions → render →
 npm run stills           # 12 stills per language + out/contact/<lang>-sheet.png
 node scripts/contact-sheet.mjs --lang ar --frames 560,690
 ```
+
+## 6. Check every frame
+
+```bash
+npm run check:framing    # key text vs the top-bar fade, the caption band and the frame edges (camera maths)
+npm run check:frames     # python3 scripts/check-frames.py: drop-outs + Demo-data chip, every frame of the
+                         # two masters and the two web files (exit 1 on any finding)
+```
+
+`check-frames.py` compares each frame (scaled to 480 × 270, grey) with its two neighbours as a
+whole, in three horizontal bands and in an 8 × 6 tile grid. A one-frame hole (a card or a scene
+missing for one frame) fails all three. A tile flag is dismissed, and listed as dismissed, only
+when the frame lies between its neighbours (a dissolve, or an edge sliding across a tile
+boundary) or when the tile keeps its detail while its neighbours also differ (the rolling record
+counter). It also checks that the inside of the Demo-data pill is on every frame. Run it after
+every render: the drop-outs it guards against were intermittent.
 
 ## Last build
 
@@ -275,9 +299,11 @@ focus back on the "How the platform works" button when the dialog closes. The ca
 into the picture, so the WebVTT file is attached as a `captions` track in the page language that
 is **off by default** (no `default` attribute): a native cue drawn on top would only cover the
 burned-in caption, or on a small player the scene's own text (the intro tagline). Viewers who
-want it (a larger or screen-reader-friendly rendering) turn it on from the player's captions
-menu; the cues then follow the burned-in ones exactly. The file names are unchanged and the
-duration is read from the video's metadata.
+prefer the player's own caption rendering (their caption size, colour and background settings)
+turn it on from the player's captions menu; the cues then follow the burned-in ones exactly. A
+browser set to always show captions (for example Safari with the system caption preference) may
+turn the track on by itself; that is the viewer's own setting and is left alone. The file names
+are unchanged and the duration is read from the video's metadata.
 
 Testing the embed locally: `python3 -m http.server` does not answer HTTP `Range` requests, so a
 browser cannot seek an MP4 it serves (every seek lands on 0:00). Use a server with range support
@@ -293,6 +319,7 @@ scripts/export-web.mjs    720p web encodes + WebP posters + faststart remux
 scripts/contact-sheet.mjs review stills (scripts/sheet.py tiles them)
 scripts/env.mjs           browser + bundled ffmpeg discovery for the Node scripts
 scripts/check-framing.mjs every card's key text through every frame of the camera paths (npm run check:framing)
+scripts/check-frames.py   drop-outs and the Demo-data chip on every frame of the rendered files (npm run check:frames)
 src/storyboard.ts         timing, transitions, step labels, captions (single source of truth)
 src/shots.ts              the camera's shot list per scene (aim / aimY framing helpers)
 src/Explainer.tsx         composition (RTL/LTR), far background plate, scenes, HUD
