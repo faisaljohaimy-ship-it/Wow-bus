@@ -115,8 +115,8 @@ the captions toggle step out of the row. The big play button's focus ring is whi
 over light and dark frames). Collapsed (`.is-collapsed`, remembered in `localStorage`
 `biltix-hse:explainer:collapsed`): a slim bar with "Play the video" and "Show video".
 
-Playback: the `src` is attached only after `load` + an idle callback; autoplay (muted, unless the file is narrated and
-the page has already had a gesture — see Sound below) unless `autoplayDecision()` says no (reduced motion —
+Playback: the `src` is attached only after `load` + an idle callback; autoplay (a narrated file tries sound first —
+see Sound below) unless `autoplayDecision()` says no (reduced motion —
 `settings.motion: 'full'` overrides the OS —, `settings.motion: 'reduce'`, Save-Data, collapsed, or finished once in
 this tab: `sessionStorage` `biltix-hse:explainer:finished`). It plays only while ≥ 35 % of the stage is on screen and
 the tab is visible, and resumes by itself only when it was playing and the reader had not paused it. Below 960 px the
@@ -127,13 +127,24 @@ the picture shows (a play button: < 35 %; a transcript line: < 90 %) first scrol
 stage carry a `scroll-margin` of the bar heights below 960 px, so neither that nor the header button leaves the picture
 under the app bar or the tab bar.
 No loop; the end shows the replay state. Position, version and play intent survive a re-mount (language switch,
-leaving and re-entering the cockpit); a stretch that started by itself goes through the policy again on re-mount
+leaving and re-entering the cockpit — also a hero torn down before its idle start passes on the intent it was handed);
+a stretch that started by itself goes through the policy again on re-mount
 (`resumeDecision()`: motion turned down on `#/settings`, Save-Data …), one the reader started carries on. The header button "How the platform works" scrolls to the hero, expands it and
-plays from the start with sound (a gesture). Sound: with a voice, unmuted play is tried when the page has had a gesture
-(`navigator.userActivation.hasBeenActive`); a refusal falls back to muted play, and the sound button next to play/pause
-becomes the prominent labelled pill "Turn sound on" (`.is-prompt`, primary look; under the picture, never over the
-captions); one tap unmutes and it returns to an icon button whose speaker glyph gives way to equaliser bars while
-sound plays. The note always says what the audio is: "AI-generated voice ·
+plays from the start with sound (a gesture).
+
+Sound (v3.7.1: on by default). With a voice, every start — autoplay, the reader's play or resume, a re-mount — tries
+unmuted play first, unless the reader turned the sound off. Whether that works is the browser's decision, not the
+page's: most browsers refuse sound before the reader has interacted with the page, and no page can override that. On a
+refusal (`NotAllowedError`) the film plays muted, the sound button next to play/pause becomes the prominent labelled
+pill "Turn sound on" (`.is-prompt`, primary look; under the picture, never over the captions), and sound comes on with
+the reader's next activating gesture outside the hero — a mouse press, the end of a tap (not of a touch scroll, which
+ends in `pointercancel`; a touch press alone does not count, Chrome would pause the film), a key press other than Tab,
+Escape or a modifier, and only while `navigator.userActivation.isActive` where the engine reports it
+(`soundGestureCounts()`) — or with a tap on the picture (the next tap pauses). A gesture on the hero's own controls
+does only what that control does (no double toggle). Each refusal arms this again (a re-mount, a start after scrolling
+back); the reader's "Mute" is final for the page load. With sound on, the pill returns to an icon button ("Mute" /
+"كتم الصوت") whose speaker glyph gives way to equaliser bars; it and pause stop the sound at any time and are
+keyboard-reachable (WCAG 1.4.2). The note always says what the audio is: "AI-generated voice ·
 <name> · <provider>" or "Silent — captions in picture". Errors: a missing file (HEAD 404) shows the "not available"
 empty state offering the other version, a failed load the error state with retry, no network the offline state.
 
@@ -145,8 +156,10 @@ change and checked for drift at cue boundaries (the only main-thread wake-ups wh
 `timeupdate` listener). One title light sweep per page load; equaliser bars only while sound plays. Under reduced
 motion and forced colours the rail and clock step once per second instead. Print hides the hero (css/print.css).
 
-**Do** keep captions burned in and the transcript complete; label any synthetic voice. **Don't** autoplay with
-sound, loop, or put controls over the picture (they would cover the burned-in captions).
+**Do** keep captions burned in and the transcript complete; label any synthetic voice; keep the sound control visible
+whenever the file has a voice. **Don't** promise sound before the reader's first interaction (browsers may refuse it),
+turn the sound back on after the reader muted it, loop, or put controls over the picture (they would cover the
+burned-in captions).
 
 ## Executive metrics — `.metric-grid` > `.metric-tile`
 

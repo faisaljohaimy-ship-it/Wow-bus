@@ -16,12 +16,17 @@
  *   - The poster paints at once (fixed 16:9 box, no layout shift). The video gets its src only after window load +
  *     an idle callback, then autoplays when autoplayDecision() allows it (reduced motion, settings.motion 'reduce',
  *     Save-Data, a collapsed hero or one finished viewing in this tab session all say no).
- *   - Sound on by default (v3.7.1): with a narrated file (manifest voice ≠ null) unmuted play is always tried first,
- *     unless the reader turned the sound off. A browser that refuses unmuted autoplay (NotAllowedError) gets muted play,
- *     the sound control next to play/pause becomes a prominent labelled "Turn sound on" pill — under the picture, so it
- *     never covers the burned-in captions — and the reader's first gesture anywhere on the page turns the sound on
- *     (armSoundOnGesture). Browsers decide this, not the page: no site can force sound before a gesture where the
- *     browser forbids it. Silent files show no sound control at all, only the note "Silent — captions in picture".
+ *   - Sound on by default (v3.7.1): with a narrated file (manifest voice ≠ null) every start — autoplay, a resume, a
+ *     re-mount — tries unmuted play first, unless the reader turned the sound off. The browser decides whether that
+ *     works, not the page: most refuse sound before the reader has interacted with the page (NotAllowedError) and no
+ *     site can override that. Then the film plays muted, the sound control next to play/pause becomes the prominent
+ *     labelled "Turn sound on" pill — under the picture, so it never covers the burned-in captions — and sound comes on
+ *     with the reader's next activating gesture outside the hero (a mouse press, the end of a tap but not of a scroll,
+ *     a key press other than Tab, Escape and modifiers: soundGestureCounts, armSoundOnGesture) or with a tap on the
+ *     picture (the next tap pauses). A gesture on the hero's own controls does only what that control does. Every
+ *     refusal arms the rule again; the reader's "sound off" is final for the page load. The sound control ("Mute" /
+ *     "كتم الصوت" while sound plays; keyboard-reachable) and pause stop the sound at any time (WCAG 1.4.2).
+ *     Silent files show no sound control at all, only the note "Silent — captions in picture".
  *   - It plays only while ≥ 35 % of the stage is on screen and the tab is visible; it resumes by itself only when it was
  *     playing (automatically or by the reader) and the reader had not paused it. No loop: the end shows a replay state.
  *     Below 960 px the app bar and tab bar are fixed over the page: "on screen" leaves the strips they cover out
@@ -42,7 +47,7 @@
  * is content, not decoration: forced colours alone do not stop it (the autoplay policy above decides).
  *
  * Pure helpers (node tests: tests/explainer-hero.test.mjs): autoplayDecision, resumeDecision, cueIndexAt, stepStarts,
- * stepAt, formatClock, seekTarget, checkExplainerManifest, posterVariant, coveredInsets, rootMarginFor.
+ * stepAt, formatClock, seekTarget, checkExplainerManifest, posterVariant, coveredInsets, rootMarginFor, soundGestureCounts.
  */
 
 import { h, clear, svgIcon, button, emptyState, errorState, offlineState } from './components.js';
@@ -185,6 +190,31 @@ export function coveredInsets(bars, viewportH) {
 export function rootMarginFor({ top = 0, bottom = 0 } = {}) {
   const px = (v) => (Number.isFinite(v) && v > 0 ? `-${Math.ceil(v)}px` : '0px');
   return `${px(top)} 0px ${px(bottom)} 0px`;
+}
+
+/** Keys that never carry the film's sound: modifiers, focus moves and Escape (browsers do not count them as activation). */
+const SOUND_IGNORED_KEYS = new Set(['Escape', 'Tab', 'Shift', 'Control', 'Alt', 'AltGraph', 'Meta', 'OS', 'Fn', 'CapsLock']);
+
+/**
+ * Whether a gesture outside the hero may turn the film's sound on (the v3.7.1 "first gesture" rule). Only the events
+ * browsers count as user activation qualify: a mouse press (pointerdown, pointerType 'mouse'), the END of a touch or pen
+ * tap (pointerup / touchend — a touch pointerdown fires before the browser knows whether it is a tap or a scroll, and is
+ * not activation), and a key press other than modifiers, Tab and Escape. A touch that became a scroll (`scrolled`: a
+ * pointercancel was seen) never qualifies, and where the engine reports it (`active` = navigator.userActivation.isActive,
+ * null when unknown) the page must hold activation: unmuting outside it makes Chrome pause the film ("Unmuting failed")
+ * and Safari refuse play().
+ * @param {{ type: string, pointerType?: string, key?: string }} ev
+ * @param {{ active?: boolean|null, scrolled?: boolean }} [ctx]
+ */
+export function soundGestureCounts(ev, { active = null, scrolled = false } = {}) {
+  if (!ev || active === false) return false;
+  switch (ev.type) {
+    case 'keydown': return typeof ev.key === 'string' && ev.key !== '' && !SOUND_IGNORED_KEYS.has(ev.key);
+    case 'pointerdown': return ev.pointerType === 'mouse';
+    case 'pointerup': return typeof ev.pointerType === 'string' && ev.pointerType !== '' && ev.pointerType !== 'mouse' && !scrolled;
+    case 'touchend': return !scrolled;
+    default: return false;
+  }
 }
 
 /** The 640 px poster next to the 1280 px one (assets/video/explainer-ar-poster.webp → …-poster-640.webp). */
@@ -727,29 +757,37 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
   }
 
   /*
-   * Sound on by default (v3.7.1). When the browser refuses unmuted autoplay, the film plays muted with the "Turn sound
-   * on" pill, and the reader's first gesture anywhere on the page turns the sound on — inside that gesture, so engines
-   * that need transient activation allow it. Gestures inside the hero are left to its own controls (the pill, play /
-   * pause, …). Disarmed once used, when the reader picks sound on or off, or when the hero is destroyed.
+   * Sound on by default (v3.7.1). Every start of a narrated film tries sound first unless the reader turned it off
+   * (doPlay). When the browser refuses sound before a gesture, the film plays muted with the "Turn sound on" pill and
+   * this listener is armed: the reader's next activating gesture outside the hero (soundGestureCounts: a mouse press, the
+   * end of a tap — not a scroll —, a key press) turns the sound on inside that gesture, so engines that need activation
+   * allow it. Gestures inside the hero are left to its own controls (the pill, play / pause, a tap on the picture, …).
+   * Armed again whenever the browser refuses sound (a re-mount, a later start); disarmed once sound plays, when the reader
+   * turns the sound off, and when the hero is destroyed. Browsers still decide: none of this can force sound without a
+   * gesture where the browser forbids it.
    */
-  const SOUND_GESTURES = ['pointerdown', 'keydown', 'touchend'];
+  const SOUND_GESTURES = ['pointerdown', 'pointerup', 'pointercancel', 'touchend', 'keydown'];
   const SOUND_OPTS = { capture: true, passive: true };
-  const IGNORED_KEYS = new Set(['Escape', 'Tab', 'Shift', 'Control', 'Alt', 'Meta', 'CapsLock']);
   let soundArmed = false;
+  let touchScrolled = false;                    // the current touch became a scroll (pointercancel)
   function onSoundGesture(ev) {
-    if (destroyed || !voice || session.soundPref !== null) { disarmSound(); return; }
-    if (ev.type === 'keydown' && IGNORED_KEYS.has(ev.key)) return;
-    if (ev.target && typeof ev.target.nodeType === 'number' && el.contains(ev.target)) return;
+    if (destroyed || !voice || session.soundPref === 'off') { disarmSound(); return; }
+    if (ev.type === 'pointerdown' && ev.pointerType !== 'mouse') touchScrolled = false;
+    if (ev.type === 'pointercancel') { touchScrolled = true; return; }
     if (!wantPlay || !video.muted) return;      // only while it plays (or waits to play) without sound
-    video.muted = false;
-    session.soundPref = 'on';
+    if (ev.target && typeof ev.target.nodeType === 'number' && el.contains(ev.target)) return;
+    let active = null;
+    try { if (navigator.userActivation) active = !!navigator.userActivation.isActive; } catch { /* old engine */ }
+    if (!soundGestureCounts(ev, { active, scrolled: touchScrolled })) return;
+    video.muted = false;                        // inside the activation: allowed, and Chrome does not pause the film
     renderSound();
-    disarmSound();
-    if (video.paused) apply();
+    if (video.paused) apply();                  // held off screen / hidden: it starts with sound once allowed to play
+    else disarmSound();
   }
   function armSoundOnGesture() {
-    if (soundArmed || destroyed || !voice || session.soundPref !== null) return;
+    if (soundArmed || destroyed || !voice || session.soundPref === 'off') return;
     soundArmed = true;
+    touchScrolled = false;
     SOUND_GESTURES.forEach((type) => document.addEventListener(type, onSoundGesture, SOUND_OPTS));
   }
   function disarmSound() {
@@ -763,6 +801,9 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
     if (destroyed || errored || playPending) return;
     if (!okLang(vlang)) { showMissing(); return; }
     ensureSrc();
+    // Sound on by default: a narrated film tries sound on every start unless the reader turned it off — also after an
+    // earlier refusal (a gesture since then, or an engine with sticky activation, may allow it now).
+    if (voice && session.soundPref !== 'off' && video.muted) video.muted = false;
     if (state !== 'playing') setState('loading');
     playPending = true;
     try {
@@ -770,8 +811,9 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
     } catch (err) {
       const name = err && err.name;
       if (name === 'NotAllowedError' && !video.muted) {
-        video.muted = true;                       // unmuted autoplay refused: play muted, offer the sound pill
-        renderSound();
+        video.muted = true;                       // sound refused before a gesture: play muted, offer the sound pill,
+        renderSound();                            // and let the reader's next gesture turn it on
+        armSoundOnGesture();
         try { await video.play(); } catch (e2) { if (e2 && e2.name === 'NotAllowedError') blocked(); }
       } else if (name === 'NotAllowedError') blocked();
       // AbortError: a pause or a new src interrupted play() — the state machine already moved on.
@@ -799,15 +841,14 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
   /* ---- reader actions ---- */
 
   /**
-   * Playback the reader asked for (a gesture). sound: 'keep' (control-bar toggle), 'auto' (first start: with sound
-   * unless the reader muted it before) or 'on' (the header button). Muted only matters when the file has a voice.
+   * Playback the reader asked for (a gesture). The sound follows doPlay(): a narrated film plays with sound unless the
+   * reader turned it off (the header button records 'on' first) — a resume after a muted stretch included.
    */
-  function userPlay({ sound = 'keep', reveal = true } = {}) {
+  function userPlay({ reveal = true } = {}) {
     if (errored) clearError();
     wantPlay = true;
     userPaused = false;
     auto = false;
-    if (voice && (sound === 'on' || (sound === 'auto' && session.soundPref !== 'off'))) video.muted = false;
     if (state === 'ended' || (srcLang && video.ended)) seek(0);
     if (reveal) revealStage();
     setState('loading');
@@ -835,14 +876,15 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
   }
 
   function togglePlay() {
-    if (state === 'ended') { seek(0); userPlay({ sound: 'auto' }); return; }
+    if (state === 'ended') { seek(0); userPlay(); return; }
     if (wantPlay && (state === 'playing' || state === 'loading')) userPause();
-    else userPlay({ sound: state === 'idle' ? 'auto' : 'keep' });
+    else userPlay();
   }
 
   function setMuted(muted) {
     video.muted = muted;
     session.soundPref = muted ? 'off' : 'on';
+    if (muted) disarmSound();                   // the reader's "off" is final: no gesture turns it back on
     renderSound();
     if (!muted && video.paused && wantPlay) apply();
   }
@@ -991,7 +1033,7 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
 
   /* ---- events ---- */
 
-  on(bigBtn, 'click', () => { if (state === 'ended') seek(0); userPlay({ sound: 'auto' }); });
+  on(bigBtn, 'click', () => { if (state === 'ended') seek(0); userPlay(); });
   on(playBtn, 'click', togglePlay);
   on(soundBtn, 'click', () => setMuted(!video.muted));
   on(ccBtn, 'click', toggleCaptions);
@@ -1000,7 +1042,7 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
   on(document, 'fullscreenchange', renderFs);
   on(document, 'webkitfullscreenchange', renderFs);
   on(collapseBtn, 'click', () => setCollapsed(!collapsed, { user: true }));
-  on(barPlay, 'click', () => { setCollapsed(false, { user: true }); userPlay({ sound: 'auto' }); try { playBtn.focus({ preventScroll: true }); } catch { /* noop */ } });
+  on(barPlay, 'click', () => { setCollapsed(false, { user: true }); userPlay(); try { playBtn.focus({ preventScroll: true }); } catch { /* noop */ } });
   on(txBtn, 'click', () => setTranscript(cueList.classList.contains('is-folded')));
   on(cueList, 'click', (e) => {
     const btn = e.target && e.target.closest ? e.target.closest('.ckh-cue') : null;
@@ -1010,14 +1052,15 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
     seek(c.start + 0.02);
     // Phones: the transcript sits under the video; bring the whole picture back before it plays.
     revealStage({ full: true });
-    if (!(wantPlay && (state === 'playing' || state === 'loading'))) userPlay({ sound: state === 'idle' ? 'auto' : 'keep', reveal: false });
+    if (!(wantPlay && (state === 'playing' || state === 'loading'))) userPlay({ reveal: false });
   });
   // Clicking the picture toggles playback (pointer convenience; the buttons carry the keyboard path) — except while a
-  // narrated film plays by itself without sound because the browser refused it: then the first tap turns the sound on.
+  // narrated film plays without sound because the browser refused it (the reader never turned it off): then the tap
+  // turns the sound on, and the next one pauses.
   on(stage, 'click', (e) => {
     if (e.target !== video && e.target !== poster && e.target !== shade && e.target !== stage) return;
     if (errored) return;
-    if (voice && video.muted && session.soundPref === null && wantPlay && (state === 'playing' || state === 'loading')) { setMuted(false); return; }
+    if (voice && video.muted && session.soundPref !== 'off' && wantPlay && (state === 'playing' || state === 'loading')) { setMuted(false); return; }
     togglePlay();
   });
 
@@ -1058,6 +1101,7 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
   });
   on(video, 'playing', () => {
     if (destroyed) return;
+    if (!video.muted) disarmSound();           // sound is playing: the first-gesture rule is done
     el.setAttribute('data-frame', 'video');
     setState('playing');
     syncRail();
@@ -1181,7 +1225,7 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
       if (decision.resume && okLang(vlang)) {
         wantPlay = true;
         auto = session.auto;
-        if (voice) { video.muted = session.soundPref === 'off'; armSoundOnGesture(); }
+        if (voice) video.muted = session.soundPref === 'off';   // doPlay() tries sound; a refusal arms the gesture rule
         if (shouldPlay()) setState('loading');   // off screen: the big play button stays until it scrolls into view
         apply();
       }
@@ -1194,11 +1238,10 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
     if (!decision.autoplay || !okLang(vlang)) return;
     wantPlay = true;
     auto = true;
-    // Sound on by default (v3.7.1): a narrated file always tries unmuted play first; a browser that refuses unmuted
-    // autoplay gets muted play + the "Turn sound on" pill, and the reader's first gesture anywhere turns the sound on
-    // (armSoundOnGesture). Only the reader's own "sound off" keeps it muted.
+    // Sound on by default (v3.7.1): a narrated file tries unmuted play first; a browser that refuses sound before a
+    // gesture gets muted play + the "Turn sound on" pill, and the reader's next gesture outside the hero (or a tap on
+    // the picture) turns the sound on (doPlay → armSoundOnGesture). Only the reader's own "sound off" keeps it muted.
     video.muted = !(voice && session.soundPref !== 'off');
-    armSoundOnGesture();
     // Off screen (scrolled away, or under the fixed bars): no spinner and the big play button stays; it starts when
     // ≥ 35 % of the stage scrolls into view (the observer calls apply()).
     if (shouldPlay()) setState('loading');
@@ -1261,21 +1304,25 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
       try { el.scrollIntoView({ block: 'start', behavior: motionOn() ? 'smooth' : 'auto' }); } catch { el.scrollIntoView(); }
       if (voice) session.soundPref = 'on';
       seek(0);
-      userPlay({ sound: 'on', reveal: false });   // the hero is already on its way into view
+      userPlay({ reveal: false });   // the hero is already on its way into view
       if (focus) { try { playBtn.focus({ preventScroll: true }); } catch { playBtn.focus(); } }
     },
     /** For tests and the QA harness. */
     debug: () => ({ state, wantPlay, userPaused, auto, inView, collapsed, vlang, srcLang, muted: video.muted, time: currentTime(), curIdx, voice: !!voice }),
     destroy() {
       if (destroyed) return;
-      // Only a hero that got going (autoplay decided, or the reader acted) hands its state to the next mount;
-      // one torn down before its idle start leaves the session untouched, so the next mount decides afresh.
-      if (started || wantPlay || userPaused || currentTime() > 0) {
+      // Only a hero that got going (autoplay decided, or the reader acted) hands its play intent to the next mount;
+      // one torn down before its idle start keeps the intent it was handed (a quick language switch there and back
+      // carries on playing), and the position only when it has one.
+      const acted = started || wantPlay || userPaused;
+      if (acted || currentTime() > 0) {
         session.saved = true;
         session.time = state === 'ended' ? 0 : currentTime();
-        session.wantPlay = wantPlay && state !== 'ended';
-        session.userPaused = userPaused;
-        session.auto = auto;
+        if (acted) {
+          session.wantPlay = wantPlay && state !== 'ended';
+          session.userPaused = userPaused;
+          session.auto = auto;
+        }
         if (voice && wantPlay && session.soundPref === null && !video.muted) session.soundPref = 'on';
       }
       destroyed = true;

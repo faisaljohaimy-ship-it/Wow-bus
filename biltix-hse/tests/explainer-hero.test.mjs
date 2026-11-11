@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import {
   autoplayDecision, shouldAutoplay, resumeDecision, cueIndexAt, stepStarts, stepAt, formatClock, seekTarget,
   checkExplainerManifest, posterVariant, coveredInsets, rootMarginFor, STEP_COUNT, POSTER_SIZES, STORAGE_KEYS,
-  VISIBLE_RATIO, FULL_RATIO,
+  VISIBLE_RATIO, FULL_RATIO, soundGestureCounts,
 } from '../js/ui/explainer-hero.js';
 import EXPLAINER_DEFAULT, { EXPLAINER } from '../js/data/explainer-media.js';
 
@@ -248,6 +248,36 @@ export const tests = [
       assert.equal(posterVariant('assets/video/explainer-ar-poster.webp'), 'assets/video/explainer-ar-poster-640.webp');
       assert.equal(posterVariant('x.jpg'), null);
       assert.equal(posterVariant(null), null);
+    },
+  },  {
+    name: 'sound on the first gesture: only activating gestures count — a mouse press, the end of a tap (not of a scroll), a key',
+    fn() {
+      const g = soundGestureCounts;
+      // mouse: the press itself is activation
+      assert.equal(g({ type: 'pointerdown', pointerType: 'mouse' }), true);
+      // touch / pen: the press is not (it may become a scroll); the end of the tap is
+      assert.equal(g({ type: 'pointerdown', pointerType: 'touch' }), false);
+      assert.equal(g({ type: 'pointerdown', pointerType: 'pen' }), false);
+      assert.equal(g({ type: 'pointerup', pointerType: 'touch' }), true);
+      assert.equal(g({ type: 'pointerup', pointerType: 'pen' }), true);
+      assert.equal(g({ type: 'pointerup', pointerType: 'mouse' }), false, 'the mouse press already counted');
+      assert.equal(g({ type: 'pointerup', pointerType: '' }), false);
+      assert.equal(g({ type: 'touchend' }), true);
+      // a touch that became a scroll (pointercancel seen) never turns the sound on
+      assert.equal(g({ type: 'touchend' }, { scrolled: true }), false);
+      assert.equal(g({ type: 'pointerup', pointerType: 'touch' }, { scrolled: true }), false);
+      // keys: anything but modifiers, focus moves and Escape
+      for (const key of ['Enter', ' ', 'a', 'ArrowDown', 'PageDown', 'F5']) assert.equal(g({ type: 'keydown', key }), true, key);
+      for (const key of ['Tab', 'Escape', 'Shift', 'Control', 'Alt', 'AltGraph', 'Meta', 'CapsLock', '']) assert.equal(g({ type: 'keydown', key }), false, key || '(empty)');
+      // where the engine reports activation it must be active (Chrome pauses a film unmuted outside it)
+      assert.equal(g({ type: 'pointerdown', pointerType: 'mouse' }, { active: false }), false);
+      assert.equal(g({ type: 'touchend' }, { active: false }), false);
+      assert.equal(g({ type: 'keydown', key: 'a' }, { active: true }), true);
+      assert.equal(g({ type: 'pointerup', pointerType: 'touch' }, { active: null }), true, 'unknown → the event type decides');
+      // other events and junk
+      for (const type of ['pointercancel', 'click', 'scroll', 'wheel', 'touchstart', 'focus']) assert.equal(g({ type, pointerType: 'mouse', key: 'a' }), false, type);
+      assert.equal(g(null), false);
+      assert.equal(g(undefined), false);
     },
   },
 ];
