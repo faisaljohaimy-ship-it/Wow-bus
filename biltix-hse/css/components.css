@@ -1512,6 +1512,14 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
   overflow: visible;
 }
 .ckh.is-collapsed { grid-template-areas: "head"; padding-block: 10px; }
+/* Phones and tablets: the app bar and the tab bar are fixed over the page (css/base.css ≤ 959.98 px), so bringing the
+   hero or its picture into view (header button "How the platform works", a transcript line) stops clear of both.
+   Wider screens scroll `main`, which starts below the bars (its scroll-padding applies). */
+@media (max-width: 959.98px) {
+  .ckh, .ckh-stage {
+    scroll-margin-block: calc(var(--appbar-h) + var(--space-3)) calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + var(--space-3));
+  }
+}
 @container main (min-width: 880px) {
   .ckh:not(.is-collapsed) {
     grid-template-columns: minmax(0, min(56%, 560px)) minmax(0, 1fr);
@@ -1632,7 +1640,7 @@ dialog.drawer .modal-foot, .drawer-foot { position: sticky; inset-block-end: 0; 
 .ckh-controls { display: flex; flex-direction: column; gap: 0; min-inline-size: 0; }
 /* overflow: clip keeps the translated playhead layer inside the rail (no page scroll in either direction); the clip
    margin leaves room for the dot and its glow at both ends. */
-.ckh-rail { position: relative; block-size: 22px; cursor: pointer; touch-action: none; border-radius: 6px; overflow: clip; overflow-clip-margin: 10px; }
+.ckh-rail { position: relative; block-size: 24px; cursor: pointer; touch-action: none; border-radius: 6px; overflow: clip; overflow-clip-margin: 10px; }
 .ckh-rail:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .ckh-track {
   position: absolute;

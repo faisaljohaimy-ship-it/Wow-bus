@@ -108,17 +108,24 @@ Layout: `main` < 880 px → stacked (video, then title, then the chip with the t
 "Full transcript"); wider → one band, video on the inline-start side (≤ 560 px) and title + chapters on the
 inline-end side, the chapters list scrolling inside the video's height (`contain: size`), so the band stays about
 410 px tall and the executive metrics still show above the fold at 1440 × 900. The progress rail runs left → right
-in both languages (media timelines are not mirrored); everything else mirrors. Targets: 38 px buttons, 44 px on
-coarse pointers (rail, buttons including the sound prompt, cue lines). On phones (`main` ≤ 520 px) with a narrated
+in both languages (media timelines are not mirrored); everything else mirrors. Targets: 38 px buttons, 24 px rail,
+44 px on coarse pointers (rail, buttons including the sound prompt, cue lines). On phones (`main` ≤ 520 px) with a narrated
 file the clock drops its "/ total" (the kicker shows the length), and while the sound prompt shows the clock and
 the captions toggle step out of the row. The big play button's focus ring is white between two dark rings (visible
 over light and dark frames). Collapsed (`.is-collapsed`, remembered in `localStorage`
 `biltix-hse:explainer:collapsed`): a slim bar with "Play the video" and "Show video".
 
-Playback: the `src` is attached only after `load` + an idle callback; muted autoplay unless `autoplayDecision()` says
-no (reduced motion — `settings.motion: 'full'` overrides the OS —, `settings.motion: 'reduce'`, Save-Data, collapsed,
-or finished once in this tab: `sessionStorage` `biltix-hse:explainer:finished`). It plays only while ≥ 35 % of the stage
-is visible and the tab is visible, and resumes by itself only when it was playing and the reader had not paused it.
+Playback: the `src` is attached only after `load` + an idle callback; autoplay (muted, unless the file is narrated and
+the page has already had a gesture — see Sound below) unless `autoplayDecision()` says no (reduced motion —
+`settings.motion: 'full'` overrides the OS —, `settings.motion: 'reduce'`, Save-Data, collapsed, or finished once in
+this tab: `sessionStorage` `biltix-hse:explainer:finished`). It plays only while ≥ 35 % of the stage is on screen and
+the tab is visible, and resumes by itself only when it was playing and the reader had not paused it. Below 960 px the
+app bar and the tab bar are fixed over the page, so "on screen" leaves the strips they cover out (IntersectionObserver
+`rootMargin` from `coveredInsets()`, re-measured on resize and full screen); while autoplay waits for the stage to
+scroll into view it stays idle with the big play button (no spinner). A play the reader asks for while too little of
+the picture shows (a play button: < 35 %; a transcript line: < 90 %) first scrolls the stage into view; the hero and
+stage carry a `scroll-margin` of the bar heights below 960 px, so neither that nor the header button leaves the picture
+under the app bar or the tab bar.
 No loop; the end shows the replay state. Position, version and play intent survive a re-mount (language switch,
 leaving and re-entering the cockpit); a stretch that started by itself goes through the policy again on re-mount
 (`resumeDecision()`: motion turned down on `#/settings`, Save-Data …), one the reader started carries on. The header button "How the platform works" scrolls to the hero, expands it and

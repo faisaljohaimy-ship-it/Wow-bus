@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   autoplayDecision, shouldAutoplay, resumeDecision, cueIndexAt, stepStarts, stepAt, formatClock, seekTarget,
-  checkExplainerManifest, posterVariant, STEP_COUNT, POSTER_SIZES, STORAGE_KEYS,
+  checkExplainerManifest, posterVariant, coveredInsets, rootMarginFor, STEP_COUNT, POSTER_SIZES, STORAGE_KEYS,
+  VISIBLE_RATIO, FULL_RATIO,
 } from '../js/ui/explainer-hero.js';
 import EXPLAINER_DEFAULT, { EXPLAINER } from '../js/data/explainer-media.js';
 
@@ -205,6 +206,40 @@ export const tests = [
       assert.ok(html.includes("base + '-640.webp 640w, ' + base + '.webp 1280w'"), 'same srcset candidates');
       assert.ok(html.includes(`localStorage.getItem('${STORAGE_KEYS.collapsed}')`), 'skipped when minimised');
       for (const lang of ['ar', 'en']) assert.equal(`assets/video/explainer-${lang}-poster.webp`, EXPLAINER.langs[lang].poster, 'preload base follows the manifest naming');
+    },
+  },
+  {
+    name: 'visibility root: the fixed app bar (top) and tab bar (bottom) are left out of "on screen"',
+    fn() {
+      const appbar = { position: 'fixed', display: 'grid', top: 0, bottom: 64 };
+      const tabbar = { position: 'fixed', display: 'grid', top: 872, bottom: 932 };
+      // phone 430 x 932: both bars fixed
+      assert.deepEqual(coveredInsets([appbar, tabbar], 932), { top: 64, bottom: 60 });
+      assert.equal(rootMarginFor(coveredInsets([appbar, tabbar], 932)), '-64px 0px -60px 0px');
+      // tab bar with the safe-area inset (fractional px round up, never under-counted)
+      assert.deepEqual(coveredInsets([{ ...appbar, bottom: 64.4 }, { ...tabbar, top: 837.6, bottom: 932 }], 932), { top: 65, bottom: 95 });
+      // desktop: the app bar is sticky in the grid and the tab bar is hidden: nothing covers the page
+      assert.deepEqual(coveredInsets([{ ...appbar, position: 'sticky' }, { ...tabbar, display: 'none' }], 900), { top: 0, bottom: 0 });
+      assert.equal(rootMarginFor({ top: 0, bottom: 0 }), '0px 0px 0px 0px');
+      // a fixed element that is not a bar at an edge (or spans most of the screen) does not count
+      assert.deepEqual(coveredInsets([{ position: 'fixed', display: 'block', top: 300, bottom: 400 }], 932), { top: 0, bottom: 0 });
+      assert.deepEqual(coveredInsets([{ position: 'fixed', display: 'block', top: 0, bottom: 700 }], 932), { top: 0, bottom: 0 });
+      // a bar scrolled / animated partly off the top only covers what is still on screen
+      assert.deepEqual(coveredInsets([{ ...appbar, top: -20, bottom: 44 }], 932), { top: 44, bottom: 0 });
+      // junk in → nothing covered
+      assert.deepEqual(coveredInsets(null, 932), { top: 0, bottom: 0 });
+      assert.deepEqual(coveredInsets([appbar], 0), { top: 0, bottom: 0 });
+      assert.deepEqual(coveredInsets([{ position: 'fixed', top: NaN, bottom: 64 }], 932), { top: 0, bottom: 0 });
+      assert.ok(VISIBLE_RATIO < FULL_RATIO && FULL_RATIO < 1);
+    },
+  },
+  {
+    name: 'components.css keeps a scrolled-to hero clear of the fixed bars below 960 px (scroll-margin)',
+    fn() {
+      const css = readFileSync(join(root, 'css/components.css'), 'utf8');
+      const base = readFileSync(join(root, 'css/base.css'), 'utf8');
+      assert.match(base, /@media \(max-width: 959\.98px\)[\s\S]*?\.appbar \{\s*position: fixed;/, 'the app bar is fixed below 960 px');
+      assert.match(css, /@media \(max-width: 959\.98px\) \{\s*\.ckh, \.ckh-stage \{\s*scroll-margin-block: calc\(var\(--appbar-h\)[^;]*var\(--tabbar-h\)/);
     },
   },
   {

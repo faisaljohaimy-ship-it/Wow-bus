@@ -22,6 +22,9 @@
  *     files show no sound control at all, only the note "Silent — captions in picture".
  *   - It plays only while ≥ 35 % of the stage is on screen and the tab is visible; it resumes by itself only when it was
  *     playing (automatically or by the reader) and the reader had not paused it. No loop: the end shows a replay state.
+ *     Below 960 px the app bar and tab bar are fixed over the page: "on screen" leaves the strips they cover out
+ *     (coveredInsets → rootMargin), and a play the reader asks for while the picture is out of sight (the header button,
+ *     a play button, a transcript line) first scrolls the stage into view, clear of both bars (CSS scroll-margin).
  *   - Playback position, the chosen language version and the play/pause intent survive a re-mount (language or numeral
  *     switch, leaving and re-entering the cockpit) through module state; live store updates never touch the hero.
  *     A stretch that started by itself is still autoplay after a re-mount: resumeDecision() runs the policy again (the
@@ -37,7 +40,7 @@
  * is content, not decoration: forced colours alone do not stop it (the autoplay policy above decides).
  *
  * Pure helpers (node tests: tests/explainer-hero.test.mjs): autoplayDecision, resumeDecision, cueIndexAt, stepStarts,
- * stepAt, formatClock, seekTarget, checkExplainerManifest, posterVariant.
+ * stepAt, formatClock, seekTarget, checkExplainerManifest, posterVariant, coveredInsets, rootMarginFor.
  */
 
 import { h, clear, svgIcon, button, emptyState, errorState, offlineState } from './components.js';
@@ -45,6 +48,10 @@ import { isRtl } from './i18n-bridge.js';
 
 export const STEP_COUNT = 7;
 export const VISIBLE_RATIO = 0.35;
+/** A transcript line brings the picture back when less than this share of the stage is on screen. */
+export const FULL_RATIO = 0.9;
+/** The shell bars that are fixed over the page on phones and tablets (app bar on top, tab bar at the bottom). */
+const FIXED_BARS = '.appbar, .tabbar';
 export const SEEK_STEP = 5;
 export const STORAGE_KEYS = Object.freeze({ collapsed: 'biltix-hse:explainer:collapsed', finished: 'biltix-hse:explainer:finished' });
 /**
@@ -147,6 +154,35 @@ export function seekTarget(key, { time = 0, duration = 0, starts = [], step = SE
     }
     default: return null;
   }
+}
+
+/**
+ * The strips of the viewport that fixed bars cover: on phones and tablets (css/base.css ≤ 959.98 px) the app bar is
+ * fixed over the top of the page and the tab bar over the bottom, so a stage scrolled under them is not "on screen".
+ * `bars` are the fixed shell bars as { position, display, top, bottom } (client px); a bar counts when it is fixed,
+ * shown, and touches the top or the bottom edge without spanning more than half the viewport.
+ * @returns {{ top: number, bottom: number }} covered px at the top and at the bottom (whole px, rounded up)
+ */
+export function coveredInsets(bars, viewportH) {
+  const vh = Number.isFinite(viewportH) && viewportH > 0 ? viewportH : 0;
+  let top = 0;
+  let bottom = 0;
+  if (!vh) return { top, bottom };
+  for (const b of Array.isArray(bars) ? bars : []) {
+    if (!b || b.position !== 'fixed' || b.display === 'none') continue;
+    const t = Number(b.top);
+    const btm = Number(b.bottom);
+    if (!Number.isFinite(t) || !Number.isFinite(btm) || btm - t <= 0 || btm - t > vh / 2) continue;
+    if (t <= 1 && btm > 0) top = Math.max(top, Math.ceil(Math.min(btm, vh)));
+    else if (btm >= vh - 1 && t < vh) bottom = Math.max(bottom, Math.ceil(vh - Math.max(t, 0)));
+  }
+  return { top, bottom };
+}
+
+/** IntersectionObserver rootMargin that leaves the covered strips out of the root ('0px' sides stay as they are). */
+export function rootMarginFor({ top = 0, bottom = 0 } = {}) {
+  const px = (v) => (Number.isFinite(v) && v > 0 ? `-${Math.ceil(v)}px` : '0px');
+  return `${px(top)} 0px ${px(bottom)} 0px`;
 }
 
 /** The 640 px poster next to the 1280 px one (assets/video/explainer-ar-poster.webp → …-poster-640.webp). */
@@ -312,7 +348,8 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
   let wantPlay = false;          // the reader (or autoplay) wants it playing; visibility may still hold it
   let userPaused = false;
   let auto = false;
-  let inView = false;
+  let inView = false;            // ≥ VISIBLE_RATIO of the stage on screen (fixed bars excluded)
+  let fullView = false;          // ≥ FULL_RATIO of it
   let srcLang = null;            // language whose file is attached to <video>
   let pendingSeek = session.saved && session.time > 0 ? session.time : null;
   let shownTime = pendingSeek || 0;
@@ -734,17 +771,28 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
    * Playback the reader asked for (a gesture). sound: 'keep' (control-bar toggle), 'auto' (first start: with sound
    * unless the reader muted it before) or 'on' (the header button). Muted only matters when the file has a voice.
    */
-  function userPlay({ sound = 'keep' } = {}) {
+  function userPlay({ sound = 'keep', reveal = true } = {}) {
     if (errored) clearError();
     wantPlay = true;
     userPaused = false;
     auto = false;
     if (voice && (sound === 'on' || (sound === 'auto' && session.soundPref !== 'off'))) video.muted = false;
     if (state === 'ended' || (srcLang && video.ended)) seek(0);
+    if (reveal) revealStage();
     setState('loading');
     // Start inside the gesture (unmuted play needs it on some engines); if the stage is off screen the
     // visibility rule pauses it again and resumes it once the stage scrolls back into view.
     doPlay();
+  }
+
+  /**
+   * The reader asked for playback while too little of the picture is on screen (for instance the control row is in view
+   * but the stage sits under the fixed app bar): bring it into view first — the stage's scroll-margin keeps it clear of
+   * the fixed bars — instead of starting a video they cannot see (the visibility rule would hold it anyway).
+   */
+  function revealStage({ full = false } = {}) {
+    if (collapsed || (full ? fullView : inView)) return;
+    try { stage.scrollIntoView({ block: 'nearest', behavior: motionOn() ? 'smooth' : 'auto' }); } catch { /* noop */ }
   }
 
   function userPause() {
@@ -801,7 +849,7 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
     renderNote();
     renderTime(pendingSeek, true);
     if (!okLang(vlang)) { showMissing(); return; }
-    if (resume) { wantPlay = true; setState('loading'); if (!inView) inView = true; doPlay(); } else setState(time > 0 ? 'paused' : 'idle');
+    if (resume) { wantPlay = true; revealStage(); setState('loading'); doPlay(); } else setState(time > 0 ? 'paused' : 'idle');
   }
 
   function renderLangBtn() {
@@ -835,6 +883,7 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
     const label = full ? t('exitFullscreen') : t('fullscreen');
     fsBtn.setAttribute('aria-label', label);
     fsBtn.setAttribute('title', label);
+    remeasure();                                // the page's fixed bars do not cover a full-screen stage
   }
 
   function setCollapsed(next, { user = false } = {}) {
@@ -928,9 +977,9 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
     const c = cues[Number(btn.getAttribute('data-i'))];
     if (!c) return;
     seek(c.start + 0.02);
-    // Phones: the transcript sits under the video; bring the picture back before it plays.
-    if (!inView) { try { stage.scrollIntoView({ block: 'nearest', behavior: motionOn() ? 'smooth' : 'auto' }); } catch { /* noop */ } }
-    if (!(wantPlay && (state === 'playing' || state === 'loading'))) userPlay({ sound: state === 'idle' ? 'auto' : 'keep' });
+    // Phones: the transcript sits under the video; bring the whole picture back before it plays.
+    revealStage({ full: true });
+    if (!(wantPlay && (state === 'playing' || state === 'loading'))) userPlay({ sound: state === 'idle' ? 'auto' : 'keep', reveal: false });
   });
   // Clicking the picture toggles playback (pointer convenience; the buttons carry the keyboard path).
   on(stage, 'click', (e) => {
@@ -1010,18 +1059,52 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
   });
   on(document, 'visibilitychange', apply);
 
-  /* visibility of the stage: play only while ≥ 35 % of it is on screen */
+  /*
+   * Visibility of the stage: play only while ≥ 35 % of it is on screen. On phones and tablets the app bar and the tab
+   * bar are fixed over the page, so the observer's root leaves the strips they cover out (rootMargin from
+   * coveredInsets()); the bars are measured in a frame callback after mount and again when the window is resized
+   * (breakpoint, rotation) or the stage enters / leaves full screen, and the observer is rebuilt only when that changes.
+   * On wider screens the bars are not fixed: `main` scrolls under them and its clip already counts.
+   */
   let io = null;
-  if (typeof IntersectionObserver === 'function') {
-    io = new IntersectionObserver((entries) => {
-      for (const en of entries) {
-        inView = en.isIntersecting && en.intersectionRatio >= VISIBLE_RATIO - 0.001;
-        if (inView) sweepTitle();
-      }
-      apply();
-    }, { threshold: [0, VISIBLE_RATIO, 0.6, 1] });
+  let ioMargin = null;
+  let measureFrame = 0;
+  const onIntersect = (entries) => {
+    for (const en of entries) {
+      inView = en.isIntersecting && en.intersectionRatio >= VISIBLE_RATIO - 0.001;
+      fullView = en.isIntersecting && en.intersectionRatio >= FULL_RATIO - 0.001;
+      if (inView) sweepTitle();
+    }
+    apply();
+  };
+  function fixedBars() {
+    if (fsEl() === media) return [];          // full screen: nothing of the page covers the stage
+    const out = [];
+    try {
+      document.querySelectorAll(FIXED_BARS).forEach((b) => {
+        const cs = getComputedStyle(b);
+        if (cs.position !== 'fixed' || cs.display === 'none') return;
+        const r = b.getBoundingClientRect();
+        out.push({ position: cs.position, display: cs.display, top: r.top, bottom: r.bottom });
+      });
+    } catch { /* measured as uncovered */ }
+    return out;
+  }
+  function observeStage() {
+    measureFrame = 0;
+    if (destroyed) return;
+    const margin = rootMarginFor(coveredInsets(fixedBars(), window.innerHeight || document.documentElement.clientHeight || 0));
+    if (io && margin === ioMargin) return;
+    if (io) io.disconnect();
+    ioMargin = margin;
+    io = new IntersectionObserver(onIntersect, { rootMargin: margin, threshold: [0, VISIBLE_RATIO, FULL_RATIO, 1] });
     io.observe(stage);
-  } else inView = true;
+  }
+  const remeasure = () => { if (!destroyed && io && !measureFrame) measureFrame = requestAnimationFrame(observeStage); };
+  if (typeof IntersectionObserver === 'function') {
+    measureFrame = requestAnimationFrame(observeStage);
+    on(window, 'resize', remeasure, { passive: true });
+  } else { inView = true; fullView = true; }
 
   /** One light sweep over the title the first time the hero is seen in this page load. */
   function sweepTitle() {
@@ -1066,7 +1149,7 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
         wantPlay = true;
         auto = session.auto;
         if (voice) video.muted = !(session.soundPref === 'on' || (session.soundPref === null && hasActivation() && !session.auto));
-        setState('loading');
+        if (shouldPlay()) setState('loading');   // off screen: the big play button stays until it scrolls into view
         apply();
       }
       // Not resumed because of the policy: the position is kept and the big play button waits for the reader.
@@ -1079,7 +1162,9 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
     wantPlay = true;
     auto = true;
     video.muted = !(voice && hasActivation() && session.soundPref !== 'off');
-    setState('loading');
+    // Off screen (scrolled away, or under the fixed bars): no spinner and the big play button stays; it starts when
+    // ≥ 35 % of the stage scrolls into view (the observer calls apply()).
+    if (shouldPlay()) setState('loading');
     apply();
   }
 
@@ -1139,7 +1224,7 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
       try { el.scrollIntoView({ block: 'start', behavior: motionOn() ? 'smooth' : 'auto' }); } catch { el.scrollIntoView(); }
       if (voice) session.soundPref = 'on';
       seek(0);
-      userPlay({ sound: 'on' });
+      userPlay({ sound: 'on', reveal: false });   // the hero is already on its way into view
       if (focus) { try { playBtn.focus({ preventScroll: true }); } catch { playBtn.focus(); } }
     },
     /** For tests and the QA harness. */
@@ -1158,6 +1243,7 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
       }
       destroyed = true;
       if (idleHandle) cancelRic(idleHandle);
+      if (measureFrame) cancelAnimationFrame(measureFrame);
       clearTimeout(spinTimer);
       stopRail();
       if (io) io.disconnect();

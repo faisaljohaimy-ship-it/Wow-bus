@@ -33,7 +33,7 @@ Legend: [ ] todo · [~] in progress · [x] done · [!] blocked
 
 ## Phase 4 — Motion and explainer
 - [~] T4.1 Remotion project biltix-explainer (AR/EN, 1080p + web, posters, VTT)
-- [ ] T4.2 Embed explainer (lazy, user-initiated)
+- [ ] T4.2 Embed explainer (lazy; v3.6: autoplaying hero at the top of the cockpit, spec D9)
 
 ## Phase 5 — Verification
 - [ ] T5.1 Functional browser tests (lifecycle, filters, deep links, import, exports)

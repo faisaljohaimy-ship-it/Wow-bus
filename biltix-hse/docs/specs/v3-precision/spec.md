@@ -61,7 +61,7 @@ filled during verification), `baseline.md` (measured "before" state).
 | D6 | Status taxonomy in one module (`status.js`) used by shell, settings, integrations, engine, data quality | One definition, no contradictory claims |
 | D7 | Activity feed becomes a collapsible panel (closed by default below 1680 px) | Content width |
 | D8 | Preview deployments only, created manually at milestones; automatic deploys disabled for `claude/**` (vercel.json) | Free-plan deployment limit was exhausted by per-push deploys |
-| D9 | Remotion explainer with burned-in captions + WebVTT. v3.6 (BILTIX request, 2026-11-11): shown at the top of the cockpit and autoplayed **muted** after load + idle (not under reduced motion, Save-Data, when minimised or after one viewing per tab session); sound only after a gesture; an AI voice is always disclosed | No autoplay audio; accessibility; honest labelling of synthetic voices |
+| D9 | Remotion explainer with burned-in captions + WebVTT. v3.6 (BILTIX request, 2026-11-11): shown at the top of the cockpit and autoplayed after load + idle (not under reduced motion, Save-Data, when minimised or after one viewing per tab session), only while ≥ 35 % of the picture is on screen (the strips under the fixed app bar and tab bar on phones and tablets do not count). Muted on a fresh page; with an AI-narrated file and a page the reader has already interacted with (`navigator.userActivation.hasBeenActive`), with sound — a browser refusal falls back to muted play and a prominent "Turn sound on" button. An AI voice is always disclosed | No audio before the reader's first interaction with the page; accessibility; honest labelling of synthetic voices |
 
 ## 5. Acceptance criteria (summary — evidence goes to acceptance.md)
 
@@ -96,8 +96,8 @@ AC-16 Performance (lab, documented conditions): LCP ≤ 2.5 s, CLS ≤ 0.1, TBT 
       desktop presets). Field INP cannot be measured here and is reported as not measured.
 AC-17 Accessibility: WCAG AA contrast, keyboard paths, visible focus, labelled controls, accessible
       dialogs/drawers, ≥ 40 px touch targets on coarse pointers; axe: 0 serious/critical.
-AC-18 Explainer: AR and EN videos, captions (burned-in + WebVTT), poster, lazy loading, user-initiated
-      playback with controls; 1080p and web exports present.
+AC-18 Explainer: AR and EN videos, captions (burned-in + WebVTT), poster, lazy loading (video source after
+      load + idle), autoplay per D9 with accessible custom controls; 1080p and web exports present.
 AC-19 Docs: design tokens, component guidance, translation guide, functional inventory (Complete /
       Partial / Demo / Not connected / Broken), AGENTS.md + CLAUDE.md handoff notes.
 
