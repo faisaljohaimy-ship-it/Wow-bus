@@ -158,8 +158,10 @@ displayed dates with `fmt` (`fmt.date`, `fmt.dateTime`, `fmt.time`, which show i
   `--dir`). On a change the old thumb travels toward the new option while it fades (opacity ease-in) and
   the new one arrives from the old side while it appears (ease-out), both on `--ease-glide` in 220 ms, so
   the light moves from one option to the other on transform + opacity alone. Exact for neighbours; a
-  jump across several options travels one width. Size variants only set `--seg-pad` / `--seg-btn-h`
-  (`.filter-bar .seg` is 2 / `--ctl-h-sm − 6`; coarse pointers 40 px).
+  jump across several options travels one width. The track has `contain: paint`, so a resting thumb at
+  the end of a wrapped row never reaches past the track or widens the page, whatever `overflow` a view
+  sets on the group. Size variants only set `--seg-pad` / `--seg-btn-h` (`.filter-bar .seg` is 2 /
+  `--ctl-h-sm − 6`; coarse pointers 40 px).
 - `.chips` / `.chip-group` > `.chip[aria-pressed]` (`.chip-count`, `.chip-remove`, `.is-sm`,
   `.chips.is-scroll` = single swipe row below 600 px; a filter-bar chip group marked
   `.chips.is-scroll` stays a swipe row at any width, other rows wrap from 600 px).
