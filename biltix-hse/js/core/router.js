@@ -98,6 +98,26 @@ let scrollSaveTimer = 0;
 let scrollListenersOn = false;
 let restoreCancel = null;
 
+/* ────────────────────────────── late-bound context members ────────────────────────────── */
+
+/**
+ * A stand-in for a module that loads after the first view (js/app.js: the live engines). Views read their context
+ * once, when they mount (`const { live } = ctx`), so a view mounted first would keep a null for its whole life.
+ * The stand-in forwards every member to `get()` once that returns the real object; until then each member reads as
+ * undefined, which views already treat as "not available" (`live && typeof live.getPings === 'function'`).
+ * Functions come back bound to the real object.
+ */
+export function lateBound(get) {
+  return new Proxy({}, {
+    get(_target, key) {
+      const real = typeof get === 'function' ? get() : null;
+      if (!real) return undefined;
+      const value = real[key];
+      return typeof value === 'function' ? value.bind(real) : value;
+    },
+  });
+}
+
 /* ────────────────────────────── hash helpers ────────────────────────────── */
 
 function safeDecode(value) {

@@ -248,6 +248,25 @@ export const tests = [
     },
   },
   {
+    name: 'live engines load after the first view: the context member is late-bound, so a view mounted first reaches the engine later',
+    async fn() {
+      const { lateBound } = await import('../js/core/router.js');
+      let engine = null;
+      const live = lateBound(() => engine);
+      // what a view does when it mounts: read ctx.live once and keep it
+      const view = { live, pings: () => (live && typeof live.getPings === 'function' ? live.getPings('S1') : 'fallback') };
+      assert.equal(view.pings(), 'fallback', 'no engine yet → the view falls back (as with a missing module)');
+      assert.equal(typeof live.getBlips, 'undefined');
+      engine = { name: 'live', getPings(site) { return `${this.name}:${site}`; }, getBlips: () => [] };
+      assert.equal(view.pings(), 'live:S1', 'the same reference now forwards to the engine, bound to it');
+      assert.equal(typeof live.getBlips, 'function');
+      assert.equal(live.name, 'live');
+      const app = read('js/app.js');
+      assert.ok(/live: liveRef,/.test(app) && /platformLive: platformLiveRef,/.test(app), 'buildContext hands out the late-bound members');
+      assert.ok(/window\.biltix = Object\.freeze\(\{ store, bus, router, live,/.test(app), 'window.biltix.live is the engine itself');
+    },
+  },
+  {
     name: 'offline layer starts once; a field action taken before it is ready waits for it (deep link to #/fieldkit, boot tail later)',
     async fn() {
       const off = await import('../js/core/offline.js');

@@ -26,7 +26,7 @@ import { store } from './core/store.js';
 import { bus } from './core/bus.js';
 import { fmt } from './core/fmt.js';
 import { sel } from './core/selectors.js';
-import { router } from './core/router.js';
+import { router, lateBound } from './core/router.js';
 import { i18n, t, tn, L } from './core/i18n.js';
 import { status } from './core/status.js';
 import coreDict, { status as statusDict } from './i18n/core.js';
@@ -108,7 +108,8 @@ async function loadOptionalModules() {
 
 /**
  * The live engines (js/data/live.js, js/data/platform-live.js: ~190 KB) are not needed to draw the first view:
- * they load after it, then start (no view reads ctx.live / ctx.platformLive while rendering).
+ * they load after it, then start. Views that use them (radar, overview) fall back to the selectors until then and
+ * reach the engines through the late-bound ctx.live (buildContext).
  */
 async function loadLiveModules() {
   const [l, pl] = await Promise.all([
@@ -2499,8 +2500,16 @@ function buildCommandPalette() {
 /* ------------------------------------------------------------------ */
 
 /** ctx handed to every view render (ARCHITECTURE §4 + CONTRACT §4: i18n, t, tn, L, status, motion). */
+/**
+ * The live engines load after the first view (loadLiveModules). Views read ctx.live once, when they mount, so the
+ * context carries stand-ins that forward to the engines as soon as they exist: a view mounted first (a reload on
+ * #/radar) gets its pings and blips without a re-mount. window.biltix.live stays the engine itself.
+ */
+const liveRef = lateBound(() => live);
+const platformLiveRef = lateBound(() => platformLive);
+
 function buildContext() {
-  return { store, bus, sel, fmt, charts, radar, components, art, live, sources, router, psel, platformLive, i18n, t, tn, L, status, motion: shellMotion };
+  return { store, bus, sel, fmt, charts, radar, components, art, live: liveRef, sources, router, psel, platformLive: platformLiveRef, i18n, t, tn, L, status, motion: shellMotion };
 }
 
 let lastNumerals = null;
@@ -2639,7 +2648,8 @@ async function boot() {
   }
 
   await loadLiveModules();
-  router.setContext(buildContext());   // later mounts see the engines in ctx as before
+  // ctx.live / ctx.platformLive are late-bound (buildContext): the view already on screen and later mounts see the
+  // engines from here on.
   if (live && typeof live.start === 'function') {
     try { live.start({ store, bus }); } catch (err) { reportError(err, 'live.start'); }
   }
