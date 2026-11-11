@@ -25,7 +25,7 @@
   (submittal MAR-S1-CW-014 → risk AIR-1069, with a guided walkthrough: `#/airisks?risk=AIR-1069&tour=1`), a 360°
   viewer with one simulated capture point on `#/spatial`, and a first paint that draws the page header before
   any script loads. 25 routes. All of it is demo data in this browser; the offline, QR and 360° parts are demos
-  of a proposed design and are not in the approved scope (Q1). The acceptance figures below were measured on
+  of a proposed design and are not in the approved scope (Q1). The acceptance figures above were measured on
   v3.5.1 with 23 routes.
 - **عطل معروف | Known broken (v3.5.1–v3.7.2):** clicking a table row outside its first-cell opener does not
   open the drawer. Fixed in the v3.8 code (`interactiveWithin` in `js/ui/components.js`, unit-tested); to be

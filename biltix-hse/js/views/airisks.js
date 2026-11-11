@@ -19,7 +19,7 @@ import airisksDict from '../i18n/airisks.js';
 import { riskRegister } from './shared/risk-register.js';
 import { openRiskDrawer, envOf, ensureStyles, hashParams, patchHashParams, domainChip, domainLabel, DOMAINS } from './shared/risk-drawer.js';
 import { openRiskForm } from './shared/risk-form.js';
-import { installDrawerHook, startWalkthrough, walkthroughAvailable } from '../ui/walkthrough.js';
+import { installDrawerHook, startWalkthrough, walkthroughAvailable, WORKED_RISK } from '../ui/walkthrough.js';
 
 i18n.register('airisks', airisksDict);
 
@@ -260,13 +260,14 @@ export default {
     if (hp.new === '1' || hp.new === 'true') {
       // ?new=1 (cockpit fallback, shared links): open the registration form once, then drop the param.
       openTimer = setTimeout(() => { if (!alive) return; patchHashParams({ new: null }); openForm(registerBtn); }, 0);
-    } else if (wanted && (hp.tour === '1' || hp.tour === 'true') && walkthroughAvailable(stateOf(), (psel.riskById(stateOf(), wanted) || {}).id)) {
-      // ?risk=AIR-1069&tour=1: the guided walkthrough of the worked example starts at the register (it opens the
-      // drawer itself on its next step); the tour param is dropped so a reload does not restart it.
+    } else if ((hp.tour === '1' || hp.tour === 'true') && walkthroughAvailable(stateOf(), (psel.riskById(stateOf(), wanted || WORKED_RISK) || {}).id)) {
+      // ?tour=1 (or ?risk=AIR-1069&tour=1): the guided walkthrough of the worked example starts at the register (it
+      // opens the drawer itself on its next step); without `risk` it is the worked example, the only record with a
+      // tour. The tour param is dropped so a reload does not restart it.
       openTimer = setTimeout(() => {
         if (!alive) return;
         patchHashParams({ tour: null, risk: null });
-        startWalkthrough(ctx, { riskId: (psel.riskById(stateOf(), wanted) || {}).id, step: 0 });
+        startWalkthrough(ctx, { riskId: (psel.riskById(stateOf(), wanted || WORKED_RISK) || {}).id, step: 0 });
       }, 0);
     } else if (wanted) {
       openTimer = setTimeout(() => {
