@@ -228,9 +228,10 @@ export default {
       return tbl;
     }
 
-    function metricTile({ key, label: lbl, value, scale = null, unit = '', tone = null, icon = null, foot = null, helper = '', spark = null, onClick = null, title = null }) {
+    function metricTile({ key, label: lbl, value, scale = null, unit = '', tone = null, icon = null, foot = null, helper = '', spark = null, onClick = null, title = null, count = true }) {
       const clickable = typeof onClick === 'function';
-      const el = h(clickable ? 'button' : 'div', { class: ['metric-tile', tone ? `tone-${tone}` : null, clickable ? 'is-clickable' : null], type: clickable ? 'button' : undefined, onClick: clickable ? onClick : undefined, title: title || undefined, 'data-key': key });
+      // count: false marks a figure that is not a quantity (a date): the stage never counts it up.
+      const el = h(clickable ? 'button' : 'div', { class: ['metric-tile', tone ? `tone-${tone}` : null, clickable ? 'is-clickable' : null], type: clickable ? 'button' : undefined, onClick: clickable ? onClick : undefined, title: title || undefined, 'data-key': key, 'data-nocount': count ? undefined : '' });
       el.appendChild(h('div', { class: 'metric-head' }, h('span', { class: 'metric-label' }, lbl), icon ? h('span', { class: 'metric-icon', 'aria-hidden': 'true' }, icon) : null));
       el.appendChild(h('div', { class: 'metric-value' }, h('span', { class: 't-metric', dir: scale ? 'ltr' : undefined }, String(value ?? '—'), scale ? h('small', {}, scale) : null), unit ? h('span', { class: 'metric-unit' }, unit) : null));
       if (spark) el.appendChild(h('span', { class: 'metric-spark', 'aria-hidden': 'true' }, spark));
@@ -507,7 +508,7 @@ export default {
       return h('div', { class: 'metric-grid', role: 'group', 'aria-label': t('title') },
         metricTile({ key: 'score', label: t('kpi.score'), value: fmt.num(num(cs.score)), scale: `/${fmt.num(100)}`, tone: RATING_TONE[r], icon: svgIcon('calendar', 16), spark: spark ? spark.el : null, foot: ratingBadge(cs.score), helper: t('dom.scoreHelper', { open: tn('dom.openRisks', num(cs.open)), red: tn('dom.redRisks', num(cs.red)) }), title: t('dom.scoreFormula') }),
         metricTile({ key: 'atRisk', label: t('kpi.atRisk'), value: fmt.num(data.highRisk.length), tone: data.highRisk.length ? 'critical' : 'good', icon: glyph(data.highRisk.length ? 'critical' : 'good', 16), helper: t('kpi.atRiskHelper', { pct: fmt.pct(HIGH_DELAY_PROB * 100), total: tn('activities', data.criticalAll.length) }), onClick: () => scrollToSection('critical') }),
-        metricTile({ key: 'p80', label: t('kpi.p80', { project: projectCode(data) }), value: data.mc && data.mc.p80 ? fmt.date(data.mc.p80, { style: 'short' }) : '—', tone: p80Slip === null ? null : p80Slip > 30 ? 'critical' : p80Slip > 0 ? 'warning' : 'good', icon: svgIcon('calendar', 16), helper: !data.mc || !data.mc.p80 ? t('kpi.p80None') : p80Slip !== null && p80Slip > 0 ? t('kpi.p80Late', { days: days(p80Slip), pct: pct80 }) : t('kpi.p80OnTime', { pct: pct80 }), onClick: () => scrollToSection('mc') }),
+        metricTile({ key: 'p80', count: false, label: t('kpi.p80', { project: projectCode(data) }), value: data.mc && data.mc.p80 ? fmt.date(data.mc.p80, { style: 'short' }) : '—', tone: p80Slip === null ? null : p80Slip > 30 ? 'critical' : p80Slip > 0 ? 'warning' : 'good', icon: svgIcon('calendar', 16), helper: !data.mc || !data.mc.p80 ? t('kpi.p80None') : p80Slip !== null && p80Slip > 0 ? t('kpi.p80Late', { days: days(p80Slip), pct: pct80 }) : t('kpi.p80OnTime', { pct: pct80 }), onClick: () => scrollToSection('mc') }),
         metricTile({ key: 'approvals', label: t('kpi.approvals'), value: fmt.num(data.atRisk.length), tone: data.atRisk.some((a) => a.status === 'متأخر') ? 'critical' : data.atRisk.length ? 'warning' : 'good', icon: glyph(data.atRisk.length ? 'warning' : 'good', 16), helper: t('kpi.approvalsHelper', { pct: fmt.pct(APPROVAL_RISK_RATIO * 100) }), onClick: () => scrollToSection('approvals') }),
       );
     }

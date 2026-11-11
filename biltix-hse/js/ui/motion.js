@@ -64,10 +64,12 @@
  *                                                       Returns a handle { state } or null (no intro: reduced motion,
  *                                                       built after the mount, e.g. by a live update).
  *   motion.countIn(textNode|el, { delay })           count a figure up from 0 to its current text; stops at once if
- *                                                       anything else rewrites the text (a live update wins).
+ *                                                       anything else rewrites the text (a live update wins). Never
+ *                                                       counts a date (parseFigure → null) or inside [data-nocount].
  *   motion.flipFirst(items) / motion.flip(items, mutate, { first })   FLIP: read boxes before the interaction writes,
  *                                                       mutate the DOM, play moved items from their old box.
- *   parseFigure(text) / flipDeltas(a, b) / staggerDelays(n, step, cap)   pure helpers (unit-tested).
+ *   parseFigure(text) / besideMonth(prefix, suffix) / flipDeltas(a, b) / staggerDelays(n, step, cap)   pure helpers
+ *                                                       (unit-tested).
  * The scroll reveal uses an IntersectionObserver whose root is the page scroller (main on desktop, the document on
  * phones) with a positive bottom margin (12 %), so a card starts rising just before it comes into view; once per
  * element. Nothing is hidden by CSS: the start state exists only inside a running Web Animation (fill backwards),
@@ -515,12 +517,33 @@ const ARAB_DIGITS = '٠١٢٣٤٥٦٧٨٩';
 const PERSIAN_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
 const DIGIT = '0-9٠-٩۰-۹';
 const FIGURE_RE = new RegExp(`[${DIGIT}](?:[${DIGIT}]|[,٬.٫](?=[${DIGIT}]))*`, 'g');
+/*
+ * Month names (Gregorian and Hijri; English long, short and "Sept"; Arabic Gregorian with its spelling variants,
+ * Levantine and Hijri). A figure next to one is a day of the month ("15 Oct", "15 أكتوبر", "Oct 15"), not a
+ * quantity: counting it up would show days that do not exist ("0 Oct").
+ */
+const MONTH_WORDS = [
+  'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December',
+  'Jan', 'Feb', 'Mar', 'Apr', 'Jun', 'Jul', 'Aug', 'Sept', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Muharram', 'Safar', "Rabi[ʻ']?", 'Jumada', 'Rajab', "Sha[ʻ']?ban", 'Ramadan', 'Shawwal', "Dhu[ʻ']?l",
+  'يناير', 'فبراير', 'مارس', '[أإا]بريل', 'مايو', 'يوني[وه]', 'يولي[وه]', '[أا]غسطس', 'سبتمبر', '[أا]كتوبر', 'نوفمبر', 'ديسمبر',
+  'كانون', 'شباط', '[آا]ذار', 'نيسان', '[أا]يار', 'حزيران', 'تموز', '[آا]ب', '[أا]يلول', 'تشرين',
+  'محرم', 'صفر', 'ربيع', 'جماد[ىي]', 'رجب', 'شعبان', 'رمضان', 'شوال', 'ذ[وي] ال(?:قعدة|حجة)',
+].join('|');
+const GAP = '[\\s\\u00a0\\u200e\\u200f\\u061c\\u2066-\\u2069,،.]*';
+const MONTH_AFTER_RE = new RegExp(`^${GAP}(?:${MONTH_WORDS})(?!\\p{L})`, 'iu');
+const MONTH_BEFORE_RE = new RegExp(`(?<!\\p{L})(?:${MONTH_WORDS})${GAP}$`, 'iu');
+
+/** Whether a figure with this text before and after it reads as a calendar day (a month name beside it). */
+export function besideMonth(prefix, suffix) {
+  return MONTH_AFTER_RE.test(String(suffix ?? '')) || MONTH_BEFORE_RE.test(String(prefix ?? ''));
+}
 
 /**
  * A displayed figure, split so it can be rendered at any intermediate value in the same notation:
  * digits (Latin, Arabic-Indic or Persian), grouping and decimal separators, prefix and suffix (units, %, signs,
  * bidi marks) kept verbatim. Returns null when the text holds no figure, more than one figure, or a figure that
- * is not a plain positive number (dates, ranges, codes).
+ * is not a plain positive number (dates — numeric or with a month name —, times, ranges, codes).
  *   parseFigure('٤٥٪') → { value: 45, decimals: 0, render(12) === '١٢٪' }
  */
 export function parseFigure(text) {
@@ -536,6 +559,7 @@ export function parseFigure(text) {
   if (/[A-Za-z\u0621-\u064A#_\-\u2212./:]/.test(lastCh)) return null;
   const firstCh = suffix.replace(/^[\u200e\u200f\u061c\u2066-\u2069]+/, '').charAt(0);
   if (/[/:\-\u2013]/.test(firstCh)) return null;
+  if (besideMonth(prefix, suffix)) return null;
   const arab = /[٠-٩]/.test(token);
   const persian = /[۰-۹]/.test(token);
   const latin = token.replace(/[٠-٩]/g, (d) => String(ARAB_DIGITS.indexOf(d))).replace(/[۰-۹]/g, (d) => String(PERSIAN_DIGITS.indexOf(d)));
@@ -704,7 +728,7 @@ export function countIn(target, { delay = 0, duration = stageTiming.count, width
   const node = figureNode(target);
   if (!node || !node.parentElement || !stageOn() || typeof requestAnimationFrame !== 'function') return done();
   const host = node.parentElement;
-  if (host.closest('[aria-live], [role="status"], [role="alert"]')) return done();
+  if (host.closest('[aria-live], [role="status"], [role="alert"], [data-nocount]')) return done();
   const finalText = node.data;
   const fig = parseFigure(finalText);
   if (!fig || !(fig.value > 0)) return done();
@@ -866,7 +890,7 @@ function flush() {
     grows = read(Array.from(root.querySelectorAll(GROW_TARGETS)).filter((el) => !el.closest('dialog')));
     sweeps = read(Array.from(root.querySelectorAll(SWEEP_TARGETS)).filter((el) => !el.closest('dialog')));
     tables = read(Array.from(root.querySelectorAll(ROW_TABLES)).filter((el) => !el.closest('dialog, .chart-table') && el.tBodies && el.tBodies[0] && el.tBodies[0].rows.length));
-    counts = read(Array.from(root.querySelectorAll(COUNT_TARGETS)).filter((el) => figureNode(el) && !el.closest('dialog, [aria-live]')));
+    counts = read(Array.from(root.querySelectorAll(COUNT_TARGETS)).filter((el) => figureNode(el) && !el.closest('dialog, [aria-live], [data-nocount]')));
   }
 
   /* write */
@@ -994,5 +1018,5 @@ export function flip(items, mutate, { key = FLIP_KEY, duration = 0.3, lift = fal
   return result;
 }
 
-export const motion = { enabled, enter, exit, number, flash, drawer, page, leave, glide, reveal, timing, animate, stage, stageBegin, intro, countIn, flip, flipFirst, stageTiming, parseFigure, flipDeltas, staggerDelays };
+export const motion = { enabled, enter, exit, number, flash, drawer, page, leave, glide, reveal, timing, animate, stage, stageBegin, intro, countIn, flip, flipFirst, stageTiming, parseFigure, besideMonth, flipDeltas, staggerDelays };
 export default motion;

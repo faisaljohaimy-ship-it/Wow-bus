@@ -335,7 +335,7 @@ toasts) · `--dur-slow 420ms` · `--stagger 32ms` · `--ease-out cubic-bezier(.1
 | `--dur-overlay` | 280ms | modal and toast entrances, scrim fade; exits use `--dur-micro` (160 ms) |
 | `--spot-size`, `--spot-core`, `--spot-mid` | 380px, warm rgba per theme | pointer spotlight on the hovered card |
 | table rows | 340 ms, 28 ms apart, first 12 only | `motion.stageTiming.rows / rowStagger / rowCap` |
-| FLIP | 300 ms (`--ease-glide`), moved kanban card 420 ms with a 3 % lift | table sort, register filters, kanban moves |
+| FLIP | 300 ms (`--ease-glide`), moved kanban card 420 ms with a 3 % lift | table sort, register filters, kanban moves made by the user (live moves repaint) |
 
 - **Stage** (`motion.stageBegin` on `ui:route-leave`, `motion.stage` on `route:change`, both from `js/app.js`):
   a new route (or the first one) arms the stage; refreshes and language changes do not. One flush in the
@@ -351,7 +351,9 @@ toasts) · `--dur-slow 420ms` · `--stagger 32ms` · `--ease-out cubic-bezier(.1
 - **Count-up** (`motion.countIn`): parses the displayed figure (`parseFigure`: Latin, Arabic-Indic or Persian
   digits, grouping and decimal marks, units and bidi marks kept), holds the host's width, ends at once if
   anything else rewrites the text, and always finishes on the exact original string. Skipped inside
-  `aria-live` / status regions.
+  `aria-live` / status regions and `[data-nocount]`. Dates are never counted: numeric ones (`2026-11-10`, `3/12`)
+  and a figure beside a month name, Gregorian or Hijri, Arabic or English (`15 Oct`, `١٥ أكتوبر`, `Oct 15`;
+  `besideMonth`); the schedule P80 finish tile is also marked `data-nocount`.
 - **Ambient loops** (`js/ui/edges.js` sets `data-amb` while on screen): halo on live / error capsules and on a
   critical KPI's icon, float on empty / error icons. Same switches as the edge laser.
 - **Spotlight** (`js/ui/spotlight.js`): mouse pointers with hover only; one leaf element per lit card,

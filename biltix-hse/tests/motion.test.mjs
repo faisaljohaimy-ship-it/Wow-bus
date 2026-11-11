@@ -1,6 +1,6 @@
 /** Motion pass helpers (js/ui/motion.js): figure parsing for count-ups, FLIP deltas, stagger delays, gates in node. */
 import assert from 'node:assert/strict';
-import { parseFigure, flipDeltas, staggerDelays, stageTiming, intro, countIn, enabled } from '../js/ui/motion.js';
+import { parseFigure, besideMonth, flipDeltas, staggerDelays, stageTiming, intro, countIn, enabled } from '../js/ui/motion.js';
 
 const renderAt = (text, v) => parseFigure(text).render(v);
 
@@ -49,6 +49,28 @@ export const tests = [
       }
       // A zero is a figure, but the count-up skips it (nothing to count).
       assert.equal(parseFigure('0').value, 0);
+    },
+  },
+  {
+    name: 'parseFigure: a day of the month (a month name beside the figure) is a date, not a quantity',
+    fn() {
+      // fmt.date(…, { style: 'short' }) in both languages and digit sets, other date orders, Hijri and Levantine months.
+      const dates = [
+        '15 Oct', '15 October', 'Oct 15', 'Oct. 15', '1 Sept', '3 May', '\u200e15\u200e Oct', '15\u00a0Dec',
+        '15 أكتوبر', '١٥ أكتوبر', '\u200f١٥ اكتوبر\u200f', '9 نوفمبر', '٢ مايو', '7 إبريل', '1 يونيه', '12 آب', '3 تشرين',
+        '30 جمادى', '٣٠ جمادى', '12 رمضان', '5 ذو القعدة', '4 ذي الحجة', '30 Jumada', '1 Rabiʻ', '12 Ramadan', '2 Dhuʻl-Hijjah',
+        'Tue, 15 Oct', 'الثلاثاء، ١٥ أكتوبر',
+      ];
+      for (const s of dates) assert.equal(parseFigure(s), null, `expected no figure in ${JSON.stringify(s)}`);
+      // Units, currencies and words that only start like a month are still quantities.
+      for (const s of ['12 days', '12 Market', '3 Mayors', '5 decisions', 'SAR 7.3bn', '‏7.3 مليار ر.س.‏', '٤ أيام', '12 مارسوا', '٨ أبنية']) {
+        assert.ok(parseFigure(s), `expected a figure in ${JSON.stringify(s)}`);
+      }
+      assert.equal(besideMonth('', ' Oct'), true);
+      assert.equal(besideMonth('Oct ', ''), true);
+      assert.equal(besideMonth('', ' أكتوبر'), true);
+      assert.equal(besideMonth('', '%'), false);
+      assert.equal(besideMonth('SAR ', ''), false);
     },
   },
   {

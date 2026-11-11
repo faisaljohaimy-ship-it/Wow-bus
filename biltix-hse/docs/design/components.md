@@ -312,8 +312,9 @@ The explainer video is no longer a dialog: see "Explainer hero (cockpit)" (v3.6)
 top frame over a faint tonal wash, live dot, `.kanban-col-title`, `.kanban-count` pill)
 > `.kanban-cards` > `.kanban-card[.tone-*]` (`.kanban-card-bar`, `.kanban-card-title`,
 `.kanban-card-meta`, `.kanban-card-foot`; a 22 px capsule light by the card head). States: `.is-over` (drop target, glows), `.is-dragging`,
-`.is-lifted` (pressed: rises 3 px, scale 1.015, warmer shadow); a card that changes column or order glides
-there from its old place (FLIP, `update()` measures only when places changed), the moved card slightly lifted;
+`.is-lifted` (pressed: rises 3 px, scale 1.015, warmer shadow); a card the user moves (drag, drop or keyboard)
+glides to its new place (FLIP from the boxes read at the move, played by the `update()` that follows within 2 s
+if places changed), the moved card slightly lifted; cards moved by a live update just repaint, without FLIP;
 overflow fade via `.is-overflowing` + `.is-scroll-start|end`; `.kanban-hint`.
 
 ## States — empty, loading, error, offline, skeleton
@@ -469,7 +470,7 @@ Inventory per route: v3 scratch `out/motion/inventory.md`. Costs: tokens.md §3.
 |---|---|---|---|
 | View sections on screen at mount | existing `motion.enter` / `motion.page` | 260–300 ms | route mount |
 | Cards / tiles / sections below the fold | rise 18 px + scale .985 + fade, siblings 50 ms apart (cap 5) | 520 ms | scrolled to (+12 % bottom margin), once |
-| KPI figures | count up from 0 in their own digits, separators and units; width held | 850 ms | first appearance; a live write wins |
+| KPI figures | count up from 0 in their own digits, separators and units; width held; dates (a month name beside the figure, or `[data-nocount]`) never count | 850 ms | first appearance; a live write wins |
 | Bar / column charts | grow from the baseline, 40 ms apart; values fade in | 620 ms | first seen after a mount |
 | Heatmap | cells cascade from the first corner | 420 ms + 26 ms per diagonal | same |
 | Segmented bars (SVG and HTML) | sweep from the inline-start | 700 ms | same |
@@ -477,7 +478,7 @@ Inventory per route: v3 scratch `out/motion/inventory.md`. Costs: tokens.md §3.
 | Line / spider | rise from the axis / open from the centre | 720 / 700 ms | same |
 | Progress, meter, feature, confidence fills | grow from the inline-start, 30 ms apart | 700 ms | same |
 | Table rows | first 12 rise 8 px + fade, 28 ms apart | 340 ms | first seen; sort / filter: FLIP 300 ms |
-| Kanban | FLIP on column / order change; lift on press | 300 / 420 ms | user move or live move |
+| Kanban | FLIP when the user moves a card (column / order); lift on press | 300 / 420 ms | user move only; a live move repaints |
 | Hovered top-level card (mouse) | warm spotlight follows the pointer; tile-like and clickable surfaces lift 2 px | 260 ms fade | fine pointer + hover only |
 | Buttons | press sinks 1 px + scale .97; icon nudges 2 px forward (icon-only: scale 1.1); tucks in on press | 160 ms | hover / press |
 | Live / error capsules, critical KPI icon | soft halo | 2.6 s loop | only while on screen; off under Static background |
