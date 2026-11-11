@@ -239,6 +239,60 @@ export const CAMERAS = Object.freeze([
     purpose: 'بوابة المقاول', purposeEn: 'Contractor gate' }),
 ]);
 
+/* ────────────────────────────── v4: 360° capture points, QR points, drawing register ──────────────────────────────
+ * All illustrative (demo). The one real picture is an AI-generated panorama (assets/360/panorama-floor.jpg, 4096 × 1738,
+ * 21:9 — it covers 360° horizontally and about ±76° vertically); the other capture dates are placeholders with no image.
+ * Hotspots: yaw (degrees, 0 = the picture's centre, + = to the right) and pitch (+ = up), measured on that image.
+ * `dayOffset` is relative to the app's "today" (store.now), never an absolute date (the seed is re-anchored daily).
+ * Positions use the site-normalised plan space (like cameras). Nothing here is a survey or a real capture.
+ */
+export const CAPTURES_360 = Object.freeze([
+  Object.freeze({
+    id: 'P360-S1-01', siteId: 'S1', zoneId: 'S1-Z1', x: 0.5, y: 0.42, level: 'L23',
+    label: 'البرج — حافة البلاطة العليا مقابل منطقة الرفع', labelEn: 'Tower — upper slab edge facing the lift zone',
+    yaw: 85, pitch: 2, fov: 78,
+    captures: Object.freeze([
+      Object.freeze({ key: 'c1', dayOffset: -1, src: 'assets/360/panorama-floor.jpg', preview: 'assets/360/panorama-floor-preview.jpg', generated: true }),
+      Object.freeze({ key: 'c2', dayOffset: -8, placeholder: true }),
+      Object.freeze({ key: 'c3', dayOffset: -15, placeholder: true }),
+    ]),
+    hotspots: Object.freeze([
+      Object.freeze({ id: 'hs-air1069', kind: 'aiRisk', ref: 'AR69', code: 'AIR-1069', yaw: 129, pitch: -18, tone: 'critical',
+        label: 'AIR-1069 — حافة الواجهة: وحدات الطوابق 8–15 بانتظار اعتماد الزجاج', labelEn: 'AIR-1069 — façade edge: floors 8–15 units await the glass approval' }),
+      Object.freeze({ id: 'hs-crates', kind: 'submittal', ref: 'SB1', code: 'MAR-S1-CW-014', yaw: -46, pitch: -25, tone: 'warning',
+        label: 'عينات زجاج الواجهة — MAR-S1-CW-014 (توضيحي)', labelEn: 'Curtain-wall glass samples — MAR-S1-CW-014 (illustrative)' }),
+      Object.freeze({ id: 'hs-tc2', kind: 'zone', ref: 'S1-Z2', code: 'TC-2', yaw: 112, pitch: 36, tone: 'serious',
+        label: 'الرافعة TC-2 — منطقة الرفع S1-Z2 (R-1009)', labelEn: 'Crane TC-2 — lift zone S1-Z2 (R-1009)' }),
+      Object.freeze({ id: 'hs-core', kind: 'zone', ref: 'S1-Z1', code: 'S1-Z1', yaw: 0, pitch: 15, tone: 'brand',
+        label: 'نواة البرج والقوالب — S1-Z1', labelEn: 'Tower core and formwork — S1-Z1' }),
+    ]),
+  }),
+]);
+
+/** QR label points (roadmap concept, demo): receiving at the truck gate, the crane pre-use checklist, façade crates. */
+export const QR_POINTS = Object.freeze([
+  Object.freeze({ id: 'QR-S1-G2', siteId: 'S1', zoneId: 'S1-Z4', x: 0.68, y: 0.93, kind: 'receiving', label: 'استلام عند بوابة الشاحنات', labelEn: 'Receiving at the truck gate' }),
+  Object.freeze({ id: 'QR-S1-TC2', siteId: 'S1', zoneId: 'S1-Z2', x: 0.86, y: 0.22, kind: 'crane', label: 'فحص ما قبل التشغيل — TC-2', labelEn: 'Pre-use checklist — TC-2' }),
+  Object.freeze({ id: 'QR-S1-CRT', siteId: 'S1', zoneId: 'S1-Z4', x: 0.44, y: 0.86, kind: 'crate', label: 'صناديق الواجهة (PO-S1-2026-0871)', labelEn: 'Façade crates (PO-S1-2026-0871)' }),
+]);
+
+/** Drawing register (illustrative): the base sheet each plan stands for, with its revision. */
+export const DRAWINGS = Object.freeze({
+  S1: Object.freeze({ number: 'S1-A-101', rev: 'C' }),
+  S2: Object.freeze({ number: 'S2-A-101', rev: 'B' }),
+  S3: Object.freeze({ number: 'S3-C-100', rev: 'A' }),
+  S4: Object.freeze({ number: 'S4-A-101', rev: 'D' }),
+  S5: Object.freeze({ number: 'S5-C-110', rev: 'B' }),
+  S6: Object.freeze({ number: 'S6-A-101', rev: 'A' }),
+});
+
+export function capturesFor(siteId) { return CAPTURES_360.filter((c) => c.siteId === siteId); }
+export function captureById(id) { return CAPTURES_360.find((c) => c.id === id) || null; }
+export function qrPointsFor(siteId) { return QR_POINTS.filter((q) => q.siteId === siteId); }
+export function drawingFor(siteId) { return DRAWINGS[siteId] || null; }
+/** Plan layers the view can toggle (all on by default). */
+export const PLAN_LAYERS = Object.freeze(['zones', 'cranes', 'cameras', 'qr', 'p360']);
+
 /* ────────────────────────────── lookups ────────────────────────────── */
 
 export function camerasFor(siteId) { return CAMERAS.filter((c) => c.siteId === siteId); }
@@ -348,6 +402,9 @@ export function planObstacles(siteId, site, { sensors = [], measure = null, isEn
     const p = markerPoint(z, sn.id, i);
     add(X(p.x) - 9, Y(p.y) - 9, X(p.x) + 9, Y(p.y) + 9, 2);
   });
+  // v4: 360° capture points and QR points (markers on the plan) — labels keep clear of them
+  const mk = narrow ? 22 : 11;
+  for (const p of [...capturesFor(siteId), ...qrPointsFor(siteId)]) add(X(p.x) - mk, Y(p.y) - mk, X(p.x) + mk, Y(p.y) + mk, 3, 'marker');
   const body = narrow ? LABEL.cam.bodyNarrow : LABEL.cam.body;
   for (const cam of camerasFor(siteId)) {
     const cx = X(cam.x); const cy = Y(cam.y);
@@ -727,8 +784,11 @@ export function spatialTargetForAiRisk(state, risk) {
 }
 
 /** Deep-link params for the spatial route (empty values dropped by router.buildHash). */
-export function spatialParams({ site, zone, camera, risk } = {}) {
-  return { site: site || null, zone: zone || null, camera: camera || null, risk: risk || null };
+export function spatialParams({ site, zone, camera, risk, pano } = {}) {
+  const out = { site: site || null, zone: zone || null, camera: camera || null, risk: risk || null };
+  if (pano) out.pano = pano;   // v4: a 360° capture point open in the viewer
+  return out;
 }
 
-export default { PLAN, SCENES, SITE_PLANS, CAMERAS, LABEL, camerasFor, cameraById, camerasInZone, planFor, toPlan, inZone, markerPoint, camLabelOffset, planObstacles, layoutZoneLabels, layoutFocusName, hitPolygons, roundedSquare, clipToRect, zoneLinks, zoneTone, ppeEventsFor, ppeItemOf, spatialTargetForAiRisk, spatialParams };
+export default { PLAN, SCENES, SITE_PLANS, CAMERAS, LABEL, camerasFor, cameraById, camerasInZone, planFor, toPlan, inZone, markerPoint, camLabelOffset, planObstacles, layoutZoneLabels, layoutFocusName, hitPolygons, roundedSquare, clipToRect, zoneLinks, zoneTone, ppeEventsFor, ppeItemOf, spatialTargetForAiRisk, spatialParams,
+  CAPTURES_360, QR_POINTS, DRAWINGS, PLAN_LAYERS, capturesFor, captureById, qrPointsFor, drawingFor };
