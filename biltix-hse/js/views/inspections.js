@@ -425,7 +425,7 @@ export const inspectionsView = {
         const n = daysFromToday(ins.date, at);
         const total = Number(ins.checklistTotal) || 0; const done = Number(ins.checklistDone) || 0;
         const titleId = `ins-${ins.id}-title`;
-        upcomingHost.appendChild(h('article', { class: 'card is-plain', role: 'listitem', 'aria-labelledby': titleId },
+        upcomingHost.appendChild(h('div', { class: 'card is-plain', role: 'listitem', 'aria-labelledby': titleId },
           h('div', { class: 'card-body stack gap-3' },
             h('div', { class: 'row between gap-2' }, badge(typeLabel(ins.type), 'neutral', { icon: typeIcon(ins.type) }), h('span', { class: 'code text-xs muted' }, ins.code)),
             h('h3', { class: 't-card', id: titleId }, siteName(ins.siteId)),

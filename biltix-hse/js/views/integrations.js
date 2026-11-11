@@ -373,7 +373,7 @@ export default {
       if (testType) actions.appendChild(button(t('integrations.card.test'), { variant: 'ghost', size: 'sm', icon: svgIcon('plug', 15), onClick: (e) => openConfig(item, e.currentTarget, { autoTest: true }) }));
       else actions.appendChild(h('span', { class: 'intg-backend', id: backendTipId, title: t('integrations.card.needsBackendTip') }, svgIcon('lock', 13), h('span', {}, t('integrations.card.needsBackend')), h('span', { class: 'sr-only' }, ` — ${t('integrations.card.needsBackendTip')}`)));
       const desc = descOf(item);
-      const el = h('article', { class: 'int-card', role: 'listitem', 'data-key': item.key, 'aria-label': nameOf(item) },
+      const el = h('div', { class: 'int-card', role: 'listitem', 'data-key': item.key, 'aria-label': nameOf(item) },
         h('div', { class: 'int-head' },
           h('span', { class: 'int-icon', 'aria-hidden': 'true' }, iconOf(item, 22)),
           h('div', { class: 'int-titles' }, h('span', { class: 'int-name' }, nameOf(item)), h('span', { class: 'int-vendor' }, vendorOf(item))),

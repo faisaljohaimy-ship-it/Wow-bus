@@ -280,7 +280,7 @@ export default {
           unitEl.textContent = unit; unitEl.hidden = !unit;
           ['critical', 'serious', 'warning', 'good', 'accent', 'neutral'].forEach((x) => el.classList.toggle(`tone-${x}`, x === tone));
           footEl.replaceChildren(...(helper ? [h('span', { class: 'metric-helper' }, helper)] : []));
-          el.setAttribute('aria-label', aria || `${title}: ${valueText}`);
+          if (C.setLabelInName) C.setLabelInName(el, aria || `${title}: ${valueText}`); else el.setAttribute('aria-label', aria || `${title}: ${valueText}`);
           if (last !== null && last !== valueText && motion && typeof motion.flash === 'function') motion.flash(el);
           last = valueText;
         },

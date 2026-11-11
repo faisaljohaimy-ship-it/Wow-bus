@@ -19,7 +19,7 @@ import dict from '../i18n/permits.js';
 import * as SEED from '../data/seed.js';
 import {
   h, clear, glyph, svgIcon, card, badge, button, modal, drawer, toast, kanban, countdown,
-  formField, emptyState, kv, motion,
+  formField, emptyState, kv, motion, setLabelInName,
 } from '../ui/components.js';
 
 i18n.register('permits', dict);
@@ -274,7 +274,7 @@ export const permitsView = {
           h('div', { class: 'priority-side' },
             badge(expired ? t('permits.expiring.expired') : t('permits.expiring.soon'), tone),
             h('span', { class: ['priority-due', expired ? 'is-overdue' : null] }, cd.el, ' ', h('span', { class: 'num' }, t('permits.expiring.until', { time: zTime(fmt, p.expiresAt) })))),
-          h('div', { class: 'priority-action' }, button(t('permits.card.view'), { variant: 'ghost', size: 'sm', attrs: { 'aria-label': t('permits.expiring.open', { code: p.code }) }, onClick: (e) => { e.stopPropagation(); open(); } }))));
+          h('div', { class: 'priority-action' }, setLabelInName(button(t('permits.card.view'), { variant: 'ghost', size: 'sm', onClick: (e) => { e.stopPropagation(); open(); } }), t('permits.expiring.open', { code: p.code })))));
       });
       expiringHost.appendChild(card({
         code: 'SEC-05.A', title: t('permits.expiring.title', { minutes: fmt.num(EXPIRING_MINUTES) }), subtitle: t('permits.expiring.sub'),
@@ -372,7 +372,7 @@ export const permitsView = {
       } else {
         foot.appendChild(h('span', { class: 'text-xs muted' }, windowLabel(p)));
       }
-      foot.appendChild(button(t('permits.card.view'), { variant: 'ghost', size: 'sm', attrs: { 'aria-label': t('permits.card.viewAria', { code: p.code }) }, onClick: (e) => { e.stopPropagation(); openDrawer(p.id); } }));
+      foot.appendChild(setLabelInName(button(t('permits.card.view'), { variant: 'ghost', size: 'sm', onClick: (e) => { e.stopPropagation(); openDrawer(p.id); } }), t('permits.card.viewAria', { code: p.code })));
       wrap.appendChild(foot);
       return wrap;
     }

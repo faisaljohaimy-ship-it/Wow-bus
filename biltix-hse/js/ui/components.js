@@ -110,6 +110,97 @@ export function h(tag, attrs = {}, ...children) {
 export function clear(el) { while (el && el.firstChild) el.removeChild(el.firstChild); return el; }
 
 /* ------------------------------------------------------------------ */
+/* Label in name (WCAG 2.5.3)                                          */
+/* ------------------------------------------------------------------ */
+
+/** Words of a string the way a label-in-name check compares them: lower case, letters and digits only. */
+function nameWords(s) {
+  return String(s ?? '').normalize('NFKC').replace(/\([^()]*\)/g, ' ').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+const collapseWs = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
+
+/** True when the words of `visible` appear, in order and next to each other, in `name`. */
+export function nameContains(name, visible) {
+  const hay = nameWords(name);
+  const needle = nameWords(visible);
+  if (!needle.length) return true;
+  for (let i = 0; i + needle.length <= hay.length; i += 1) {
+    if (needle.every((w, j) => hay[i + j] === w)) return true;
+  }
+  return false;
+}
+
+/**
+ * Accessible name that contains the visible label (WCAG 2.5.3 Label in Name): `label` as is when it already
+ * contains `visible`; otherwise the visible text first, then what the label adds. Leading sentences of the
+ * label that only repeat visible words ("Open incidents: 9.") are dropped so the name does not say them twice.
+ */
+export function labelInName(visible, label) {
+  const v = collapseWs(visible);
+  const l = collapseWs(label);
+  if (!v) return l;
+  if (!l || nameContains(l, v)) return l || v;
+  const rest = nameExtra(v, l);
+  return rest ? `${v} — ${rest}` : v;
+}
+
+/** What `label` says beyond the visible text: its leading sentences that only repeat visible words dropped. */
+export function nameExtra(visible, label) {
+  const l = collapseWs(label);
+  const seen = new Set(nameWords(visible));
+  const parts = l.split(/(?<=[.:؛،—–])\s+/);
+  while (parts.length > 1 && nameWords(parts[0]).every((w) => seen.has(w))) parts.shift();
+  const rest = parts.join(' ').trim();
+  return rest && !nameWords(rest).every((w) => seen.has(w)) ? rest : '';
+}
+
+/**
+ * Text a sighted reader sees inside `el`: every text node outside [hidden] and .sr-only subtrees (aria-hidden
+ * text still counts: it is on screen). Whitespace collapsed.
+ */
+export function visibleText(el) {
+  let out = '';
+  const walk = (node) => {
+    for (let c = node.firstChild; c; c = c.nextSibling) {
+      if (c.nodeType === 3) out += c.nodeValue;
+      else if (c.nodeType === 1) {
+        if (c.hidden || (c.classList && c.classList.contains('sr-only'))) continue;
+        out += ' ';
+        walk(c);
+        out += ' ';
+      }
+    }
+  };
+  if (el) walk(el);
+  return collapseWs(out);
+}
+
+/**
+ * Name a control so its accessible name contains its visible text (WCAG 2.5.3) whatever the responsive CSS
+ * hides: with visible text the name comes from the content and what `label` adds is appended as visually
+ * hidden text; an icon-only control (no visible text) gets `label` as aria-label. Safe to call again on
+ * every update. Returns el.
+ */
+export function setLabelInName(el, label) {
+  if (!el || typeof el.setAttribute !== 'function') return el;
+  let extraEl = null;
+  for (let c = el.firstChild; c; c = c.nextSibling) if (c.nodeType === 1 && c.hasAttribute('data-name-extra')) extraEl = c;
+  const visible = visibleText(el);
+  if (!visible) {
+    if (extraEl) extraEl.remove();
+    if (collapseWs(label)) el.setAttribute('aria-label', collapseWs(label)); else el.removeAttribute('aria-label');
+    return el;
+  }
+  el.removeAttribute('aria-label');
+  const rest = nameExtra(visible, label);
+  if (!rest) { if (extraEl) extraEl.remove(); return el; }
+  if (!extraEl) { extraEl = h('span', { class: 'sr-only', 'data-name-extra': '' }); el.appendChild(extraEl); }
+  if (extraEl !== el.lastChild) el.appendChild(extraEl);
+  if (extraEl.textContent !== ` ${rest}`) extraEl.textContent = ` ${rest}`;
+  return el;
+}
+
+/* ------------------------------------------------------------------ */
 /* Icons & glyphs                                                      */
 /* ------------------------------------------------------------------ */
 
@@ -672,7 +763,9 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
   const emptyEl = emptyState({ icon: glyph('empty', 28), title: emptyText || t('ui.table.empty') });
   emptyEl.hidden = true;
   wrap.appendChild(emptyEl);
-  const pager = h('nav', { class: 'pager', 'aria-label': t('ui.table.pagination'), hidden: true });
+  // Each pager is its own landmark: name it after the table so two paged tables on one page stay distinguishable.
+  const pagerName = caption ? `${t('ui.table.pagination')} — ${String(caption).replace(/\s+/g, ' ').trim()}` : t('ui.table.pagination');
+  const pager = h('nav', { class: 'pager', 'aria-label': pagerName, hidden: true });
   wrap.appendChild(pager);
   const collator = collatorFor(locale());
 
@@ -744,8 +837,12 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     const label = t('ui.table.open', { name: text });
     const open = (e) => { e.stopPropagation(); onRowClick(row, e); };
     if (!td.querySelector(INTERACTIVE)) {
-      const btn = h('button', { type: 'button', class: 'row-open', 'aria-label': label, onClick: open });
+      // Name from content (label in name, whatever the responsive CSS hides), led by the verb: "Open: …".
+      const btn = h('button', { type: 'button', class: 'row-open', onClick: open });
       while (td.firstChild) btn.appendChild(td.firstChild);
+      const verb = t('ui.table.open', { name: '' }).replace(/[\s:：]+$/u, '');
+      if (verb && visibleText(btn)) btn.insertBefore(h('span', { class: 'sr-only' }, `${verb}: `), btn.firstChild);
+      else btn.setAttribute('aria-label', label);
       td.appendChild(btn);
     } else {
       // The cell already holds interactive content: add a dedicated opener beside it instead of nesting.
@@ -2229,5 +2326,6 @@ export const components = {
   h, clear, glyph, svgIcon, card, statTile, badge, tierBadge, button, segmented, tabs, dataTable,
   modal, drawer, menu, toast, kanban, formField, readForm, emptyState, progress, countdown, liveDot, kv, reducedMotion,
   parseDelta, statusBadge, filterBar, loadingState, errorState, offlineState, skeleton, motion,
+  labelInName, nameExtra, setLabelInName, visibleText,
 };
 export default components;

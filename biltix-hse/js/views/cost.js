@@ -373,7 +373,7 @@ export default {
           ),
         ),
         h('div', { class: 'view-actions' },
-          data.plat && sources && typeof sources.exportCSV === 'function' ? button(t('export'), { variant: 'outline', size: 'sm', icon: 'download', attrs: { 'aria-label': t('exportAria') }, onClick: () => exportLines(data) }) : null,
+          data.plat && sources && typeof sources.exportCSV === 'function' ? components.setLabelInName(button(t('export'), { variant: 'outline', size: 'sm', icon: 'download', onClick: () => exportLines(data) }), t('exportAria')) : null,
           button(t('dom.register'), { variant: 'ghost', size: 'sm', icon: 'shield-alert', attrs: { 'aria-label': t('dom.registerAria') }, onClick: () => router.navigate('airisks', { domain: CATEGORY }) }),
         ),
       );

@@ -682,7 +682,9 @@ function localizeStaticChrome() {
   setAttr($('rail'), 'aria-label', t('core.nav.aria'));
   setAttr($('tabbar'), 'aria-label', t('core.nav.tabsAria'));
   setAttr($('alertBanner'), 'aria-label', t('core.alerts.bannerAria'));
-  setAttr($('cmdkBtn'), 'aria-label', t('core.shell.searchAria'));
+  const cmdkBtn = $('cmdkBtn');
+  if (cmdkBtn && typeof components.setLabelInName === 'function') components.setLabelInName(cmdkBtn, t('core.shell.searchAria'));
+  else setAttr(cmdkBtn, 'aria-label', t('core.shell.searchAria'));
   setAttr($('cmdkPanel'), 'aria-label', t('core.cmdk.dialogAria'));
   setText($('cmdkInputLabel'), t('core.cmdk.inputLabel'));
   setAttr($('cmdkInput'), 'placeholder', t('core.cmdk.placeholder'));
@@ -695,8 +697,9 @@ function localizeStaticChrome() {
   const name = t('core.user.name');
   setText($('userName'), name);
   setText($('userRole'), t('core.user.role'));
-  setText($('userAvatar'), t('core.user.initial'));
-  setAttr(user, 'aria-label', t('core.user.aria', { name }));
+  // The initial is drawn by CSS (attr(data-initial)) so it is not part of the chip's visible text.
+  setAttr($('userAvatar'), 'data-initial', t('core.user.initial'));
+  setAttr(user, 'aria-label', labelInName(`${name} ${t('core.user.role')}`, t('core.user.aria', { name })));
   setAttr(user, 'title', t('core.user.roleTitle'));
   syncThemeButton();
   syncRailToggle();
@@ -1250,7 +1253,7 @@ function syncActivityToggle() {
   if (count) { count.hidden = n === 0; setText(count, n > 99 ? `${fmt.num(99)}+` : fmt.num(n)); }
   if (btn) {
     setAttr(btn, 'aria-expanded', panel.open ? 'true' : 'false');
-    setAttr(btn, 'aria-label', t('core.activity.toggleAria', { unread: tn('core.activity.unread', n) }));
+    setAttr(btn, 'aria-label', labelInName(count && !count.hidden ? count.textContent : '', t('core.activity.toggleAria', { unread: tn('core.activity.unread', n) })));
     setAttr(btn, 'title', panel.open ? t('core.activity.close') : t('core.activity.open'));
     btn.classList.toggle('has-unread', n > 0);
   }
@@ -1722,7 +1725,10 @@ function refreshScorePill() {
     deltaEl.classList.toggle('is-down', delta < 0);
   }
   const deltaText = delta !== 0 ? t('core.score.delta', { delta: fmt.signed(delta) }) : '';
-  setAttr(pill, 'aria-label', t('core.score.aria', { score: fmt.num(score), rating: label, delta: deltaText }));
+  // Label in name (WCAG 2.5.3): the spoken name starts with what the pill shows (score, change, rating label),
+  // built from the final values so a running count-up never leaks into it.
+  const shown = [fmt.num(score), delta !== 0 ? fmt.signed(delta) : '', t('core.score.labelRated', { rating: label })].join(' ');
+  setAttr(pill, 'aria-label', labelInName(shown, t('core.score.aria', { score: fmt.num(score), rating: label, delta: deltaText })));
   setAttr(pill, 'title', t('core.score.title', { score: fmt.num(score), rating: label, delta: deltaText }));
 }
 
@@ -1940,12 +1946,19 @@ async function switchLang(lang) {
   }
 }
 
+/** Accessible names of the "ع | EN" options: the visible mark first (label in name), then the language's own name. */
+const LANG_NAMES = Object.freeze({ ar: 'ع — العربية', en: 'EN — English' });
+/** components.labelInName (WCAG 2.5.3), or the plain label when the helper is missing. */
+function labelInName(visible, label) {
+  return typeof components.labelInName === 'function' ? components.labelInName(visible, label) : label;
+}
+
 /** One "ع | EN" segmented control (app bar instance is static markup; the sheet builds its own). */
 function langSwitchControl({ onSwitch = null } = {}) {
   const wrap = h('div', { class: 'lang-switch', role: 'group', 'aria-label': t('core.lang.groupAria') });
   ['ar', 'en'].forEach((code) => {
     const b = h('button', {
-      type: 'button', class: 'lang-opt', 'data-lang': code, lang: code, 'aria-label': code === 'ar' ? 'العربية' : 'English',
+      type: 'button', class: 'lang-opt', 'data-lang': code, lang: code, 'aria-label': LANG_NAMES[code],
       'aria-pressed': i18n.lang() === code ? 'true' : 'false',
       onClick: () => { if (typeof onSwitch === 'function') onSwitch(); switchLang(code); },
       onPointerenter: () => { if (code === 'en') i18n.loadData().catch(() => {}); },

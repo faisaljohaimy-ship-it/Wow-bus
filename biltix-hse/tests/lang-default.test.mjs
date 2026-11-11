@@ -83,7 +83,10 @@ export const tests = [
       for (const [, text, key] of html.matchAll(/aria-label="([^"]*)" data-i18n-aria="([\w.]+)"/g)) assert.equal(text, pick(core.en, key), `static aria ${key}`);
       const byId = { brandName: 'app.name', brandTag: 'app.tagline', dataChipLabel: 'data.chipDemo', userAvatar: 'user.initial', userName: 'user.name', userRole: 'user.role', siteLabel: 'filters.project', rangeLabel: 'filters.period', searchLabel: 'filters.searchLabel' };
       for (const [id, key] of Object.entries(byId)) {
-        const m = html.match(new RegExp(`id="${id}"[^>]*>([^<]*)<`));
+        // The avatar initial is drawn by CSS from data-initial (label in name: the chip's text is name + role).
+        const m = id === 'userAvatar'
+          ? html.match(/id="userAvatar"[^>]*\bdata-initial="([^"]*)"[^>]*><\/span>/)
+          : html.match(new RegExp(`id="${id}"[^>]*>([^<]*)<`));
         assert.ok(m, `#${id} in index.html`);
         assert.equal(m[1], pick(core.en, key), `#${id} static text is core.en.${key}`);
         const ar = html.match(new RegExp(`\\b${id}: '([^']*)'`));
@@ -95,6 +98,7 @@ export const tests = [
       assert.ok(html.includes(`>${core.en.filters.allProjects}</option>`));
       assert.ok(html.includes(`'${core.ar.filters.allProjects}'`));
       assert.ok(html.includes(`'${core.ar.shell.skip}'`) && html.includes(`'${core.ar.shell.search}'`), 'Arabic skip link and search button labels');
+      assert.ok(html.includes("if (id === 'userAvatar') el.setAttribute('data-initial', text[id])"), 'the Arabic pre-paint sets the avatar initial as data-initial');
       assert.ok(/<html lang="en" dir="ltr"/.test(html), 'the static document is English / LTR');
     },
   },

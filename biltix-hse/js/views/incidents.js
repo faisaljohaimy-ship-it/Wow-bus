@@ -259,7 +259,7 @@ export const incidentsView = {
           }
           if (helper) foot.push(h('span', { class: 'metric-helper' }, helper));
           footEl.replaceChildren(...foot);
-          el.setAttribute('aria-label', aria || `${title}: ${text}`);
+          if (C.setLabelInName) C.setLabelInName(el, aria || `${title}: ${text}`); else el.setAttribute('aria-label', aria || `${title}: ${text}`);
           if (last !== null && last !== text && motion && typeof motion.flash === 'function') motion.flash(el);
           last = text;
         },
@@ -486,7 +486,7 @@ export const incidentsView = {
       const done = actions.filter((a) => a && a.done).length;
       const titleId = `inc-${inc.id}-title`;
       const open = () => openDrawer(inc.id);
-      const el = h('article', { class: 'card', role: 'listitem', 'aria-labelledby': titleId, 'data-id': inc.id });
+      const el = h('div', { class: 'card', role: 'listitem', 'aria-labelledby': titleId, 'data-id': inc.id });
       const body = h('div', { class: 'card-body stack gap-3' });
       body.appendChild(h('div', { class: 'row between gap-2' },
         h('span', { class: 'code mono nowrap t-helper', dir: 'ltr', translate: 'no' }, inc.code),

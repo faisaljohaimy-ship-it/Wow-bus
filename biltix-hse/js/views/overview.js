@@ -235,7 +235,8 @@ export default {
           }
           if (helper) foot.push(h('span', { class: 'metric-helper' }, helper));
           footEl.replaceChildren(...foot);
-          el.setAttribute('aria-label', aria || `${title}: ${text}${unit ? ` ${unit}` : ''}`);
+          const name = aria || `${title}: ${text}${unit ? ` ${unit}` : ''}`;
+          if (C.setLabelInName) C.setLabelInName(el, name); else el.setAttribute('aria-label', name);
           if (onClick) el.setAttribute('title', aria || title);
           if (last !== null && last !== text && motion && typeof motion.flash === 'function') motion.flash(el);
           last = text;
@@ -292,7 +293,7 @@ export default {
     root.appendChild(row1);
 
     /* ═════════════ D. leading indicators ═════════════ */
-    const leadingRow = h('div', { class: 'kpi-row', role: 'list', 'aria-labelledby': 'ov-leading-title' });
+    const leadingRow = h('div', { class: 'kpi-row', role: 'group', 'aria-labelledby': 'ov-leading-title' });
     root.appendChild(h('section', { class: 'view-section', 'aria-labelledby': 'ov-leading-title' },
       h('div', { class: 'view-section-head' },
         h('div', { class: 'stack gap-1' },
@@ -541,7 +542,6 @@ export default {
           spark: sparkOf(hist, x.key), icon: ico(x.icon, 18), tone: x.tone ? x.tone(raw) : null, hint: x.hint(),
           onClick: () => router.navigate(x.route[0], x.route[1]),
         });
-        tile.setAttribute('role', 'listitem');
         return tile;
       }));
     }

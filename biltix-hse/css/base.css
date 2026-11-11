@@ -822,6 +822,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd, kbd.kbd {
   background: linear-gradient(145deg, var(--brand), color-mix(in srgb, var(--brand) 55%, var(--accent)));
   box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 0 0 2px color-mix(in srgb, var(--brand) 20%, transparent);
 }
+.user-avatar::before { content: attr(data-initial); } /* drawn, not DOM text: the chip's name is name + role */
 .user-text { display: flex; flex-direction: column; line-height: var(--lh-tight); text-align: start; min-inline-size: 0; gap: 1px; }
 .user-name { font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; }
 .user-role { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-inline-size: 180px; }

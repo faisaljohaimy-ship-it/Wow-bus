@@ -369,7 +369,7 @@ export default {
         const name = courseName(c);
         const titleId = `trn-course-${c.id}`;
         const provider = providerName(c);
-        return h('article', { class: 'card is-compact is-flat is-plain', role: 'listitem', 'aria-labelledby': titleId },
+        return h('div', { class: 'card is-compact is-flat is-plain', role: 'listitem', 'aria-labelledby': titleId },
           h('div', { class: 'card-body stack gap-3' },
             h('div', { class: 'row between gap-2' },
               h('div', { class: 'row gap-2 grow' },

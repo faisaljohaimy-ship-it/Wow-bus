@@ -225,7 +225,7 @@ export default {
         ),
         h('div', { class: 'view-actions' },
           data.roadmap ? totalBadge(data.total, data.anyPct) : null,
-          button(t('export'), { variant: 'primary', size: 'sm', icon: 'print', attrs: { 'aria-label': t('exportAria') }, onClick: () => { try { window.print(); } catch { toast(t('printFailed'), { tone: 'warning' }); } } }),
+          components.setLabelInName(button(t('export'), { variant: 'primary', size: 'sm', icon: 'print', onClick: () => { try { window.print(); } catch { toast(t('printFailed'), { tone: 'warning' }); } } }), t('exportAria')),
         ),
       );
     }
@@ -307,9 +307,11 @@ export default {
       const [from, to] = data.span;
       const cols = Math.max(1, to - from + 1);
       const gantt = h('div', { class: 'roadmap-gantt', role: 'table', 'aria-label': t('timeline.aria'), style: { '--months': String(cols) } });
-      const monthsRow = h('div', { class: 'roadmap-months', role: 'row', dir: 'ltr' });
-      for (let m = from; m <= to; m += 1) monthsRow.appendChild(h('span', { class: 'roadmap-month', role: 'columnheader' }, t('timeline.month', { n: fmt.num(m) })));
-      gantt.appendChild(h('div', { class: 'roadmap-gantt-head' }, h('span', { role: 'columnheader' }, t('timeline.head')), monthsRow));
+      // Two columns, as in the body rows (row header + one track cell): the head row holds the milestone column
+      // header and the month scale as the track column's header (the month labels are its text, not columns).
+      const monthsRow = h('div', { class: 'roadmap-months', role: 'columnheader', dir: 'ltr' });
+      for (let m = from; m <= to; m += 1) monthsRow.appendChild(h('span', { class: 'roadmap-month' }, t('timeline.month', { n: fmt.num(m) })));
+      gantt.appendChild(h('div', { class: 'roadmap-gantt-head', role: 'row' }, h('span', { role: 'columnheader' }, t('timeline.head')), monthsRow));
       data.milestones.forEach((m) => {
         const start = Math.min(cols - 1, Math.max(0, Math.floor(m.month) - from));
         const dur = m.duration === null ? toBeAgreed() : durationText(m);
