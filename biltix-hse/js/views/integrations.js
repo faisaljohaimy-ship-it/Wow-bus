@@ -385,7 +385,7 @@ export default {
       if (testType) actions.appendChild(button(t('integrations.card.test'), { variant: 'ghost', size: 'sm', icon: svgIcon('plug', 15), onClick: (e) => openConfig(item, e.currentTarget, { autoTest: true }) }));
       else if (plan) actions.appendChild(button(t('integrations.card.test'), { variant: 'ghost', size: 'sm', icon: svgIcon('lock', 15), onClick: (e) => openDetails(item, e.currentTarget, { autoTest: true }), attrs: { title: t('integrations.card.needsBackendTip'), 'aria-describedby': backendTipId } }));
       if (!testType) actions.appendChild(h('span', { class: ['intg-backend', plan ? 'sr-only' : null], id: backendTipId, title: t('integrations.card.needsBackendTip') }, svgIcon('lock', 13), h('span', {}, t('integrations.card.needsBackend')), h('span', { class: 'sr-only' }, ` — ${t('integrations.card.needsBackendTip')}`)));
-      if (plan) actions.appendChild(button(t('integrations.card.details'), { variant: 'ghost', size: 'sm', icon: svgIcon('info', 15), onClick: (e) => openDetails(item, e.currentTarget), attrs: { 'aria-label': i18n.t('golive.map.detailsAria', { name: nameOf(item) }) } }));
+      if (plan) actions.appendChild(components.setLabelInName(button(t('integrations.card.details'), { variant: 'ghost', size: 'sm', icon: svgIcon('info', 15), onClick: (e) => openDetails(item, e.currentTarget) }), i18n.t('golive.map.detailsAria', { name: nameOf(item) })));
       const desc = descOf(item);
       const el = h('div', { class: 'int-card', role: 'listitem', 'data-key': item.key, 'aria-label': nameOf(item) },
         h('div', { class: 'int-head' },

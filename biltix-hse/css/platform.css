@@ -1453,6 +1453,8 @@ dialog.modal.sp-viewer-dialog { inline-size: min(1080px, 100%); }
 .view-golive .gl-prio-name { margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--ink-1); }
 .view-golive .gl-prio-weeks { font-size: var(--fs-xs); color: var(--ink-3); }
 .gl-concept { display: inline-flex; align-items: center; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-pill); color: var(--ink-2); border: 1px dashed var(--line-strong); background: var(--bg-1); white-space: nowrap; }
+/* A browser-only demo of the priority exists (field kit, 360° viewer): solid edge in the "built as demo" tone; the longer text may wrap. */
+.gl-concept.is-demo { white-space: normal; text-align: start; border-style: solid; border-color: color-mix(in srgb, var(--gl-built_demo) 50%, var(--line)); background: color-mix(in srgb, var(--gl-built_demo) 10%, var(--bg-1)); color: var(--ink-1); }
 .view-golive .gl-prio-track { position: relative; block-size: 10px; border-radius: 5px; background: var(--bg-1); border: 1px solid var(--line); }
 .view-golive .gl-prio-track .gl-gantt-bar { inset-block: 1px; opacity: 0.85; }
 .view-golive .gl-prio-facts { margin: 0; display: grid; gap: 8px; }

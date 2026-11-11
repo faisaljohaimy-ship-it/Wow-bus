@@ -269,7 +269,11 @@ export const CAPTURES_360 = Object.freeze([
   }),
 ]);
 
-/** QR label points (roadmap concept, demo): receiving at the truck gate, the crane pre-use checklist, façade crates. */
+/**
+ * QR label points (demo, decorative markers): receiving at the truck gate, the crane pre-use checklist, façade crates.
+ * They stand where the field kit's demo labels would hang (#/fieldkit: zone BX1:Z:S1-Z4, crane BX1:E:S1-TC-2, crates
+ * BX1:M:CR-0871-0n of PO-S1-2026-0871); tests/integration.test.mjs keeps the two in step. No label exists on a site.
+ */
 export const QR_POINTS = Object.freeze([
   Object.freeze({ id: 'QR-S1-G2', siteId: 'S1', zoneId: 'S1-Z4', x: 0.68, y: 0.93, kind: 'receiving', label: 'استلام عند بوابة الشاحنات', labelEn: 'Receiving at the truck gate' }),
   Object.freeze({ id: 'QR-S1-TC2', siteId: 'S1', zoneId: 'S1-Z2', x: 0.86, y: 0.22, kind: 'crane', label: 'فحص ما قبل التشغيل — TC-2', labelEn: 'Pre-use checklist — TC-2' }),

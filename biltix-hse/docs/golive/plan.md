@@ -5,6 +5,22 @@ Scope: what it takes to move BILTIX Risk AI from today's demo to a live pilot on
 project, starting with one end-to-end use case — **a delayed material approval and its effect on supply and the
 schedule** — and then the four field priorities requested by BILTIX: **Offline, QR, site plans/drawings and 360°**.
 
+> **Status note — app v3.8 (added when the plan became a page of the app).** This plan describes the app as it
+> was at v3.7.0, and its content is unchanged below. Since then the demo changed in ways that touch the "Today"
+> column of the capability table and the "Today" paragraphs of section 3:
+> - the interface opens in **English** by default (Arabic by choice), and the app has **25 routes**, including this
+>   plan as a page (`#/golive`) and a field kit (`#/fieldkit`);
+> - **row 2** — the submittal MAR-S1-CW-014 and its chain to the PO, activity A1100 and risk AIR-1069 are now seeded
+>   as demo records (with a guided walkthrough); there is still no submittal register screen and no source system;
+> - **rows 11 and 12** — an offline copy (service worker) with an outbox, and QR labels with scanning, now exist
+>   **as browser-only demos** in the field kit: no server to sync with, no photo queue, no labels on a site, no
+>   managed devices. The `Permissions-Policy` header now allows `camera=(self)` for scanning;
+> - **row 14** — a 360° viewer with one simulated capture point exists as a demo; its picture is AI-generated and
+>   labelled so. There is no capture kit, no processing and no real walk.
+>
+> None of these is in the approved scope (open question Q1). The "Needed to go live" column, the phases, the
+> on-the-ground needs and every estimate are unchanged. The `#/golive` page shows the current state.
+
 ## How to read this document
 
 | Mark | Meaning |

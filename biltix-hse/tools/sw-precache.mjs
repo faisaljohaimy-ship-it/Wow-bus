@@ -1,7 +1,14 @@
 // Rewrites the PRECACHE list in sw.js from the files on disk (no build step: run it after adding or removing a
 // module, stylesheet, font or poster). `node tools/sw-precache.mjs --check` exits 1 when sw.js is out of date.
 // Included: ./ (index.html), js/**/*.js, css/*.css, assets/fonts/*.woff2, assets/video/*.webp + *.vtt,
-// assets/favicon.svg, assets/manifest.webmanifest. Never the MP4s (large; streamed with Range requests).
+// assets/360/*-preview.jpg (the small previews of the simulated 360° captures), assets/favicon.svg,
+// assets/manifest.webmanifest. Never the MP4s (large; streamed with Range requests) and never the full panoramas
+// (about 1 MB each: cached at runtime the first time one is opened).
+//
+// The list holds file names only, so it does not depend on the build stamp. The worker's caches do: they are named
+// after <meta name="biltix-build"> (sw.js?v=<stamp>), so every publish needs a new stamp or installed copies keep
+// the old files. Publish order: node tools/stamp-shell.mjs → node tools/stamp-build.mjs → node tools/sw-precache.mjs
+// → node tests/run.mjs → commit (AGENTS.md "Publishing").
 import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +29,7 @@ export function precacheList() {
     ...walk(join(root, 'css')).filter((f) => f.endsWith('.css')),
     ...walk(join(root, 'assets/fonts')).filter((f) => f.endsWith('.woff2')),
     ...walk(join(root, 'assets/video')).filter((f) => /\.(webp|vtt)$/.test(f)),
+    ...walk(join(root, 'assets/360')).filter((f) => /-preview\.(jpg|webp)$/.test(f)),
     'assets/favicon.svg',
     'assets/manifest.webmanifest',
   ].sort();

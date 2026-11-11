@@ -23,9 +23,16 @@ Status: **demo**. Offline work and QR workflows are not in the approved scope ye
   `sw.js?v=<stamp>`. Caches: `biltix-shell-<stamp>` (precache) and `biltix-rt-<stamp>` (runtime). A new stamp is a
   new worker: it precaches, calls `skipWaiting()`, deletes older `biltix-*` caches and claims the pages.
   **Run `node tools/stamp-build.mjs` before every publish** — without a new stamp, installed copies keep the old shell.
-- **Precache:** `./`, every `js/**/*.js`, `css/*.css`, fonts, explainer posters and captions, favicon, manifest
-  (126 files, ≈ 7 MB uncompressed). Never the MP4s: media and Range requests bypass the worker.
+- **Precache:** `./`, every `js/**/*.js`, `css/*.css`, fonts, explainer posters and captions, the previews of the
+  simulated 360° captures, favicon, manifest (135 files, ≈ 6.1 MB uncompressed at v3.8). Never the MP4s: media and
+  Range requests bypass the worker. Never the full panoramas (≈ 1 MB each): one is cached at runtime the first
+  time it is opened, so the 360° viewer shows its "no picture" state offline until then.
   After adding or removing a file run `node tools/sw-precache.mjs`; the test suite fails when the list drifts.
+  The list holds file names only (it does not depend on the build stamp); the caches are named after the stamp.
+  Publish order: `stamp-shell` → `stamp-build` → `sw-precache` → tests → commit (`AGENTS.md` "Publishing").
+- **`index.html` starts the app itself:** there is no static `<script type="module">`; the inline loader adds the
+  module preloads and `js/app.js` after the first paint. Those requests are same-origin GETs for precached files,
+  so they are answered from the shell cache like any other; the cached `./` carries the stamped page headers.
 - **Strategies:** navigations network-first (5 s timeout when a copy exists, cached shell offline, a bilingual
   offline page when nothing is cached); precached files cache-first (never revalidated one by one, so builds never
   mix); any other same-origin GET stale-while-revalidate. `?build-check=` (app.js `watchForNewBuild`) is never

@@ -40,7 +40,10 @@ export const tests = [
       assert.ok(!/<script[^>]+type="module"/.test(html), 'app.js is injected by the loader, not a static <script type=module>');
       assert.ok(!/<link rel="modulepreload"/.test(html), 'module preloads are injected after the first paint');
       for (const f of ['js/app.js', 'js/core/router.js', 'js/ui/components.js', 'js/ui/charts.js', 'js/views/index.js']) assert.ok(html.includes(`'${f}'`), f);
-      assert.ok(html.includes("cockpit: ['js/views/cockpit.js', 'js/ui/explainer-hero.js', 'js/data/explainer-media.js']"));
+      // The cockpit's own modules are preloaded with the boot graph (the exact list is checked against the real
+      // import graph in tests/integration.test.mjs).
+      const cockpit = (html.match(/VIEW_MODS = \{ cockpit: \[([^\]]*)\]/) || [])[1] || '';
+      for (const f of ['js/views/cockpit.js', 'js/ui/explainer-hero.js', 'js/data/explainer-media.js']) assert.ok(cockpit.includes(`'${f}'`), `cockpit preloads ${f}`);
     },
   },
 ];

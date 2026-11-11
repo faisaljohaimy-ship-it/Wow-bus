@@ -51,7 +51,7 @@ repository.
 | Radar trend charts (cockpit, incidents, overview, reports; v3.3) | Partial | Replace the trend line charts. Values, rim labels, legend, empty and one-point states, keyboard, accessible names and print checked on 120 loads; accessible text and table views identical to the line charts. **Known defects:** in Arabic the grid layer drifts 40–120 px from the series while a resize redraw is pending (`js/ui/charts.js:3051`); a chart whose entrance is pending off screen shows its final state, then regrows. Already the case with the line charts: the svg root is an extra tab stop, and chart labels shrink to about 3–4 px in narrow print columns | U Q V |
 | Filters (domain, rating, status, owner, search) update every section | Complete | URL state via `replaceState`; bilingual search | P U |
 | L × I matrix: cell opens matching records; inherent / residual toggle; keyboard | Complete | Roving tabindex; table view | P U |
-| Register rows: open the drawer by clicking a row | **Broken** | Clicking any cell other than the first-cell opener does nothing: `<main tabindex="-1">` matches `[tabindex]` in `INTERACTIVE` (`js/ui/components.js:626`), so the row listener (`:762`) always returns early. The `.row-open` button and the keyboard work. Affects every clickable table (AI register, cockpit register, HSE register and others) | V |
+| Register rows: open the drawer by clicking a row | **Broken** in v3.5.1–v3.7.2; fixed in the v3.8 code (see "v3.8 additions") | In those versions clicking any cell other than the first-cell opener does nothing: `<main tabindex="-1">` matches `[tabindex]` in `INTERACTIVE` (`js/ui/components.js:626`), so the row listener (`:762`) always returns early. The `.row-open` button and the keyboard work. Affects every clickable table (AI register, cockpit register, HSE register and others) | V |
 | Risk drawer: Overview / Evidence / Treatment / History | Complete | Severity, model confidence and input-data quality shown separately | P U |
 | Lifecycle actions (accept, override, dismiss, assign, residual, close, reopen) | Complete | Guards from `store.aiRiskTransitions` | P U |
 | Escalation | Not connected | "Simulated — not sent" | P |
@@ -102,10 +102,33 @@ repository.
 | Engine (pipelines, stages, audit) | Demo | Precision, recall, calibration and drift show "Not measured" | Q P R |
 | Retrain / pause model | Not connected | Disabled: "requires a connected model service" | P |
 
+## v3.8 additions (integrated 2026-11-11 — unit-tested, not yet re-verified in a browser after integration)
+
+Four pieces built in parallel on v3.7.0 and integrated on v3.7.2. Evidence so far: **U** (the node suite) and
+each builder's own development probes on its own tree. The combined tree has **not** been through
+`tools/qa.mjs`, axe or Lighthouse yet; treat every row as unverified in the browser until that run is recorded.
+
+| Function | Status | Notes | Evidence |
+|---|---|---|---|
+| Go-live readiness `#/golive` (PLT-04) | Demo | A plan, not an operating status: 18 capabilities classed built as demo / ready to connect / needs client input / planned (6 / 4 / 5 / 3), target architecture, connector map, phases P0–P6 (estimates), the four field priorities, on-the-ground needs, a client checklist ticked in this browser only. Source: `docs/golive/plan.md`. The "today" texts follow the demo, not the plan's v4 table (offline, QR and the 360° viewer now exist as demos) | U |
+| Cockpit go-live strip | Demo | One link to `#/golive`: "10 of 18 capabilities built as a demo or ready to connect" (one definition: `readiness()` in `js/data/golive.js`). Registers its own small dictionary so the home route does not load the page's | U |
+| Integrations: connector details drawer, "Test connection" on every card | Not connected | Protocol, direction, frequency, entities, prerequisites, effort (est.), risks. Where the browser cannot test, the result says nothing was sent; never a fake success. The material-approval chain (DMS → ERP → P6 → BIM → BILTIX PM) is listed first | U |
+| Field kit `#/fieldkit` (FLD-01): offline copy | Demo | Service worker `sw.js` (versioned by the build stamp; shell network-first, precached files cache-first, 135 files). Registered on HTTPS only; not on `localhost` or under automation without `?sw=1`. Settings → SET-08 shows state, storage and "clear the offline copy". **There is no server**: nothing syncs anywhere | U |
+| Field kit: outbox | Demo | Four field actions (observation, acknowledge alert, start task, checklist tick) with idempotency keys, FIFO replay into this browser's store, conflicts kept as "needs attention". "Simulate an outage" switch. App-bar indicator while offline or waiting | U |
+| Field kit: QR labels and scanning | Demo | Labels generated in the browser (zones, cranes, cameras, façade crates, open permits; opaque ids, no personal data), A4 print sheet, `BarcodeDetector` scan where the browser has it, manual entry otherwise; foreign-host URLs refused. A crate scan answers from the seeded submittal ("approval pending — do not install"). No label exists on a site | U |
+| Worked example: submittal MAR-S1-CW-014 → AIR-1069 (seed) | Demo | Root risk AIR-1069 (80, red) with drivers, 15 evidence items from seven source systems, options R1–R3, task templates MT-0229…MT-0234 (not seeded as tasks: they follow the demo clock), monitors and closure criteria marked Projected; chain A1090 → A1095 → A1100 → M1150; PO blocked by the submittal. No submittal register screen | U |
+| Guided walkthrough of the worked example | Demo | Eight steps over the real screens, from the AIR-1069 drawer or `#/airisks?risk=AIR-1069&tour=1`; non-modal, Esc closes; steps after the demo clock are tagged Projected | U |
+| Spatial: plan layers, drawing chip, 360° viewer | Demo | Layer toggles (zones, cranes, cameras, QR points, 360° points); an illustrative drawing number per site; one simulated 360° capture point on S1 whose picture is **AI-generated and labelled so** (WebGL sphere → Canvas 2D → static picture under reduced motion), with hotspots to AIR-1069, the submittal samples and zones. QR points on the plan are decorative markers for the field kit's demo labels | U |
+| First paint: static page header before any script (pre-view), app starts after it has painted | Complete | `index.html` draws the route's header (or the cockpit poster) in the active language from strings stamped by `tools/stamp-shell.mjs`; module preloads and `js/app.js` are injected after the first paint; live engines load after the first view. Builder probes on v3.7.0 measured one LCP entry (the pre-view); **not re-measured** on the integrated tree, and not with the English default | U |
+| Label in name on shell and view controls; roadmap grid roles; unique pagers | Complete | `components.labelInName` / `setLabelInName`; applied to the new v3.8 controls too (go-live strip, plan link, connector details, tour button). Builder's axe run on v3.7.0: 0 violations on the 13 affected routes; **not re-run** on the integrated tree | U |
+| Register rows: open the drawer by clicking a row | Complete (was Broken) | `interactiveWithin` stops at the row, so `<main tabindex="-1">` no longer swallows the click. To confirm in a browser | U |
+
 ## Not built (out of scope or awaiting a decision)
 
 - Multi-user storage, authentication, role-based access, server-side connectors and signed webhooks (Q4).
-- Offline mode, QR workflows, CAD/BIM viewers, 360° capture (Q1).
+- Offline mode, QR workflows, CAD/BIM viewers, 360° capture as approved scope (Q1). Since v3.8 browser-only
+  **demos** exist for offline, QR and a 360° viewer (see "v3.8 additions"): no server, no installed labels, no real
+  capture, no managed devices. A CAD/BIM viewer and a drawing register are not built.
 - Real site cameras. The 8 Higgsfield camera stills that were generated could not be downloaded (blocked
   by the network policy, then by the session permission classifier), so they are not in the app.
 - Production deployment under BILTIX authorization (Q3). Production was published on the user's

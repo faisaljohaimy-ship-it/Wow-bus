@@ -484,7 +484,8 @@ export function attachTourButton(drawerEl, ctx = {}) {
   if (!ok) { if (btn) btn.remove(); return; }
   if (btn || !head) return;
   ensureStyles();
-  btn = components.button(t('launch'), { variant: 'outline', size: 'sm', icon: 'play', onClick: (e) => startWalkthrough(ctx, { riskId: risk.id, step: 1, returnFocus: e.currentTarget }), attrs: { class: 'wt-launch', 'aria-label': t('launchAria') } });
+  // Label in name (WCAG 2.5.3): named by its visible text; `launchAria` adds what the tour is about.
+  btn = components.setLabelInName(components.button(t('launch'), { variant: 'outline', size: 'sm', icon: 'play', onClick: (e) => startWalkthrough(ctx, { riskId: risk.id, step: 1, returnFocus: e.currentTarget }), attrs: { class: 'wt-launch' } }), t('launchAria'));
   const x = head.querySelector('.drawer-close');
   head.insertBefore(btn, x || null);
 }

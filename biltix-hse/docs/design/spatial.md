@@ -172,7 +172,9 @@ The URL is the truth (the view reads `location.hash`, so a router re-mount after
   `biltix.spatial.layers`): zones, cranes, cameras, QR points, 360° points. Hidden through `data-hide` on `.sp-plan`.
 - **Drawing chip**: «المخطط: S1-A-101 مراجعة C — توضيحي» / "Drawing: S1-A-101 Rev C — illustrative" from
   `SP.DRAWINGS` — no document system is connected; the plan is drawn from the zone register, not a CAD file.
-- **QR points** (`SP.QR_POINTS`): decorative markers, labelled "concept — roadmap".
+- **QR points** (`SP.QR_POINTS`): decorative markers, labelled "QR label point (demo — Field kit)". They stand where
+  the field kit's demo labels would hang (`#/fieldkit`: zone `BX1:Z:S1-Z4`, crane `BX1:E:S1-TC-2`, the façade crates of
+  PO-S1-2026-0871); `tests/integration.test.mjs` keeps the two in step. No label exists on a site.
 - **360° capture points** (`SP.CAPTURES_360`): buttons on the plan and tiles in card 360-01; they open the viewer
   (`js/ui/pano360.js`, modal) and set `?pano=`. One capture is a real file — an **AI-generated** panorama
   (`assets/360/panorama-floor.jpg`, 4096 × 1738, 21:9, ±76° vertical coverage) — always labelled «لقطة 360° محاكاة —

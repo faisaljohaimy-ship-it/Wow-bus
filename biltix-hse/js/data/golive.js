@@ -18,11 +18,16 @@ export const GL_STATUSES = Object.freeze(['built_demo', 'ready_connect', 'needs_
  *   ready_connect the demo screen exists and the connection is designed; it needs credentials and a backend;
  *   needs_client  blocked first on client input (access, mapping, IdP, hosting, history, approvals);
  *   planned       not built (roadmap; not in the approved scope yet — open question Q1).
- * `route` is the closest existing view (deep link), or null.
+ * `route` is the closest existing view (deep link), or null; `params` are that link's parameters.
+ *
+ * v3.8: rows 11, 12 and 14 are `built_demo` — the field kit (#/fieldkit: offline copy + outbox, QR labels and
+ * scanning) and the 360° viewer on #/spatial exist as browser-only demos (the plan table in docs/golive/plan.md was
+ * written before them). They are still not in the approved scope (Q1); the dictionary's "today" text says what the
+ * demo does and does not do. Row 2 links to the worked example (submittal MAR-S1-CW-014 → AIR-1069).
  */
 export const CAPABILITIES = Object.freeze([
   { id: 'c1', status: 'built_demo', owner: 'BX', phase: 'P1', route: 'cockpit' },
-  { id: 'c2', status: 'needs_client', owner: 'BX + CL', phase: 'P2', route: 'bom' },
+  { id: 'c2', status: 'needs_client', owner: 'BX + CL', phase: 'P2', route: 'airisks', params: { risk: 'AIR-1069' } },
   { id: 'c3', status: 'ready_connect', owner: 'BX + CL', phase: 'P2 / P5', route: 'schedule' },
   { id: 'c4', status: 'ready_connect', owner: 'BX + CL', phase: 'P2', route: 'bom' },
   { id: 'c5', status: 'built_demo', owner: 'BX', phase: 'P1', route: 'airisks' },
@@ -31,15 +36,15 @@ export const CAPABILITIES = Object.freeze([
   { id: 'c8', status: 'ready_connect', owner: 'BX + CL', phase: 'P2', route: 'alerts' },
   { id: 'c9', status: 'needs_client', owner: 'BX + CL', phase: 'P1', route: null },
   { id: 'c10', status: 'needs_client', owner: 'BX + CL', phase: 'P0–P1', route: null },
-  { id: 'c11', status: 'planned', owner: 'BX + CL', phase: 'P3', route: null },
-  { id: 'c12', status: 'planned', owner: 'BX + CL', phase: 'P3', route: null },
+  { id: 'c11', status: 'built_demo', owner: 'BX + CL', phase: 'P3', route: 'fieldkit' },
+  { id: 'c12', status: 'built_demo', owner: 'BX + CL', phase: 'P3', route: 'fieldkit' },
   { id: 'c13', status: 'planned', owner: 'BX + CL', phase: 'P3', route: 'spatial' },
-  { id: 'c14', status: 'planned', owner: 'BX + VN + CL', phase: 'P4', route: null },
+  { id: 'c14', status: 'built_demo', owner: 'BX + VN + CL', phase: 'P4', route: 'spatial', params: { site: 'S1' } },
   { id: 'c15', status: 'planned', owner: 'CL + VN + BX', phase: 'P4', route: 'spatial' },
   { id: 'c16', status: 'ready_connect', owner: 'BX + CL', phase: 'P2–P4', route: 'integrations' },
   { id: 'c17', status: 'needs_client', owner: 'BX + CL', phase: 'P5', route: 'engine' },
   { id: 'c18', status: 'needs_client', owner: 'BX + CL', phase: 'P1–P6', route: null },
-].map((c) => Object.freeze(c)));
+].map((c) => Object.freeze({ ...c, params: c.params ? Object.freeze({ ...c.params }) : null })));
 
 /**
  * Connector catalogue (plan §2). `wave` 1 = the material-approval chain (§2.1, in chain order), 2 = other demo
@@ -105,12 +110,16 @@ export const MILESTONES = Object.freeze([
 /** Weeks shown on the timeline (P6 continues past the end). */
 export const TIMELINE_WEEKS = 40;
 
-/** The four field priorities requested by BILTIX (plan §3), each with its sub-phases (estimates). */
+/**
+ * The four field priorities requested by BILTIX (plan §3), each with its sub-phases (estimates). `demo: true` = a
+ * browser-only demo of it exists at `route` (v3.8: field kit, 360° viewer); the field release itself (server, devices,
+ * labels, capture) is not built. `plans` has no demo beyond the illustrative plan.
+ */
 export const PRIORITIES = Object.freeze([
-  { key: 'offline', phase: 'P3', start: 13, end: 26, route: 'settings', steps: [{ id: 'a', start: 13, end: 18 }, { id: 'b', start: 17, end: 22 }, { id: 'c', start: 21, end: 26 }] },
-  { key: 'qr', phase: 'P3', start: 13, end: 26, route: 'bom', steps: [{ id: 'a', start: 13, end: 18 }, { id: 'b', start: 17, end: 22 }, { id: 'c', start: 21, end: 26 }] },
-  { key: 'plans', phase: 'P3', start: 13, end: 26, route: 'spatial', steps: [{ id: 'a', start: 13, end: 18 }, { id: 'b', start: 17, end: 22 }, { id: 'c', start: 21, end: 26 }] },
-  { key: 'p360', phase: 'P4', start: 17, end: 34, route: 'spatial', steps: [{ id: 'a', start: 17, end: 26 }, { id: 'b', start: 19, end: 34 }] },
+  { key: 'offline', phase: 'P3', start: 13, end: 26, route: 'fieldkit', demo: true, steps: [{ id: 'a', start: 13, end: 18 }, { id: 'b', start: 17, end: 22 }, { id: 'c', start: 21, end: 26 }] },
+  { key: 'qr', phase: 'P3', start: 13, end: 26, route: 'fieldkit', demo: true, steps: [{ id: 'a', start: 13, end: 18 }, { id: 'b', start: 17, end: 22 }, { id: 'c', start: 21, end: 26 }] },
+  { key: 'plans', phase: 'P3', start: 13, end: 26, route: 'spatial', demo: false, steps: [{ id: 'a', start: 13, end: 18 }, { id: 'b', start: 17, end: 22 }, { id: 'c', start: 21, end: 26 }] },
+  { key: 'p360', phase: 'P4', start: 17, end: 34, route: 'spatial', demo: true, steps: [{ id: 'a', start: 17, end: 26 }, { id: 'b', start: 19, end: 34 }] },
 ].map((p) => Object.freeze({ ...p, steps: Object.freeze(p.steps.map((s) => Object.freeze(s))) })));
 
 /** On-the-ground needs (plan §3a–3d, §1.6). */

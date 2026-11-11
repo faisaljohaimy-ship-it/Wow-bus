@@ -42,7 +42,7 @@
 
 import {
   h, clear, glyph, svgIcon, badge, button, card, segmented, dataTable, emptyState, errorState,
-  filterBar, statusBadge, toast,
+  filterBar, statusBadge, toast, setLabelInName,
 } from '../ui/components.js';
 import { createExplainerHero } from '../ui/explainer-hero.js';
 import { EXPLAINER } from '../data/explainer-media.js';
@@ -56,11 +56,12 @@ import { status as statusLib } from '../core/status.js';
 import { psel as pselLib, RATING_THRESHOLDS } from '../core/platform-selectors.js';
 import { parseHash, buildHash } from '../core/router.js';
 import dict from '../i18n/cockpit.js';
-import goliveDict from '../i18n/golive.js';
+// Go-live strip: only its own strings (js/i18n/golive-strip.js), not the 90 KB page dictionary — this is the home route.
+import goliveStripDict from '../i18n/golive-strip.js';
 import { CAPABILITIES as GL_CAPABILITIES, GL_STATUSES, readiness as glReadiness } from '../data/golive.js';
 
 i18n.register('cockpit', dict);
-i18n.register('golive', goliveDict);
+i18n.register('golive', goliveStripDict);
 
 const VIEW_ID = 'cockpit';
 const STYLE_ID = 'view-cockpit-style-v3';
@@ -853,13 +854,16 @@ export default {
       const gt = (k, p) => i18n.t(`golive.strip.${k}`, p);
       const x = fmt.num(r.demoReady);
       const y = fmt.num(r.total);
-      root.appendChild(h('a', { class: 'gl-strip', href: router && typeof router.href === 'function' ? router.href('golive') : '#/golive', 'aria-label': gt('aria', { x, y }) },
+      const strip = h('a', { class: 'gl-strip', href: router && typeof router.href === 'function' ? router.href('golive') : '#/golive' },
         h('span', { class: 'gl-strip-icon', 'aria-hidden': 'true' }, svgIcon('send', 16)),
-        h('span', { class: 'gl-strip-text', 'aria-hidden': 'true' }, h('span', { class: 'gl-strip-label' }, `${gt('label')}:`), h('span', { class: 'gl-strip-value' }, gt('value', { x, y }))),
+        h('span', { class: 'gl-strip-text' }, h('span', { class: 'gl-strip-label' }, `${gt('label')}:`), ' ', h('span', { class: 'gl-strip-value' }, gt('value', { x, y }))),
         h('span', { class: ['gl-bar', 'is-compact'], 'aria-hidden': 'true' }, ...GL_STATUSES.filter((s) => r.counts[s] > 0).map((s) => h('span', {
           class: ['gl-bar-seg', `is-${s}`], style: { flexGrow: String(r.counts[s]) }, title: gt('seg', { label: i18n.t(`golive.status.${s}`), n: fmt.num(r.counts[s]) }),
         }))),
-        h('span', { class: 'gl-strip-cta', 'aria-hidden': 'true' }, gt('cta'))));
+        ' ', h('span', { class: 'gl-strip-cta' }, gt('cta')));
+      // Label in name (WCAG 2.5.3): the link is named by what it shows; `strip.aria` only adds where it leads.
+      setLabelInName(strip, gt('aria', { x, y }));
+      root.appendChild(strip);
     } catch (err) { warnOnce(warned, 'go-live strip', err); }
 
     /* ================================================================ */

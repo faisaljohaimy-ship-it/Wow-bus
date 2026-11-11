@@ -638,6 +638,7 @@ export default {
   terms: {
     // People (owners, managers, inspectors, reporters, approvers, workers)
     'النظام': 'System',
+    'عُدّة الميدان': 'Field kit',   // actor of actions queued from #/fieldkit (js/core/offline.js FIELD_ACTOR)
     'م. تركي المطيري': 'Eng. Turki Al-Mutairi',
     'م. مها الغامدي': 'Eng. Maha Al-Ghamdi',
     'م. ريم السبيعي': 'Eng. Reem Al-Subaie',

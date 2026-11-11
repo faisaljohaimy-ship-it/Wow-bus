@@ -203,7 +203,8 @@ files `js/i18n/<view>.js`:
 - B-PLATFORM: settings.js, integrations.js, dataquality.js, engine.js.
 - B-DOMAINS: contracts.js, bom.js, schedule.js, cost.js, roadmap.js.
 - B-HSE1: overview.js, radar.js, risks.js, incidents.js. B-HSE2: permits.js, inspections.js, training.js, compliance.js, reports.js.
-- SPATIAL (v3.1, route `#/spatial`, SEC-12; the app has 23 routes): `js/views/spatial.js`, `js/ui/camfeed.js`,
+- SPATIAL (v3.1, route `#/spatial`, SEC-12; the app had 23 routes then, 25 since v3.8 with `#/golive` PLT-04 and
+  `#/fieldkit` FLD-01 — the registry `js/views/index.js` is the source): `js/views/spatial.js`, `js/ui/camfeed.js`,
   `js/data/spatial-seed.js`, `js/i18n/spatial.js`, the "Spatial" section at the end of `css/platform.css`,
   `docs/design/spatial.md`, `tests/spatial*.test.mjs`. Entry points owned elsewhere carry only a deep link
   (`router.href('spatial', { site, zone, risk })`): the AI-risk drawer, the HSE register drawer (risks.js), the radar.

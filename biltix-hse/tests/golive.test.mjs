@@ -17,8 +17,11 @@ export const tests = [
     fn() {
       const r = gl.readiness();
       assert.equal(r.total, 18);
-      assert.deepEqual(r.counts, { built_demo: 3, ready_connect: 4, needs_client: 5, planned: 6 });
-      assert.equal(r.demoReady, 7);
+      // v3.8: offline (c11), QR (c12) and the 360° viewer (c14) exist as browser-only demos (field kit, #/spatial),
+      // so they are "built as demo", not "planned" (3 + 3 built, 6 − 3 planned).
+      assert.deepEqual(r.counts, { built_demo: 6, ready_connect: 4, needs_client: 5, planned: 3 });
+      assert.equal(r.demoReady, 10);
+      for (const id of ['c11', 'c12', 'c14']) assert.equal(gl.CAPABILITIES.find((c) => c.id === id).status, 'built_demo', id);
       assert.deepEqual(gl.readiness([{ status: 'planned' }, { status: 'bogus' }, null]).counts, { built_demo: 0, ready_connect: 0, needs_client: 0, planned: 1 });
       assert.equal(gl.readiness('x').total, 0);
       const ids = gl.CAPABILITIES.map((c) => c.id);
@@ -117,12 +120,19 @@ export const tests = [
         ...gl.GROUND.flatMap((g) => ['name', 'i1'].map((f) => `ground.${g}.${f}`)),
         ...gl.CHECKLIST.flatMap((g) => [`checklist.groups.${g.id}`, ...g.items.map((i) => `checklist.items.${i}`)]),
         ...gl.ARCH_NODES.flatMap((n) => ['name', 'sub', 'tag'].map((f) => `arch.nodes.${n.id}.${f}`)),
-        'strip.label', 'strip.value', 'strip.cta', 'strip.aria',
+        'strip.label', 'strip.value', 'strip.cta', 'strip.aria', 'strip.seg',
+        'roadmap.notBuilt', 'roadmap.demoBuilt', 'roadmap.open', 'roadmap.openDemo',
       ];
       for (const lang of ['ar', 'en']) for (const k of keys) assert.equal(typeof get(dict[lang], k), 'string', `${lang}: ${k}`);
       assert.ok(VIEW_ORDER.includes('golive'));
       assert.equal(NAV_META.find((m) => m.id === 'golive').path, './golive.js');
-      assert.equal(NAV_META.length, 24);
+      // 23 routes of v3.7 + #/golive (PLT-04) + #/fieldkit (FLD-01), each registered and listed in the rail order once.
+      assert.equal(NAV_META.length, 25);
+      for (const id of ['golive', 'fieldkit']) {
+        assert.equal(NAV_META.filter((m) => m.id === id).length, 1, `${id} registered once`);
+        assert.equal(VIEW_ORDER.filter((v) => v === id).length, 1, `${id} in the rail once`);
+      }
+      assert.deepEqual([...VIEW_ORDER].sort(), NAV_META.map((m) => m.id).sort(), 'rail order and registry hold the same ids');
     },
   },
 ];

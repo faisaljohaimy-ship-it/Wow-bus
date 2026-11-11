@@ -30,7 +30,7 @@ i18n.register('golive', dict);
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XHTML_NS = 'http://www.w3.org/1999/xhtml';
 const SECTIONS = ['matrix', 'arch', 'map', 'roadmap', 'ground', 'checklist', 'links'];
-const RELATED = ['integrations', 'roadmap', 'spatial', 'bom', 'schedule', 'airisks', 'tasks', 'alerts', 'engine', 'dataquality'];
+const RELATED = ['integrations', 'roadmap', 'fieldkit', 'spatial', 'bom', 'schedule', 'airisks', 'tasks', 'alerts', 'engine', 'dataquality'];
 const GROUND_ICON = { network: 'globe', power: 'bolt', devices: 'phone', cameras: 'cctv', hosting: 'lock' };
 const PRIO_ICON = { offline: 'cloud-off', qr: 'grid', plans: 'layers', p360: 'cctv' };
 const AXIS_WEEKS = [1, 5, 10, 15, 20, 25, 30, 35, 40];
@@ -67,7 +67,7 @@ export default {
   render(container, ctx) {
     const { store, fmt, components, router } = ctx;
     const status = ctx.status || null;
-    const { h, card, button, segmented, statusBadge, svgIcon, toast } = components;
+    const { h, card, button, segmented, statusBadge, svgIcon, toast, setLabelInName } = components;
     const t = (k, p) => i18n.t(`golive.${k}`, p);
     const tn = (k, n, p) => i18n.tn(`golive.${k}`, n, p);
     const D = (s) => digitsIn(fmt, s);
@@ -98,7 +98,7 @@ export default {
             h('li', {}, svgIcon('map-pin', 14), h('span', {}, t('metaScope'))))),
         h('div', { class: 'view-actions' },
           statusBadge('demo', { size: 'sm' }),
-          h('a', { class: 'btn btn-outline btn-sm gl-doc-link', href: docHref, target: '_blank', rel: 'noopener', 'aria-label': t('docsAria') }, svgIcon('external', 15), h('span', {}, t('docs')))));
+          setLabelInName(h('a', { class: 'btn btn-outline btn-sm gl-doc-link', href: docHref, target: '_blank', rel: 'noopener' }, svgIcon('external', 15), h('span', {}, t('docs'))), t('docsAria'))));
     }
 
     function buildBanner() {
@@ -131,7 +131,7 @@ export default {
           h('div', { class: 'gl-cap-foot' },
             h('span', { class: 'gl-tagline' }, h('span', { class: 'gl-k' }, `${t('matrix.owner')}:`), h('bdi', { class: 'gl-code' }, c.owner)),
             h('span', { class: 'gl-tagline' }, h('span', { class: 'gl-k' }, `${t('matrix.phase')}:`), h('bdi', { class: 'gl-code' }, c.phase)),
-            c.route ? h('a', { class: 'gl-link', href: href(c.route) }, h('span', {}, t('arch.open', { view: viewTitle(c.route) })), svgIcon('chevron-end', 14)) : null))));
+            c.route ? h('a', { class: 'gl-link', href: href(c.route, c.params || {}) }, h('span', {}, t('arch.open', { view: viewTitle(c.route) })), svgIcon('chevron-end', 14)) : null))));
       }
       const seg = segmented({
         ariaLabel: t('matrix.filterAria'),
@@ -230,7 +230,7 @@ export default {
       const recs = recordsFor(entry);
       const name = connText(entry.key, 'name');
       const st = recs.length ? recs[0].status : 'not_connected';
-      const btn = button(t('map.details'), { variant: 'ghost', size: 'sm', icon: 'info', onClick: (e) => openDetails(entry, e.currentTarget), attrs: { 'aria-label': t('map.detailsAria', { name }) } });
+      const btn = setLabelInName(button(t('map.details'), { variant: 'ghost', size: 'sm', icon: 'info', onClick: (e) => openDetails(entry, e.currentTarget) }), t('map.detailsAria', { name }));
       return h(step ? 'li' : 'li', { class: [step ? 'gl-step' : 'gl-conn', `is-${connectorClass(entry)}`] },
         step ? h('span', { class: 'gl-step-no' }, t('map.step', { n: fmt.num(entry.chain) })) : null,
         h('span', { class: 'gl-conn-name' }, D(name)),
@@ -289,7 +289,8 @@ export default {
           h('div', { class: 'gl-prio-titles' },
             h('h3', { id: `gl-prio-${p.key}`, class: 'gl-prio-name' }, t(`${k}.name`)),
             h('span', { class: 'gl-prio-weeks' }, `${p.phase} · ${weeksText(p.start, p.end)} · ${tn('roadmap.duration', spanWeeks(p.start, p.end))} (${t('roadmap.est')})`)),
-          h('span', { class: 'gl-concept' }, t('roadmap.notBuilt'))),
+          // A browser-only demo exists for some priorities (field kit, 360° viewer): say so instead of "not built".
+          h('span', { class: ['gl-concept', p.demo ? 'is-demo' : null] }, t(p.demo ? 'roadmap.demoBuilt' : 'roadmap.notBuilt'))),
         h('div', { class: 'gl-prio-track', 'aria-hidden': 'true' }, ...p.steps.map((s) => bar(s.start, s.end, 'is-field'))),
         h('dl', { class: 'gl-prio-facts' },
           h('div', {}, h('dt', {}, t('roadmap.today')), h('dd', {}, D(t(`${k}.today`)))),
@@ -297,7 +298,7 @@ export default {
           h('div', {}, h('dt', {}, t('roadmap.steps')), h('dd', {}, h('ul', { class: 'gl-steps' }, ...p.steps.map((s) => h('li', {}, D(t(`${k}.steps.${s.id}`)), h('span', { class: 'gl-step-weeks' }, ` · ${weeksText(s.start, s.end)}`)))))),
           h('div', {}, h('dt', {}, t('roadmap.exit')), h('dd', {}, D(t(`${k}.exit`)))),
           h('div', {}, h('dt', {}, t('roadmap.ground')), h('dd', {}, D(t(`${k}.ground`))))),
-        p.route ? h('a', { class: 'gl-link', href: href(p.route) }, h('span', {}, t('roadmap.open', { view: viewTitle(p.route) })), svgIcon('chevron-end', 14)) : null);
+        p.route ? h('a', { class: 'gl-link', href: href(p.route) }, h('span', {}, t(p.demo ? 'roadmap.openDemo' : 'roadmap.open', { view: viewTitle(p.route) })), svgIcon('chevron-end', 14)) : null);
     }
     function buildRoadmap() {
       return card({

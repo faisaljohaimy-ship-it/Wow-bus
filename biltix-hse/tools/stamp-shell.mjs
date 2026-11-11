@@ -38,7 +38,9 @@ const SPEC = {
   inspections: ['inspections', ['core:nav.inspections.title'], ['lead'], 't-page'],
   dataquality: ['dataquality', ['title'], ['lead']],
   integrations: ['integrations', ['title'], ['lead']],
+  fieldkit: ['fieldkit', ['title'], ['lead'], 't-page', 't-lead'],
   roadmap: ['roadmap', ['title'], ['lead']],
+  golive: ['golive', ['title'], ['lead']],
   settings: ['settings', ['title'], ['lead']],
 };
 

@@ -20,8 +20,16 @@
   Unit tests 104/104; QA matrix 552/552 (23 routes × AR/EN × light/dark × 6 widths, Chromium only).
   Details: `docs/specs/v3-precision/acceptance.md`. Status of every function:
   `docs/specs/v3-precision/inventory.md`.
-- **عطل معروف | Known broken:** clicking a table row outside its first-cell opener does not open the
-  drawer. Use the row's open button or the keyboard.
+- **v3.8 (integrated, not yet re-verified in a browser):** two new routes — `#/golive` (PLT-04, go-live
+  readiness) and `#/fieldkit` (FLD-01, offline copy + outbox, QR labels and scanning) — a worked example
+  (submittal MAR-S1-CW-014 → risk AIR-1069, with a guided walkthrough: `#/airisks?risk=AIR-1069&tour=1`), a 360°
+  viewer with one simulated capture point on `#/spatial`, and a first paint that draws the page header before
+  any script loads. 25 routes. All of it is demo data in this browser; the offline, QR and 360° parts are demos
+  of a proposed design and are not in the approved scope (Q1). The acceptance figures below were measured on
+  v3.5.1 with 23 routes.
+- **عطل معروف | Known broken (v3.5.1–v3.7.2):** clicking a table row outside its first-cell opener does not
+  open the drawer. Fixed in the v3.8 code (`interactiveWithin` in `js/ui/components.js`, unit-tested); to be
+  confirmed in a browser. Until then use the row's open button or the keyboard.
 
 The section tables below describe the product scope; where they differ from `inventory.md`, the
 inventory is authoritative.
@@ -41,6 +49,8 @@ inventory is authoritative.
 | **PLT-01 محرك الذكاء الاصطناعي** | خمسة خطوط نماذج (عقود NLP، توقع BoM، نموذج الجدول، صور وتقارير الموقع، توقع التكلفة) مع طبقة تقييم وتفسير مشتركة، الدقة والانحراف (تظهر «غير مُقاسة»)، القبول مقابل التجاوز (الإنسان في الحلقة)، سجل التدقيق |
 | **PLT-02 جودة البيانات** | طبقة التحقق والتنظيف: فحص المخطط، إزالة التكرار، الاكتمال، الاتساق، قائمة الحجر |
 | **PLT-03 خارطة الطريق والمقترح** | المعمارية ذات الطبقات الخمس وإضافات v2، نطاق العمل، الافتراضات، المعالم M0–M4 مع نسب دفع قابلة للتعبئة |
+| **PLT-04 الجاهزية للتشغيل** (`#/golive`) | ما يلزم لنقل العرض إلى تشغيل فعلي: مصفوفة 18 قدرة (مبني كعرض / جاهز للربط / يحتاج مدخلات العميل / مخطط)، المعمارية المستهدفة، خريطة الموصلات مع درج تفاصيل لكل موصل، المراحل P0–P6 والأولويات الميدانية الأربع، ما يلزم على أرض الواقع، وقائمة تحقق العميل (تُحفظ في هذا المتصفح فقط). خطة لا حالة تشغيل: لا اتصال حقيقي، وكل المدد تقديرية. المصدر: `docs/golive/plan.md` |
+| **FLD-01 عُدّة الميدان** (`#/fieldkit`) | عرض تجريبي في المتصفح فقط: نسخة للعمل دون اتصال (عامل خدمة) وقائمة إرسال تعيد تطبيق الإجراءات في هذا المتصفح (لا يوجد خادم)، ملصقات QR للمناطق والمعدات وصناديق الواجهة والتصاريح مع المسح بالكاميرا أو الإدخال اليدوي، وورقة ملصقات A4. غير معتمد ضمن النطاق بعد (السؤال Q1). الدليل: `docs/offline.md` |
 
 ### ركيزة الموقع والسلامة (HSE — Part A)
 

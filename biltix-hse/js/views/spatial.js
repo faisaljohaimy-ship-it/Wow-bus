@@ -447,7 +447,7 @@ export default {
       labelG.appendChild(focusName);
       world.appendChild(labelG);
 
-      // v4: QR points (roadmap concept, decorative) and 360° capture points (buttons that open the viewer)
+      // v4: QR label points (decorative; the labels themselves are the field kit's demo) and 360° capture points (buttons that open the viewer)
       const qrG = s('g', { class: 'sp-qrs', 'aria-hidden': 'true' });
       SP.qrPointsFor(siteId).forEach((q) => {
         const g = s('g', { class: 'sp-qr', transform: `translate(${X(q.x)} ${Y(q.y)})` });

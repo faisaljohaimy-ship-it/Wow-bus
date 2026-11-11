@@ -1,9 +1,12 @@
 /**
  * BILTIX Risk AI — go-live readiness dictionary (namespace 'golive'). Owner: #/golive (PLT-04).
- * Registered by js/views/golive.js, js/views/integrations.js (connector details drawer) and js/views/cockpit.js
- * (readiness strip). Content: docs/golive/plan.md and plan-ar.md (v4). Keys follow js/data/golive.js ids.
+ * Registered by js/views/golive.js and js/views/integrations.js (connector details drawer). The cockpit's readiness
+ * strip registers only js/i18n/golive-strip.js (`status` and `strip`, re-used here), so the home route does not
+ * download this file. Content: docs/golive/plan.md and plan-ar.md (v4), with the "today" texts kept in step with
+ * what the demo has (tests/integration.test.mjs). Keys follow js/data/golive.js ids.
  * "(est.)" / «(تقدير)» = planning estimate; "[V]" = must be verified with the vendor, operator, authority or client.
  */
+import strip from './golive-strip.js';
 
 export default {
   ar: {
@@ -16,12 +19,7 @@ export default {
     docs: 'الخطة الكاملة (Markdown)',
     docsAria: 'فتح الخطة التقنية الكاملة بصيغة Markdown في نافذة جديدة',
     owners: 'BX = بلتكس · CL = العميل · VN = مورّد أو طرف ثالث',
-    status: {
-      built_demo: 'مبني كعرض',
-      ready_connect: 'جاهز للربط',
-      needs_client: 'يحتاج مدخلات العميل',
-      planned: 'مخطط',
-    },
+    status: strip.ar.status,
     statusHint: {
       built_demo: 'موجود ويعمل اليوم في هذا العرض على بيانات تجريبية.',
       ready_connect: 'الشاشة موجودة كعرض والربط مصمَّم؛ يحتاج بيانات اعتماد العميل وخدمة خلفية.',
@@ -43,7 +41,7 @@ export default {
     },
     cap: {
       c1: { name: 'قمرة القيادة وسجل المخاطر والمجالات الخمسة ودرج المخاطرة', today: 'مبني ويعمل على بيانات مُعدّة مسبقاً في متصفح واحد؛ عربي/إنجليزي.', needed: 'الواجهة نفسها على واجهة برمجية في الخادم: بيانات متعددة المستخدمين، صلاحيات لكل مشروع، تعريفات المؤشرات على الخادم.' },
-      c2: { name: 'سلسلة اعتماد المواد (طلب الاعتماد ← أمر الشراء ← التوريد ← التركيب)', today: 'ليست كياناً مستقلاً؛ أجزاؤها موجودة: الالتزام CT2-O1، تواريخ الطلب في جدول الكميات، أمر التغيير CO-034، والمخاطر المرتبطة.', needed: 'سجل لطلبات الاعتماد؛ روابط طلب الاعتماد ↔ بند الكميات ↔ سطر أمر الشراء ↔ نشاط P6 يؤكدها شخص؛ قاعدة «آخر موعد للاعتماد»؛ الموصلات.' },
+      c2: { name: 'سلسلة اعتماد المواد (طلب الاعتماد ← أمر الشراء ← التوريد ← التركيب)', today: 'مُدخلة كسجلات تجريبية: طلب الاعتماد MAR-S1-CW-014 مرتبط ببند الكميات وأمر الشراء المحجوب والنشاط A1100 والمخاطرة AIR-1069 (مع جولة إرشادية). لا توجد شاشة لسجل طلبات الاعتماد ولا نظام مصدر متصل.', needed: 'سجل لطلبات الاعتماد؛ روابط طلب الاعتماد ↔ بند الكميات ↔ سطر أمر الشراء ↔ نشاط P6 يؤكدها شخص؛ قاعدة «آخر موعد للاعتماد»؛ الموصلات.' },
       c3: { name: 'أثر الجدول الزمني', today: 'أرقام P6 تجريبية (طفو A1100 صفر، توقع +28 يوماً، مونت كارلو «توضيحية»).', needed: 'قراءة P6 (الأنشطة، الطفو، خطوط الأساس، التحديثات)؛ قاعدة أثر حتمية؛ التوقع بتعلّم الآلة بعد التحقق فقط.' },
       c4: { name: 'المشتريات والموردون', today: 'موردون ومدد توريد وعلامات المورد الوحيد وتواريخ طلب تجريبية.', needed: 'قراءة ERP (أوامر الشراء، التواريخ الموعودة، الاستلامات، الموردون)؛ كتابة عكسية للملاحظات/العلامات فقط إن وافق العميل.' },
       c5: { name: 'التوصيات مع الإنسان في الحلقة', today: 'قبول / تعديل / تجاوز مع ذكر السبب؛ تُسجَّل في سجل تدقيق هذا المتصفح.', needed: 'التدفق نفسه على الخادم بهويات حقيقية وفحص للأدوار وسجل تدقيق غير قابل للتعديل.' },
@@ -52,10 +50,10 @@ export default {
       c8: { name: 'التنبيهات والتصعيد', today: 'التوجيه مُسجَّل؛ القنوات «غير متصلة»؛ اختبار Webhook من المتصفح فقط.', needed: 'خدمة إشعارات (البريد، الرسائل النصية، واتساب، Teams/Slack، إشعارات الويب) مع إيصالات التسليم ومؤقتات التصعيد.' },
       c9: { name: 'الهوية والأدوار وتعدد المستخدمين', today: 'لا يوجد: عرض لمستخدم واحد محفوظ في المتصفح.', needed: 'دخول موحّد مع مزوّد هوية العميل (OIDC أو SAML)، تحقق متعدد العوامل، صلاحيات حسب الدور والنطاق، تزويد الحسابات عبر SCIM.' },
       c10: { name: 'الاستضافة وإقامة البيانات', today: 'عرض ثابت على Vercel؛ لا بيانات حقيقية؛ لم تُقيَّم إقامة البيانات.', needed: 'الإنتاج والنسخ الاحتياطية والسجلات والمفاتيح والتعافي من الكوارث داخل المملكة لدى مزوّد معتمد [V].' },
-      c11: { name: 'العمل الميداني دون اتصال', today: 'اكتشاف حالة الانقطاع وعرضها؛ يوجد ملف manifest؛ لا عامل خدمة ولا قائمة إرسال.', needed: 'هيكل PWA، IndexedDB، قائمة إرسال بمفاتيح عدم التكرار، قائمة صور، حالة مزامنة، أجهزة مُدارة.' },
-      c12: { name: 'ملصقات QR', today: 'لا يوجد؛ ترويسة التطبيق تعطّل الكاميرا حالياً (camera=()).', needed: 'سجل الملصقات، الطباعة، خمسة تدفقات مسح، البحث دون اتصال، الإلغاء.' },
-      c13: { name: 'المخططات', today: 'مخطط SVG توضيحي لكل موقع مُعلَّم «ليس مسحاً هندسياً».', needed: 'سجل مخططات من نظام الوثائق، لوحات معايَرة، طبقات، لوحات دون اتصال، تعليقات على المخطط.' },
-      c14: { name: 'جولات التصوير 360°', today: 'لا يوجد.', needed: 'عُدّة تصوير وجدول دوري، معالجة وتثبيت على المخططات، عارض، طمس الوجوه، مدد حفظ.' },
+      c11: { name: 'العمل الميداني دون اتصال', today: 'عرض تجريبي في عُدّة الميدان: عامل خدمة يحفظ نسخة من التطبيق للعمل دون اتصال، وقائمة إرسال تصفّ أربعة إجراءات ميدانية بمفاتيح عدم التكرار وتعيد تطبيقها في هذا المتصفح. لا يوجد خادم للمزامنة ولا قائمة صور ولا أجهزة مُدارة.', needed: 'هيكل PWA، IndexedDB، قائمة إرسال بمفاتيح عدم التكرار، قائمة صور، حالة مزامنة، أجهزة مُدارة.' },
+      c12: { name: 'ملصقات QR', today: 'عرض تجريبي في عُدّة الميدان: ملصقات للمناطق والمعدات وصناديق الواجهة والتصاريح تُولَّد في المتصفح وتُطبع على A4؛ المسح بكاميرا الجهاز حيث يدعمها المتصفح، وإلا فبالإدخال اليدوي. لا ملصقات مركّبة في الموقع ولا خادم للسجل ولا إلغاء.', needed: 'سجل الملصقات، الطباعة، خمسة تدفقات مسح، البحث دون اتصال، الإلغاء.' },
+      c13: { name: 'المخططات', today: 'مخطط SVG توضيحي لكل موقع مُعلَّم «ليس مسحاً هندسياً»، بطبقات قابلة للإظهار والإخفاء ورقم مخطط توضيحي؛ لا سجل مخططات ولا ملف CAD أو BIM.', needed: 'سجل مخططات من نظام الوثائق، لوحات معايَرة، طبقات، لوحات دون اتصال، تعليقات على المخطط.' },
+      c14: { name: 'جولات التصوير 360°', today: 'عرض تجريبي: عارض 360° ونقطة تصوير محاكاة واحدة على مخطط الموقع S1؛ صورتها مولّدة بالذكاء الاصطناعي ومُعلَّمة بذلك. لا عُدّة تصوير ولا معالجة ولا جولة حقيقية.', needed: 'عُدّة تصوير وجدول دوري، معالجة وتثبيت على المخططات، عارض، طمس الوجوه، مدد حفظ.' },
       c15: { name: 'الكاميرات الثابتة والذكاء الاصطناعي على الحافة', today: '25 كاميرا محاكاة مرسومة برمجياً؛ مربعات توضيحية لأحداث محاكاة فقط.', needed: 'كاميرات وطاقة وشبكة ونظام تسجيل/إدارة فيديو وأحداث من الحافة ومعايرة وإشعارات خصوصية وتحصين.' },
       c16: { name: 'مصادر السلامة (التصاريح، الحوادث، التدريب، البوابات، الأجهزة القابلة للارتداء، الطقس)', today: 'وحدات تجريبية و19 موصلاً محاكى للسلامة.', needed: 'موصل لكل نظام يستخدمه العميل فعلاً [V]؛ موافقات مشاركة البيانات.' },
       c17: { name: 'نماذج الذكاء الاصطناعي', today: 'خمسة خطوط معروضة؛ الدقة والاستدعاء «غير مقاسة»؛ الثقة «توضيحية».', needed: 'القواعد أولاً؛ تعلّم آلة على تاريخ العميل (≥ 24 شهراً)؛ تشغيل ظلي؛ تقرير تحقق؛ بطاقات نماذج.' },
@@ -232,6 +230,7 @@ export default {
       duration: { zero: '—', one: 'أسبوع واحد', two: 'أسبوعان', few: '{count} أسابيع', many: '{count} أسبوعاً', other: '{count} أسبوع' },
       est: 'تقدير',
       notBuilt: 'خارطة تطوير — غير مبني بعد',
+      demoBuilt: 'عرض تجريبي مبني — الإصدار الميداني غير مبني بعد',
       fieldTag: 'أولوية ميدانية',
       deliverables: 'المخرجات',
       exit: 'معايير الخروج',
@@ -240,6 +239,7 @@ export default {
       target: 'الهدف',
       ground: 'على أرض الواقع',
       open: 'العرض الأقرب: {view}',
+      openDemo: 'فتح العرض التجريبي: {view}',
       ganttAria: 'مخطط زمني للمراحل بالأسابيع (تقديري)',
       milestones: 'المعالم',
       phaseRow: '{name}: {weeks}',
@@ -265,7 +265,7 @@ export default {
     prio: {
       offline: {
         name: 'العمل دون اتصال',
-        today: 'حالة الانقطاع تظهر فقط؛ لا عامل خدمة ولا قائمة إرسال ولا خادم للمزامنة.',
+        today: 'يوجد عرض تجريبي في عُدّة الميدان: نسخة من التطبيق للعمل دون اتصال (عامل خدمة) وقائمة إرسال تعيد تطبيق أربعة إجراءات ميدانية في هذا المتصفح. لا يوجد بعدُ خادم للمزامنة ولا قائمة صور ولا أجهزة مُدارة.',
         target: 'يفتح التطبيق بلا شبكة ويعرض بيانات «حتى تاريخ» آخر مزامنة؛ تُرسل كل ملاحظة وصورة مرة واحدة فقط؛ «تمت المزامنة» بعد تأكيد الخادم فقط.',
         steps: { a: 'P3أ: تخزين الهيكل، القراءة دون اتصال، مؤشر المزامنة', b: 'P3ب: قائمة الإرسال، قائمة الصور، معالجة التعارض', c: 'P3ج: نشر MDM والتجربة في الموقع' },
         exit: 'ملاحظة بثلاث صور تُنشأ دون اتصال تصل مرة واحدة ببصمات مطابقة؛ لا تكرار عند إعادة المحاولة؛ مؤشر المزامنة صحيح بالعربية والإنجليزية؛ 72 ساعة دون اتصال ضمن ميزانية التخزين.',
@@ -273,7 +273,7 @@ export default {
       },
       qr: {
         name: 'رموز QR',
-        today: 'لا يوجد؛ ترويسة التطبيق تعطّل الكاميرا حالياً.',
+        today: 'يوجد عرض تجريبي في عُدّة الميدان: ملصقات تُولَّد في المتصفح للمناطق والمعدات وصناديق الواجهة والتصاريح، ومسح بكاميرا الجهاز أو بالإدخال اليدوي. لا ملصقات مركّبة في الموقع ولا خادم للسجل.',
         target: 'ملصقات متينة على المناطق والمعدات والتوريدات والتصاريح ونقاط التفتيش؛ المسح يفتح السجل والإجراء الصحيح، مع الاتصال أو دونه؛ مسح التوريد يجيب «معتمد — ركّب» أو «معلّق — لا تركّب».',
         steps: { a: 'P3أ: السجل والطباعة', b: 'P3ب: التدفقات 1–3 و5', c: 'P3ج: تدفق الاستلام عند البوابة والتجربة' },
         exit: 'من المسح إلى النتيجة ≤ ثانيتين مع الاتصال و≤ ثانية دونه (تقدير)؛ لا بيانات شخصية في أي رمز؛ رفض النطاقات المجهولة؛ الملصقات الملغاة تظهر ملغاة دون اتصال.',
@@ -281,7 +281,7 @@ export default {
       },
       plans: {
         name: 'المخططات',
-        today: 'مخطط توضيحي لكل موقع «ليس مسحاً هندسياً».',
+        today: 'مخطط توضيحي لكل موقع «ليس مسحاً هندسياً»، بطبقات قابلة للإظهار والإخفاء ورقم مخطط توضيحي.',
         target: 'المخططات المعتمدة الحالية كطبقة أساس، معايَرة (≤ 0.25 م، تقدير)، بطبقات للمناطق والرافعات والكاميرات ونقاط QR؛ لوحات متاحة دون اتصال.',
         steps: { a: 'P3أ: سجل المخططات وأداة المعايرة', b: 'P3ب: الطبقات واللوحات دون اتصال', c: 'P3ج: التعليقات والتجربة' },
         exit: 'باقي المعايرة ≤ 0.25 م؛ أحدث مراجعة معتمدة خلال مزامنة واحدة؛ اللوحات الملغاة معلَّمة؛ 40 لوحة دون اتصال ضمن الميزانية.',
@@ -289,7 +289,7 @@ export default {
       },
       p360: {
         name: 'تقنية 360°',
-        today: 'لا يوجد؛ 25 كاميرا محاكاة على المخطط.',
+        today: 'عارض تجريبي بنقطة تصوير محاكاة واحدة (صورة مولّدة بالذكاء الاصطناعي ومُعلَّمة)؛ 25 كاميرا محاكاة على المخطط. لا تصوير حقيقي ولا كاميرا حقيقية.',
         target: 'جولات 360° أسبوعية مثبّتة على المخططات؛ كاميرات ثابتة/متحركة مع ذكاء على الحافة ترسل أحداثاً لا فيديو؛ طمس الوجوه.',
         steps: { a: 'P4أ: جولات تصوير 360°', b: 'P4ب: الكاميرات الثابتة والحافة' },
         exit: 'أربع جولات أسبوعية متتالية مثبّتة؛ توافر كل كاميرا ≥ 98 % (هدف تقديري)؛ وصول الأحداث خلال 10 ثوانٍ؛ لا يغادر أي فيديو متواصل الموقع؛ اعتماد مسؤول حماية البيانات.',
@@ -343,13 +343,7 @@ export default {
       title: 'شاشات مرتبطة',
       sub: 'أين يظهر كل جزء من هذه الخطة في العرض اليوم.',
     },
-    strip: {
-      label: 'الجاهزية للتشغيل',
-      value: '{x} من {y} قدرة جاهزة كعرض',
-      cta: 'ما يلزم للتشغيل الفعلي ←',
-      aria: 'الجاهزية للتشغيل: {x} من {y} قدرة جاهزة كعرض. فتح صفحة ما يلزم للتشغيل الفعلي.',
-      seg: '{label}: {n}',
-    },
+    strip: strip.ar.strip,
   },
 
   en: {
@@ -362,12 +356,7 @@ export default {
     docs: 'Full plan (Markdown)',
     docsAria: 'Open the full technical plan as Markdown in a new tab',
     owners: 'BX = BILTIX · CL = client · VN = vendor or third party',
-    status: {
-      built_demo: 'Built as demo',
-      ready_connect: 'Ready to connect',
-      needs_client: 'Needs client input',
-      planned: 'Planned',
-    },
+    status: strip.en.status,
     statusHint: {
       built_demo: 'Exists and works today in this demo over demo data.',
       ready_connect: 'The demo screen exists and the connection is designed; it needs the client’s credentials and a backend.',
@@ -389,7 +378,7 @@ export default {
     },
     cap: {
       c1: { name: 'Risk cockpit, register, five domains and risk drawer', today: 'Built and working over seeded data in one browser; Arabic/English.', needed: 'The same UI on a server API: multi-user data, per-project permissions, server-side metric definitions.' },
-      c2: { name: 'Material-approval chain (submittal → PO → delivery → installation)', today: 'Not an entity; the pieces exist: obligation CT2-O1, BoQ order-by dates, change order CO-034 and the linked risks.', needed: 'A submittal register; human-confirmed links submittal ↔ BoQ item ↔ PO line ↔ P6 activity; the latest-approval-date rule; the connectors.' },
+      c2: { name: 'Material-approval chain (submittal → PO → delivery → installation)', today: 'Seeded as demo records: submittal MAR-S1-CW-014 linked to its BoQ item, the blocked PO, activity A1100 and risk AIR-1069 (with a guided walkthrough). No submittal register screen and no source system connected.', needed: 'A submittal register; human-confirmed links submittal ↔ BoQ item ↔ PO line ↔ P6 activity; the latest-approval-date rule; the connectors.' },
       c3: { name: 'Schedule impact', today: 'Demo P6 figures (A1100 float 0, forecast +28 days, Monte Carlo labelled Illustrative).', needed: 'P6 read (activities, float, baselines, updates); a deterministic impact rule; ML forecasts only after validation.' },
       c4: { name: 'Procurement and suppliers', today: 'Demo suppliers, lead times, single-source flags and order-by dates.', needed: 'ERP read (POs, promised dates, receipts, suppliers); write-back of notes/flags only if the client approves.' },
       c5: { name: 'Recommendations with a human in the loop', today: 'Accept / edit / override with a reason; recorded in this browser’s audit log.', needed: 'The same flow server-side with real identities, role checks and an immutable audit log.' },
@@ -398,10 +387,10 @@ export default {
       c8: { name: 'Alerts and escalation', today: 'Routing recorded; channels Not connected; webhook test from the browser only.', needed: 'A notification service (e-mail, SMS, WhatsApp, Teams/Slack, Web Push) with delivery receipts and escalation timers.' },
       c9: { name: 'Identity, roles and multiple users', today: 'None: a single-user demo held in the browser.', needed: 'SSO with the client’s identity provider (OIDC or SAML), MFA, role- and scope-based access, SCIM provisioning.' },
       c10: { name: 'Hosting and data residency', today: 'Static demo on Vercel; no real data; residency not assessed.', needed: 'Production, backups, logs, keys and disaster recovery inside the Kingdom on an approved provider [V].' },
-      c11: { name: 'Offline field use', today: 'Offline state detected and shown; a web manifest exists; no service worker and no outbox.', needed: 'PWA shell, IndexedDB, an outbox with idempotency keys, a photo queue, sync status, managed devices.' },
-      c12: { name: 'QR labels', today: 'None; the app header currently disables the camera (camera=()).', needed: 'Label registry, printing, five scan flows, offline lookup, revocation.' },
-      c13: { name: 'Site plans and drawings', today: 'An illustrative SVG plan per site labelled “not a survey”.', needed: 'Drawing register from the DMS, calibrated sheets, layers, offline sheets, markups.' },
-      c14: { name: '360° walk-throughs', today: 'None.', needed: 'Capture kit and cadence, processing and pinning to plans, a viewer, face blurring, retention.' },
+      c11: { name: 'Offline field use', today: 'A demo in the Field kit: a service worker keeps an offline copy of the app, and an outbox queues four field actions with idempotency keys and replays them into this browser. No server to sync with, no photo queue, no managed devices.', needed: 'PWA shell, IndexedDB, an outbox with idempotency keys, a photo queue, sync status, managed devices.' },
+      c12: { name: 'QR labels', today: 'A demo in the Field kit: labels for zones, equipment, façade crates and permits are generated in the browser and print on A4; scanning uses the device camera where the browser supports it, manual entry otherwise. No labels installed on site, no registry server, no revocation.', needed: 'Label registry, printing, five scan flows, offline lookup, revocation.' },
+      c13: { name: 'Site plans and drawings', today: 'An illustrative SVG plan per site labelled “not a survey”, with layer toggles and an illustrative drawing number; no drawing register and no CAD or BIM file.', needed: 'Drawing register from the DMS, calibrated sheets, layers, offline sheets, markups.' },
+      c14: { name: '360° walk-throughs', today: 'A demo: a 360° viewer and one simulated capture point on the S1 plan; its picture is AI-generated and labelled so. No capture kit, no processing, no real walk.', needed: 'Capture kit and cadence, processing and pinning to plans, a viewer, face blurring, retention.' },
       c15: { name: 'Fixed cameras and edge AI', today: '25 procedurally drawn simulated cameras; illustrative boxes for simulated events only.', needed: 'Cameras, power, network, NVR/VMS, edge events, calibration, privacy notices, hardening.' },
       c16: { name: 'HSE feeds (permits, incidents, training, access, wearables, weather)', today: 'Demo modules and 19 simulated HSE connectors.', needed: 'One connector per client system actually in use [V]; data-sharing approvals.' },
       c17: { name: 'AI models', today: 'Five pipelines shown; precision and recall “Not measured”; confidence “Illustrative”.', needed: 'Rules first; ML on client history (≥ 24 months); shadow mode; a validation report; model cards.' },
@@ -578,6 +567,7 @@ export default {
       duration: { zero: '—', one: '1 week', other: '{count} weeks' },
       est: 'est.',
       notBuilt: 'Roadmap — not built yet',
+      demoBuilt: 'Demo built — field release not built yet',
       fieldTag: 'Field priority',
       deliverables: 'Deliverables',
       exit: 'Exit criteria',
@@ -586,6 +576,7 @@ export default {
       target: 'Target',
       ground: 'On the ground',
       open: 'Closest screen: {view}',
+      openDemo: 'Open the demo: {view}',
       ganttAria: 'Phase timeline in weeks (estimates)',
       milestones: 'Milestones',
       phaseRow: '{name}: {weeks}',
@@ -611,7 +602,7 @@ export default {
     prio: {
       offline: {
         name: 'Offline',
-        today: 'The offline state is shown, nothing more: no service worker, no outbox, no server to sync with.',
+        today: 'A demo exists in the Field kit: an offline copy of the app (service worker) and an outbox that replays four field actions into this browser. There is still no server to sync with, no photo queue and no managed devices.',
         target: 'The app opens with no network and shows data “as of” the last sync; every observation and photo reaches the server exactly once; “synced” only after the server confirms.',
         steps: { a: 'P3a: shell caching, read-only offline, sync pill', b: 'P3b: outbox, photo queue, conflict handling', c: 'P3c: MDM roll-out and the on-site pilot' },
         exit: 'An observation with 3 photos created offline arrives once with matching hashes; retries create no duplicates; the sync pill is right in Arabic and English; 72 hours offline stay within the storage budget.',
@@ -619,7 +610,7 @@ export default {
       },
       qr: {
         name: 'QR',
-        today: 'None; the app header currently disables the camera.',
+        today: 'A demo exists in the Field kit: labels generated in the browser for zones, equipment, façade crates and permits, and scanning with the device camera or manual entry. No labels are installed on site and there is no registry server.',
         target: 'Durable labels on zones, equipment, deliveries, permits and inspection points; a scan opens the right record and action, online or offline; a delivery scan answers “approved — install” or “pending — do not install”.',
         steps: { a: 'P3a: registry and printing', b: 'P3b: flows 1–3 and 5', c: 'P3c: the gate receipt flow and the pilot' },
         exit: 'Scan-to-result ≤ 2 s online and ≤ 1 s offline (est.); no personal data in any code; unknown domains refused; revoked labels show as revoked offline.',
@@ -627,7 +618,7 @@ export default {
       },
       plans: {
         name: 'Plans and drawings',
-        today: 'An illustrative plan per site, “not a survey”.',
+        today: 'An illustrative plan per site, “not a survey”, with layer toggles and an illustrative drawing number.',
         target: 'The current approved drawings as the base layer, calibrated (≤ 0.25 m, est.), with layers for zones, cranes, cameras and QR points; sheets available offline.',
         steps: { a: 'P3a: drawing register and calibration tool', b: 'P3b: layers and offline sheets', c: 'P3c: markups and the pilot' },
         exit: 'Calibration residual ≤ 0.25 m; the latest approved revision within one sync; superseded sheets flagged; 40 sheets offline within budget.',
@@ -635,7 +626,7 @@ export default {
       },
       p360: {
         name: '360°',
-        today: 'None; 25 simulated cameras on the plan.',
+        today: 'A demo viewer with one simulated capture point (an AI-generated picture, labelled); 25 simulated cameras on the plan. No real capture and no real camera.',
         target: 'Weekly 360° walks pinned to the plans; fixed/PTZ cameras with edge AI sending events, not video; faces blurred.',
         steps: { a: 'P4a: 360° walk-through capture', b: 'P4b: fixed cameras and edge' },
         exit: 'Four consecutive weekly walks pinned; camera uptime ≥ 98 % (est. target); events arrive within 10 s; no continuous video leaves the site; DPO sign-off.',
@@ -689,12 +680,6 @@ export default {
       title: 'Related screens',
       sub: 'Where each part of this plan shows up in the demo today.',
     },
-    strip: {
-      label: 'Go-live readiness',
-      value: '{x} of {y} capabilities ready as a demo',
-      cta: 'What a real go-live needs →',
-      aria: 'Go-live readiness: {x} of {y} capabilities ready as a demo. Open what a real go-live needs.',
-      seg: '{label}: {n}',
-    },
+    strip: strip.en.strip,
   },
 };
