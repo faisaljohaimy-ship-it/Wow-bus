@@ -16,6 +16,7 @@ Status: **demo**. Offline work and QR workflows are not in the approved scope ye
 | `js/i18n/fieldkit.js` | All strings (AR/EN) |
 | `css/field.css` | Indicator, page, A4 print sheet |
 | `tests/field.test.mjs` | Encoder vectors, payload parser, outbox ordering / idempotency, precache drift |
+| `tests/sw.test.mjs` | The worker's behaviour (install, activate, shell, other documents, precache, runtime cache, bypasses, newer build) in a `vm` context |
 
 ## Service worker
 
@@ -33,9 +34,13 @@ Status: **demo**. Offline work and QR workflows are not in the approved scope ye
 - **`index.html` starts the app itself:** there is no static `<script type="module">`; the inline loader adds the
   module preloads and `js/app.js` after the first paint. Those requests are same-origin GETs for precached files,
   so they are answered from the shell cache like any other; the cached `./` carries the stamped page headers.
-- **Strategies:** navigations network-first (5 s timeout when a copy exists, cached shell offline, a bilingual
-  offline page when nothing is cached); precached files cache-first (never revalidated one by one, so builds never
-  mix); any other same-origin GET stale-while-revalidate. `?build-check=` (app.js `watchForNewBuild`) is never
+- **Strategies:** the app shell (the scope root or `index.html`, with any query string) network-first (5 s timeout
+  when a copy exists, cached shell offline, a bilingual offline page when nothing is cached); only HTML that carries
+  this worker's build stamp is saved as the shell, so a captive-portal sign-in page never replaces it. Any other
+  document opened in scope (the Markdown plan linked from `#/golive`, a file opened in its own tab) is network-first
+  with the runtime cache as fallback and is never treated as the shell. Precached files cache-first (never
+  revalidated one by one, so builds never mix); any other same-origin GET stale-while-revalidate.
+  `tests/sw.test.mjs` runs the worker against a fake cache and network. `?build-check=` (app.js `watchForNewBuild`) is never
   answered from cache. When the network HTML carries a different stamp, the old worker forwards everything to the
   network until the new worker takes over, so the "Reload" offered by the new-version notice loads one build.
 - **Where it registers:** HTTPS (and `localhost` only with `?sw=1` or `localStorage['biltix-hse:sw'] = 'on'`).

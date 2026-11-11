@@ -464,6 +464,9 @@ export default {
 
     function paintAll() { paintConn(); paintQuick(); if (current) paintResult(); }
     paintAll();
+    // The app starts the offline layer at the end of boot; opened as the first route, the page starts it now
+    // (idempotent) so the outbox and the field actions are usable without waiting for the live engines.
+    off.initOffline({ store, bus, toast }).then(() => { if (alive) paintAll(); }).catch(() => { /* app.js reports it */ });
     paintLabels();
     if (params.code) { input.value = String(params.code); openCode(String(params.code)); }
 

@@ -13,7 +13,10 @@
  *   index.html network-first (5 s timeout when a cached copy exists), cached copy offline. When the network
  *              HTML carries a different build stamp than this worker (a publish happened), this worker stops
  *              answering from its cache and forwards to the network until the new worker takes over — so the
- *              reload offered by app.js watchForNewBuild() never runs old modules under a new page.
+ *              reload offered by app.js watchForNewBuild() never runs old modules under a new page. Only HTML
+ *              that carries this worker's stamp is saved as the shell.
+ *   Other      documents in scope (docs/golive/plan.md opened from #/golive, a file opened in a tab) are
+ *   documents  network-first with the runtime cache as fallback; they are never treated as the shell.
  *   Bypassed   non-GET, other origins, ?build-check= (app.js new-version check), Range / media requests.
  */
 /* eslint-env serviceworker */
@@ -219,7 +222,9 @@ async function navigate(request) {
       const html = await res.clone().text();
       const m = html.match(BUILD_RE);
       if (m && m[1] !== VERSION) newerBuildSeen = true;
-      else if (!res.redirected) await shell.put('./', new Response(html, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } }));
+      // Only this build's own shell is stored. A 200 page without the stamp (a captive-portal sign-in page, a host
+      // error page) never replaces the cached app.
+      else if (m && !res.redirected) await shell.put('./', new Response(html, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } }));
     }
     return res;
   })();
@@ -229,6 +234,23 @@ async function navigate(request) {
     const res = await Promise.race([network, timeout]);
     return res || cached;
   } catch { return cached; }
+}
+
+/**
+ * A document in this scope that is not the app shell (the Markdown plan linked from #/golive, a file opened in its
+ * own tab): network first, the runtime cache as the offline fallback. Never stored as the shell.
+ */
+async function otherDocument(request) {
+  try {
+    const res = await fetch(request);
+    if (res.ok && res.type === 'basic' && !res.redirected) {
+      const rt = await caches.open(RUNTIME);
+      await rt.put(request, res.clone());
+    }
+    return res;
+  } catch {
+    return (await fromCaches(request)) || offlinePage();
+  }
 }
 
 async function staleWhileRevalidate(event, request) {
@@ -250,8 +272,14 @@ self.addEventListener('fetch', (event) => {
   if (url.searchParams.has('build-check') || url.pathname.endsWith('/sw.js')) return;
   if (request.headers.has('range') || request.destination === 'video' || request.destination === 'audio' || /\.(mp4|webm|mov)$/i.test(url.pathname)) return;
 
-  if (request.mode === 'navigate' || shellKey(request.url)) {
+  // The app shell (the scope root or …/index.html), however it is requested.
+  if (shellKey(request.url)) {
     event.respondWith(navigate(request));
+    return;
+  }
+  // Any other navigation in scope is its own document, not the app: it must not be answered with, or saved as, the shell.
+  if (request.mode === 'navigate') {
+    event.respondWith(otherDocument(request));
     return;
   }
   // A newer build is published: forward to the network (cache only as an offline fallback) until it takes over.

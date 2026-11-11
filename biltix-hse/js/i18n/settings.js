@@ -315,6 +315,7 @@ export default {
         'دقة نماذج الذكاء الاصطناعي (الدقة، الاستدعاء، المعايرة، الانجراف) غير مقيسة؛ يتطلب قياسها مجموعة اختبار مُعلَّمة وخدمة نماذج متصلة.',
         'الكتابة العكسية إلى منصة بلتكس لإدارة المشاريع محاكاة.',
         'اختبار الاتصال يعرض نجاحاً فقط بعد طلب HTTP حقيقي ناجح.',
+        'عُدّة الميدان (نسخة العمل دون اتصال، قائمة الإرسال، ملصقات QR) وعارض 360° عروض تجريبية لتصميم مقترح: لا يوجد خادم للمزامنة، ولا ملصقات مركّبة في أي موقع، وصورة 360° مولّدة بالذكاء الاصطناعي.',
       ],
       questionsTitle: 'أسئلة مفتوحة لبلتكس',
       questions: [
@@ -638,6 +639,7 @@ export default {
         'AI model accuracy (precision, recall, calibration, drift) is not measured; measuring it needs a labelled test set and a connected model service.',
         'Write-back to the BILTIX project-management platform is simulated.',
         'A connection test reports success only after a real, successful HTTP request.',
+        'The field kit (offline copy, outbox, QR labels) and the 360° viewer are demos of a proposed design: there is no server to sync with, no label is installed on any site, and the 360° picture is AI-generated.',
       ],
       questionsTitle: 'Open questions for BILTIX',
       questions: [

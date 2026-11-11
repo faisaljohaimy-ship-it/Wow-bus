@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assert, freshStore, psel } from './helpers.mjs';
+import { assert, freshStore, psel, store, bus } from './helpers.mjs';
 import { core } from '../js/i18n/core.js';
 import { NAV_META, VIEW_ORDER, TAB_IDS, navGroups, views } from '../js/views/index.js';
 import { labelInName, nameContains, nameExtra } from '../js/ui/components.js';
@@ -245,6 +245,32 @@ export const tests = [
       assert.equal(/const FIELD_ACTOR = '([^']+)'/.exec(read('js/views/fieldkit.js'))[1], actor, 'one actor name');
       assert.equal(data.terms[actor], 'Field kit');
       assert.equal(core.ar.nav.fieldkit.title, actor);
+    },
+  },
+  {
+    name: 'offline layer starts once; a field action taken before it is ready waits for it (deep link to #/fieldkit, boot tail later)',
+    async fn() {
+      const off = await import('../js/core/offline.js');
+      const state = freshStore();
+      const q = psel.alertQueue(state, {});
+      const alert = [...q.immediate, ...q.standard].find((a) => !a.acknowledged);
+      assert.ok(alert, 'an unacknowledged alert in the seed');
+      const heard = [];
+      const stop = bus.on('field:outbox', (p) => heard.push(p));
+      const first = off.initOffline({ store, bus });            // the field kit on mount …
+      const acting = off.act('alert.ack', { alertId: alert.id, code: alert.code, by: 'عُدّة الميدان' }, { key: `alert.ack:${alert.id}:integration` });
+      const second = off.initOffline({ store, bus });           // … and js/app.js at the end of boot
+      assert.equal(first, second, 'one initialisation, one promise');
+      assert.equal(await off.offlineReady(), await first);
+      const res = await acting;
+      assert.equal(res.duplicate, false);
+      assert.equal(res.queued, false, 'online: applied at once');
+      assert.equal(Boolean(store.state.platform.alerts.find((a) => a.id === alert.id).acknowledged), true, 'the alert was acknowledged in the store');
+      assert.ok(heard.length >= 1, 'views mounted earlier are told the outbox is ready');
+      assert.equal(off.outbox().count(), 0);
+      if (typeof stop === 'function') stop();
+      await off.outbox().clearAll();
+      freshStore();
     },
   },
   {

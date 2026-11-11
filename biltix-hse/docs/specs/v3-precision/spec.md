@@ -48,6 +48,10 @@ filled during verification), `baseline.md` (measured "before" state).
 - Offline-first, QR, CAD/BIM viewing and 360 capture workflows are NOT in the approved scope until
   BILTIX confirms them (open question Q1). An architecture diagram mentioning Autodesk APS does not
   make it a working integration; it is labelled "Not connected".
+  v3.8 note: the app now carries browser-only **demos** of a proposed design for three of them (the field
+  kit `#/fieldkit`: offline copy + outbox, QR labels and scanning; a 360° viewer with one simulated,
+  AI-generated capture on `#/spatial`). They are labelled as demos, have no server behind them and do not
+  change this non-goal or the answer BILTIX still owes on Q1. No CAD/BIM viewer is built.
 
 ## 4. Decisions
 

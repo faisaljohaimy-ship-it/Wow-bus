@@ -14,6 +14,10 @@
  *                opted in (?sw=1 or localStorage 'biltix-hse:sw' = 'on') — no service worker in tests.
  *   Indicator    initOffline() mounts one polite status pill in the app bar (#netIndicator → #/fieldkit), visible
  *                while offline or while actions wait.
+ *   Start        initOffline({ store, bus, toast }) is idempotent and returns one promise. js/app.js calls it at the
+ *                end of boot (after the first view and the live engines); the field kit calls it on mount, so a
+ *                deep link to #/fieldkit does not wait for the boot tail. act() waits for it; when it is ready it
+ *                emits 'field:outbox' once so panels mounted earlier (Settings → Offline) repaint.
  *
  * No innerHTML; text through textContent. Strings: dictionary 'fieldkit' (js/i18n/fieldkit.js).
  */
@@ -256,6 +260,8 @@ function applyEntry(store, entry) {
  * outbox as "waiting to sync". Resolves to { duplicate, queued, entry }.
  */
 export async function act(kind, payload, { key = '' } = {}) {
+  // The app starts this layer after the first view (js/app.js boot); a field action taken in that window waits for it.
+  if (!field.outbox && initPromise) await initPromise;
   if (!field.outbox) throw new Error('offline layer not initialised');
   const res = await field.outbox.enqueue(kind, payload, { key });
   if (res.duplicate) return { ...res, queued: false };
@@ -432,9 +438,22 @@ export function paintIndicator() {
 /* Boot hook (js/app.js)                                               */
 /* ------------------------------------------------------------------ */
 
-/** Called once by js/app.js after the first render: outbox, indicator, network listeners, service worker. */
-export async function initOffline({ store, bus, toast } = {}) {
-  if (field.inited) return field.outbox;
+let initPromise = null;
+
+/**
+ * Outbox, indicator, network listeners, service worker. Called by js/app.js at the end of boot and by the field
+ * kit when it mounts first (a deep link): one initialisation, every caller gets the same promise, which resolves
+ * to the outbox once it has loaded.
+ */
+export function initOffline(opts = {}) {
+  if (!initPromise) initPromise = startOffline(opts);
+  return initPromise;
+}
+
+/** Resolves when the outbox is usable (null when initOffline was never called). */
+export function offlineReady() { return initPromise || Promise.resolve(null); }
+
+async function startOffline({ store, bus, toast } = {}) {
   field.inited = true;
   Object.assign(field, { store: store || null, bus: bus || null, toast: typeof toast === 'function' ? toast : null });
   field.outbox = createOutbox({ storage: await pickStorage(), apply: storeApplier(field.store) });
@@ -453,6 +472,8 @@ export async function initOffline({ store, bus, toast } = {}) {
   }
   if (bus) bus.on('lang:change', () => { ind.lastSr = ''; paintIndicator(); });
   paintIndicator();
+  // Views mounted before this point (a deep link to #/fieldkit or Settings → Offline) repaint with the real outbox.
+  if (field.bus) field.bus.emit('field:outbox', { waiting: field.outbox.count() });
   if (isOnline() && field.outbox.count()) syncNow({ announce: true });
   // Service worker after load and an idle moment: never competes with the first render or the LCP image.
   const later = () => registerServiceWorker();
@@ -462,4 +483,4 @@ export async function initOffline({ store, bus, toast } = {}) {
   return field.outbox;
 }
 
-export default { createOutbox, storeApplier, memoryStorage, localStorageAdapter, idbStorage, idemKey, randomKey, initOffline, act, syncNow, isOnline, setSimulatedOffline, isSimulatedOffline, outbox, swInfo, swSkipReason, registerServiceWorker, cacheInfo, storageInfo, requestPersistence, clearOfflineCache, buildStamp, paintIndicator };
+export default { createOutbox, storeApplier, memoryStorage, localStorageAdapter, idbStorage, idemKey, randomKey, initOffline, offlineReady, act, syncNow, isOnline, setSimulatedOffline, isSimulatedOffline, outbox, swInfo, swSkipReason, registerServiceWorker, cacheInfo, storageInfo, requestPersistence, clearOfflineCache, buildStamp, paintIndicator };
