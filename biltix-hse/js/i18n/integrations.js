@@ -50,6 +50,7 @@ export default {
       writeback: 'الكتابة العكسية (محاكاة)',
       entities: 'الكيانات',
       vendorUnknown: '—',
+      details: 'التفاصيل',
     },
     modal: {
       title: 'إعداد — {name}',
@@ -129,6 +130,7 @@ export default {
       writeback: 'Write-back (simulated)',
       entities: 'Entities',
       vendorUnknown: '—',
+      details: 'Details',
     },
     modal: {
       title: 'Configure — {name}',

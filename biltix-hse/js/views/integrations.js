@@ -12,6 +12,13 @@
  * Settings can be live). The data source itself is managed in Settings (summary card here, #int-datasource,
  * deep link ?section=datasource).
  *
+ * Go-live details (plan v4 §2, js/data/golive.js): every card has "Details" — a drawer with protocol / API family,
+ * direction, frequency, entities, auth, client prerequisites, effort (est.), risks and status — and "Test connection"
+ * on every connector: the real HTTP test above where a browser can do one, otherwise the drawer's honest result
+ * ("needs the client's credentials and a backend — nothing was sent"); never a fake success. The material-approval
+ * chain (DMS → ERP → P6 → BIM → BILTIX PM) is listed first and tagged. Deep link ?connector=<record id> opens the
+ * drawer once.
+ *
  * Live updates: `integrations:tick` patches simulated figures in place (no flash); a store change on one record
  * repaints that card (flash only when its status changed); filters re-render the grid without motion.
  * Strings: dictionary 'integrations' (js/i18n/integrations.js). Data reaches the DOM only via textContent / h().
@@ -19,6 +26,8 @@
 
 import { i18n } from '../core/i18n.js';
 import dict from '../i18n/integrations.js';
+import { connectorFor, chainRank } from '../data/golive.js';
+import { openConnectorDetails } from './shared/connector-details.js';
 
 i18n.register('integrations', dict);
 
@@ -188,10 +197,11 @@ export default {
     const integrations = () => arr(store.state && store.state.integrations).filter(Boolean);
     const connectors = () => arr(safe(() => psel.platform(store.state).connectors, null) || (store.state.platform && store.state.platform.connectors)).filter(Boolean);
     function items() {
+      // The material-approval chain first (stable otherwise): DMS → ERP → P6 → BIM → BILTIX PM.
       return [
         ...integrations().map((rec) => ({ key: `i:${rec.id}`, kind: 'integration', ns: 'integrations', group: 'site', rec })),
         ...connectors().map((rec) => ({ key: `c:${rec.id}`, kind: 'connector', ns: 'connectors', group: 'enterprise', rec })),
-      ];
+      ].map((it, i) => ({ it, i, r: chainRank(it.rec.id) })).sort((a, b) => (a.r - b.r) || (a.i - b.i)).map((x) => x.it);
     }
     const statusOf = (item) => {
       const s = safe(() => status.connector(store.state, item.rec, now()), 'not_connected');
@@ -364,14 +374,18 @@ export default {
       };
       const backendTipId = `intg-tip-${String(rec.id).replace(/[^\w-]/g, '')}-${item.kind}`;
       const configured = isObj(rec.config) && Object.values(rec.config).some((v) => String(v || '').trim());
+      const plan = connectorFor(rec.id);
       const meta = h('div', { class: 'int-meta' },
+        plan && plan.wave === 1 ? badge(i18n.t('golive.drawer.wave1', { n: fmt.num(plan.chain) }), 'brand', { icon: svgIcon('link', 12) }) : null,
         badge(categoryOf(item), 'neutral', { icon: svgIcon('grid', 12) }),
         testType ? badge(t('integrations.card.httpTest', { type: TYPE_LABEL[testType] }), 'brand', { icon: svgIcon('plug', 12) }) : badge(t('integrations.card.needsBackend'), 'neutral', { icon: svgIcon('lock', 12) }),
         configured ? badge(t('integrations.card.configured'), 'neutral', { icon: svgIcon('check', 12) }) : null);
       const actions = h('div', { class: 'intg-actions' },
         button(t('integrations.card.configure'), { variant: 'outline', size: 'sm', icon: svgIcon('settings', 15), onClick: (e) => openConfig(item, e.currentTarget) }));
       if (testType) actions.appendChild(button(t('integrations.card.test'), { variant: 'ghost', size: 'sm', icon: svgIcon('plug', 15), onClick: (e) => openConfig(item, e.currentTarget, { autoTest: true }) }));
-      else actions.appendChild(h('span', { class: 'intg-backend', id: backendTipId, title: t('integrations.card.needsBackendTip') }, svgIcon('lock', 13), h('span', {}, t('integrations.card.needsBackend')), h('span', { class: 'sr-only' }, ` — ${t('integrations.card.needsBackendTip')}`)));
+      else if (plan) actions.appendChild(button(t('integrations.card.test'), { variant: 'ghost', size: 'sm', icon: svgIcon('lock', 15), onClick: (e) => openDetails(item, e.currentTarget, { autoTest: true }), attrs: { title: t('integrations.card.needsBackendTip'), 'aria-describedby': backendTipId } }));
+      if (!testType) actions.appendChild(h('span', { class: ['intg-backend', plan ? 'sr-only' : null], id: backendTipId, title: t('integrations.card.needsBackendTip') }, svgIcon('lock', 13), h('span', {}, t('integrations.card.needsBackend')), h('span', { class: 'sr-only' }, ` — ${t('integrations.card.needsBackendTip')}`)));
+      if (plan) actions.appendChild(button(t('integrations.card.details'), { variant: 'ghost', size: 'sm', icon: svgIcon('info', 15), onClick: (e) => openDetails(item, e.currentTarget), attrs: { 'aria-label': i18n.t('golive.map.detailsAria', { name: nameOf(item) }) } }));
       const desc = descOf(item);
       const el = h('div', { class: 'int-card', role: 'listitem', 'data-key': item.key, 'aria-label': nameOf(item) },
         h('div', { class: 'int-head' },
@@ -421,6 +435,36 @@ export default {
       const next = buildSummary();
       summaryEl.replaceWith(next);
       summaryEl = next;
+    }
+
+    /* ───────────────────────── go-live details drawer ───────────────────────── */
+
+    function openDetails(item, returnFocus, { autoTest = false } = {}) {
+      const entry = connectorFor(item.rec.id);
+      if (!entry) return;
+      if (openModal) { try { openModal.close(); } catch { /* ignore */ } openModal = null; }
+      const all = items();
+      const records = entry.recIds.map((id) => all.find((it) => it.rec.id === id)).filter(Boolean)
+        .map((it) => ({ id: it.rec.id, name: nameOf(it), status: statusOf(it) }));
+      const fresh = all.find((it) => it.key === item.key) || item;
+      const testType = testTypeOf(fresh);
+      openModal = openConnectorDetails(ctx, {
+        entry, records, returnFocus, autoTest,
+        realTest: testType ? () => { openModal = null; openConfig(fresh, returnFocus, { autoTest: true }); } : null,
+      });
+    }
+
+    /** ?connector=<record id> → open its details drawer once (the param is then dropped). */
+    function revealConnector() {
+      const id = params.connector ? String(params.connector) : '';
+      if (!id || !/[?&]connector=/.test(location.hash || '')) return;
+      const it = items().find((x) => x.rec.id === id);
+      if (!it) return;
+      requestAnimationFrame(() => {
+        const entry = cardRefs.get(it.key);
+        openDetails(it, entry ? entry.el.querySelector('.int-foot .btn:last-child') : null);
+        try { history.replaceState(history.state, '', router && typeof router.href === 'function' ? router.href('integrations') : '#/integrations'); } catch { /* ignore */ }
+      });
     }
 
     /* ───────────────────────── config / real test ───────────────────────── */
@@ -561,6 +605,7 @@ export default {
           gridEl));
       renderGrid({ animate: firstPaint });
       if (firstPaint && motion && typeof motion.enter === 'function') motion.enter([bannerEl, dsCard, summaryEl, filters], { y: 6, stagger: 0.03 });
+      if (firstPaint) revealConnector();
       firstPaint = false;
       revealSection();
     }

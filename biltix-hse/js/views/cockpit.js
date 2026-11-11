@@ -56,8 +56,11 @@ import { status as statusLib } from '../core/status.js';
 import { psel as pselLib, RATING_THRESHOLDS } from '../core/platform-selectors.js';
 import { parseHash, buildHash } from '../core/router.js';
 import dict from '../i18n/cockpit.js';
+import goliveDict from '../i18n/golive.js';
+import { CAPABILITIES as GL_CAPABILITIES, GL_STATUSES, readiness as glReadiness } from '../data/golive.js';
 
 i18n.register('cockpit', dict);
+i18n.register('golive', goliveDict);
 
 const VIEW_ID = 'cockpit';
 const STYLE_ID = 'view-cockpit-style-v3';
@@ -843,6 +846,21 @@ export default {
       return { el: wrap, update, reset: () => { if (bar) bar.set({ ...DEFAULT_UI }); } };
     })();
     root.appendChild(filters.el);
+
+    /* ---- go-live readiness strip (static plan data, js/data/golive.js; links to #/golive; never animates) ---- */
+    try {
+      const r = glReadiness(GL_CAPABILITIES);
+      const gt = (k, p) => i18n.t(`golive.strip.${k}`, p);
+      const x = fmt.num(r.demoReady);
+      const y = fmt.num(r.total);
+      root.appendChild(h('a', { class: 'gl-strip', href: router && typeof router.href === 'function' ? router.href('golive') : '#/golive', 'aria-label': gt('aria', { x, y }) },
+        h('span', { class: 'gl-strip-icon', 'aria-hidden': 'true' }, svgIcon('send', 16)),
+        h('span', { class: 'gl-strip-text', 'aria-hidden': 'true' }, h('span', { class: 'gl-strip-label' }, `${gt('label')}:`), h('span', { class: 'gl-strip-value' }, gt('value', { x, y }))),
+        h('span', { class: ['gl-bar', 'is-compact'], 'aria-hidden': 'true' }, ...GL_STATUSES.filter((s) => r.counts[s] > 0).map((s) => h('span', {
+          class: ['gl-bar-seg', `is-${s}`], style: { flexGrow: String(r.counts[s]) }, title: gt('seg', { label: i18n.t(`golive.status.${s}`), n: fmt.num(r.counts[s]) }),
+        }))),
+        h('span', { class: 'gl-strip-cta', 'aria-hidden': 'true' }, gt('cta'))));
+    } catch (err) { warnOnce(warned, 'go-live strip', err); }
 
     /* ================================================================ */
     /* B — executive metrics                                              */
