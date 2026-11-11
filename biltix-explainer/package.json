@@ -24,7 +24,13 @@
     "showcase:stills": "node scripts/showcase-stills.mjs",
     "showcase:render:ar": "remotion render src/index.ts ShowcaseAR out/biltix-mvp-ar-1080p.mp4 --concurrency=3 --image-format=jpeg --jpeg-quality=92 --audio-codec=aac --audio-bitrate=192k",
     "showcase:render:en": "remotion render src/index.ts ShowcaseEN out/biltix-mvp-en-1080p.mp4 --concurrency=3 --image-format=jpeg --jpeg-quality=92 --audio-codec=aac --audio-bitrate=192k",
-    "showcase:mix": "node scripts/showcase-mix.mjs"
+    "showcase:mix": "node scripts/showcase-mix.mjs",
+    "film:voice": "node scripts/film-voice.mjs",
+    "film:media": "node scripts/film-media.mjs",
+    "film:stills": "node scripts/film-stills.mjs",
+    "film:render:ar": "node scripts/film-media.mjs && remotion render src/index.ts FilmAR out/film-ar-1080p.mp4 --concurrency=3 --image-format=jpeg --jpeg-quality=92 --audio-codec=aac --audio-bitrate=192k",
+    "film:render:en": "node scripts/film-media.mjs && remotion render src/index.ts FilmEN out/film-en-1080p.mp4 --concurrency=3 --image-format=jpeg --jpeg-quality=92 --audio-codec=aac --audio-bitrate=192k",
+    "film:mix": "node scripts/film-mix.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "5.3.0",

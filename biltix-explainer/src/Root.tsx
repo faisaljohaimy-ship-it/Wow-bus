@@ -3,6 +3,8 @@ import { Close, Open } from './bookends/Bookends';
 import { BOOKEND_FRAMES, FPS as BK_FPS, HEIGHT as BK_H, WIDTH as BK_W } from './bookends/timing';
 import { Composition } from 'remotion';
 import { Explainer } from './Explainer';
+import { calculateFilmMetadata, Film } from './film/Film';
+import { FPS as FL_FPS, HEIGHT as FL_H, WIDTH as FL_W } from './film/timeline';
 import { calculateShowcaseMetadata, Showcase } from './showcase/Showcase';
 import { FPS as SC_FPS, HEIGHT as SC_H, WIDTH as SC_W } from './showcase/timeline';
 import { FPS, HEIGHT, TOTAL_FRAMES, WIDTH } from './storyboard';
@@ -53,5 +55,8 @@ export const RemotionRoot: React.FC = () => (
       height={SC_H}
       defaultProps={{ lang: 'en' as const }}
     />
+    {/* Film v2 "One material" (≈ 3 min): one scene per narration line; duration from src/film/voice-timing.json */}
+    <Composition id="FilmAR" component={Film} durationInFrames={5000} calculateMetadata={calculateFilmMetadata} fps={FL_FPS} width={FL_W} height={FL_H} defaultProps={{ lang: 'ar' as const }} />
+    <Composition id="FilmEN" component={Film} durationInFrames={5000} calculateMetadata={calculateFilmMetadata} fps={FL_FPS} width={FL_W} height={FL_H} defaultProps={{ lang: 'en' as const }} />
   </>
 );

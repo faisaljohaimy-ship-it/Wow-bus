@@ -15,3 +15,6 @@ public/showcase/*
 !public/showcase/manifest.json
 public/voice/*.norm.wav
 out/showcase-stills/
+# Film v2: AI media (b-roll, panorama, score, narration, UI recordings; ~120 MB, never committed) and review stills
+public/v2/
+out/film-stills/

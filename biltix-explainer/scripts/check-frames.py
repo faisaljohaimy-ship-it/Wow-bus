@@ -4,7 +4,8 @@
     python3 scripts/check-frames.py                    # both 1080p masters and both 720p web files
     python3 scripts/check-frames.py path/to/file.mp4 [ar|en]
     (a file named *mvp* is checked against the MVP showcase: scenes from src/showcase/voice-timing.json and the
-    showcase's Demo-data chip box)
+    showcase's Demo-data chip box; a file named *film* against the film v2: scenes from scripts/lib/film-timeline.mjs,
+    the Demo-data chip from src/film/layout.json, checked on S02–S12 only, outside their fades)
 
 Needs python3 + numpy and ffmpeg/ffprobe on PATH (or FFMPEG / FFPROBE set). Exit 1 on any finding.
 
@@ -53,6 +54,23 @@ def use_showcase(lang):
     tl = open(os.path.join(ROOT, 'src/showcase/timeline.ts'), encoding='utf-8').read()
     TRANSITION = int(re.search(r'export const XFADE = (\d+)', tl).group(1))
     CHIP = SHOWCASE_CHIP
+
+
+CHIP_RANGE = None  # (first, last) frame the chip must be on screen; None = every frame
+
+
+def use_film(lang):
+    """Film v2 files (film-*, BILTIX-Film-*): scenes from the film timeline, the chip box inside its pill."""
+    global SCENES, TRANSITION, CHIP, CHIP_RANGE
+    import json
+    out = subprocess.run(['node', os.path.join(ROOT, 'scripts/lib/film-timeline.mjs'), lang], capture_output=True, text=True, check=True).stdout
+    t = json.loads(out)
+    SCENES = [(f'S{i + 1:02d}', s['frames']) for i, s in enumerate(t['scenes'])]
+    TRANSITION = t['xfade']
+    x0, x1, y0, y1 = t['chip'][lang]
+    CHIP = {lang: (x0 + 14, x1 - 14, y0 + 10, y1 - 10)}
+    a, b = t['demoScenes']
+    CHIP_RANGE = (t['scenes'][a - 1]['from'] + t['xfade'] + 2, t['scenes'][b]['from'] - 1)
 
 
 def where(i):
@@ -138,9 +156,12 @@ def check(path, lang):
     ev = lambda v: int(v * s) // 2 * 2
     X0, X1, Y0, Y1 = ev(x0), ev(x1), ev(y0), ev(y1)
     C = decode(path, f'crop={X1 - X0}:{Y1 - Y0}:{X0}:{Y0}', X1 - X0, Y1 - Y0).reshape(n, -1)
-    ref = np.median(C, axis=0)
+    r0, r1 = CHIP_RANGE if CHIP_RANGE else (0, n - 1)
+    r1 = min(r1, n - 1)
+    ref = np.median(C[r0:r1 + 1], axis=0)
     cd = np.abs(C - ref).mean(axis=1); white = (C > 235).mean(axis=1); ink = (C < 120).mean(axis=1)
-    nochip = [i for i in range(n) if cd[i] > 8 or white[i] < 0.5 or ink[i] < 0.03]
+    nochip = [i for i in range(r0, r1 + 1) if cd[i] > 8 or white[i] < 0.5 or ink[i] < 0.03]
+    cd, white, ink = cd[r0:r1 + 1], white[r0:r1 + 1], ink[r0:r1 + 1]
 
     name = os.path.basename(path)
     print(f'{name} [{lang}]: {n} frames')
@@ -156,10 +177,13 @@ def check(path, lang):
 if __name__ == '__main__':
     if len(sys.argv) > 1:
         path = sys.argv[1]
-        lang = sys.argv[2] if len(sys.argv) > 2 else ('ar' if '-ar' in os.path.basename(path) else 'en')
+        nm = os.path.basename(path).lower()
+        lang = sys.argv[2] if len(sys.argv) > 2 else ('ar' if ('-ar' in nm or 'arabic' in nm) else 'en')
         files = [(path, lang)]
         if 'mvp' in os.path.basename(path).lower():
             use_showcase(lang)
+        elif 'film' in os.path.basename(path).lower():
+            use_film(lang)
     else:
         files = []
         for lang in ('ar', 'en'):

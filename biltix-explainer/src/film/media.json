@@ -1,0 +1,53 @@
+{
+ "broll": {
+  "aerial": 4,
+  "engineer": 4,
+  "ops-room": 4,
+  "hardhat": 4,
+  "facade-lift": 4,
+  "cam360-floor": 4,
+  "offline-basement": 4,
+  "factory-line": 4,
+  "pm-approve": 4,
+  "facade-inspect": 4,
+  "qr-scan": 4,
+  "qr-scan-keyed": 4
+ },
+ "ui": {
+  "ui-cockpit-en": {
+   "dur": 8.4,
+   "w": 1920,
+   "h": 1080,
+   "fps": 30
+  },
+  "ui-register-en": {
+   "dur": 10.667,
+   "w": 1920,
+   "h": 1080,
+   "fps": 30
+  },
+  "ui-treatment-en": {
+   "dur": 6.767,
+   "w": 1920,
+   "h": 1080,
+   "fps": 30
+  },
+  "ui-tasks-en": {
+   "dur": 8.4,
+   "w": 1920,
+   "h": 1080,
+   "fps": 30
+  },
+  "ui-schedule-en": {
+   "dur": 10.6,
+   "w": 1920,
+   "h": 1080,
+   "fps": 30
+  }
+ },
+ "captures": "showcase/showcase",
+ "panorama": {
+  "w": 3168,
+  "h": 1344
+ }
+}
