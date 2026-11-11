@@ -97,11 +97,12 @@ const STYLE_TEXT = `
 .wt-title { margin: 0; font-size: var(--fs-md, 16px); line-height: 1.35; outline: none; }
 .wt-title:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 .wt-x { flex: none; }
-.wt-progress { display: flex; gap: 4px; padding: 0 14px 8px; margin: 0; list-style: none; }
-.wt-progress li { flex: 1; block-size: 4px; border-radius: 2px; background: var(--line); }
-.wt-progress li.is-done { background: color-mix(in srgb, var(--brand) 55%, var(--bg-1)); }
-.wt-progress li.is-current { background: var(--brand); }
+.wt-progress { display: flex; gap: 4px; padding: 0 14px 8px; margin: 0; }
+.wt-progress > span { flex: 1; block-size: 4px; border-radius: 2px; background: var(--line); }
+.wt-progress > span.is-done { background: color-mix(in srgb, var(--brand) 55%, var(--bg-1)); }
+.wt-progress > span.is-current { background: var(--brand); }
 .wt-body { overflow: auto; padding: 10px 14px; display: grid; gap: 10px; font-size: var(--fs-sm); line-height: 1.55; }
+.wt-body:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .wt-body p { margin: 0; }
 .wt-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .wt-sub { margin: 0; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-2); }
@@ -290,6 +291,9 @@ async function ensureScreen(stepId) {
     const want = `#/spatial?site=${encodeURIComponent(risk.projectId)}&zone=${encodeURIComponent(risk.zoneId)}`;
     if (routeId() !== 'spatial') location.hash = want;
     await waitFor(() => document.querySelector('.view-spatial .sp-plan'));
+    // Leaving the register closes its drawer, which hands the focus back when its closing animation ends: wait
+    // for that, so the step heading (focused at the end of go()) keeps the focus.
+    await waitFor(() => !openDrawerEl(), 1500);
     return;
   }
   const tab = DRAWER_TAB[stepId] || null;
@@ -359,6 +363,52 @@ function placeRing() {
   const drawer = openDrawerEl();
   a.root.setAttribute('data-side', drawer ? 'start' : 'end');
 }
+/**
+ * The panel lies over the bottom of the screen (on phones across its whole width). When the step's target is in
+ * the panel's columns, the target's scroll container (the page, `main` or the drawer body) gets room at its end
+ * and a matching scroll padding, so scrollIntoView stops the target clear of the panel and the reader can still
+ * scroll the end of that container into view. Kept while the next step uses the same container (no jump of its
+ * scroll position in between); undone when the container changes and when the tour ends.
+ */
+function undock() {
+  const a = active;
+  const d = a && a.docked;
+  if (!d) return;
+  a.docked = null;
+  d.el.style.paddingBlockEnd = d.pad;
+  d.el.style.scrollPaddingBlockEnd = d.scrollPad;
+}
+/** The box that scrolls `target` vertically: inside a dialog its body, on the page `main` (wide) or the document. */
+function scrollerOf(target) {
+  const dlg = target.closest('dialog[open]');
+  for (let el = target.parentElement; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+    const oy = getComputedStyle(el).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1) return el;
+    if (el === dlg) break;
+  }
+  if (!dlg) return document.documentElement;
+  const body = dlg.querySelector('.drawer-body, .modal-body');
+  return body && body.contains(target) ? body : null;
+}
+function dock(target) {
+  const a = active;
+  if (!a) return;
+  let sc = null;
+  let room = 0;
+  if (target && target.isConnected) {
+    const pr = a.root.getBoundingClientRect();
+    const tr = target.getBoundingClientRect();
+    if (pr.height && tr.right > pr.left + 1 && tr.left < pr.right - 1) {   // not beside the panel
+      sc = scrollerOf(target);
+      room = Math.max(0, Math.round(window.innerHeight - pr.top + 12));
+    }
+  }
+  if (a.docked && (a.docked.el !== sc || !room)) undock();
+  if (!sc || !room) return;
+  if (!a.docked) a.docked = { el: sc, pad: sc.style.paddingBlockEnd, scrollPad: sc.style.scrollPaddingBlockEnd, own: parseFloat(getComputedStyle(sc).paddingBlockEnd) || 0 };
+  sc.style.paddingBlockEnd = `${a.docked.own + room}px`;
+  sc.style.scrollPaddingBlockEnd = `${room}px`;
+}
 function scheduleRing() {
   const a = active;
   if (!a || a.ringRaf) return;
@@ -378,8 +428,9 @@ async function go(index) {
   const target = await waitFor(() => findTarget(stepId), 1500);
   if (!active || active !== a || seq !== a.seq) return;
   a.target = target;
+  paint(stepId, { loading: false });   // first: the panel takes its height for this step, then the target is placed
+  dock(target);
   if (target) { try { target.scrollIntoView({ block: 'nearest', behavior: reduced() ? 'auto' : 'smooth' }); } catch { /* ignore */ } }
-  paint(stepId, { loading: false });
   scheduleRing();
   setTimeout(scheduleRing, reduced() ? 0 : 360);
   try { a.title.focus({ preventScroll: true }); } catch { /* ignore */ }
@@ -392,7 +443,7 @@ function paint(stepId, { loading }) {
   const n = STEPS.indexOf(stepId);
   a.kicker.textContent = `${t('title')} · ${t('step', { n: fmt.num(n + 1), total: fmt.num(STEPS.length) })}`;
   a.title.textContent = t(`steps.${stepId}.title`, { n: fmt.num(new Set(arr(risk && risk.evidenceChain).map((e) => e.sourceSystem)).size) });
-  Array.from(a.progress.children).forEach((li, i) => { li.className = i < n ? 'is-done' : i === n ? 'is-current' : ''; });
+  Array.from(a.progress.children).forEach((seg, i) => { seg.className = i < n ? 'is-done' : i === n ? 'is-current' : ''; });
   a.progress.setAttribute('aria-valuenow', String(n + 1));
   a.progress.setAttribute('aria-valuetext', t('step', { n: fmt.num(n + 1), total: fmt.num(STEPS.length) }));
   if (!loading || !a.body.childElementCount) a.body.replaceChildren(...(risk ? content(stepId, risk, a.ctx) : [h('p', {}, t('unavailable'))]), h('p', { class: 'wt-note' }, t('honest')));
@@ -421,8 +472,9 @@ export function startWalkthrough(ctx = {}, { riskId = WORKED_RISK, step = 0, ret
   const kicker = h('span', { class: 'wt-kicker' });
   const title = h('h2', { class: 'wt-title', id: `${uid}-t`, tabindex: '-1' });
   const closeX = components.button('', { variant: 'ghost', size: 'sm', icon: 'close', onClick: () => stopWalkthrough('close'), attrs: { 'aria-label': t('close'), class: 'wt-x' } });
-  const progress = h('ol', { class: 'wt-progress', role: 'progressbar', 'aria-label': t('progress'), 'aria-valuemin': '1', 'aria-valuemax': String(STEPS.length) }, ...STEPS.map(() => h('li', {})));
-  const body = h('div', { class: 'wt-body', id: `${uid}-b` });
+  const progress = h('div', { class: 'wt-progress', role: 'progressbar', 'aria-label': t('progress'), 'aria-valuemin': '1', 'aria-valuemax': String(STEPS.length) }, ...STEPS.map(() => h('span', {})));
+  // The step text scrolls when it is longer than the panel: focusable, so the keyboard can scroll it.
+  const body = h('div', { class: 'wt-body', id: `${uid}-b`, tabindex: '0' });
   const prev = components.button(t('prev'), { variant: 'outline', size: 'sm', onClick: () => go(active.step - 1) });
   const next = components.button(t('next'), { variant: 'primary', size: 'sm', onClick: () => { if (active.step >= STEPS.length - 1) stopWalkthrough('finish'); else go(active.step + 1); } });
   const root = h('section', { class: 'wt-panel', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': `${uid}-t`, 'aria-describedby': `${uid}-b`, 'data-side': 'end', dir: i18n.dir(), lang: i18n.lang() },
@@ -446,7 +498,7 @@ export function startWalkthrough(ctx = {}, { riskId = WORKED_RISK, step = 0, ret
   const onHash = () => { setTimeout(scheduleRing, 250); };
   window.addEventListener('hashchange', onHash);
   const opener = returnFocus || (document.activeElement && document.activeElement !== document.body ? document.activeElement : null);
-  active = { ctx: ctx || {}, riskId: risk.id, step: 0, seq: 0, root, ring, kicker, title, progress, body, prev, next, target: null, ringRaf: 0, opener,
+  active = { ctx: ctx || {}, riskId: risk.id, step: 0, seq: 0, root, ring, kicker, title, progress, body, prev, next, target: null, ringRaf: 0, opener, docked: null,
     cleanup: () => { inertGuard.disconnect(); window.removeEventListener('resize', onMove); document.removeEventListener('scroll', onMove, true); window.removeEventListener('hashchange', onHash); } };
   if (animOn && typeof root.animate === 'function') {
     try { root.animate([{ opacity: 0, transform: 'translateY(12px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.16,1,.3,1)' }); } catch { /* ignore */ }
@@ -459,6 +511,7 @@ export function startWalkthrough(ctx = {}, { riskId = WORKED_RISK, step = 0, ret
 export function stopWalkthrough(reason = 'close') {
   const a = active;
   if (!a) return;
+  undock();
   active = null;
   a.seq += 1;
   if (a.ringRaf) cancelAnimationFrame(a.ringRaf);
@@ -466,7 +519,12 @@ export function stopWalkthrough(reason = 'close') {
   a.root.remove();
   a.ring.remove();
   document.documentElement.classList.remove('wt-anim');
-  const back = a.opener && a.opener.isConnected && !a.opener.closest('[inert]') ? a.opener : (openDrawerEl() ? openDrawerEl().querySelector('.drawer-tab[aria-selected="true"]') : document.querySelector('main h1, h1'));
+  // Focus goes back to the opener; when that is gone, into the dialog that is open (the page behind it is inert:
+  // the risk drawer's selected tab, the 360° viewer's close button), else to the page heading.
+  const dialogs = document.querySelectorAll('dialog[open]');
+  const dlg = dialogs.length ? dialogs[dialogs.length - 1] : null;
+  const back = a.opener && a.opener.isConnected && !a.opener.closest('[inert]') ? a.opener
+    : (dlg ? dlg.querySelector('.drawer-tab[aria-selected="true"], .modal-close, .drawer-close, button:not([disabled])') : document.querySelector('main h1, h1'));
   if (back && typeof back.focus === 'function') { try { back.focus({ preventScroll: true }); } catch { /* ignore */ } }
   return reason;
 }
