@@ -161,6 +161,19 @@
   --stagger: 32ms;
   --ease-out: cubic-bezier(.16, 1, .3, 1);
   --ease-in-out: cubic-bezier(.65, 0, .35, 1);
+  /* Shell motion (v3.3): route transition, sliding nav indicators, header stagger, app-bar glint.
+     js/ui/motion.js mirrors these values (timing.*). */
+  --dur-page: 300ms;                /* incoming view: opacity + rise */
+  --dur-leave: 140ms;               /* outgoing view afterimage: fade + recede (linear) */
+  --page-delay: 60ms;               /* incoming view holds while the afterimage thins out */
+  --dur-glide: 320ms;               /* rail / tab-bar active indicator */
+  --page-rise: 10px;                /* incoming view starts this far below its place */
+  --stagger-head: 40ms;             /* page header parts (code, title, lead, chips, actions) */
+  --ease-glide: cubic-bezier(.22, 1, .36, 1);
+  --ease-in: cubic-bezier(.4, 0, 1, 1);
+  --glint-cycle: 11s;               /* app-bar light line: one sweep per cycle (subtle) */
+  --glint-cycle-cinematic: 7s;      /* … and in the cinematic background */
+  --shell-fx: 1;                    /* 1 = hover/press micro-motion on; 0 under reduced motion (below) */
 
   /* Layout */
   --appbar-h: 64px;
@@ -318,6 +331,47 @@
   --shadow-1: var(--elev-1);
   --glow-accent: 0 0 0 1px rgba(14,147,172,.35), 0 0 22px -8px rgba(14,147,172,.4);
   --grid-alpha: 2.5%;
+}
+
+/* --------------------------------------------------------------------------
+   Shell surface tokens (v3.3, css/base.css): app-bar glass sheen, light line,
+   scroll depth, nav indicator and the cinematic light shafts. Derived from the
+   colour tokens above (none of those change); ornament only, never status.
+   -------------------------------------------------------------------------- */
+
+:root, :root[data-theme="dark"] {
+  --appbar-sheen: linear-gradient(180deg, color-mix(in srgb, var(--bg-1) 70%, transparent) 0%, color-mix(in srgb, var(--bg-0) 82%, transparent) 100%);
+  --appbar-hairline: linear-gradient(90deg, transparent 4%, color-mix(in srgb, var(--brand) 55%, transparent) 30%, color-mix(in srgb, var(--beam-core) 70%, transparent) 50%, color-mix(in srgb, var(--brand) 55%, transparent) 70%, transparent 96%);
+  --appbar-hairline-opacity: .55;
+  --glint-tail: color-mix(in srgb, var(--brand) 70%, transparent);
+  --glint-core: var(--beam-core);
+  --glint-head: var(--beam-head);
+  --glint-bloom: color-mix(in srgb, var(--beam-glow) 70%, transparent);
+  --scroll-shade: linear-gradient(180deg, rgba(2, 6, 14, .42), rgba(2, 6, 14, 0));
+  --nav-ind-fill: linear-gradient(90deg, color-mix(in srgb, var(--brand) 26%, var(--bg-1)), color-mix(in srgb, var(--brand) 10%, var(--bg-1)) 70%);
+  --nav-ind-ring: color-mix(in srgb, var(--brand) 38%, transparent);
+  --nav-ind-bar: linear-gradient(180deg, var(--accent), var(--brand));
+  --nav-ind-glow: 0 0 12px -1px color-mix(in srgb, var(--accent) 70%, transparent);
+  /* Cinematic light shafts — strengths are bounded by contrast: --ink-3 text on the plane stays ≥ 4.5:1 even
+     where a shaft's core crosses the ambient light's centre (worst case 4.59:1, tokens.md §6). */
+  --shaft-1: color-mix(in srgb, var(--brand) 18%, transparent);
+  --shaft-2: color-mix(in srgb, var(--beam-core) 8%, transparent);
+  --shaft-3: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+:root[data-theme="light"] {
+  --appbar-sheen: linear-gradient(180deg, color-mix(in srgb, var(--bg-1) 92%, transparent) 0%, color-mix(in srgb, var(--bg-1) 76%, transparent) 100%);
+  --appbar-hairline-opacity: .5;
+  --glint-tail: color-mix(in srgb, var(--brand) 55%, transparent);
+  --glint-bloom: color-mix(in srgb, var(--beam-glow) 60%, transparent);
+  --scroll-shade: linear-gradient(180deg, rgba(19, 34, 56, .12), rgba(19, 34, 56, 0));
+  --nav-ind-fill: linear-gradient(90deg, color-mix(in srgb, var(--brand) 13%, var(--bg-1)), color-mix(in srgb, var(--brand) 5%, var(--bg-1)) 70%);
+  --nav-ind-ring: color-mix(in srgb, var(--brand) 26%, transparent);
+  --nav-ind-glow: 0 0 10px -2px color-mix(in srgb, var(--accent) 55%, transparent);
+  /* Light theme: shafts are sunlight (white / warm white) that only brighten the plane, plus one 30 % cream
+     shaft; the 11 px code tag (--accent-text) keeps ≥ 4.5:1 under any of them (worst case 4.56:1). */
+  --shaft-1: color-mix(in srgb, var(--bg-1) 80%, transparent);
+  --shaft-2: color-mix(in srgb, color-mix(in srgb, var(--bg-1) 80%, var(--beam-head)) 80%, transparent);
+  --shaft-3: color-mix(in srgb, var(--beam-head) 30%, transparent);
 }
 
 /* --------------------------------------------------------------------------
@@ -518,6 +572,13 @@ pre {
    "reduced") forces it off. Live dots keep a static halo so "live" is never
    colour-alone; the cinematic background stops (base.css).
    -------------------------------------------------------------------------- */
+
+/* Micro-motion multiplier: hover/press offsets are written as calc(var(--shell-fx) * …), so they vanish
+   (no jump, no animation) under reduced motion instead of snapping into place. */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) { --shell-fx: 0; }
+}
+:root[data-motion="reduce"], :root[data-motion="reduced"] { --shell-fx: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-motion="full"]) *,

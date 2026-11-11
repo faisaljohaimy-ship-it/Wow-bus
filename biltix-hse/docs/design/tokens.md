@@ -265,11 +265,42 @@ tabular figures.
 
 `--dur-micro 160ms` (hover, press, colour fades) · `--dur-main 260ms` (panels, dialogs, drawers,
 toasts) · `--dur-slow 420ms` · `--stagger 32ms` · `--ease-out cubic-bezier(.16,1,.3,1)` ·
-`--ease-in-out cubic-bezier(.65,0,.35,1)`. Movement uses transform/opacity only. The only infinite
-loops are the live dot, the cinematic background and the edge laser (§3.1, compositor-only);
-loading spinners exist only while busy.
+`--ease-in-out cubic-bezier(.65,0,.35,1)`. Movement uses transform/opacity only.
 `prefers-reduced-motion` and `html[data-motion="reduce"]` collapse every animation (tokens.css);
-`html[data-motion="full"]` opts back in. Route transitions come from `motion.page()` (JS), not CSS.
+`html[data-motion="full"]` opts back in.
+
+**Shell motion (v3.3)** — tokens in `css/tokens.css`, mirrored by `motion.timing` in `js/ui/motion.js`:
+
+| Token | Value | Used by |
+|---|---|---|
+| `--dur-page` | 300ms | incoming view: opacity 0→1 + rise `--page-rise` (10 px), after `--page-delay` 60 ms |
+| `--dur-leave` | 140ms | outgoing view afterimage: linear fade + recede (`translateY(-6px) scale(.98)`) |
+| `--dur-glide` | 320ms | rail plate and tab-bar light bar (FLIP), `--ease-glide cubic-bezier(.22,1,.36,1)` |
+| `--stagger-head` | 40ms | page header parts: code tag (from the inline-start), title (rise 14 px), lead / scope chips, actions |
+| `--glint-cycle` / `--glint-cycle-cinematic` | 11s / 7s | app-bar light line: one sweep per cycle in the reading direction |
+| `--shell-fx` | 1 → 0 | multiplier for hover / press offsets; 0 under reduced motion, so nothing snaps |
+
+- **Route transition** (`motion.page`, `motion.leave`, shell hooks in `js/app.js`): on a user navigation
+  whose view mounts in the same task, the outgoing view is lifted unchanged into a fixed, inert,
+  `aria-hidden` layer (`.route-ghost`) behind `<main>` at the exact place it was read, trimmed to what
+  was on screen (branches wholly below the band are dropped, wholly above become spacers; tables, SVG and
+  canvases are kept whole), and fades out in 140 ms while the new view rises; the page header builds in a
+  40 ms stagger and the code tag's survey rule (`.code-tag::after`) draws in once (`.is-entering`).
+  Same-route parameter changes get a plain quick fade; first paint, refresh, language change and cold
+  (still-loading) views get none. Input is never blocked and the layer is removed within 600 ms.
+- **Indicators**: the rail plate (`.rail-indicator`) and the tab-bar light bar (`.tabbar-indicator`) glide
+  between items on transform only; they are re-placed without motion after rebuilds, resizes and rail
+  collapse. The active item keeps `aria-current="page"`, its bold label and ink (never colour alone);
+  forced colours fall back to the per-item styles.
+- **App bar**: a one-time brand-mark reveal at boot (`motion.reveal`), rail items enter once in a 22 ms
+  stagger, the score pill counts to a changed value (`motion.number`) with one ring pulse (`.is-bump`),
+  hover / focus micro-motion on icons; a scroll shade fades in under the filters row (≥ 960 px) or the
+  fixed app bar (phones) once the reader leaves the top (`body.is-scrolled`, opacity only).
+- **Infinite loops** (all compositor-only, transform/opacity on their own layers): the live dot, the edge
+  laser (§3.1), the app-bar glint (Subtle and Cinematic), and the Cinematic background (§6). None runs under
+  reduced motion; the glint and the background stop under Static; print shows none of them.
+- **Budget**: idle main-thread cost per route ≤ base + 5 ms/s (CDP `Performance.getMetrics` TaskDuration,
+  5 s, 1440×900). Nothing replays on live updates: views patch in place and may `flash` a changed node.
 
 ## 5. Density and layout
 
@@ -283,15 +314,31 @@ loading spinners exist only while busy.
 
 ## 6. Background (CONTRACT §3)
 
-`html[data-bg]`: **static** (quietest, no motion) · **subtle** (default, no motion, slightly richer
-light) · **cinematic** (the two ambient lights drift on `transform`, 84 s / 112 s alternate loops;
-paused under reduced motion, `data-motion="reduce"`, and `.bg-layers.is-paused` while the tab is
-hidden). Layers: base `--bg-0` → `.bg-ambient` (two broad radial lights, `--amb-1` brand near the
-app bar, `--amb-2` accent near the hero) → `.bg-grid` (120 px engineering grid with survey crosses,
-`--grid-opacity`: hairlines ≈ 3 %, faded toward the bottom) → `.bg-mark` (emblem + mono datum
-caption, inline-end bottom, hidden below 960 px). The host is fixed at z-index 0; cards are opaque,
-so nothing moves over data. Glass (`backdrop-filter`) only on the app bar and rail, with solid
-fallbacks for `@supports not (backdrop-filter)` and `prefers-reduced-transparency`.
+`html[data-bg]`: **static** (quietest: no motion anywhere in the background or chrome decoration — no
+ambient drift, no shafts, no app-bar glint, no edge laser) · **subtle** (default, restrained: the
+background does not move; the app-bar glint sweeps once every 11 s) · **cinematic** (the two ambient
+lights drift on `transform`, 84 s / 112 s alternate loops; three light shafts `.bg-beam` sweep slowly
+across the upper plane at 46 s / 63 s / 78 s on transform + opacity; the survey grid drifts 48 px over
+96 s against them for parallax; the glint sweeps every 7 s). Everything pauses under reduced motion,
+`data-motion="reduce"`, and `.bg-layers.is-paused` while the tab is hidden.
+
+Layers: base `--bg-0` → `.bg-ambient` (two broad radial lights, `--amb-1` brand near the app bar,
+`--amb-2` accent near the hero) → `.bg-beams` (Cinematic only; three shafts, masked to fade out by 85 %
+of the height; appended by the shell after the ambient layer) → `.bg-grid` (120 px engineering grid with
+survey crosses, `--grid-opacity`: hairlines ≈ 3 %, faded toward the bottom) → `.bg-mark` (emblem + mono
+datum caption, inline-end bottom, hidden below 960 px). The host is fixed at z-index 0; cards are opaque,
+so nothing moves over data.
+
+Shaft colours (`--shaft-1..3`, shell tokens in `css/tokens.css`) are bounded by contrast, because page
+headers and helper text sit on the plane: **dark** brand 18 % · nickel-orange 8 % · accent 10 %, worst case
+(shaft core over the ambient light's centre) `--ink-3` 4.59:1, `--ink-2` 6.79:1; **light** two
+white / warm-white sunlight shafts (they only brighten the plane, raising contrast) and one 30 % cream
+shaft, worst case `--accent-text` (11 px code tag) 4.56:1, `--ink-3` 5.04:1.
+
+App bar: glass (`--glass` under a vertical `--appbar-sheen`, 1 px top highlight, `blur(20px)`), a static
+`--appbar-hairline` (brand → nickel-orange → brand) on the lower edge and the glint above it. Glass only on
+the app bar and rail, with solid fallbacks for `@supports not (backdrop-filter)` and
+`prefers-reduced-transparency`.
 
 ## 7. Legacy aliases
 

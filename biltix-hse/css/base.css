@@ -177,15 +177,67 @@ body.app {
   50%  { transform: translate3d(calc(var(--dir) * 6%), 4%, 0) scale(1); }
   100% { transform: translate3d(calc(var(--dir) * 2%), 8%, 0) scale(1.07); }
 }
+/* Cinematic only — light shafts (.bg-beams, appended to the layers by app.js mountBackdrop()): three long,
+   soft, slanted shafts of site light (brand, nickel-orange, accent) fall from the top and sweep slowly
+   across the upper plane at different speeds, while the survey grid drifts a few pixels against them
+   (parallax). Each shaft and the grid are their own composited layer moved by transform/opacity only;
+   the shafts fade out by 85 % of the height, and cards stay opaque over them. Subtle and Static: no shafts,
+   no drift. */
+.bg-beams {
+  position: absolute;
+  inset: 0;
+  display: none;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, .55) 45%, transparent 85%);
+  mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, .55) 45%, transparent 85%);
+}
+.bg-beam {
+  position: absolute;
+  inset-block-start: -30%;
+  block-size: 150%;
+  inline-size: 16vw;
+  min-inline-size: 140px;
+  background: linear-gradient(90deg, transparent, var(--shaft) 50%, transparent);
+  transform: skewX(-22deg);
+  will-change: transform, opacity;
+}
+:root[dir="rtl"] .bg-beam { transform: skewX(22deg); }
+.bg-beam:nth-child(1) { --shaft: var(--shaft-1); inset-inline-start: 8%;  animation: bg-shaft 46s var(--ease-in-out) -6s infinite alternate; }
+.bg-beam:nth-child(2) { --shaft: var(--shaft-2); inset-inline-start: 38%; inline-size: 10vw; animation: bg-shaft 63s var(--ease-in-out) -31s infinite alternate-reverse; }
+.bg-beam:nth-child(3) { --shaft: var(--shaft-3); inset-inline-start: 64%; inline-size: 22vw; animation: bg-shaft 78s var(--ease-in-out) -50s infinite alternate; }
+:root[dir="rtl"] .bg-beam { animation-name: bg-shaft-rtl; }
+@keyframes bg-shaft {
+  0%   { transform: translate3d(0, 0, 0) skewX(-22deg); opacity: .55; }
+  50%  { transform: translate3d(9vw, 0, 0) skewX(-22deg); opacity: 1; }
+  100% { transform: translate3d(17vw, 0, 0) skewX(-22deg); opacity: .7; }
+}
+@keyframes bg-shaft-rtl {
+  0%   { transform: translate3d(0, 0, 0) skewX(22deg); opacity: .55; }
+  50%  { transform: translate3d(-9vw, 0, 0) skewX(22deg); opacity: 1; }
+  100% { transform: translate3d(-17vw, 0, 0) skewX(22deg); opacity: .7; }
+}
+:root[data-bg="cinematic"] .bg-beams { display: block; }
+:root[data-bg="cinematic"] .bg-grid { will-change: transform; animation: bg-grid-drift 96s var(--ease-in-out) infinite alternate; }
+@keyframes bg-grid-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(0, -48px, 0); }
+}
+
 /* Paused: tab hidden (shell flag), explicit pause, reduced motion (OS or setting) */
 :root.is-hidden .bg-ambient::before, :root.is-hidden .bg-ambient::after,
 :root[data-visibility="hidden"] .bg-ambient::before, :root[data-visibility="hidden"] .bg-ambient::after,
-.bg-layers.is-paused .bg-ambient::before, .bg-layers.is-paused .bg-ambient::after { animation-play-state: paused; }
+.bg-layers.is-paused .bg-ambient::before, .bg-layers.is-paused .bg-ambient::after,
+.bg-layers.is-paused .bg-beam, .bg-layers.is-paused .bg-grid { animation-play-state: paused; }
 :root[data-motion="reduce"] .bg-ambient::before, :root[data-motion="reduce"] .bg-ambient::after,
-:root[data-motion="reduced"] .bg-ambient::before, :root[data-motion="reduced"] .bg-ambient::after { animation: none !important; will-change: auto; }
+:root[data-motion="reduced"] .bg-ambient::before, :root[data-motion="reduced"] .bg-ambient::after,
+:root[data-motion="reduce"] .bg-beam, :root[data-motion="reduced"] .bg-beam,
+:root[data-motion="reduce"] .bg-grid, :root[data-motion="reduced"] .bg-grid { animation: none !important; will-change: auto; }
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-motion="full"]) .bg-ambient::before,
-  :root:not([data-motion="full"]) .bg-ambient::after { animation: none !important; will-change: auto; }
+  :root:not([data-motion="full"]) .bg-ambient::after,
+  :root:not([data-motion="full"]) .bg-beam,
+  :root:not([data-motion="full"]) .bg-grid { animation: none !important; will-change: auto; }
 }
 
 /* Fallback until art.backdrop() renders .bg-layers: the same layers on the host itself. */
@@ -283,13 +335,16 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
   gap: var(--space-4);
   block-size: var(--appbar-h);
   padding-inline: var(--space-4) var(--space-5);
-  background: var(--glass);
-  -webkit-backdrop-filter: blur(18px) saturate(1.35);
-  backdrop-filter: blur(18px) saturate(1.35);
+  /* Glass with a vertical sheen (lit from above) and a 1 px inner highlight on the top edge. Text sits on
+     ≥ 76 % of the card surface, so contrast is that of the solid surface (tokens.md §1). */
+  background: var(--appbar-sheen), var(--glass);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ink-on-dark) 7%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
   border-block-end: 1px solid var(--line);
   overflow: visible;
 }
-/* Gold ornament hairline, centred on the bar's lower edge (the only gold in the chrome). */
+/* Static hairline on the lower edge: brand → nickel-orange → brand, fading at both ends. */
 .appbar::after {
   content: "";
   position: absolute;
@@ -297,8 +352,81 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
   inset-block-end: -1px;
   block-size: 1px;
   pointer-events: none;
-  background: linear-gradient(90deg, transparent 18%, var(--gold) 50%, transparent 82%);
-  opacity: .32;
+  background: var(--appbar-hairline);
+  opacity: var(--appbar-hairline-opacity);
+}
+/* Scroll depth (phones: the document scrolls under the fixed bar). body.is-scrolled comes from app.js
+   (passive scroll listener, one class toggle per threshold crossing); only opacity transitions. */
+.appbar::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 100%;
+  block-size: 16px;
+  pointer-events: none;
+  background: var(--scroll-shade);
+  opacity: 0;
+  transition: opacity var(--dur-main) var(--ease-out);
+}
+@media (max-width: 959.98px) {
+  body.is-scrolled .appbar::before { opacity: 1; }
+}
+
+/* App bar light line: one glint (a short brand → nickel-orange → white-hot streak with a soft bloom)
+   sweeps along the lower edge in the reading direction, then rests off-stage until the next cycle.
+   The streak is one 40 %-wide element moved with transform only (compositor; no per-frame paint).
+   Subtle: one sweep per --glint-cycle (11 s). Cinematic: one per --glint-cycle-cinematic (7 s).
+   Static, reduced motion (OS or setting), forced colours and print: no glint, hairline only. */
+.appbar-light {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: -1px;
+  block-size: 6px;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+.appbar-glint {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-start: 0;
+  inline-size: 40%;
+  block-size: 6px;
+  opacity: 0;
+  background:
+    linear-gradient(90deg, transparent 0%, var(--glint-tail) 46%, var(--glint-core) 80%, var(--glint-head) 92%, transparent 100%) bottom / 100% 2px no-repeat,
+    linear-gradient(90deg, transparent 20%, var(--glint-bloom) 78%, transparent 100%) bottom / 100% 6px no-repeat;
+  -webkit-mask-image: linear-gradient(to top, #000 30%, transparent);
+  mask-image: linear-gradient(to top, #000 30%, transparent);
+  transform: translate3d(-100%, 0, 0);
+  will-change: transform;
+  animation: appbar-glint var(--glint-cycle) cubic-bezier(.45, 0, .2, 1) 1.4s infinite;
+}
+:root[dir="rtl"] .appbar-glint {
+  background:
+    linear-gradient(270deg, transparent 0%, var(--glint-tail) 46%, var(--glint-core) 80%, var(--glint-head) 92%, transparent 100%) bottom / 100% 2px no-repeat,
+    linear-gradient(270deg, transparent 20%, var(--glint-bloom) 78%, transparent 100%) bottom / 100% 6px no-repeat;
+  transform: translate3d(100%, 0, 0);
+  animation-name: appbar-glint-rtl;
+}
+:root[data-bg="cinematic"] .appbar-glint { animation-duration: var(--glint-cycle-cinematic); }
+@keyframes appbar-glint {
+  0%        { transform: translate3d(-100%, 0, 0); opacity: 0; }
+  4%        { opacity: 1; }
+  34%       { opacity: 1; }
+  40%, 100% { transform: translate3d(250%, 0, 0); opacity: 0; }
+}
+@keyframes appbar-glint-rtl {
+  0%        { transform: translate3d(100%, 0, 0); opacity: 0; }
+  4%        { opacity: 1; }
+  34%       { opacity: 1; }
+  40%, 100% { transform: translate3d(-250%, 0, 0); opacity: 0; }
+}
+:root[data-bg="static"] .appbar-glint,
+:root[data-motion="reduce"] .appbar-glint,
+:root[data-motion="reduced"] .appbar-glint { animation: none !important; display: none; }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .appbar-glint { animation: none !important; display: none; }
 }
 
 .appbar-start, .appbar-center, .appbar-end {
@@ -322,6 +450,22 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
 .appbar-end > .lang-switch, .appbar-end > .data-chip, .appbar-end > .activity-toggle { flex: none; }
 .appbar .btn-icon { color: var(--ink-2); }
 .appbar .btn-icon:hover { color: var(--ink-1); }
+/* Micro-motion (transform only; offsets scale with --shell-fx, 0 under reduced motion): icons lift a
+   pixel on hover / keyboard focus and dip on press. */
+.appbar .btn-icon > .icon,
+.cmdk-btn > .icon,
+.user-avatar,
+.brand-mark { transition: transform var(--dur-micro) var(--ease-out); }
+.appbar .btn-icon:hover > .icon,
+.appbar .btn-icon:focus-visible > .icon { transform: translateY(calc(var(--shell-fx) * -1px)) scale(calc(1 + var(--shell-fx) * .08)); }
+.appbar .btn-icon:active > .icon { transform: scale(calc(1 - var(--shell-fx) * .08)); }
+.cmdk-btn:hover > .icon, .cmdk-btn:focus-visible > .icon { transform: rotate(calc(var(--dir) * var(--shell-fx) * -10deg)) scale(calc(1 + var(--shell-fx) * .08)); }
+.user-chip:hover .user-avatar, .user-chip:focus-visible .user-avatar { transform: scale(calc(1 + var(--shell-fx) * .06)); }
+.brand:hover .brand-mark, .brand:focus-visible .brand-mark { transform: rotate(calc(var(--dir) * var(--shell-fx) * -8deg)) scale(calc(1 + var(--shell-fx) * .06)); }
+.appbar .pill, .appbar .data-chip {
+  transition: border-color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out);
+}
+.appbar .pill:hover, .appbar .data-chip:hover { transform: translateY(calc(var(--shell-fx) * -1px)); }
 
 /* Rail toggle (three bars) */
 .rail-toggle-bars {
@@ -459,6 +603,24 @@ kbd.cmdk-kbd, .cmdk-foot kbd, kbd.kbd {
 .pill[data-tone="warning"] { border-color: color-mix(in srgb, var(--warning) 45%, var(--line)); background: color-mix(in srgb, var(--warning) 9%, var(--bg-2)); }
 .pill[data-tone="serious"] { border-color: color-mix(in srgb, var(--serious) 50%, var(--line)); background: color-mix(in srgb, var(--serious) 10%, var(--bg-2)); }
 .pill[data-tone="serious"] .pill-value { color: var(--serious-text); }
+
+/* Score pill: when the consolidated score changes, app.js counts the figure to its new value
+   (motion.number) and adds .is-bump for one ring pulse in the rating tone. Never on first paint. */
+.score-pill { position: relative; }
+.score-pill::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 1.5px solid color-mix(in srgb, var(--tone, var(--brand)) 65%, transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+.score-pill.is-bump::after { animation: pill-bump 900ms var(--ease-out) 1; }
+@keyframes pill-bump {
+  0%   { opacity: .9; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.12, 1.45); }
+}
 
 /* Language switch "ع | EN" (A-SHELL): a two-option segmented control.
    .lang-switch > button|[role=radio]|.lang-opt with aria-pressed / aria-checked / .is-active */
@@ -834,13 +996,59 @@ kbd.cmdk-kbd, .cmdk-foot kbd, kbd.kbd {
   transform: rotate(45deg);
 }
 
+/* Sliding active indicator (app.js syncRailIndicator): one plate behind the items that glides to the
+   active item with a FLIP transform (motion.glide, --dur-glide); its block-size is set once per move.
+   While it is mounted (.rail.has-indicator) the item itself drops its own active fill and diamond; the
+   active item keeps its weight and ink, so "current page" never depends on the plate or on colour alone
+   (aria-current="page" + bold label). Forced colours fall back to the per-item styles. */
+.rail-indicator {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 10px;
+  z-index: 0;
+  block-size: 38px;
+  border-radius: var(--radius-md);
+  background: var(--nav-ind-fill);
+  box-shadow: inset 0 0 0 1px var(--nav-ind-ring), var(--elev-1);
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+.rail-indicator::before {
+  content: "";
+  position: absolute;
+  inset-block: 9px;
+  inset-inline-start: -10px;
+  inline-size: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--nav-ind-bar);
+  box-shadow: var(--nav-ind-glow);
+}
+:root[dir="rtl"] .rail-indicator::before { border-radius: 3px 0 0 3px; }
+.rail-indicator[hidden] { display: none; }
+.rail-list { position: relative; z-index: 1; }
+@media (forced-colors: none) {
+  .rail.has-indicator .rail-item.is-active,
+  .rail.has-indicator .rail-item[aria-current="page"] { background: transparent; box-shadow: none; }
+  .rail.has-indicator .rail-item.is-active:hover { background: color-mix(in srgb, var(--ink-1) 3%, transparent); }
+  .rail.has-indicator .rail-item.is-active::before,
+  .rail.has-indicator .rail-item[aria-current="page"]::before { display: none; }
+}
+@media (forced-colors: active) { .rail-indicator { display: none; } }
+
 .rail-icon {
   inline-size: 20px;
   block-size: 20px;
   display: grid;
   place-items: center;
   color: inherit;
+  transition: transform var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
 }
+/* Icons step toward the reading direction on hover / keyboard focus and settle a little larger on the
+   active item; offsets scale with --shell-fx (0 under reduced motion). */
+.rail-item:hover .rail-icon,
+.rail-item:focus-visible .rail-icon { transform: translateX(calc(var(--dir) * var(--shell-fx) * 2px)) scale(calc(1 + var(--shell-fx) * .08)); }
+.rail-item.is-active .rail-icon { transform: scale(calc(1 + var(--shell-fx) * .06)); }
+.rail-item:active .rail-icon { transform: scale(calc(1 - var(--shell-fx) * .08)); }
 .rail-icon svg, .rail-item > svg { inline-size: 19px; block-size: 19px; }
 /* Full labels: wrap (two lines for the longest titles), never clipped or ellipsized. */
 .rail-label {
@@ -924,6 +1132,21 @@ kbd.cmdk-kbd, .cmdk-foot kbd, kbd.kbd {
   padding: 10px var(--gutter);
   border-block-end: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg-0) 55%, transparent);
+}
+/* Scroll depth (≥ 960 px: <main> scrolls under the filters row). Same switch as the phone app bar. */
+.filters::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 100%;
+  block-size: 16px;
+  pointer-events: none;
+  background: var(--scroll-shade);
+  opacity: 0;
+  transition: opacity var(--dur-main) var(--ease-out);
+}
+@media (min-width: 960px) {
+  body.is-scrolled .filters::after { opacity: 1; }
 }
 .filters-group { display: flex; align-items: center; gap: var(--space-2); min-inline-size: 0; }
 .filters-label { font-size: var(--fs-xs); font-weight: 500; color: var(--ink-3); white-space: nowrap; letter-spacing: var(--tracking-caps); }
@@ -1016,6 +1239,49 @@ html[data-input="pointer"] .view-head h1:focus-visible { outline: none; }
   border-radius: 1px;
   opacity: .9;
 }
+/* Page-header code tag: a short survey rule runs from the code toward the inline-end
+   ("CPT-00 ───" in English, "─── CPT-00" in Arabic: the tag itself is an LTR run). motion.page() adds
+   .is-entering to the header for one route change, which draws the rule in once (scaleX from the code). */
+.view-head .code-tag::after,
+.ck-head .code-tag::after {
+  content: "";
+  flex: none;
+  inline-size: 28px;
+  block-size: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent-text) 70%, transparent), transparent);
+  transform-origin: 0 50%;
+}
+:root[dir="rtl"] .view-head .code-tag::after,
+:root[dir="rtl"] .ck-head .code-tag::after {
+  order: -1;
+  background: linear-gradient(270deg, color-mix(in srgb, var(--accent-text) 70%, transparent), transparent);
+  transform-origin: 100% 50%;
+}
+.is-entering .code-tag::after { animation: code-rule var(--dur-slow) var(--ease-out) 120ms both; }
+@keyframes code-rule {
+  from { transform: scaleX(0); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+/* Route transition afterimage (app.js + motion.leave): on a user navigation the outgoing view is lifted,
+   unchanged, into this fixed layer at the exact place it was read, then fades and recedes (140 ms) while
+   the incoming view rises in front of it 60 ms later (motion.page). Behind <main> (z-index 0 vs 1), clipped to the
+   content area, inert and hidden from assistive tech; removed as soon as the fade ends. The stage repeats
+   <main>'s inline size and container name so the old layout does not reflow while it fades. */
+.route-ghost {
+  position: fixed;
+  z-index: var(--z-backdrop);
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+  transform-origin: 50% 0;
+}
+.route-ghost-stage { position: absolute; container: main / inline-size; }
+.route-ghost-stage > * { inline-size: 100%; max-inline-size: var(--content-max); margin-inline: auto; }
+/* The afterimage is a fading still: running decorations inside it (edge comets, gauge sheens, video) are hidden
+   so they bring no compositor layers into the transition frame. */
+.route-ghost video { visibility: hidden; }
+.route-ghost .edge-run, .route-ghost .rg-sheen { display: none; }
 
 /* Router error view */
 .view-error { align-items: center; text-align: center; padding-block: var(--space-7); }
@@ -1313,6 +1579,35 @@ body.is-feed-paused .feed-status::before,
   border-radius: 0 0 2px 2px;
   background: var(--brand);
 }
+/* Sliding top bar (app.js syncTabIndicator): one 3 px light bar glides between tabs on transform; the
+   per-tab bar stays as the forced-colours / no-JS fallback. The active tab's icon rises 2 px; a press dips it. */
+.tabbar-indicator {
+  position: absolute;
+  inset-block-start: -1px;
+  inset-inline-start: 0;
+  inline-size: 25%;
+  block-size: 3px;
+  pointer-events: none;
+  display: flex;
+  justify-content: center;
+}
+.tabbar-indicator::before {
+  content: "";
+  inline-size: 44%;
+  block-size: 100%;
+  border-radius: 0 0 3px 3px;
+  background: linear-gradient(90deg, var(--accent), var(--brand));
+  box-shadow: 0 2px 10px -1px color-mix(in srgb, var(--brand) 60%, transparent);
+}
+.tabbar-indicator[hidden] { display: none; }
+@media (forced-colors: none) {
+  .tabbar.has-indicator .tab-item.is-active::before,
+  .tabbar.has-indicator .tab-item[aria-current]::before { display: none; }
+}
+@media (forced-colors: active) { .tabbar-indicator { display: none; } }
+.tab-icon { transition: transform var(--dur-micro) var(--ease-out); }
+.tab-item.is-active .tab-icon, .tab-item[aria-current] .tab-icon { transform: translateY(calc(var(--shell-fx) * -2px)); }
+.tab-item:active .tab-icon { transform: scale(calc(1 - var(--shell-fx) * .1)); }
 .tab-icon, .tabbar-icon { display: grid; place-items: center; inline-size: 24px; block-size: 24px; }
 .tab-icon svg, .tabbar-icon svg, .tabbar-item > svg, .tab-item > svg { inline-size: 22px; block-size: 22px; }
 .tab-label, .tabbar-label { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.2; }
@@ -1697,5 +1992,10 @@ body.is-feed-paused .feed-status::before,
   .appbar, .rail, .feed, .activity-panel, .filters, .tabbar { border-color: CanvasText; }
   .rail-item.is-active::before, .tabbar-item.is-active::before, .tab-item.is-active::before { background: Highlight; }
   .skip-link:focus { outline: 2px solid Highlight; }
-  .backdrop { display: none; }
+  .backdrop, .appbar-light, .route-ghost { display: none; }
+}
+
+/* Print stays static and complete: no shell decoration, no transition afterimage. */
+@media print {
+  .route-ghost, .appbar-light, .rail-indicator, .tabbar-indicator, .bg-beams { display: none !important; }
 }

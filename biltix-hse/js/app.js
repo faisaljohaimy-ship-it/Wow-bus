@@ -513,7 +513,164 @@ function mountBackdrop() {
   let node = null;
   try { node = art && typeof art.backdrop === 'function' ? art.backdrop() : null; } catch (err) { reportError(err, 'art.backdrop'); }
   if (node instanceof Node) { clear(host); host.appendChild(node); }
+  mountBeams(node instanceof Element ? node : host);
 }
+
+/**
+ * Cinematic light shafts (css/base.css "Cinematic only"): three empty, decorative layers placed right after
+ * the ambient lights, so they sit under the grid and the identity mark. CSS shows and moves them only for
+ * html[data-bg="cinematic"] with motion allowed; the art layer's .is-paused (tab hidden) pauses them too.
+ */
+function mountBeams(layers) {
+  if (!layers || layers.querySelector('.bg-beams')) return;
+  const beams = h('div', { class: 'bg-beams', 'aria-hidden': 'true' }, h('i', { class: 'bg-beam' }), h('i', { class: 'bg-beam' }), h('i', { class: 'bg-beam' }));
+  const ambient = layers.querySelector('.bg-ambient');
+  if (ambient && ambient.parentNode === layers) ambient.after(beams); else layers.appendChild(beams);
+}
+
+/* ------------------------------------------------------------------ */
+/* Route transition: outgoing afterimage                               */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A user navigation cross-fades with depth: the router swaps the view synchronously, so on 'ui:route-leave'
+ * the shell notes where the outgoing view sits and which of its branches are on screen (rect reads only, on a
+ * clean layout, ≤ 400 nodes), and on 'route:change' — only when the new view mounted in the same task, i.e.
+ * nothing was blank on screen — it lifts the detached old nodes into a fixed, inert, aria-hidden layer behind
+ * <main> at the same place, and motion.leave() fades it out while motion.page() raises the new view.
+ * Before the lift, branches that were wholly below the visible band are dropped and those wholly above it
+ * become empty spacers of the same size (block / column flow only; tables, SVG and canvases are kept whole), so
+ * the afterimage costs the layout and paint of one screen, not of the whole page (cockpit at 1440 × 900:
+ * 2,089 → 787 elements). The view's own cleanup has already run on the intact tree. The layer is removed when the fade
+ * ends (600 ms at most) and at once when another navigation starts. Never on first paint, refresh, language
+ * change, same-route param changes or with motion off. Input is never blocked (pointer-events: none).
+ */
+const PRUNE_VISITS = 400;
+const GHOST_MAX_ELEMENTS = 1200;   // a denser screen skips the afterimage (incoming motion only): bounded cost
+
+/** Plan (reads only) which branches of the outgoing view are off screen: [el, 'drop'] or [el, 'space', size]. */
+function planPrune(kids, band) {
+  const plan = [];
+  let visits = 0;
+  const flowParent = (parent) => {
+    const cs = getComputedStyle(parent);
+    return cs.display === 'block' || cs.display === 'flow-root' || (/flex$/.test(cs.display) && cs.flexDirection.startsWith('column'));
+  };
+  const walk = (el, depth) => {
+    for (const k of el.children) {
+      if (++visits > PRUNE_VISITS) return;
+      const r = k.getBoundingClientRect();
+      if (!r.width && !r.height) continue;
+      if (r.top >= band.bottom) { plan.push([k, 'drop']); continue; }
+      if (r.bottom <= band.top) {
+        if (flowParent(el)) {
+          const ks = getComputedStyle(k);
+          if (ks.position === 'static' || ks.position === 'relative') plan.push([k, 'space', r.height, ks.marginTop, ks.marginBottom]);
+        }
+        continue;
+      }
+      if ((r.top < band.top || r.bottom > band.bottom) && depth < 6 && k.childElementCount > 1 && !k.matches('table, svg, canvas, video, picture, select')) walk(k, depth + 1);
+    }
+  };
+  kids.forEach((k) => walk(k, 0));
+  return plan;
+}
+
+function applyPrune(plan) {
+  for (const [el, kind, size, mt, mb] of plan) {
+    if (kind === 'drop') { el.remove(); continue; }
+    const spacer = document.createElement('div');
+    spacer.style.blockSize = `${size}px`;
+    spacer.style.marginBlock = `${mt} ${mb}`;
+    el.replaceWith(spacer);
+  }
+}
+const routeFx = { pending: null, ghost: null, same: false, timer: 0 };
+
+function dropRouteGhost() {
+  clearTimeout(routeFx.timer);
+  if (routeFx.ghost) { routeFx.ghost.remove(); routeFx.ghost = null; }
+}
+
+function captureOutgoing(payload) {
+  dropRouteGhost();
+  routeFx.pending = null;
+  const from = payload && payload.from;
+  const to = payload && payload.to;
+  routeFx.same = Boolean(from && from === to);
+  if (!from || from === to || !motion || typeof motion.leave !== 'function' || !motion.enabled()) return;
+  const main = $('main');
+  const kids = main ? Array.from(main.children) : [];
+  if (!kids.length) return;
+  try {
+    const rect = kids[0].getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const cs = getComputedStyle(main);
+    const contentWidth = main.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+    const marginTop = parseFloat(getComputedStyle(kids[0]).marginTop) || 0;
+    const m = main.getBoundingClientRect();
+    const appbar = $('appbar');
+    const band = { top: Math.max(m.top, appbar ? appbar.getBoundingClientRect().bottom : 0, 0), bottom: Math.min(m.bottom, window.innerHeight) };
+    const plan = planPrune(kids, band);
+    // Elements the afterimage would keep: everything minus the dropped / spaced-out branches (selector counts only).
+    let kept = kids.reduce((n, k) => n + 1 + k.getElementsByTagName('*').length, 0);
+    for (const [el] of plan) kept -= 1 + el.getElementsByTagName('*').length;
+    if (kept > GHOST_MAX_ELEMENTS) return;
+    const pending = { kids, rect, contentWidth, marginTop, plan, sync: true };
+    routeFx.pending = pending;
+    queueMicrotask(() => { pending.sync = false; });
+  } catch { routeFx.pending = null; }
+}
+
+function playOutgoing(payload) {
+  const p = routeFx.pending;
+  routeFx.pending = null;
+  if (!p || !p.sync || !payload || !payload.previousId || payload.previousId === payload.id || !motion.enabled()) return;
+  const kids = p.kids.filter((k) => !k.isConnected);
+  const main = $('main');
+  if (!kids.length || !main) return;
+  let ghost = null;
+  try {
+    const vw = document.documentElement.clientWidth;
+    const vh = window.innerHeight;
+    const m = main.getBoundingClientRect();
+    const appbar = $('appbar');
+    const top = Math.max(m.top, appbar ? appbar.getBoundingClientRect().bottom : 0, 0);
+    const bottom = Math.min(m.bottom, vh);
+    const left = Math.max(m.left, 0);
+    const right = Math.min(m.right, vw);
+    if (bottom - top < 24 || right - left < 24) return;
+    const rtl = document.documentElement.getAttribute('dir') === 'rtl';
+    ghost = h('div', { class: 'route-ghost', 'aria-hidden': 'true' });
+    ghost.setAttribute('inert', '');
+    ghost.style.setProperty('inset-block-start', `${top}px`);
+    ghost.style.setProperty('inset-inline-start', `${rtl ? vw - right : left}px`);
+    ghost.style.setProperty('inline-size', `${right - left}px`);
+    ghost.style.setProperty('block-size', `${bottom - top}px`);
+    const stage = h('div', { class: 'route-ghost-stage' });
+    // Children of <main> are centred in its content box (margin-inline: auto), so the content box is recovered
+    // from the first child's rectangle and the measured content width; the stage repeats it exactly.
+    const stageLeft = p.rect.left - (p.contentWidth - p.rect.width) / 2;
+    stage.style.setProperty('inline-size', `${p.contentWidth}px`);
+    stage.style.setProperty('inset-block-start', `${p.rect.top - p.marginTop - top}px`);
+    stage.style.setProperty('inset-inline-start', `${rtl ? right - (stageLeft + p.contentWidth) : stageLeft - left}px`);
+    applyPrune(p.plan || []);
+    kids.forEach((k) => stage.appendChild(k));
+    ghost.appendChild(stage);
+    document.body.appendChild(ghost);
+    routeFx.ghost = ghost;
+    const done = () => { if (routeFx.ghost === ghost) dropRouteGhost(); else ghost.remove(); };
+    routeFx.timer = setTimeout(done, 600);
+    motion.leave(ghost).then(done, done);
+  } catch (err) {
+    if (ghost) ghost.remove();
+    if (routeFx.ghost === ghost) routeFx.ghost = null;
+    reportError(err, 'route transition');
+  }
+}
+
+/** Motion as handed to the router and views: page() learns whether this mount only changed params. */
+const shellMotion = motion ? Object.freeze({ ...motion, page: (root, opts = {}) => motion.page(root, { same: routeFx.same, ...opts }) }) : null;
 
 /* ------------------------------------------------------------------ */
 /* Static chrome strings ([data-i18n], skip link, labels)               */
@@ -626,6 +783,8 @@ function buildRail() {
   syncRailTooltips();
   watchRailWidth();
   restoreNavFocus(railButtons, refocus);
+  const cur = router.current ? router.current() : null;
+  if (cur && cur.id) markActive(cur.id, { place: true });
 }
 
 /**
@@ -652,7 +811,7 @@ function watchRailWidth() {
   let frame = 0;
   railObserver = new ResizeObserver(() => {
     if (frame) return;
-    frame = requestAnimationFrame(() => { frame = 0; syncRailTooltips(); });
+    frame = requestAnimationFrame(() => { frame = 0; syncRailTooltips(); syncRailIndicator(); });
   });
   railObserver.observe(rail);
 }
@@ -677,7 +836,7 @@ function buildTabbar() {
   bar.appendChild(more);
   tabButtons.set('__more', more);
   const cur = router.current ? router.current() : null;
-  if (cur && cur.id) markActive(cur.id);
+  if (cur && cur.id) markActive(cur.id, { place: true });
   restoreNavFocus(tabButtons, refocus);
 }
 
@@ -723,7 +882,9 @@ function openMoreSheet(rest, anchor) {
   moreDrawer.open();
 }
 
-function markActive(id) {
+let lastActiveId = null;
+/** Mark the current view in the rail and tab bar; `place` re-measures the indicators after a chrome rebuild. */
+function markActive(id, { place = false } = {}) {
   for (const [key, btn] of railButtons) {
     const active = key === id;
     if (active) btn.setAttribute('aria-current', 'page'); else btn.removeAttribute('aria-current');
@@ -736,6 +897,91 @@ function markActive(id) {
     btn.classList.toggle('is-active', !!active);
   }
   document.body.dataset.view = id || '';
+  const moved = (id || null) !== lastActiveId;
+  lastActiveId = id || null;
+  if (moved || place) {
+    syncRailIndicator({ animate: moved });
+    syncTabIndicator({ animate: moved });
+  }
+}
+
+/*
+ * Sliding active indicators. Rail: one plate (span.rail-indicator, first child of nav.rail, aria-hidden)
+ * sized to the active item and moved with transform; on a change of page it glides there with a FLIP
+ * (motion.glide: translate + scaleY from the previous item's box, 320 ms, compositor only). Tab bar: a 3 px
+ * light bar slides between tabs on translateX. Both are placed again without a glide after rebuilds (language),
+ * resizes and rail collapse. Purely decorative: the active item keeps aria-current, its bold label and ink.
+ */
+const railFx = { el: null, id: null, y: 0, h: 0 };
+const tabFx = { el: null, id: null, x: 0 };
+
+function syncRailIndicator({ animate = false } = {}) {
+  const rail = $('rail');
+  if (!rail) return;
+  let ind = railFx.el;
+  if (!ind || !ind.isConnected) {
+    ind = h('span', { class: 'rail-indicator', 'aria-hidden': 'true', hidden: true });
+    rail.insertBefore(ind, rail.firstChild);
+    railFx.el = ind;
+    railFx.id = null;
+  }
+  let active = null;
+  for (const btn of railButtons.values()) if (btn.classList.contains('is-active')) { active = btn; break; }
+  const railRect = rail.getBoundingClientRect();
+  const r = active ? active.getBoundingClientRect() : null;
+  if (!active || !railRect.width || !r || !r.height) {
+    ind.hidden = true;
+    rail.classList.remove('has-indicator');
+    railFx.id = null;
+    return;
+  }
+  const y = Math.round((r.top - railRect.top - rail.clientTop + rail.scrollTop) * 100) / 100;
+  const hgt = Math.round(r.height * 100) / 100;
+  const id = active.dataset.view || '';
+  const from = animate && railFx.id && railFx.id !== id && !ind.hidden
+    ? `translateY(${railFx.y + (railFx.h - hgt) / 2}px) scaleY(${(railFx.h / hgt).toFixed(4)})` : null;
+  const to = `translateY(${y}px)`;
+  ind.hidden = false;
+  ind.style.blockSize = `${hgt}px`;
+  ind.style.transform = to;
+  rail.classList.add('has-indicator');
+  if (from && motion && typeof motion.glide === 'function') motion.glide(ind, from, to);
+  railFx.id = id; railFx.y = y; railFx.h = hgt;
+}
+
+function syncTabIndicator({ animate = false } = {}) {
+  const bar = $('tabbar');
+  if (!bar) return;
+  let ind = tabFx.el;
+  if (!ind || !ind.isConnected) {
+    ind = h('span', { class: 'tabbar-indicator', 'aria-hidden': 'true', hidden: true });
+    bar.appendChild(ind);
+    tabFx.el = ind;
+    tabFx.id = null;
+  }
+  let active = null;
+  let key = null;
+  for (const [k, btn] of tabButtons) if (btn.classList.contains('is-active')) { active = btn; key = k; break; }
+  const barRect = bar.getBoundingClientRect();
+  const r = active ? active.getBoundingClientRect() : null;
+  if (!active || !barRect.width || !r || !r.width) {
+    ind.hidden = true;
+    bar.classList.remove('has-indicator');
+    tabFx.id = null;
+    return;
+  }
+  // inset-inline-start: 0 → the resting box starts at the bar's inline-start edge (right edge in RTL).
+  const rtl = document.documentElement.getAttribute('dir') === 'rtl';
+  const restLeft = rtl ? barRect.right - r.width : barRect.left;
+  const x = Math.round((r.left - restLeft) * 100) / 100;
+  const from = animate && tabFx.id && tabFx.id !== key && !ind.hidden ? `translateX(${tabFx.x}px)` : null;
+  const to = `translateX(${x}px)`;
+  ind.hidden = false;
+  ind.style.inlineSize = `${r.width}px`;
+  ind.style.transform = to;
+  bar.classList.add('has-indicator');
+  if (from && motion && typeof motion.glide === 'function') motion.glide(ind, from, to);
+  tabFx.id = key; tabFx.x = x;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1436,6 +1682,9 @@ function buildDataStatus() {
 /* ------------------------------------------------------------------ */
 
 let scorePillFrame = 0;
+/* Last figure shown in the pill: a change counts from it to the new value (motion.number) with one ring pulse
+   (.is-bump, css/base.css); first appearance, language and numerals changes write the figure directly. */
+const scoreFx = { value: null, timer: 0 };
 
 function refreshScorePill() {
   const pill = $('scorePill');
@@ -1448,9 +1697,20 @@ function refreshScorePill() {
   if (score === null) { pill.hidden = true; return; }
   const rating = RATINGS.includes(data.rating) ? data.rating : ratingOf(score);
   const label = ratingLabel(rating);
+  const wasShown = !pill.hidden;
+  const prev = scoreFx.value;
+  const changed = wasShown && prev !== null && prev !== score;
+  scoreFx.value = score;
   pill.hidden = false;
   pill.dataset.rating = rating;
-  setText($('scoreValue'), fmt.num(score));
+  const valueEl = $('scoreValue');
+  if (valueEl && motion && typeof motion.number === 'function') motion.number(valueEl, changed ? prev : score, score, { format: (v) => fmt.num(v) });
+  else setText(valueEl, fmt.num(score));
+  if (changed && motion && motion.enabled()) {
+    pill.classList.add('is-bump');
+    clearTimeout(scoreFx.timer);
+    scoreFx.timer = setTimeout(() => pill.classList.remove('is-bump'), 950);
+  }
   setText($('scoreLabel'), t('core.score.labelRated', { rating: label }));
   const deltaEl = $('scoreDelta');
   const delta = data && Number.isFinite(Number(data.delta)) ? Number(data.delta) : 0;
@@ -1741,7 +2001,7 @@ function renderShellChrome() {
   if (bannerAlert) showBanner(bannerAlert);
   if (cmdk.open) { cmdk.items = staticCommands(); runSearch(cmdk.input ? cmdk.input.value : ''); }
   const cur = router.current ? router.current() : null;
-  if (cur && cur.id) markActive(cur.id);
+  if (cur && cur.id) markActive(cur.id, { place: true });
 }
 
 function onLangChange() {
@@ -1786,6 +2046,47 @@ function setRailOpen(open) {
   const rail = $('rail');
   if (rail) rail.classList.toggle('is-open', open);
   syncRailToggle();
+  if (open) syncRailIndicator();
+}
+
+/*
+ * Scroll depth: a soft shade appears under the filters row (≥ 960 px, <main> scrolls) or under the fixed app
+ * bar (phones, the document scrolls) once the reader leaves the top. Passive listeners, one rAF read, and the
+ * body class only flips when the 4 px threshold is crossed; the shade itself is an opacity transition.
+ */
+function watchScrollDepth() {
+  const main = $('main');
+  let frame = 0;
+  let scrolled = null;
+  const update = () => {
+    frame = 0;
+    const y = (main ? main.scrollTop : 0) + (window.scrollY || 0);
+    const next = y > 4;
+    if (next !== scrolled) { scrolled = next; document.body.classList.toggle('is-scrolled', next); }
+  };
+  const onScroll = () => { if (!frame) frame = requestAnimationFrame(update); };
+  if (main) main.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('scroll', onScroll, { passive: true });
+  on('route:change', onScroll);
+  update();
+}
+
+/*
+ * One-time shell entrance at boot (never again: language changes rebuild the rail without it). Only nodes that
+ * first appear at boot animate — the logo mark (mounted by applyBrandText), the rail items and the score pill;
+ * the static app-bar markup has been visible since first paint and is left alone (no blink).
+ */
+function shellIntro() {
+  if (!motion || typeof motion.enabled !== 'function' || !motion.enabled()) return;
+  const mark = document.querySelector('.brand-mark');
+  if (mark && mark.firstElementChild && typeof motion.reveal === 'function') motion.reveal(mark, { delay: 0.05 });
+  const items = [...railButtons.values()].filter((b) => b.getClientRects().length);
+  if (items.length) motion.enter(items, { x: -10, stagger: 0.022, delay: 0.08, duration: motion.timing.slow });
+  const pill = $('scorePill');
+  if (pill && !pill.hidden) motion.enter(pill, { y: -6, scale: 0.94, delay: 0.3, duration: motion.timing.slow });
+  const ind = railFx.el;
+  // The plate rests on an inline translateY: fade it in only (an enter offset would replace that transform).
+  if (ind && !ind.hidden) motion.enter(ind, { y: 0, delay: 0.2, duration: motion.timing.slow });
 }
 
 function buildToggles() {
@@ -1799,6 +2100,11 @@ function buildToggles() {
   // Layout mode transitions: close overlays that only exist in narrower layouts.
   const narrow = narrowQuery();
   const onNarrow = () => { if (!narrow.matches) setRailOpen(false); syncRailToggle(); syncRailTooltips(); };
+  let resizeFrame = 0;
+  window.addEventListener('resize', () => {
+    if (resizeFrame) return;
+    resizeFrame = requestAnimationFrame(() => { resizeFrame = 0; syncTabIndicator(); syncRailIndicator(); });
+  }, { passive: true });
   if (typeof narrow.addEventListener === 'function') narrow.addEventListener('change', onNarrow); else narrow.addListener(onNarrow);
 
   document.addEventListener('keydown', (e) => {
@@ -2086,7 +2392,7 @@ function buildCommandPalette() {
 
 /** ctx handed to every view render (ARCHITECTURE §4 + CONTRACT §4: i18n, t, tn, L, status, motion). */
 function buildContext() {
-  return { store, bus, sel, fmt, charts, radar, components, art, live, sources, router, psel, platformLive, i18n, t, tn, L, status, motion };
+  return { store, bus, sel, fmt, charts, radar, components, art, live, sources, router, psel, platformLive, i18n, t, tn, L, status, motion: shellMotion };
 }
 
 let lastNumerals = null;
@@ -2162,6 +2468,7 @@ async function boot() {
   buildLangSwitch();
   buildToggles();
   buildCommandPalette();
+  watchScrollDepth();
 
   views.forEach((view) => { try { router.register(view); } catch (err) { reportError(err, `router.register(${view && view.id})`); } });
   router.setContainer(main);
@@ -2169,12 +2476,14 @@ async function boot() {
 
   // Before the view changes: close menus, drawers, the "More" sheet, the palette and the data popover.
   on('ui:route-leave', (payload) => {
+    captureOutgoing(payload);
     closeTransientUi();
     if (payload && payload.to) markActive(payload.to);
   });
   // Scroll position is owned by the router (top for new navigations, restored on back / forward / language change).
   on('route:change', (payload) => {
     const id = payload && payload.id;
+    playOutgoing(payload);
     markActive(id);
     setRailOpen(false);
     // A real navigation closes the overlay panel; a re-mount in place (language / numerals) keeps it.
@@ -2189,6 +2498,7 @@ async function boot() {
     router.start(homeViewId());
     const cur = router.current ? router.current() : null;
     if (cur && cur.id) markActive(cur.id);
+    shellIntro();
   } else {
     renderShellEmpty(main);
     document.title = `${t('core.app.name')} — ${t('core.app.full')}`;

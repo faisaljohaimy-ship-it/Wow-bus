@@ -27,9 +27,23 @@
  *                                                       (class .is-flash + opacity pulse).
  *   motion.drawer(el, open)                           → Promise; slide a drawer panel in/out from the inline-end
  *                                                       (bottom for .is-sheet).
- *   motion.page(root)                                 → Promise; route transition, opacity + translateY(6px), 220 ms.
+ *   motion.page(root, { same })                       → Promise; route transition for a freshly mounted view:
+ *                                                       each child of root rises 10 px and fades in (300 ms, after
+ *                                                       a 60 ms hold that lets the outgoing afterimage thin out), and
+ *                                                       the page header enters as a short stagger (code tag from
+ *                                                       the inline-start, title, lead, scope-chip row, actions;
+ *                                                       40 ms apart). `same` (same route, new params): a plain
+ *                                                       quick fade, no stagger. Never on first paint, refresh or
+ *                                                       language change (the router decides).
+ *   motion.leave(el)                                  → Promise; outgoing-view afterimage: fade + recede (140 ms).
+ *   motion.glide(el, from, to, { duration })          → Promise; FLIP move of an indicator between two transforms
+ *                                                       (to = the resting inline transform already set by caller).
+ *   motion.reveal(el, { rotate, scale, delay })       → Promise; one-time brand reveal (scale + rotate + fade).
  *   motion.timing                                     timing tokens (seconds / bezier arrays).
  *   motion.animate                                    the raw vendored animate (respect enabled() yourself).
+ *
+ * Shell timing (v3.3, css/tokens.css): page 300 ms (+60 ms hold), leave 140 ms, glide 320 ms, header stagger 40 ms,
+ * rise 10 px, ease-glide cubic-bezier(.22,1,.36,1).
  */
 import { animate, stagger as motionStagger } from '../vendor/motion.js';
 import { fmt } from '../core/fmt.js';
@@ -38,14 +52,22 @@ import { isRtl } from './i18n-bridge.js';
 export const timing = Object.freeze({
   micro: 0.16,
   main: 0.26,
-  page: 0.22,
+  page: 0.3,
+  leave: 0.14,
+  pageDelay: 0.06,                    // incoming view waits for the outgoing afterimage to thin out
+  glide: 0.32,
   slow: 0.42,
   flash: 0.6,
   number: 0.6,
   stagger: 0.032,
+  staggerHead: 0.04,
   staggerCap: 12,                     // items after the 12th share the last delay (long lists stay snappy)
+  rise: 10,                           // px: incoming view offset
   ease: [0.16, 1, 0.3, 1],
   easeInOut: [0.65, 0, 0.35, 1],
+  easeGlide: [0.22, 1, 0.36, 1],
+  easeIn: [0.4, 0, 1, 1],
+  linear: [0, 0, 1, 1],
 });
 
 const done = () => Promise.resolve();
@@ -249,15 +271,124 @@ export function drawer(el, open) {
 
 /* ---- page ---- */
 
-/** Route transition for a freshly mounted view root. */
-export function page(root) {
-  const els = toElements(root);
-  if (!els.length || !enabled()) return done();
-  const snap = snapshot(els, ['opacity', 'transform']);
-  const controls = run(els, { opacity: [0, 1], transform: ['translateY(6px)', 'none'] }, { duration: timing.page, ease: timing.ease });
+/** Animate one element with its own keyframes/options; inline opacity/transform are restored afterwards. */
+function one(el, keyframes, options) {
+  const snap = snapshot([el], ['opacity', 'transform']);
+  const controls = run([el], keyframes, options);
   if (!controls) { restore(snap); return done(); }
   return settle(controls).then(() => restore(snap));
 }
 
-export const motion = { enabled, enter, exit, number, flash, drawer, page, timing, animate };
+const visible = (el) => el instanceof Element && !el.hidden && el.getClientRects().length > 0;
+
+/**
+ * The page header of a freshly mounted view, as an ordered list of [element, kind] parts:
+ * code tag, title, the rest of the title block row by row (lead, scope-chip row), then the action group(s).
+ * Works for .view-head (views) and .ck-head (cockpit); anything else falls back to the first h1.
+ */
+function headerParts(view) {
+  const h1 = view.querySelector('h1');
+  if (!h1) return { head: null, parts: [] };
+  const head = h1.closest('.view-head, .ck-head, header') || h1.parentElement;
+  if (!head || !view.contains(head)) return { head: null, parts: [] };
+  const parts = [];
+  const code = head.querySelector('.code-tag');
+  if (code) parts.push([code, 'code']);
+  parts.push([h1, 'title']);
+  const block = h1.parentElement;
+  // Rows enter whole (a chip row or an action group is one part): fewer layers in the transition frame.
+  const spread = (el, kind) => { parts.push([el, kind]); };
+  if (block && block !== head) {
+    for (const el of block.children) if (el !== h1 && el !== code && visible(el)) spread(el, 'line');
+  }
+  for (const el of head.children) {
+    if (el === block || el === h1 || el === code || !visible(el) || el.contains(h1)) continue;
+    spread(el, 'action');
+  }
+  return { head, parts: parts.filter(([el]) => visible(el)) };
+}
+
+/**
+ * Route transition for a freshly mounted view (root = the <main> container; its children are animated, never
+ * the scroller itself). Opacity + a 10 px rise for the view, and a short staggered entrance for its header.
+ * Input is never blocked: nothing waits on these promises and no pointer-events are touched.
+ */
+export function page(root, { same = false } = {}) {
+  const host = toElements(root)[0];
+  if (!host || !enabled()) return done();
+  const views = Array.from(host.children).filter((el) => !el.classList.contains('route-ghost'));
+  if (!views.length) return done();
+  if (same) {
+    const snap = snapshot(views, ['opacity']);
+    const c = run(views, { opacity: [0.55, 1] }, { duration: timing.main, ease: timing.ease });
+    if (!c) { restore(snap); return done(); }
+    return settle(c).then(() => restore(snap));
+  }
+  const rise = { opacity: [0, 1], transform: [`translateY(${timing.rise}px)`, 'none'] };
+  const d0 = timing.pageDelay;
+  const jobs = views.map((el, i) => one(el, rise, { duration: timing.page, ease: timing.ease, delay: d0 + Math.min(i, 3) * 0.04 }));
+  const { head, parts } = headerParts(views[0]);
+  if (head) {
+    head.classList.add('is-entering');
+    const inline = isRtl() ? 12 : -12;
+    let line = 0;
+    let action = 0;
+    parts.slice(0, 24).forEach(([el, kind]) => {
+      let keyframes;
+      let delay;
+      let duration = timing.slow;
+      if (kind === 'code') {
+        keyframes = { opacity: [0, 1], transform: [`translateX(${inline}px)`, 'none'] };
+        delay = d0 + 0.02;
+      } else if (kind === 'title') {
+        keyframes = { opacity: [0, 1], transform: ['translateY(14px)', 'none'] };
+        delay = d0 + 0.06;
+        duration = 0.48;
+      } else if (kind === 'line') {
+        keyframes = { opacity: [0, 1], transform: ['translateY(8px)', 'none'] };
+        delay = d0 + 0.12 + Math.min(line++, 6) * timing.staggerHead;
+      } else {
+        keyframes = { opacity: [0, 1], transform: ['translateY(6px) scale(0.97)', 'none'] };
+        delay = d0 + 0.16 + Math.min(action++, 5) * timing.staggerHead;
+        duration = timing.page;
+      }
+      jobs.push(one(el, keyframes, { duration, delay, ease: timing.ease }));
+    });
+    // The CSS rule sweep (.is-entering .code-tag::after) runs once; the class leaves with the last part.
+    setTimeout(() => head.classList.remove('is-entering'), 900);
+  }
+  return Promise.all(jobs).then(() => undefined);
+}
+
+/** Outgoing-view afterimage: fade and recede slightly (depth). Resolves when the layer may be removed. */
+export function leave(target, { duration = timing.leave } = {}) {
+  const els = toElements(target);
+  if (!els.length || !enabled()) return done();
+  return settle(run(els, { opacity: [1, 0], transform: ['none', 'translateY(-6px) scale(0.98)'] }, { duration, ease: timing.linear }));
+}
+
+/**
+ * FLIP glide for a single indicator: the caller has already written the resting transform (and size) inline;
+ * this plays `from` → `to` on the compositor. A new glide replaces one still running on the same element.
+ */
+const glides = new WeakMap();
+export function glide(el, from, to, { duration = timing.glide } = {}) {
+  if (!(el instanceof Element) || !from || !to || from === to || !enabled()) return done();
+  const prev = glides.get(el);
+  if (prev) { try { prev.cancel(); } catch { /* finished */ } }
+  let anim = null;
+  try { anim = el.animate([{ transform: from }, { transform: to }], { duration: duration * 1000, easing: `cubic-bezier(${timing.easeGlide.join(',')})` }); } catch { return done(); }
+  glides.set(el, anim);
+  return anim.finished.then(() => { if (glides.get(el) === anim) glides.delete(el); }, () => undefined);
+}
+
+/** One-time reveal (brand mark at boot): scale + rotate + fade, rotation mirrored for RTL. */
+export function reveal(target, { rotate = -70, scale = 0.6, delay = 0, duration = timing.slow * 1.6 } = {}) {
+  const els = toElements(target);
+  if (!els.length || !enabled()) return done();
+  const r = isRtl() ? -rotate : rotate;
+  return Promise.all(els.map((el) => one(el, { opacity: [0, 1], transform: [`rotate(${r}deg) scale(${scale})`, 'none'] }, { duration, delay, ease: timing.ease })));
+}
+
+export const motion = { enabled, enter, exit, number, flash, drawer, page, leave, glide, reveal, timing, animate };
 export default motion;
