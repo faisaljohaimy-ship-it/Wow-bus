@@ -54,25 +54,37 @@ const tl = filmTimeline(lang);
 if (Math.abs(tl.seconds - D) > 0.2) console.warn(`warning: video ${D.toFixed(2)} s, timeline ${tl.seconds.toFixed(2)} s`);
 const spans = tl.scenes.map((s) => s.voice);
 
-// 1) extension point: the quietest window of the middle third (RMS envelope at 20 ms)
-const X = Math.max(0, D - M + 1.0);
-let p = 0;
-if (X > 0) {
+// 1) extension: the score's resolution must land on the film's end. musicalEnd = the last moment the score is within
+//    22 dB of its loudest stretch; the calm stretch repeated is the quietest window of the middle third.
+const env = (() => {
   const r = spawnSync(FFMPEG, ['-v', 'error', '-i', music, '-ac', '1', '-ar', '2000', '-f', 'f32le', '-'], { maxBuffer: 256 << 20 });
   const buf = r.stdout;
-  const a = new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.length / 4));
-  const sr = 2000;
+  return new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.length / 4));
+})();
+const SR = 2000;
+const rmsDb = (t0, t1) => {
+  const i0 = Math.max(0, Math.floor(t0 * SR));
+  const i1 = Math.min(env.length, Math.floor(t1 * SR));
+  let e = 0;
+  for (let i = i0; i < i1; i++) e += env[i] * env[i];
+  return 10 * Math.log10(e / Math.max(1, i1 - i0) + 1e-12);
+};
+let loudest = -120;
+for (let t = 0; t < M - 2; t += 0.5) loudest = Math.max(loudest, rmsDb(t, t + 2));
+let musicalEnd = M;
+for (let t = M - 2; t > 0; t -= 0.25) if (rmsDb(t, t + 1) > loudest - 22) { musicalEnd = t + 1; break; }
+const X = Math.max(0, D - M + 1.0, D - 1.0 - musicalEnd);
+let p = 0;
+if (X > 0) {
   const win = X + 2 * DUCK.xf + 1;
   let best = Infinity;
-  for (let t = M * 0.33; t < M * 0.66 - win; t += 0.25) {
-    let e = 0;
-    const i0 = Math.floor(t * sr);
-    const i1 = Math.floor((t + win) * sr);
-    for (let i = i0; i < i1; i++) e += a[i] * a[i];
-    e /= i1 - i0;
+  const lo = M * 0.33;
+  const hi = Math.max(lo + 0.25, M * 0.7 - win);
+  for (let t = lo; t < hi; t += 0.25) {
+    const e = rmsDb(t, t + win);
     if (e < best) { best = e; p = t; }
   }
-  console.log(`score ${M.toFixed(2)} s < film ${D.toFixed(2)} s: repeating ${X.toFixed(2)} s of the calm stretch at ${p.toFixed(2)} s (rms ${Math.sqrt(best).toFixed(4)})`);
+  console.log(`score ${M.toFixed(2)} s (musical end ${musicalEnd.toFixed(2)} s), film ${D.toFixed(2)} s: repeating ${X.toFixed(2)} s of the calm stretch at ${p.toFixed(2)} s (${best.toFixed(1)} dB)`);
 }
 
 // 2) music gain: loudness to −16 LUFS, then the ducking curve

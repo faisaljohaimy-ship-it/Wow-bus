@@ -14,6 +14,12 @@
   "qr-scan-keyed": 4
  },
  "ui": {
+  "ui-cockpit-ar": {
+   "dur": 9,
+   "w": 1920,
+   "h": 1080,
+   "fps": 30
+  },
   "ui-cockpit-en": {
    "dur": 8.4,
    "w": 1920,
@@ -42,6 +48,24 @@
    "dur": 10.6,
    "w": 1920,
    "h": 1080,
+   "fps": 30
+  },
+  "ui-spatial-en": {
+   "dur": 10,
+   "w": 1920,
+   "h": 1080,
+   "fps": 30
+  },
+  "ui-integrations-en": {
+   "dur": 10.833,
+   "w": 1920,
+   "h": 1080,
+   "fps": 30
+  },
+  "ui-phone-en": {
+   "dur": 8,
+   "w": 1170,
+   "h": 2532,
    "fps": 30
   }
  },

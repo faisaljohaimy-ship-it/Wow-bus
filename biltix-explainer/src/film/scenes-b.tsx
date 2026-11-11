@@ -73,6 +73,7 @@ export const S07: React.FC<SceneProps> = ({ s }) => {
           <Clip src={staticFile(brollFile('ops-room'))} from={0} dur={cut + 22} scale={[1.02, 1.12]} drift={[-30, -8]} />
           <CoolGrade />
           <LowShade k={0.8} />
+          <AbsoluteFill style={{ background: `linear-gradient(${rtl ? 270 : 90}deg, rgba(6,12,24,0.62) 0%, rgba(6,12,24,0.38) 30%, rgba(6,12,24,0) 52%)` }} />
           <SceneCam frames={cut + 20} zoom={[1, 1.03]}>
             <Box x={140} y={190} w={700} style={{ color: '#FFFFFF' }}>
               <div style={{ ...rise(f, 4, 20) }}>
@@ -109,6 +110,10 @@ export const S07: React.FC<SceneProps> = ({ s }) => {
                 ]}
                 shine={20}
               />
+            </div>
+            {/* the same cockpit on the phone */}
+            <div style={{ ...rise(f, 20, 26, 60) }}>
+              <Screen ui="ui-phone" fallback="phone-cockpit" x={1640} y={390} w={200} dur={cut + 22} phone label="" startAt={1.8} focus={[[0, 1, 0.5, 0.3]]} clipFocus={[[1.8, 1, 0.5, 0.5]]} shine={40} />
             </div>
           </SceneCam>
           <FootageTag text={c.aiFootage} opacity={1 - iris} />
