@@ -6,3 +6,8 @@ out/contact/
 .cache/
 *.log
 .DS_Store
+# MVP showcase: app captures (~80 MB; re-create with scripts/showcase-capture.mjs), derived narration, stills
+public/showcase/*
+!public/showcase/manifest.json
+public/voice/*.norm.wav
+out/showcase-stills/

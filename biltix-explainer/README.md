@@ -470,6 +470,67 @@ Testing the embed locally: `python3 -m http.server` does not answer HTTP `Range`
 browser cannot seek an MP4 it serves (every seek lands on 0:00). Use a server with range support
 (any CDN, Vercel, `npx serve`, …) when checking seeking or caption timing.
 
+## MVP showcase video
+
+A second, longer film about the whole project: **ShowcaseAR** and **ShowcaseEN** (1920 × 1080, 30 fps,
+about 68 s each), one scene per narration line, built from real captures of the app (`../biltix-hse`).
+It lives next to the explainer and shares its theme, fonts, emblem, metal edge, laser comet and 2D camera
+(`src/lib/camera.ts`, no CSS 3D context), and adds `src/showcase/`.
+
+| # | Line (EN) | What is on screen |
+|---|---|---|
+| 1 | BILTIX Risk AI. Safety risk, seen clearly. | emblem builds, wordmark + Arabic name in a metal frame drawn by the laser; the cockpit capture rises behind in true perspective (canvas, one 2 px row at a time) |
+| 2 | One platform … in Arabic and English. | the English and Arabic cockpits slide in, mirrored, with language chips |
+| 3 | The cockpit brings every risk onto one screen. | cockpit in a browser frame, slow dolly down the full-page capture |
+| 4 | Ring gauges and radar trends … | macro push-in on the domain ring gauges, then the 12-week radar trend, with callouts |
+| 5 | Every AI score is explained … | risk drawer (AIR-1014): severity, model confidence, data quality → "Why this risk was raised" → the source evidence |
+| 6 | A human reviewer approves … | pointer on "Accept recommendation" → "Accept and create task" → the task board; the new card glides into "New" |
+| 7 | The site map ties risks, zones and simulated cameras to place. | spatial view, zone Z2 and its links → the camera viewer with its Simulated / not connected labels |
+| 8 | Thirteen demo data sources … | counter and the 13 sources (from the data-quality page) ticked; integrations page beside it |
+| 9 | Twenty-three screens … | mosaic of all 23 routes (real thumbnails, nav titles in the video's language) |
+| 10 | A light, precise design … | a real metric tile under the metal edge and laser, construction guides, colour tokens, type |
+| 11 | Built for accessibility and speed … | phone captures (390 × 844 @3x) and measured checks: tests passing, six widths without sideways scroll |
+| 12 | Demo data today … | macro crops of the app's own Demo data / Illustrative value / Simulated labels |
+| 13 | Evidence-backed decisions, with humans in control. | closing lockup and the link biltix-risk-ai.vercel.app |
+
+Captions (lower third, start-aligned, ≥ 40 px on a plate) are the narration lines; the Arabic ones drop the
+tashkeel and use the app's spelling «بلتكس». A Demo-data chip is on screen on every frame.
+
+### Build
+
+```bash
+# 1. captures (Playwright + Chromium; serves ../biltix-hse on 127.0.0.1:9701 if nothing listens there)
+NODE_PATH=/opt/node-tools/node_modules node scripts/showcase-capture.mjs --check-widths
+# 2. narration: lines, loudness, timeline → public/voice/showcase-<lang>.norm.wav, src/showcase/voice-timing.json
+node scripts/showcase-voice.mjs
+# 3. review stills (optional) → out/showcase-stills/
+node scripts/showcase-stills.mjs --at 0.3,0.8
+# 4. render (JPEG frames are fine here: no hairline grid under motion) and check every frame
+npm run showcase:render:ar && npm run showcase:render:en
+python3 scripts/check-frames.py out/biltix-mvp-ar-1080p.mp4 ar
+python3 scripts/check-frames.py out/biltix-mvp-en-1080p.mp4 en
+# 5. optional music bed, ducked under the voice
+node scripts/showcase-mix.mjs --video out/biltix-mvp-en-1080p.mp4 --music bed.wav
+```
+
+- **Captures** (`public/showcase/`, about 80 MB, not in git; only `manifest.json` is): fixed clock
+  2026-11-10T09:00:00+03:00 as in `tools/qa.mjs`, English through `?lang=en` + `i18n.setLang`, light theme,
+  1600 × 900 at DPR 2 for all 23 routes in both languages, full-page JPEG q92 for cockpit, overview, airisks,
+  spatial and integrations, the drawer flow on AIR-1014, the spatial zone and camera viewer, and phones at
+  390 × 844 DPR 3. Each shot waits for the ready flag, fonts, non-blank canvases, the edge overlay and the end
+  of every finite animation; the infinite edge comets are paused at one time (and hidden in full-page shots,
+  where their layers once composited as a solid block). `manifest.json` records sizes and the rectangles the
+  camera aims at, so every push-in follows the real layout in each language.
+- **Narration** (`public/voice/showcase-<lang>.mp3`, ElevenLabs eleven_multilingual_v2; Arabic narrator
+  Saadoun, English narrator Ryan): the 12 longest silences split the 13 lines; gain to about −16 LUFS, a
+  4×-rate look-ahead limiter, then loudnorm two-pass in linear mode → −16 LUFS / ≤ −1.5 dBTP; the gaps between
+  lines are gated to true zero with 20 ms ramps. Scene i = line + 0.9 s with the line 0.35 s in; scene 1 adds
+  a 1.6 s lead-in, scene 13 holds 2.5 s. Each line is one `<Html5Audio trimBefore>` clip whose ends fall in
+  the gated silence, so cuts never click.
+- **Mix** (`scripts/showcase-mix.mjs`): music normalised to −16 LUFS, −14 dB under each line (0.25 s attack,
+  0.4 s release), −6 dB between lines, 1.5 s fade-in, 3 s fade-out; the sum to −16 LUFS / −1.5 dBTP; video
+  stream copied → `<name>-music.mp4`. `--stem` writes the processed music alone to check the ducking.
+
 ## Project layout
 
 ```
@@ -496,4 +557,8 @@ src/components/Metal.tsx  metal-edge cards, laser comet, metal rings
 src/components/Ring.tsx   ring gauge with radial weekly bars, exact donut
 src/components/Chrome.tsx background plate, HUD (top bar, step dial, caption band), chips
 src/scenes/*.tsx          the ten beats (SiteCam.tsx = the simulated camera)
+src/showcase/             MVP showcase: Showcase.tsx (composition, HUD, lower third, audio), scenes-a/b.tsx,
+                          ui.tsx (capture cards, browser and phone frames, callouts, perspective plane),
+                          timeline.ts + voice-timing.json, copy.ts, captures.ts (manifest access)
+scripts/showcase-*.mjs    captures, narration prep, review stills, music mix
 ```

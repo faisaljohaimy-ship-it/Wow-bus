@@ -18,7 +18,13 @@
     "voice": "node scripts/voice-mux.mjs",
     "test": "node --test \"tests/*.test.mjs\"",
     "stills": "node scripts/contact-sheet.mjs",
-    "build": "npm run extract && npm run captions && npm run render && npm run export:web"
+    "build": "npm run extract && npm run captions && npm run render && npm run export:web",
+    "showcase:capture": "node scripts/showcase-capture.mjs --check-widths",
+    "showcase:voice": "node scripts/showcase-voice.mjs",
+    "showcase:stills": "node scripts/showcase-stills.mjs",
+    "showcase:render:ar": "remotion render src/index.ts ShowcaseAR out/biltix-mvp-ar-1080p.mp4 --concurrency=3 --image-format=jpeg --jpeg-quality=92 --audio-codec=aac --audio-bitrate=192k",
+    "showcase:render:en": "remotion render src/index.ts ShowcaseEN out/biltix-mvp-en-1080p.mp4 --concurrency=3 --image-format=jpeg --jpeg-quality=92 --audio-codec=aac --audio-bitrate=192k",
+    "showcase:mix": "node scripts/showcase-mix.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "5.3.0",

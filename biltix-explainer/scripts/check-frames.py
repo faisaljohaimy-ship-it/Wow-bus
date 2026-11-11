@@ -3,6 +3,8 @@
 
     python3 scripts/check-frames.py                    # both 1080p masters and both 720p web files
     python3 scripts/check-frames.py path/to/file.mp4 [ar|en]
+    (a file named *mvp* is checked against the MVP showcase: scenes from src/showcase/voice-timing.json and the
+    showcase's Demo-data chip box)
 
 Needs python3 + numpy and ffmpeg/ffprobe on PATH (or FFMPEG / FFPROBE set). Exit 1 on any finding.
 
@@ -35,6 +37,22 @@ TW, TH = W // GX, H // GY
 sb = open(os.path.join(ROOT, 'src/storyboard.ts'), encoding='utf-8').read()
 SCENES = [(m.group(1), int(m.group(2))) for m in re.finditer(r"\{ id: '(\w+)', frames: (\d+)", sb)]
 TRANSITION = int(re.search(r'export const TRANSITION = (\d+)', sb).group(1))
+# Demo-data chip (screen-fixed, top bar, inline-end), 1080p coordinates: x0, x1, y0, y1 per language
+CHIP = {'en': (1668, 1816, 52, 82), 'ar': (103, 271, 52, 82)}
+
+
+SHOWCASE_CHIP = {'en': (1702, 1836, 50, 76), 'ar': (86, 226, 50, 76)}  # inside the showcase HUD's Demo-data pill
+
+
+def use_showcase(lang):
+    """MVP showcase files (biltix-mvp-*, BILTIX-MVP-*): scenes from src/showcase/voice-timing.json, its chip box."""
+    global SCENES, TRANSITION, CHIP
+    import json
+    t = json.load(open(os.path.join(ROOT, 'src/showcase/voice-timing.json'), encoding='utf-8'))[lang]
+    SCENES = [(f's{i + 1}', s['frames']) for i, s in enumerate(t['scenes'])]
+    tl = open(os.path.join(ROOT, 'src/showcase/timeline.ts'), encoding='utf-8').read()
+    TRANSITION = int(re.search(r'export const XFADE = (\d+)', tl).group(1))
+    CHIP = SHOWCASE_CHIP
 
 
 def where(i):
@@ -116,9 +134,9 @@ def check(path, lang):
     # chip
     pr = subprocess.run([FFPROBE, '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width', '-of', 'csv=p=0', path], capture_output=True, text=True).stdout.strip()
     s = int(pr) / 1920
-    x0, x1 = (1668, 1816) if lang == 'en' else (103, 271)
+    x0, x1, y0, y1 = CHIP[lang]
     ev = lambda v: int(v * s) // 2 * 2
-    X0, X1, Y0, Y1 = ev(x0), ev(x1), ev(52), ev(82)
+    X0, X1, Y0, Y1 = ev(x0), ev(x1), ev(y0), ev(y1)
     C = decode(path, f'crop={X1 - X0}:{Y1 - Y0}:{X0}:{Y0}', X1 - X0, Y1 - Y0).reshape(n, -1)
     ref = np.median(C, axis=0)
     cd = np.abs(C - ref).mean(axis=1); white = (C > 235).mean(axis=1); ink = (C < 120).mean(axis=1)
@@ -140,6 +158,8 @@ if __name__ == '__main__':
         path = sys.argv[1]
         lang = sys.argv[2] if len(sys.argv) > 2 else ('ar' if '-ar' in os.path.basename(path) else 'en')
         files = [(path, lang)]
+        if 'mvp' in os.path.basename(path).lower():
+            use_showcase(lang)
     else:
         files = []
         for lang in ('ar', 'en'):
