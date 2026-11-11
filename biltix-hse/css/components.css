@@ -3157,7 +3157,7 @@ button.domain-card:hover, .domain-card.is-clickable:hover, .int-card:hover, .kan
 /* Shape language (v3.5) in forced colours and print. Decoration steps back; every state keeps a system-colour
    mark: the selected segment and tab are drawn in Highlight, icon tiles become plain bordered squircles. */
 @media (forced-colors: active) {
-  .card.is-framed::after { content: none; }
+  .card.is-framed:not(.is-hero):not(.is-plain)::after { content: none; }
   .metric-icon, .domain-icon, .tile-icon, .int-icon, .evidence-icon, .feed-icon, .urgent-icon,
   .state-icon, .empty-icon, .priority-rank { background: Canvas; color: CanvasText; border-color: CanvasText; box-shadow: none; }
   .seg-btn::before, .tab::before, .drawer-tab::before, .drawer-tabs [role="tab"]::before { display: none; }
@@ -3166,7 +3166,7 @@ button.domain-card:hover, .domain-card.is-clickable:hover, .int-card:hover, .kan
   .int-card::before, .kanban-card::before, .kanban-col-head::before, .alert-item::before, .urgent-item::before { background: CanvasText; box-shadow: none; }
 }
 @media print {
-  .card.is-framed::after { content: none; }
+  .card.is-framed:not(.is-hero):not(.is-plain)::after { content: none; }
   .metric-icon, .domain-icon, .tile-icon, .int-icon, .evidence-icon, .feed-icon, .urgent-icon,
   .state-icon, .empty-icon, .priority-rank, .badge, .status-badge, .chip, .seg, .seg-btn::before { box-shadow: none !important; }
   .tile[class*="tone-"]::before, .metric-tile::before, .domain-card::before, .int-card::before, .kanban-card::before,
