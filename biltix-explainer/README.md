@@ -20,6 +20,60 @@ writes into the app are the web exports in `../biltix-hse/assets/video/`.
 > The exported MP4/WebP/VTT files contain no Remotion code. The licence applies to using
 > Remotion to produce them.
 
+## Fixes after the v3.1 review
+
+An independent check of the published v3.1 recut found single-frame drop-outs, an English honesty
+tag in the Arabic camera feed, frames without the demo-data label, key text under the top-bar fade,
+an untagged write-back and an embed whose caption track was on by default over the burned-in
+captions. All are fixed in the code and both languages were re-rendered ("Last build" below).
+
+- **Single-frame drop-outs: cause and fix.** The first v3.1 masters had frames where part of the
+  picture vanished for exactly one frame: English 233 (the whole validation scene), 765 (the top
+  ~430 px of both approval cards), 811 and 813 (the Accept / Edit / Dismiss row; found by the same
+  detectors) and 902 (the upper `MT-0214` card); Arabic 44 (the intro emblem and wordmark), 112 (the
+  data-sources card) and 345 (the risk-analysis content). The camera was built with CSS 3D
+  (`perspective` on the stage, `preserve-3d` and `translate3d … rotateY` on the world, `translateZ`
+  on every depth plane), so Chromium composited each scene as a 3D rendering context of several
+  full-frame planes, and on rare frames Remotion's screenshot (`Page.captureScreenshot` of the
+  compositor surface, four tabs in parallel) caught some of those planes with raster tiles not
+  drawn. The evidence: the holes are rectangles and full-width bands on raster-tile boundaries; only
+  the scenes' depth planes ever lose content (the 2D top bar and caption band, and the background
+  plate, never did); and it does not repeat: rendering frames 228–238 again gives a clean 233, and a
+  full re-render of the unchanged English composition on the same machine dropped tiles at mostly
+  other frames (372, 622, 812, 1095, 1120: about one frame in 250). The camera maths was ruled out:
+  camera states, plane matrices and dissolve opacities are finite and in range on every frame of
+  every scene in both languages, the drop-outs sit mid-shot rather than at cuts, and the fonts are
+  loaded before the first frame (`delayRender` in `src/fonts.ts`); no image or async state is
+  involved. **Fix:** `src/lib/camera.ts` now projects each depth plane itself (same 2200 px lens,
+  same rotation order, same parallax) and `src/components/Stage.tsx` gives each plane one 2D
+  `matrix()`. No `perspective`, `preserve-3d` or `translateZ` is left, so there is no 3D context for
+  Chromium to composite. The ≤ 1.6° orbit keeps its parallax and loses only its keystone (a few px
+  at the frame corners): six sample frames rendered with the old and the new camera differ by
+  0.3–0.6 grey levels on average (2.4 on a rack-focus frame, where the blurred plane sits a few px
+  over). Every frame of the new masters and web files was checked with three detectors: no drop-out
+  (see "Last build").
+- **Arabic honesty tag.** The Arabic feed's OSD reads `بث محاكى · لا كاميرا متصلة`, the app's own
+  wording (`biltix-hse/js/i18n/spatial.js`), set in IBM Plex Sans Arabic with no letter-spacing
+  (letter-spacing breaks Arabic joining) and isolated right-to-left inside the left-to-right OSD
+  block. The zone line is isolated the same way, so every OSD line starts at the same edge as the
+  camera name above it (the picture and its OSD never mirror).
+- **Demo data on every frame.** The chip no longer fades with the top bar: it is on screen at full
+  opacity from frame 0 of the intro, through the full-frame simulated feed (the feed's OSD now sits
+  60 px below the feed's top edge, so the chip never covers it), to the last frame of the outro.
+- **Framing.** The Approve push-in is gentler and centred (magnification about 1.045 instead of
+  1.07), so "Model recommendation · AIR-1020" and "Reviewer" stay below the top-bar fade and the
+  reviewer card stays inside the frame; the Mitigation end keeps the "Exclusion zone" heading clear
+  of the fade. The same rule fixed the end of Explanation (the evidence heading), the end of Risk
+  analysis (the portfolio card's text left the frame and the matrix legend sat in the caption
+  band), the Verified-closure tilt (its heading) and the validation → portfolio match point. Arabic
+  mirrors every shot. `npm run check:framing` projects every card's heading and key text through
+  the camera for every frame of both languages; the only allowed exits are named in the script
+  (the far ring gauges and the entering matrix during the validation → portfolio match).
+- **Write-back.** The *Simulated* tag and "No real connection to BILTIX PM in this version" are
+  part of the write-back card, on screen for as long as the card is (about 3.3 s); before, the arc
+  ran untagged from about frame 913 to 965 and the note was readable for about 1.2 s.
+- **Embed.** The caption track is offered but off by default (see "In the app").
+
 ## What changed in the v3.1 recut
 
 - **Light theme first.** The palette is the app's light tokens (`biltix-hse/css/tokens.css`,
@@ -44,12 +98,15 @@ writes into the app are the web exports in `../biltix-hse/assets/video/`.
   60-minute clock, the write-back travels over an arc, and the seven steps close the film on one
   circle round the emblem. The 7-beat step rail became a circular dial in the top bar.
 - **Virtual camera** (`src/lib/camera.ts`, `src/components/Stage.tsx`, `src/shots.ts`). The
-  world is a 1920 × 1080 plane under CSS perspective (2200 px, about a 50 mm look); layers sit at
-  `translateZ(depth)`. Each scene has a short shot list (focus point, dolly, a degree or two of
-  orbit) eased with `EASE.cam` / `EASE.soft` from `theme.ts`, so the camera settles on the detail
-  being explained and never starts or stops abruptly. `aim()` pushes in by bringing a detail
-  toward a chosen screen point, so the frame never runs far off the layout and key text never
-  slides under the top bar or the caption (both sit on soft fades of the app plane).
+  world is a stack of flat 1920 × 1080 planes at depths (px toward the viewer), seen through a
+  2200 px pinhole lens (about a 50 mm look). The projection is computed in JS and every plane gets
+  one plain 2D `matrix()` (see "Fixes after the v3.1 review" for why it is no longer CSS 3D).
+  Each scene has a short shot list (focus point, dolly, a degree or two of orbit) eased with
+  `EASE.cam` / `EASE.soft` from `theme.ts`, so the camera settles on the detail being explained
+  and never starts or stops abruptly. `aim()` / `aimY()` push in by bringing a detail toward a
+  chosen screen point, and `npm run check:framing` proves for every frame, in both languages,
+  that no card heading or key text goes under the top bar's fade, into the caption band or out
+  of the frame.
   - **Match cuts**: the intro emblem dissolves into the ingestion hub at the same screen size and
     spot (the comet keeps its angle and angular speed across the cut); the validation ring
     dissolves into the portfolio dial; the closure seal becomes the outro's ring of steps.
@@ -60,7 +117,8 @@ writes into the app are the web exports in `../biltix-hse/assets/video/`.
   - **Site camera**: a hard cut to a procedurally drawn **simulated** CCTV-style frame of the
     story risk's location, full frame, then a pull-back revealing the app's camera viewer with
     its badges (*Simulated*, *Camera not connected*) and the burned-in
-    `SIMULATED FEED · NO CAMERA CONNECTED` / `15 FPS SIM` tags (same rules as the app's
+    `SIMULATED FEED · NO CAMERA CONNECTED` (Arabic: `بث محاكى · لا كاميرا متصلة`, the app's own
+    wording) / `15 FPS SIM` tags (same rules as the app's
     `#/spatial` view, `docs/design/spatial.md`). The picture updates at 15 fps, never mirrors,
     and shows no "live", "REC" or detection-confidence claim. The dashed box over the tension
     cracks is tagged *Illustrative*; the crack length, worker and excavator counts, sensor and
@@ -93,7 +151,9 @@ writes into the app are the web exports in `../biltix-hse/assets/video/`.
 | Outro | 1158–1244 | The seven steps on one ring round the emblem |
 
 Honesty notes:
-- Every frame carries the **بيانات توضيحية / Demo data** label.
+- Every frame carries the **بيانات توضيحية / Demo data** label, at full opacity and at the same
+  spot (top bar, inline-end), from frame 0 of the intro through the full-frame simulated camera
+  feed to the last frame of the outro.
 - No model-accuracy figures are shown. The dataset marks pipeline precision, recall,
   calibration and drift as not measured, so they are never extracted. The per-risk confidence
   and the driver weights are tagged as illustrative, the same way the app tags demo metrics.
@@ -210,9 +270,18 @@ stay within 3 % of the old ones.
 
 The cockpit's "How the platform works" dialog (`biltix-hse/js/views/cockpit.js`,
 `openExplainer`) embeds these files: poster, `preload="none"`, playback only on the viewer's
-click, captions in the page language by default with a switch to the other version, no audio
-track. The file names are unchanged and the duration is read from the video's metadata, so the
-recut needs no embed change.
+click, the version in the page language with a switch to the other one, no audio track, and
+focus back on the "How the platform works" button when the dialog closes. The captions are burned
+into the picture, so the WebVTT file is attached as a `captions` track in the page language that
+is **off by default** (no `default` attribute): a native cue drawn on top would only cover the
+burned-in caption, or on a small player the scene's own text (the intro tagline). Viewers who
+want it (a larger or screen-reader-friendly rendering) turn it on from the player's captions
+menu; the cues then follow the burned-in ones exactly. The file names are unchanged and the
+duration is read from the video's metadata.
+
+Testing the embed locally: `python3 -m http.server` does not answer HTTP `Range` requests, so a
+browser cannot seek an MP4 it serves (every seek lands on 0:00). Use a server with range support
+(any CDN, Vercel, `npx serve`, …) when checking seeking or caption timing.
 
 ## Project layout
 
@@ -223,11 +292,12 @@ scripts/write-captions.mjs  storyboard → WebVTT
 scripts/export-web.mjs    720p web encodes + WebP posters + faststart remux
 scripts/contact-sheet.mjs review stills (scripts/sheet.py tiles them)
 scripts/env.mjs           browser + bundled ffmpeg discovery for the Node scripts
+scripts/check-framing.mjs every card's key text through every frame of the camera paths (npm run check:framing)
 src/storyboard.ts         timing, transitions, step labels, captions (single source of truth)
-src/shots.ts              the camera's shot list per scene
+src/shots.ts              the camera's shot list per scene (aim / aimY framing helpers)
 src/Explainer.tsx         composition (RTL/LTR), far background plate, scenes, HUD
-src/lib/camera.ts         virtual camera: shot interpolation, mirroring, world transform
-src/components/Stage.tsx  perspective stage, depth layers (rack focus), scene dissolves
+src/lib/camera.ts         virtual camera: shot interpolation, mirroring, projection of each depth plane to a 2D matrix
+src/components/Stage.tsx  stage (clips the frame), depth planes with 2D matrices (rack focus), scene dissolves
 src/components/Metal.tsx  metal-edge cards, laser comet, metal rings
 src/components/Ring.tsx   ring gauge with radial weekly bars, exact donut
 src/components/Chrome.tsx background plate, HUD (top bar, step dial, caption band), chips

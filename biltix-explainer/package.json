@@ -9,6 +9,7 @@
     "captions": "node scripts/write-captions.mjs",
     "studio": "remotion studio src/index.ts",
     "typecheck": "tsc --noEmit",
+    "check:framing": "node scripts/check-framing.mjs",
     "render:ar": "remotion render src/index.ts ExplainerAR out/biltix-explainer-ar-1080p.mp4",
     "render:en": "remotion render src/index.ts ExplainerEN out/biltix-explainer-en-1080p.mp4",
     "render": "npm run render:ar && npm run render:en",

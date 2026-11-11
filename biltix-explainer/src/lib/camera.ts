@@ -10,8 +10,19 @@
  * Between keys the camera eases (EASE.cam by default, or the key's own curve), so it settles on
  * the detail being explained and never starts or stops abruptly.
  *
- * The world is a 3D plane (CSS perspective = LENS) and layers sit on it at translateZ(depth):
- * when the camera pans or orbits, near layers travel further than far ones (real parallax).
+ * The world is a stack of flat planes at depths (px toward the viewer). The camera's projection
+ * (rotation about the focus point, then a pinhole lens of LENS px centred on the frame) is computed
+ * here, in JS, and each plane receives one plain 2D `matrix()`: exact at the focus point and
+ * linear around it. Near planes still travel further than far ones when the camera pans or orbits
+ * (real parallax), and a dolly still magnifies near planes more than far ones.
+ *
+ * Why not CSS 3D (perspective + preserve-3d + translateZ)? That is how the v3.1 recut first drew
+ * the camera, and Chromium then composited every scene as a 3D rendering context: on rare frames
+ * (about 1 frame in 300, mostly different frames from one render to the next) the screenshot
+ * Remotion takes caught those planes with some of their raster tiles not drawn, so a card, a band
+ * of a card or a whole scene vanished for one frame. With 2D matrices there is no 3D context left
+ * to composite. The only thing given up is the keystone of a ≤ 1.6° orbit (a few px at the frame
+ * corners, see `planeAffine`), which the eye cannot see.
  */
 import type { CSSProperties } from 'react';
 import { EASE, LENS } from '../theme';
@@ -54,13 +65,56 @@ export function mirrorShot(s: Shot, rtl: boolean): Shot {
 /** Magnification of the focus plane for a dolly position. */
 export const magnification = (z: number) => LENS / (LENS - z);
 
-/** CSS transform of the world plane for a camera state. */
-export function worldTransform(c: Cam): CSSProperties {
-  return {
-    transformOrigin: `${c.x.toFixed(2)}px ${c.y.toFixed(2)}px`,
-    transform: `translate3d(${(960 - c.x).toFixed(2)}px, ${(540 - c.y).toFixed(2)}px, ${c.z.toFixed(2)}px) rotateX(${c.pitch.toFixed(3)}deg) rotateY(${c.yaw.toFixed(3)}deg) rotateZ(${c.roll.toFixed(3)}deg)`,
-    transformStyle: 'preserve-3d',
-  };
+const RAD = Math.PI / 180;
+
+/**
+ * Exact screen position of world point (px, py) on the plane at depth d, for camera c: the point is
+ * rotated about the focus point (roll, then yaw, then pitch — the order the earlier CSS transform
+ * `rotateX · rotateY · rotateZ` applied them), moved by the dolly, and projected through a pinhole
+ * of LENS px centred on the 1920 × 1080 frame.
+ */
+export function project(c: Cam, px: number, py: number, d = 0): { x: number; y: number } {
+  let x = px - c.x;
+  let y = py - c.y;
+  let z = d;
+  const r = c.roll * RAD;
+  [x, y] = [x * Math.cos(r) - y * Math.sin(r), x * Math.sin(r) + y * Math.cos(r)];
+  const a = c.yaw * RAD;
+  [x, z] = [x * Math.cos(a) + z * Math.sin(a), -x * Math.sin(a) + z * Math.cos(a)];
+  const b = c.pitch * RAD;
+  [y, z] = [y * Math.cos(b) - z * Math.sin(b), y * Math.sin(b) + z * Math.cos(b)];
+  const depth = LENS - (z + c.z);
+  if (!(depth > 1)) throw new Error(`camera: plane ${d} is at or behind the lens (z ${c.z.toFixed(1)})`);
+  const s = LENS / depth;
+  return { x: 960 + x * s, y: 540 + y * s };
+}
+
+/** The 2D affine of a plane: the projection's value at the focus point and its slope across ±H px. */
+const H = 480;
+export type Affine = { a: number; b: number; c: number; d: number; e: number; f: number };
+export function planeAffine(c: Cam, depth = 0): Affine {
+  const o = project(c, c.x, c.y, depth);
+  const xp = project(c, c.x + H, c.y, depth);
+  const xm = project(c, c.x - H, c.y, depth);
+  const yp = project(c, c.x, c.y + H, depth);
+  const ym = project(c, c.x, c.y - H, depth);
+  const a = (xp.x - xm.x) / (2 * H);
+  const b = (xp.y - xm.y) / (2 * H);
+  const cc = (yp.x - ym.x) / (2 * H);
+  const d = (yp.y - ym.y) / (2 * H);
+  const m = { a, b, c: cc, d, e: o.x - (a * c.x + cc * c.y), f: o.y - (b * c.x + d * c.y) };
+  for (const v of Object.values(m)) if (!Number.isFinite(v)) throw new Error(`camera: non-finite plane matrix at depth ${depth}`);
+  return m;
+}
+
+/** Apply a plane's affine to a world point (used by the framing check and the scenes' anchors). */
+export const applyAffine = (m: Affine, x: number, y: number) => ({ x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f });
+
+/** CSS for a plane at a depth: one 2D matrix about the world origin (no 3D rendering context). */
+export function planeStyle(c: Cam, depth = 0): CSSProperties {
+  const m = planeAffine(c, depth);
+  const n = (v: number, k: number) => v.toFixed(k);
+  return { transformOrigin: '0 0', transform: `matrix(${n(m.a, 6)}, ${n(m.b, 6)}, ${n(m.c, 6)}, ${n(m.d, 6)}, ${n(m.e, 3)}, ${n(m.f, 3)})` };
 }
 
 /** Blend two camera states (for the background plate during a dissolve). */

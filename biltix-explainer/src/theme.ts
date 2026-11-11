@@ -73,7 +73,7 @@ export const EASE = {
 /** 1 frame ≈ 33 ms at 30 fps: the stagger unit for related elements (25–40 ms). */
 export const STAGGER = 1;
 
-/** Virtual camera lens: CSS perspective distance (px). 2200 px ≈ a 50 mm look on a 1920 px frame. */
+/** Virtual camera lens: pinhole distance (px) used by the JS projection in src/lib/camera.ts. 2200 px ≈ a 50 mm look on a 1920 px frame. */
 export const LENS = 2200;
 
 export const nf = new Intl.NumberFormat('en-US');

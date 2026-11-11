@@ -14,9 +14,11 @@
  *  - close      tilts down the audit trail and ends on the seal
  *  - outro      match: the step ring starts at the seal's screen size and spot; the camera cranes in
  *
- * A push-in uses aim(): it brings a world point to a chosen screen point at a dolly position, so
- * the detail grows toward the centre without the frame running off the edge of the layout
- * (margins stay ≤ ≈ 250 px) and without lifting key text under the top bar or the caption band.
+ * A push-in uses aim() / aimY(): it brings a world point to a chosen screen point at a dolly position,
+ * so the detail grows toward the centre without the frame running off the edge of the layout and
+ * without lifting key text under the top bar's fade (y < 148) or into the caption band (y > 915), nor
+ * pushing a card's text out of the frame. The framing check in the README projects every card's
+ * heading and key text through these paths for every frame, in both languages.
  * Moves stay slow: magnification 0.65–1.12 on the action plane, except the opening frames of the
  * source match (1.65) and of the full-frame camera feed (1.72), which only pull back; the largest
  * pan is the outro crane (≈ 650 world px, ≈ 430 px on screen, over 2.2 s), all eased at both ends.
@@ -29,6 +31,10 @@ const m = (z: number) => LENS / (LENS - z);
 /** Focus that puts world point (px, py) at screen point (sx, sy) with the camera at dolly z. */
 function aim(px: number, py: number, sx: number, sy: number, z: number): { x: number; y: number; z: number } {
   return { x: px - (sx - 960) / m(z), y: py - (sy - 540) / m(z), z };
+}
+/** Focus at world x `fx` (chosen so the outer cards' text stays in frame) with world height py at screen height sy. */
+function aimY(fx: number, py: number, sy: number, z: number): { x: number; y: number; z: number } {
+  return { x: fx, y: py - (sy - 540) / m(z), z };
 }
 
 // Anchors shared with the scenes (world px, left-to-right layout).
@@ -45,7 +51,7 @@ const SEAL = { x: 1484, y: 440 }; // scenes/Close.tsx
 const FEED = { x: 782, y: 526 }; // simulated camera feed centre, scenes/SiteCam.tsx
 
 // Match points: where the hand-off detail sits on screen across a dissolve.
-const RING_SPOT = { x: 640, y: 584 }; // validation ring → portfolio dial
+const RING_SPOT = { x: 640, y: 600 }; // validation ring → portfolio dial (low enough that both scenes' headings stay below the top-bar fade)
 const SEAL_SPOT = { z: 40, focus: { x: 1062, y: 470 } }; // close ends here; the outro ring starts on the seal
 
 export const SHOTS: Record<SceneId, Shot[]> = {
@@ -70,14 +76,18 @@ export const SHOTS: Record<SceneId, Shot[]> = {
     { f: 0, ...aim(DIAL.x, DIAL.y, RING_SPOT.x, RING_SPOT.y, 110), yaw: 1.0 },
     { f: 66, x: 960, y: 540, z: 0, yaw: 0 },
     { f: 104, x: 960, y: 540, z: 0 },
-    { f: 180, ...aim(CELL.x, CELL.y, 1560, 380, 170), yaw: -1.4 },
+    // push in toward the story cell, with the focus at x 1000 so the portfolio card's text stays in frame
+    // and low enough that the matrix legend (the rating counts) stays above the caption band
+    { f: 180, ...aimY(1000, CELL.y, 346, 170), yaw: -1.4 },
   ],
   explain: [
     { f: 0, x: 800, y: 470, z: 120, yaw: -1.0 },
     { f: 42, x: 900, y: 510, z: 50, yaw: 0 },
     { f: 70, x: 900, y: 510, z: 50 },
     { f: 108, x: 1040, y: 520, z: 70, yaw: -1.0 },
-    { f: 156, ...aim(SECTION.x, SECTION.y, 1300, 650, 230), yaw: 0 },
+    // into the evidence card (depth −40) as far as its heading can stay below the top-bar fade
+    // and the section above the caption band (m ≈ 1.05 on that plane)
+    { f: 156, ...aimY(1000, SECTION.y, 776, 150), yaw: 0 },
   ],
   sitecam: [
     // the 1116 × 628 feed fills the 1920 × 1080 frame at m 1.72
@@ -90,20 +100,24 @@ export const SHOTS: Record<SceneId, Shot[]> = {
     { f: 0, x: 1000, y: 530, z: 60, yaw: -0.8 },
     { f: 38, x: 920, y: 520, z: 30, yaw: 0 },
     { f: 52, x: 920, y: 520, z: 30 },
-    { f: 72, ...aim(ACCEPT.x, ACCEPT.y, 420, 780, 140) },
-    { f: 92, ...aim(ACCEPT.x, ACCEPT.y, 420, 780, 150) },
+    // the decision: a gentle push-in that keeps both card headings below the top-bar fade, the
+    // Accept row above the caption band and the reviewer card inside the frame (m ≈ 1.045)
+    { f: 72, ...aimY(940, ACCEPT.y, 862, 85) },
+    { f: 92, ...aimY(940, ACCEPT.y, 865, 95) },
     { f: 153, ...aim(CLOCK.x, CLOCK.y, 1250, 520, 70), yaw: -1.0 },
   ],
   mitigate: [
     { f: 0, x: 840, y: 470, z: 110, yaw: 0.8 },
     { f: 44, x: 900, y: 520, z: 30, yaw: 0 },
     { f: 64, x: 900, y: 520, z: 30 },
-    { f: 104, ...aim(ZONE.x, ZONE.y, 1400, 400, 90), yaw: -1.0 },
-    { f: 147, ...aim(WRITEBACK.x, WRITEBACK.y, 1380, 640, 120), yaw: 0 },
+    { f: 104, ...aimY(1040, ZONE.y, 400, 90), yaw: -1.0 }, // toward the zone, the task card's text kept in frame
+    // settle on the write-back: the zone heading stays below the top-bar fade, the write-back note above
+    // the caption band, and the out-of-focus task card's text inside the frame
+    { f: 147, ...aimY(1020, WRITEBACK.y, 768, 100), yaw: 0 },
   ],
   close: [
     { f: 0, x: 820, y: 470, z: 90, yaw: 0.6 },
-    { f: 64, x: 860, y: 600, z: 50, yaw: 0 },
+    { f: 64, x: 860, y: 555, z: 50, yaw: 0 }, // tilt down the trail; the heading stays below the top-bar fade
     { f: 96, x: 960, y: 540, z: 0 },
     { f: 168, x: SEAL_SPOT.focus.x, y: SEAL_SPOT.focus.y, z: SEAL_SPOT.z, ease: EASE.soft },
   ],

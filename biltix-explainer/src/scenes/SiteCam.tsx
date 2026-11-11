@@ -33,8 +33,15 @@ const rnd = (i: number) => {
   return x - Math.floor(x);
 };
 
+/**
+ * OSD inset from the feed's top edge. While the feed fills the frame (magnification ≈ 1.72) this puts the
+ * OSD lines at y ≥ 100 px on screen, below the HUD's Demo-data chip (y 44–90 px), which stays on screen.
+ */
+const OSD_TOP = 60;
+
 const Feed: React.FC<{ f: number; lang: 'ar' | 'en' }> = ({ f, lang }) => {
   const t = COPY[lang].sitecam;
+  const ar = lang === 'ar';
   const tick = Math.floor(f / 2); // the picture updates at 15 fps, like the burned-in counter says
   const zoom = 1 + 0.07 * prog(f, 10, 90, EASE.soft); // slow digital PTZ toward the crest
   const crestY = 238;
@@ -194,18 +201,36 @@ const Feed: React.FC<{ f: number; lang: 'ar' | 'en' }> = ({ f, lang }) => {
           </>
         );
       })()}
-      {/* OSD */}
-      <div style={{ position: 'absolute', top: 14, left: 16, fontFamily: FONT.mono, fontSize: 17, color: '#F2F5F9', textShadow: '0 1px 2px #000', lineHeight: 1.45 }}>
+      {/* OSD. The picture never mirrors, so the OSD block is left-to-right in both languages: every line
+          starts at the same left edge and Arabic runs are isolated inside it (right-to-left shaping, no
+          letter-spacing, the Arabic face). It sits OSD_TOP px below the feed's top edge so the HUD's
+          Demo-data chip never covers it, even while the feed fills the frame. */}
+      <div dir="ltr" style={{ position: 'absolute', top: OSD_TOP, left: 16, fontFamily: FONT.mono, fontSize: 17, color: '#F2F5F9', textShadow: '0 1px 2px #000', lineHeight: 1.45, textAlign: 'start' }}>
         <div>{`${t.cam} · ${S.site.code}${CAM ? ` · ${CAM.code}` : ''}`}</div>
-        <div style={{ fontFamily: lang === 'ar' ? FONT.ar : FONT.en, fontSize: 16, opacity: 0.9 }} dir={lang === 'ar' ? 'rtl' : 'ltr'}>
-          {t.zone}
+        <div style={{ fontFamily: ar ? FONT.ar : FONT.en, fontSize: 16, opacity: 0.9 }}>
+          <bdi dir={ar ? 'rtl' : 'ltr'}>{t.zone}</bdi>
         </div>
-        {/* the honesty tag sits with the camera name, top-left: clear of the caption band at every zoom */}
-        <div style={{ display: 'inline-block', marginTop: 8, fontSize: 16, fontWeight: 600, letterSpacing: '0.04em', color: '#FFE2C2', background: 'rgba(12,16,24,0.8)', padding: '4px 10px', borderRadius: 4, textShadow: 'none' }}>
+        {/* the honesty tag sits with the camera name: clear of the caption band at every zoom */}
+        <div
+          dir={ar ? 'rtl' : 'ltr'}
+          style={{
+            display: 'inline-block',
+            marginTop: 8,
+            fontFamily: ar ? FONT.ar : FONT.mono,
+            fontSize: ar ? 17 : 16,
+            fontWeight: 600,
+            letterSpacing: ar ? 'normal' : '0.04em',
+            color: '#FFE2C2',
+            background: 'rgba(12,16,24,0.8)',
+            padding: '4px 10px',
+            borderRadius: 4,
+            textShadow: 'none',
+          }}
+        >
           {t.osdSim}
         </div>
       </div>
-      <div style={{ position: 'absolute', top: 14, right: 16, textAlign: 'right', fontFamily: FONT.mono, fontSize: 17, color: '#F2F5F9', textShadow: '0 1px 2px #000', lineHeight: 1.45 }}>
+      <div dir="ltr" style={{ position: 'absolute', top: OSD_TOP, right: 16, textAlign: 'right', fontFamily: FONT.mono, fontSize: 17, color: '#F2F5F9', textShadow: '0 1px 2px #000', lineHeight: 1.45 }}>
         <div>{ts}</div>
         <div style={{ opacity: 0.85 }}>{t.osdFps}</div>
       </div>

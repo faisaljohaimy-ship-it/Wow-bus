@@ -1577,7 +1577,10 @@ export default {
         }
         const v = h('video', { controls: true, preload: 'none', playsinline: true, 'aria-label': t('video.videoAria'), lang: l, poster: poster ? f.poster : undefined });
         v.appendChild(h('source', { src: f.mp4, type: 'video/mp4' }));
-        if (vtt) v.appendChild(h('track', { kind: 'captions', src: f.vtt, srclang: l, label: l === 'en' ? t('video.captionsEn') : t('video.captions'), default: true }));
+        // The captions are burned into the picture, so the text track is offered but off by default:
+        // a native cue drawn on top would only cover the burned-in caption (or, on a small player,
+        // the scene's own text). Viewers who want it turn it on from the player's captions menu.
+        if (vtt) v.appendChild(h('track', { kind: 'captions', src: f.vtt, srclang: l, label: l === 'en' ? t('video.captionsEn') : t('video.captions') }));
         v.addEventListener('loadedmetadata', () => {
           const s = Math.round(Number(v.duration) || 0);
           if (s > 0) { setText(durationEl, t('video.duration', { time: fmt.digits(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`) })); durationEl.hidden = false; }

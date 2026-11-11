@@ -108,7 +108,7 @@ export const COPY: Record<Lang, Copy> = {
       simulated: 'محاكاة',
       notConnected: 'الكاميرا غير متصلة',
       note: 'بث محاكى — لا توجد كاميرا متصلة',
-      osdSim: 'SIMULATED FEED · NO CAMERA CONNECTED',
+      osdSim: 'بث محاكى · لا كاميرا متصلة', // the app's wording (biltix-hse js/i18n/spatial.js)
       osdFps: '15 FPS SIM',
       evidence: 'الدليل المرتبط',
       photo: 'صورة الدليل',

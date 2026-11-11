@@ -158,11 +158,10 @@ export const Mitigate: React.FC<SceneProps> = ({ lang, frames, matchIn, matchOut
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <Eyebrow>{t.writeback}</Eyebrow>
             <span style={{ flex: 1 }} />
-            <span style={{ opacity: synced }}>
-              <Tag size={16} color={C.amberText}>
-                {t.synced}
-              </Tag>
-            </span>
+            {/* the Simulated tag is part of the card: on screen for as long as the write-back is */}
+            <Tag size={16} color={C.amberText}>
+              {t.synced}
+            </Tag>
           </div>
           <div style={{ position: 'relative', marginTop: 6, height: 104 }}>
             {/* an arc, not a line: the record travels over it */}
@@ -208,10 +207,11 @@ export const Mitigate: React.FC<SceneProps> = ({ lang, frames, matchIn, matchOut
               <bdi dir="ltr">{T.writeback.target}</bdi>
             </div>
           </div>
-          <div style={{ marginTop: 10, opacity: synced }}>
-            <Num size={19} color={C.ink2} mono>
+          <div style={{ marginTop: 10 }}>
+            <Num size={19} color={C.ink2} mono style={{ opacity: synced }}>
               {T.writeback.at.slice(0, 10)} {syncTime}
             </Num>
+            {/* shown with the card (from scene frame ~30 to its end: readable for about 3.3 s), not only after the arc */}
             <div style={{ fontSize: 17, color: C.ink3, marginTop: 4 }}>{t.simNote}</div>
           </div>
         </Metal>

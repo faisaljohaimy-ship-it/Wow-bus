@@ -235,20 +235,25 @@ const StepDial: React.FC<{ lang: Lang }> = ({ lang }) => {
 };
 
 /* ── top bar ── */
+/**
+ * The brand and the step dial fade in after the intro and step aside for the full-frame camera feed;
+ * the Demo-data chip does not: it is on screen at full opacity on every frame of the film (intro, the
+ * full-frame simulated feed and the outro included), at the same spot.
+ */
 export const TopBar: React.FC<{ lang: Lang; visible?: number }> = ({ lang, visible = 1 }) => {
   const frame = useCurrentFrame();
   const p = prog(frame, 60, 22, EASE.out) * visible;
   const t = COPY[lang];
   return (
-    <div style={{ position: 'absolute', top: 34, insetInlineStart: 96, insetInlineEnd: 96, height: 64, opacity: p }}>
-      <div style={{ position: 'absolute', top: 6, insetInlineStart: 0 }}>
+    <div style={{ position: 'absolute', top: 34, insetInlineStart: 96, insetInlineEnd: 96, height: 64 }}>
+      <div style={{ position: 'absolute', top: 6, insetInlineStart: 0, opacity: p }}>
         <div dir="ltr" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <Emblem size={46} id="tb" />
           <span style={{ fontFamily: FONT.en, fontSize: 27, fontWeight: 600, letterSpacing: '0.1em', color: C.ink }}>BILTIX</span>
           <span style={{ fontFamily: FONT.en, fontSize: 27, fontWeight: 400, color: C.ink2 }}>Risk AI</span>
         </div>
       </div>
-      <div style={{ position: 'absolute', top: 6, left: 0, right: 0, display: 'flex', justifyContent: 'center' }}>
+      <div style={{ position: 'absolute', top: 6, left: 0, right: 0, display: 'flex', justifyContent: 'center', opacity: p }}>
         <StepDial lang={lang} />
       </div>
       <div
