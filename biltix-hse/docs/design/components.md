@@ -285,6 +285,53 @@ forced colours. Print settles every gauge to its final state (`beforeprint`) and
 **Do** pass ratios computed from the same selector values the tile shows. **Don't** use the gauge for
 a value without a meaningful whole, and don't colour-code it without a text or badge equivalent.
 
+**Radar trend** (`charts.radarTrend`, v3.2.1) replaces the line chart in the trend cards: the cockpit's
+"Risk trend — 12 weeks" (open risks, consolidated score: one radar each), the incident trends of
+`#/incidents` and `#/overview`, and the report's RPT-03A. It is a drop-in for `lineChart`: same options
+(`series [{ id, label, color, values }]`, `labels`, `height`, `yFormat`, `area`, `ariaLabel`, `xLabel`)
+and the same return value (`{ el, update(data), table(), destroy() }`), so a call site switches by name.
+- **Geometry (a dial, identical in Arabic and English):** one spoke per period; the **oldest period is at
+  12 o'clock and the periods run clockwise**, so the latest sits just before 12 (a short tick outside the
+  rim marks the start). The radius is the value on a **linear scale from zero**; rings at a nice step
+  (1, 2, 2.5 or 5 × 10ⁿ, at most four rings, whole numbers only for counts) are labelled through
+  `yFormat`, along the bisector of two spokes that the data leave free. Negative values sit at the centre;
+  the tooltip and the table keep the exact number. Only the period labels follow the document direction.
+- **Marks:** each series is a polygon with a soft radial gradient in its colour (denser toward the rim), a
+  2 px outline over a faint glow, and 8 px point markers with a surface ring. A dashed **seam** marks joins
+  that are not one measured step: the closing edge from the latest period back to the first, and any join
+  across an unknown period. The latest point of each series is larger, with a halo, and carries its value
+  in a pill placed clear of labels and markers. Several series overlay with lighter fills and a legend
+  (dot keys); one series has no legend.
+- **Labels:** period labels round the rim are measured and thinned with an even stride counted back from
+  the latest (latest and first always win when they fit; never overlapping, never outside the box); the
+  dial shrinks a little rather than drop below four labels. `height` is the block size; a container wider
+  than 1.8 × height lets the dial grow to at most 1.3 × height.
+- **Honest states:** no series, no periods or no known value → "No data" over dashed rings; a single known
+  period → its point plus a note ("Only one period has data so far"), no shape; unknown periods keep their
+  spoke with no point.
+- **Interaction:** hover anywhere in a period's wedge, or Tab to the chart (one tab stop) and move with the
+  arrow keys (Right / Down = next period clockwise, Left / Up = previous, Home / End), to see the wedge,
+  its spoke, a ring on each series point and the tooltip listing every series (value first). An sr-only
+  sentence explains how to read the dial; the card's "Table" view keeps the exact numbers.
+- **Motion:** HTML layers (grid, sweep, one per series shape, points, value pills) under the interactive
+  svg, animated with Web Animations on `transform` / `opacity` only. Once per render, when about 40 % of
+  the chart is first on screen: the rings fade in (640 ms), one radar sweep passes clockwise (960 ms; not
+  under the Static background), each polygon grows from the centre (820 ms ease-out, series 110 ms apart),
+  the points pop in clockwise 32 ms apart and the value pills fade in last. A data update morphs the shape
+  from the shown values to the new ones in one 520 ms tween (path `d` and point positions are written only
+  during that tween); a view that rebuilds the chart on live data gets the same morph instead of a second
+  entrance (the last shape is remembered per chart while it is on the page). No idle motion. Reduced
+  motion (OS or setting): final state, no animation. Print: final state (`beforeprint` settles any pending
+  entrance or morph, important print rules outrank any running animation, the sweep is hidden). Paper is laid
+  out without ResizeObserver, so the HTML point and pill layers are hidden in print and SVG twins drawn inside
+  each series layer (`g.rt-print`) print instead: they share the dial's viewBox and stay registered with it.
+**Do** keep the table view beside it for exact values, and use it for regular periods (weeks, months).
+**Don't** use it for categories without an order (use bars), or for more than four overlaid series.
+
+Legend keys (`.legend-key`) are soft rounded markers: a 10 px rounded square with a top-light sheen and a
+faint halo in the series colour; `.is-line` is a 16 × 4 px pill, `.is-dot` a 9 px dot; table key cells
+use the same marker. The label beside each key always carries the identity.
+
 ## Print (css/print.css)
 
 A4, 16 mm margins, page numbers ("n / N") from page 2. Chrome, background layers, filters and

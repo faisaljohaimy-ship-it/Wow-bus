@@ -35,6 +35,7 @@ export default {
       segbar: 'شريط مجزأ',
       spider: 'رسم عنكبوتي',
       dumbbell: 'رسم مقارنة قبل وبعد',
+      radarTrend: 'رسم راداري زمني',
     },
     dumbbell: {
       from: 'الخطر الكامن',
@@ -48,6 +49,11 @@ export default {
       noTrend: 'اتجاه آخر {weeks} أسبوعاً غير متاح بعد.',
       dir: { up: 'في ارتفاع', down: 'في انخفاض', flat: 'دون تغيير' },
       peakTitle: 'الحلقة: قيمة الأسبوع الأخير نسبةً إلى أعلى أسبوع خلال آخر {weeks} أسبوعاً. الأشرطة: أسبوع لكل شريط، الأقدم أولاً، باتجاه عقارب الساعة من الأعلى.',
+    },
+    radar: {
+      how: 'كل شعاع فترة واحدة: الأقدم عند موضع الساعة {top} ثم باتجاه عقارب الساعة حتى الأحدث. البعد عن المركز هو القيمة، والحلقات تدرّج من الصفر.',
+      onePoint: 'فترة واحدة فقط فيها بيانات حتى الآن؛ يكتمل الشكل عند تسجيل فترات أخرى.',
+      latest: 'أحدث فترة',
     },
   },
   en: {
@@ -81,6 +87,7 @@ export default {
       segbar: 'segmented bar',
       spider: 'radar chart',
       dumbbell: 'before and after chart',
+      radarTrend: 'radar trend chart',
     },
     dumbbell: {
       from: 'Inherent',
@@ -94,6 +101,11 @@ export default {
       noTrend: 'Trend for the last {weeks} weeks not available yet.',
       dir: { up: 'rising', down: 'falling', flat: 'unchanged' },
       peakTitle: 'Ring: the latest week as a share of the highest week in the last {weeks}. Bars: one per week, oldest first, clockwise from the top.',
+    },
+    radar: {
+      how: 'Each spoke is one period: the oldest at {top} o\'clock, then clockwise to the latest. Distance from the centre is the value; the rings count up from zero.',
+      onePoint: 'Only one period has data so far; the shape appears once more periods are recorded.',
+      latest: 'Latest period',
     },
   },
 };

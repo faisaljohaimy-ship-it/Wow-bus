@@ -1237,8 +1237,8 @@ export default {
     /* ---- D3 trend small multiples ---- */
     const trendBlock = (() => {
       const dateLabel = (iso) => fmt.date(iso, { style: 'short' });
-      const openChart = charts.lineChart({ series: [], labels: [], height: 220, ariaLabel: t('analysis.trend.openAria', { weeks: fmt.num(WEEKS) }), xLabel: t('analysis.trend.week') });
-      const scoreChart = charts.lineChart({ series: [], labels: [], height: 220, ariaLabel: t('analysis.trend.scoreAria', { weeks: fmt.num(WEEKS) }), xLabel: t('analysis.trend.week') });
+      const openChart = charts.radarTrend({ series: [], labels: [], height: 220, ariaLabel: t('analysis.trend.openAria', { weeks: fmt.num(WEEKS) }), xLabel: t('analysis.trend.week') });
+      const scoreChart = charts.radarTrend({ series: [], labels: [], height: 220, ariaLabel: t('analysis.trend.scoreAria', { weeks: fmt.num(WEEKS) }), xLabel: t('analysis.trend.week') });
       chartsToDestroy.push(openChart, scoreChart);
       const mk = (titleText) => {
         const value = h('span', { class: 'ck-multiple-value' });

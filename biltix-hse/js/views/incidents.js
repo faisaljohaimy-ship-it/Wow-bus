@@ -419,14 +419,14 @@ export const incidentsView = {
       if (!totalInc && !totalNm) {
         trendHost.replaceChildren(C.emptyState({ icon: ico('check-circle', 28), title: t('incidents.trend.emptyTitle'), text: t('incidents.trend.emptyText') }));
       } else {
-        trendHost.replaceChildren(tryEl(() => charts.lineChart({
+        trendHost.replaceChildren(tryEl(() => charts.radarTrend({
           series: [
             { id: 'incidents', label: t('incidents.trend.incidents'), color: 'var(--s1)', values: trend.map((b) => Number(b.incidents) || 0) },
             { id: 'nearMisses', label: t('incidents.trend.nearMisses'), color: 'var(--s2)', values: trend.map((b) => Number(b.nearMisses) || 0) },
           ],
           labels: trend.map(weekLabel), height: 220, yFormat: (v) => fmt.num(v), xLabel: t('incidents.trend.weekCol'),
           ariaLabel: t('incidents.trend.aria', { weeks: fmt.num(12) }),
-        }), 'lineChart') || C.emptyState({ title: t('incidents.errors.chart') }));
+        }), 'radarTrend') || C.emptyState({ title: t('incidents.errors.chart') }));
       }
 
       /* distribution by type */

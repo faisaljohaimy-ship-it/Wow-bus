@@ -573,13 +573,13 @@ export default {
         trendHost.replaceChildren(C.emptyState({ icon: ico('check-circle', 28), title: t('overview.trend.emptyTitle'), text: t('overview.trend.emptyText') }));
         return;
       }
-      const chart = tryEl(() => charts.lineChart({
+      const chart = tryEl(() => charts.radarTrend({
         series: [
           { id: 'incidents', label: t('overview.trend.incidents'), color: 'var(--s1)', values: rows.map((w) => Number(w.incidents) || 0) },
           { id: 'nearMisses', label: t('overview.trend.nearMisses'), color: 'var(--s2)', values: rows.map((w) => Number(w.nearMisses) || 0) },
         ],
         labels: rows.map(weekLabel), height: 260, yFormat: fmt.num, ariaLabel: t('overview.trend.aria', { n: fmt.num(12) }), xLabel: t('overview.trend.cols.week'),
-      }), 'lineChart');
+      }), 'radarTrend');
       trendHost.replaceChildren(chart || C.emptyState({ title: t('overview.errors.chart') }));
     }
 

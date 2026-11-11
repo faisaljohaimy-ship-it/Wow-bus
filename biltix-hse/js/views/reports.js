@@ -569,7 +569,7 @@ function render(container, ctx) {
   /* ── incidents ── */
   function incidentsSection(d) {
     const labels = d.trend.map((b) => t('reports.incidents.week', { n: fmt.num(b.week) }));
-    const line = mountChart(() => charts.lineChart({
+    const line = mountChart(() => charts.radarTrend({
       series: [
         { id: 'incidents', label: t('reports.incidents.series'), color: 'var(--s1)', values: d.trend.map((b) => b.incidents) },
         { id: 'nearmiss', label: t('reports.incidents.nearMiss'), color: 'var(--s2)', values: d.trend.map((b) => b.nearMisses) },
