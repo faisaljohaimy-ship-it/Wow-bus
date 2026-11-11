@@ -945,8 +945,10 @@
 
 /* ---- plan (SVG) ---- */
 .sp-plan { position: relative; margin: 0; container-type: inline-size; border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; background: var(--bg-1); }
-/* "Show whole site": appears while the plan frames a zone */
-.sp-fit-dock { position: absolute; inset-block-start: 8px; inset-inline-end: 8px; }
+/* "Show whole site": appears while the plan frames a zone, in a strip under the drawing at every width — never over
+   the drawing, so it can never cover a zone name */
+.sp-fit-dock { display: flex; justify-content: flex-end; padding: 6px 8px 8px; border-block-start: 1px solid var(--line); }
+.sp-plan:not(.is-framed) .sp-fit-dock { display: none; }
 .sp-fit { gap: 6px; min-block-size: 36px; padding-inline: 10px; border: 1px solid var(--line-strong); background: color-mix(in srgb, var(--bg-1) 92%, transparent); color: var(--ink-1); box-shadow: var(--elev-1); }
 .sp-fit:hover { background: var(--bg-2); }
 .sp-fit[hidden] { display: none; }
@@ -1069,10 +1071,80 @@
   .sp-cam-glyph { transform: scale(2); }
   /* a framed zone is drawn larger: its own name returns, at a size that renders ≥ 12.5 CSS px */
   .sp-plan.is-framed .sp-focus-name { display: inline; }
-  /* small plans: the button sits under the drawing, never over the framed zone */
-  .sp-fit-dock { position: static; display: flex; justify-content: flex-end; padding: 6px 8px 8px; border-block-start: 1px solid var(--line); }
-  .sp-plan:not(.is-framed) .sp-fit-dock { display: none; }
+  /* the scale bar keeps its numbers (enlarged like the north label) */
+  /* 38 plan units ≈ 11–12 CSS px on a 300–330 px plan (360–390 px phones) */
+  .sp-svg .sp-scale-label { display: inline; font-size: 38px; fill: var(--ink-2); }
+  /* 360° and QR markers double like the camera glyphs */
+  .sp-p360-glyph, .sp-qr-glyph { transform: scale(2); }
 }
+
+/* ---- v4: plan layers, drawing chip, QR points, 360° capture points ---- */
+.sp-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.sp-layers { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sp-layers-title { margin-inline-end: 2px; }
+.sp-layer { display: inline-flex; align-items: center; gap: 6px; min-block-size: 32px; padding: 4px 10px; border: 1px solid var(--line-2); border-radius: var(--radius-pill); background: var(--bg-1); color: var(--ink-2); font: inherit; font-size: var(--fs-xs); cursor: pointer; transition: background var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out); }
+.sp-layer:hover { background: var(--hover); }
+.sp-layer[aria-pressed="true"] { border-color: var(--brand); background: var(--selected); color: var(--ink-1); }
+.sp-layer[aria-pressed="false"] .sp-layer-key { opacity: .3; }
+.sp-layer:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.sp-layer-key { display: inline-block; inline-size: 14px; block-size: 10px; border-radius: 3px; flex: none; }
+@media (pointer: coarse) { .sp-layer { min-block-size: 40px; } }
+.sp-drawing-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px dashed var(--line-strong); border-radius: var(--radius-pill); background: var(--bg-2); color: var(--ink-2); font-size: var(--fs-xs); }
+.sp-drawing-chip .icon { color: var(--ink-3); }
+.sp-plan[data-hide~="zones"] .sp-zones, .sp-plan[data-hide~="zones"] .sp-zone-labels { display: none; }
+.sp-plan[data-hide~="cranes"] .sp-cranes { display: none; }
+.sp-plan[data-hide~="cameras"] .sp-cams { display: none; }
+.sp-plan[data-hide~="qr"] .sp-qrs { display: none; }
+.sp-plan[data-hide~="p360"] .sp-p360s { display: none; }
+.sp-qr-box { fill: var(--bg-1); stroke: var(--ink-1); stroke-width: 1.4; }
+.sp-qr-dot { fill: var(--ink-1); }
+.sp-p360 { cursor: pointer; outline: none; }
+.sp-p360-hit { fill: transparent; stroke: none; }
+.sp-p360-ring { fill: var(--bg-1); stroke: var(--brand-text); stroke-width: 2.2; transition: fill var(--dur-micro) var(--ease-out); }
+.sp-p360-arc { fill: none; stroke: var(--brand-text); stroke-width: 1.3; }
+.sp-p360-dot { fill: var(--brand-text); }
+.sp-p360:hover .sp-p360-ring, .sp-p360.is-active .sp-p360-ring { fill: color-mix(in srgb, var(--brand) 20%, var(--bg-1)); }
+.sp-p360:focus-visible .sp-p360-hit { stroke: var(--focus); stroke-width: 2.5px; vector-effect: non-scaling-stroke; }
+.sp-lg-qr { background: var(--bg-1); border: 1.5px solid var(--ink-1); inline-size: 11px; block-size: 11px; border-radius: 2px; }
+.sp-lg-p360 { background: var(--bg-1); border: 2px solid var(--brand-text); border-radius: 50%; inline-size: 12px; block-size: 12px; }
+.sp-legend-key.sp-lg-p360, .sp-layer-key.sp-lg-p360 { inline-size: 12px; block-size: 12px; border-radius: 50%; }
+.sp-legend-key.sp-lg-qr, .sp-layer-key.sp-lg-qr { inline-size: 11px; block-size: 11px; border-radius: 2px; }
+.sp-p360-thumb { display: block; inline-size: 100%; block-size: auto; aspect-ratio: 1024 / 434; object-fit: cover; border-radius: var(--radius-sm); background: var(--bg-3, #20262c); }
+
+/* ---- v4: 360° viewer (js/ui/pano360.js) — a picture: dir="ltr", never mirrored; dark frame in both themes ---- */
+dialog.modal.sp-pano-dialog { inline-size: min(1180px, 100%); }
+.sp-pano-date { max-inline-size: 100%; }
+.pano { position: relative; }
+.pano-stage { position: relative; inline-size: 100%; aspect-ratio: 16 / 9; max-block-size: 58vh; overflow: hidden; border-radius: 14px; background: #0F1316; touch-action: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, .35), var(--elev-2); }
+@media (max-width: 640px) { .pano-stage { aspect-ratio: 4 / 3; } }
+.pano.is-static .pano-stage { touch-action: auto; max-block-size: none; }
+.pano-canvas { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; display: block; cursor: grab; outline: none; }
+.pano.is-dragging .pano-canvas { cursor: grabbing; }
+.pano-canvas:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+.pano-static-img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+.pano-spots { position: absolute; inset: 0; pointer-events: none; }
+.pano-spot { position: absolute; inset-block-start: 0; inset-inline-start: 0; pointer-events: auto; display: inline-flex; align-items: center; gap: 6px; min-block-size: 30px; margin-block-start: -15px; margin-inline-start: -15px; padding-block: 3px; padding-inline: 4px 10px; border: 1px solid rgba(255, 255, 255, .7); border-radius: 999px; background: rgba(12, 16, 20, .74); color: #FFFFFF; font: 600 12px/1.2 var(--font-mono); cursor: pointer; white-space: nowrap; }
+/* near the end edge the label flips to the other side of its dot (the dot stays on the anchor) */
+.pano-spot.is-end { flex-direction: row-reverse; translate: calc(-100% + 30px) 0; padding-inline: 10px 4px; }
+.pano-spot-dot { inline-size: 20px; block-size: 20px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 3px rgba(255, 255, 255, .9); flex: none; }
+.pano-spot[data-tone="critical"] .pano-spot-dot { background: var(--critical); }
+.pano-spot[data-tone="serious"] .pano-spot-dot { background: var(--serious); }
+.pano-spot[data-tone="warning"] .pano-spot-dot { background: var(--warning); }
+.pano-spot:hover { background: rgba(12, 16, 20, .9); }
+.pano-spot:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 2px; }
+.pano-spot[hidden] { display: none; }
+.pano-osd { position: absolute; inset-block-start: 10px; inset-inline-start: 10px; max-inline-size: calc(100% - 20px); margin: 0; padding: 3px 8px; border: 1px solid rgba(255, 196, 0, .8); border-radius: 4px; background: rgba(0, 0, 0, .62); color: #FFD54A; font-size: 12px; font-weight: 600; pointer-events: none; }
+.pano-controls { position: absolute; inset-block-end: 10px; inset-inline-end: 10px; display: flex; gap: 6px; }
+@media (max-width: 640px) { .pano-controls { position: static; justify-content: flex-end; margin-block-start: 8px; } .pano-btn { inline-size: 44px; block-size: 40px; } }
+.pano-btn { display: inline-flex; align-items: center; justify-content: center; inline-size: 38px; block-size: 38px; border: 1px solid rgba(255, 255, 255, .45); border-radius: 8px; background: rgba(12, 16, 20, .72); color: #FFFFFF; font-size: 18px; line-height: 1; cursor: pointer; }
+.pano-btn:hover { background: rgba(12, 16, 20, .9); }
+.pano-btn:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 1px; }
+.pano-btn[aria-pressed="true"] { background: var(--brand); }
+.pano-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; background: #12171B; color: #E8EDF2; text-align: center; font-size: var(--fs-sm); }
+.pano-empty[hidden] { display: none; }
+@media (max-width: 640px) { .pano-osd, .pano-spot { font-size: 10px; } .pano-spot-dot { inline-size: 16px; block-size: 16px; } }
+@media (forced-colors: active) { .pano-spot, .pano-btn { border-color: ButtonText; } .pano-spot-dot { background: Highlight; } }
+@media print { .sp-layers { display: none; } }
 
 .sp-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: var(--fs-xs); color: var(--ink-2); }
 .sp-legend-item { display: inline-flex; align-items: center; gap: 6px; }
@@ -1147,7 +1219,8 @@
   .sp-table tbody tr { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 10px; padding: 10px 12px; border-block-end: 1px solid var(--line); }
   .sp-table tbody tr:last-child { border-block-end: 0; }
   .sp-table tbody th[scope="row"] { grid-column: 1 / -1; padding: 0; border: 0; block-size: auto; }
-  .sp-table tbody td { display: flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 0; border: 0; block-size: auto; text-align: start; white-space: normal; }
+  /* td.num-col: beats `.sp-table .num-col` (end-aligned, nowrap) — otherwise the labels overflow into each other */
+  .sp-table tbody td, .sp-table tbody td.num-col { display: flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 0; border: 0; block-size: auto; text-align: start; white-space: normal; min-inline-size: 0; }
   .sp-table tbody td::before { content: attr(data-label); content: attr(data-label) / ""; font-size: var(--fs-xs); line-height: 1.35; color: var(--ink-3); overflow-wrap: anywhere; }
   .sp-table tbody td .sp-cell-num { font-size: var(--fs-md); font-weight: 600; color: var(--ink-1); }
   .sp-table tbody td.is-zero .sp-cell-num { color: var(--ink-3); font-weight: 500; }

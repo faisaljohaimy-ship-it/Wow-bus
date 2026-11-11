@@ -166,6 +166,28 @@ The URL is the truth (the view reads `location.hash`, so a router re-mount after
   `role="table|rowgroup|row|columnheader|rowheader|cell"` keep the table semantics while the display changes.
 - Print is always the real table (container query disabled), numbers aligned under their headers.
 
+## 4b. v4 — plan layers, drawing chip, 360° capture points (simulated)
+
+- **Layers** (toolbar above the plan, toggle buttons with `aria-pressed`, remembered in this browser under
+  `biltix.spatial.layers`): zones, cranes, cameras, QR points, 360° points. Hidden through `data-hide` on `.sp-plan`.
+- **Drawing chip**: «المخطط: S1-A-101 مراجعة C — توضيحي» / "Drawing: S1-A-101 Rev C — illustrative" from
+  `SP.DRAWINGS` — no document system is connected; the plan is drawn from the zone register, not a CAD file.
+- **QR points** (`SP.QR_POINTS`): decorative markers, labelled "concept — roadmap".
+- **360° capture points** (`SP.CAPTURES_360`): buttons on the plan and tiles in card 360-01; they open the viewer
+  (`js/ui/pano360.js`, modal) and set `?pano=`. One capture is a real file — an **AI-generated** panorama
+  (`assets/360/panorama-floor.jpg`, 4096 × 1738, 21:9, ±76° vertical coverage) — always labelled «لقطة 360° محاكاة —
+  صورة مولّدة بالذكاء الاصطناعي»; the other dates are placeholders without a picture. Hotspots (AIR-1069 on the façade
+  edge, the MAR-S1-CW-014 samples, TC-2 / S1-Z2, S1-Z1) are buttons, mirrored by a text list under the picture.
+- **Viewer modes**: WebGL sphere (ray-cast equirectangular, on-demand frames, no loop) → Canvas 2D cylindrical without
+  WebGL → a static picture with the same hotspots under reduced motion / Static. Drag, pinch, wheel (Ctrl or focused),
+  keyboard (arrows, + / −, 0), optional device orientation (iOS permission; never under reduced motion).
+- **Fixes in the same pass**: framed plans wider than 620 px scale each zone name / code / badge about its anchor so the
+  smallest renders ≥ 12 px (`paintLabelBoost`, after the tween); "Show whole site" sits in a strip under the drawing at
+  every width; the scale bar keeps its numbers on narrow plans; the zones table's stacked cells beat `.num-col`
+  (labels wrap, no overlap); the zone panel holds its re-render while any dialog (command palette, drawer, modal) is
+  open; a deep link (`camera=` / `pano=`) opens without a live-region message; the camera iris waits two animation
+  frames after the worker's first-frame message.
+
 ## 5. Camera viewer and feed renderer
 
 The viewer is `components.modal` (size lg, widened by `.sp-viewer-dialog`). Inside, `createCamFeed(host, opts)` builds a

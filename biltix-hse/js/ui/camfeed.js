@@ -33,7 +33,8 @@
  *                    present: 'offscreen'|'video'|'canvas', phase }
  *   onMode(stats) is called whenever the mode, backend or frame rate changes (the viewer's caption follows it).
  *   feed.ready resolves when the first frame can be seen: the worker posts 'first-frame' from the task after the one
- *   that drew it (OffscreenCanvas frames commit when their task ends); the fallback waits for the video's first
+ *   that drew it (OffscreenCanvas frames commit when their task ends) and the page waits two animation frames more
+ *   (the compositor has presented it); the fallback waits for the video's first
  *   picture (or the first frame on in-page canvases). The viewer keeps its lens iris closed until then.
  *
  * DOM: host > .cf-frame (watched by the IntersectionObserver; never clip it) > .cf-layers (feed.picture: plate + dyn
@@ -1335,7 +1336,9 @@ export function createCamFeed(host, opts = {}) {
       };
       worker.onmessage = (e) => {
         const msg = e.data || {};
-        if (msg.type === 'first-frame') markReady();
+        // the worker's frame is committed to the OffscreenCanvas, but the page shows it only once the compositor has
+        // presented it: wait two animation frames before the viewer may open its iris (never on an empty picture)
+        if (msg.type === 'first-frame') requestAnimationFrame(() => requestAnimationFrame(() => markReady()));
         else if (msg.type === 'stats') { remoteStats = msg.stats; paintMode(Boolean(msg.stats.ir)); }
         else if (msg.type === 'error') fallBack();
       };

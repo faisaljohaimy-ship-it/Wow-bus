@@ -354,11 +354,11 @@ export function createPano360(host, opts = {}) {
     gl.uniform1i(u.tex, 0);
   }
   function load(src) {
+    if (mode === 'static') { empty.hidden = Boolean(src); spotsHost.hidden = !src; return; }
     img = null;
     root.classList.add('is-loading');
     if (!src) { empty.hidden = false; root.classList.remove('is-loading'); placeSpots(); readyResolve('empty'); return; }
     empty.hidden = true;
-    if (mode === 'static') return;
     const im = new Image();
     im.decoding = 'async';
     im.onload = () => {

@@ -35,6 +35,7 @@ import { i18n } from '../core/i18n.js';
 import dict from '../i18n/spatial.js';
 import * as SP from '../data/spatial-seed.js';
 import { createCamFeed, riyadhHour, lightPhase } from '../ui/camfeed.js';
+import { createPano360 } from '../ui/pano360.js';
 
 i18n.register('spatial', dict);
 
@@ -53,6 +54,8 @@ const FRAME_MIN_W = 430;          // closest framing: about 2.1× the whole-site
 const FOCUS_NAME_PX = 12.5;       // a framed zone's name on a small plan is drawn at least this size (CSS px)
 const NARROW_PLAN_PX = 620;       // the container query of css/platform.css (Spatial › narrow plans)
 const FEED_WAIT_MS = 2000;        // no first frame yet after this: the viewer says the simulated feed is starting
+const FRAMED_LABEL_PX = 12;       // framed plans wider than NARROW_PLAN_PX: zone names, codes and badges render ≥ this
+const LAYERS_KEY = 'biltix.spatial.layers';
 
 /** Sets an attribute only when it changes (live repaints stay free of style invalidations). */
 function setAttr(el, name, value) {
@@ -182,11 +185,14 @@ export default {
     let highlightRisk = paramRisk && paramRisk.siteId === siteId ? paramRisk.id : null;
     let pendingCamera = params.camera && SP.cameraById(params.camera) && SP.cameraById(params.camera).siteId === siteId ? params.camera : null;
     if (pendingCamera && !zoneId) zoneId = SP.cameraById(pendingCamera).zoneId;
+    let pendingPano = !pendingCamera && params.pano && SP.captureById(params.pano) && SP.captureById(params.pano).siteId === siteId ? params.pano : null;
     let openCameraId = null;
+    let openPanoId = null;
+    let pano = null;            // { api, viewer } while the 360° viewer is open
     let panelHold = null;       // { key } while a dialog opened from a zone-panel control is open
 
     function hashFor(extra = {}) {
-      return router.href(VIEW_ID, SP.spatialParams({ site: siteId, zone: zoneId, camera: openCameraId, risk: highlightRisk, ...extra }));
+      return router.href(VIEW_ID, SP.spatialParams({ site: siteId, zone: zoneId, camera: openCameraId, risk: highlightRisk, pano: openPanoId, ...extra }));
     }
     function writeUrl(mode) {
       const hash = hashFor();
@@ -354,14 +360,17 @@ export default {
         feat.appendChild(s('circle', { cx: X(mh.x), cy: Y(mh.y), r: 7, class: 'sp-manhole' }));
         feat.appendChild(s('text', { x: X(mh.x) + 11, y: Y(mh.y) + 4, class: 'sp-code-label', text: mh.code }));
       }
+      // cranes in their own group (plan layer "cranes")
+      const craneG = s('g', { class: 'sp-cranes' });
       for (const cr of arr(plan.cranes)) {
         const cx = X(cr.x); const cy = Y(cr.y); const rr = r1(cr.r * inner.w);
-        feat.appendChild(s('circle', { cx, cy, r: rr, class: 'sp-crane-radius' }));
+        craneG.appendChild(s('circle', { cx, cy, r: rr, class: 'sp-crane-radius' }));
         const ang = Math.atan2(Y(0.5) - cy, X(0.5) - cx);
-        feat.appendChild(s('line', { x1: r1(cx - Math.cos(ang) * rr * 0.3), y1: r1(cy - Math.sin(ang) * rr * 0.3), x2: r1(cx + Math.cos(ang) * rr), y2: r1(cy + Math.sin(ang) * rr), class: 'sp-crane-jib' }));
-        feat.appendChild(s('rect', { x: cx - 6, y: cy - 6, width: 12, height: 12, class: 'sp-crane-mast' }));
-        feat.appendChild(s('text', { x: cx + 10, y: cy + 18, class: 'sp-code-label', text: cr.id }));
+        craneG.appendChild(s('line', { x1: r1(cx - Math.cos(ang) * rr * 0.3), y1: r1(cy - Math.sin(ang) * rr * 0.3), x2: r1(cx + Math.cos(ang) * rr), y2: r1(cy + Math.sin(ang) * rr), class: 'sp-crane-jib' }));
+        craneG.appendChild(s('rect', { x: cx - 6, y: cy - 6, width: 12, height: 12, class: 'sp-crane-mast' }));
+        craneG.appendChild(s('text', { x: cx + 10, y: cy + 18, class: 'sp-code-label', text: cr.id }));
       }
+      feat.appendChild(craneG);
       for (const gt of arr(plan.gates)) {
         const gx = X(gt.x); const gy = Y(gt.y);
         const horiz = gt.side === 'n' || gt.side === 's';
@@ -403,6 +412,7 @@ export default {
       // the selected zone's name while it is framed on a small plan, drawn at ≥ FOCUS_NAME_PX (paintFocusName)
       const focusName = s('text', { class: 'sp-zone-name sp-focus-name is-selected', 'text-anchor': 'middle' });
       let lay = new Map(); let obsNarrow = []; let layoutSeq = 0;
+      const codeEls = new Map();
       function layoutLabels() {
         const sensors = arr(state().sensors);
         const names = zonesOf(site).map((z) => zoneName(site, z.id));
@@ -412,11 +422,14 @@ export default {
         layoutSeq += 1;
         textG.replaceChildren();
         nameEls.clear();
+        codeEls.clear();
         zonesOf(site).forEach((z) => {
           const L0 = lay.get(z.id);
           if (!L0) return;
           const short = z.id.split('-').pop();
-          textG.appendChild(s('text', { x: r1(L0.code.x), y: r1(L0.code.y), class: 'sp-zone-code', text: short }));
+          const codeEl = s('text', { x: r1(L0.code.x), y: r1(L0.code.y), class: 'sp-zone-code', text: short });
+          textG.appendChild(codeEl);
+          codeEls.set(z.id, codeEl);
           textG.appendChild(s('text', { x: r1(L0.codeNarrow.x), y: r1(L0.codeNarrow.y), class: 'sp-zone-code is-narrow', text: short }));
           const b = badgeEls.get(z.id);
           if (b) setAttr(b.g, 'transform', `translate(${r1(L0.badge.cx)} ${r1(L0.badge.cy)})`);
@@ -433,6 +446,32 @@ export default {
       layoutLabels();
       labelG.appendChild(focusName);
       world.appendChild(labelG);
+
+      // v4: QR points (roadmap concept, decorative) and 360° capture points (buttons that open the viewer)
+      const qrG = s('g', { class: 'sp-qrs', 'aria-hidden': 'true' });
+      SP.qrPointsFor(siteId).forEach((q) => {
+        const g = s('g', { class: 'sp-qr', transform: `translate(${X(q.x)} ${Y(q.y)})` });
+        const glyph = s('g', { class: 'sp-qr-glyph' });
+        glyph.appendChild(s('rect', { x: -7, y: -7, width: 14, height: 14, rx: 2, class: 'sp-qr-box' }));
+        [[-4.5, -4.5], [1.5, -4.5], [-4.5, 1.5]].forEach(([qx, qy]) => glyph.appendChild(s('rect', { x: qx, y: qy, width: 3, height: 3, class: 'sp-qr-dot' })));
+        glyph.appendChild(s('rect', { x: 2, y: 2, width: 2, height: 2, class: 'sp-qr-dot' }));
+        g.appendChild(glyph);
+        qrG.appendChild(g);
+      });
+      world.appendChild(qrG);
+      const p360G = s('g', { class: 'sp-p360s' });
+      const p360Els = new Map();
+      SP.capturesFor(siteId).forEach((cp) => {
+        const g = s('g', { class: 'sp-p360', role: 'button', tabindex: '0', 'data-pano': cp.id, transform: `translate(${X(cp.x)} ${Y(cp.y)})`, 'aria-label': t('spatial.p360.pointAria', { code: cp.id, label: isEn() ? (cp.labelEn || cp.label) : cp.label }) });
+        const glyph = s('g', { class: 'sp-p360-glyph' });
+        glyph.appendChild(s('circle', { r: 17, class: 'sp-p360-hit' }));
+        glyph.appendChild(s('circle', { r: 9, class: 'sp-p360-ring' }));
+        glyph.appendChild(s('path', { d: 'M-5.5 -1.5 A6 3 0 0 0 5.5 -1.5 M-5.5 1.5 A6 3 0 0 1 5.5 1.5', class: 'sp-p360-arc' }));
+        glyph.appendChild(s('circle', { r: 2, class: 'sp-p360-dot' }));
+        g.appendChild(glyph);
+        p360G.appendChild(g);
+        p360Els.set(cp.id, g);
+      });
 
       // cameras (interactive): view cone (decorative, no pointer), hit area (resized for touch, split between
       // close neighbours), glyph (scaled up on narrow plans) and code label
@@ -466,6 +505,7 @@ export default {
         camEls.set(cam.id, g);
       });
       world.appendChild(camG);
+      world.appendChild(p360G);
 
       // sheet border shown while a zone is framed: the right and bottom margins outside FRAME_PORT
       const px1 = FRAME_PORT.x + FRAME_PORT.w; const py1 = FRAME_PORT.y + FRAME_PORT.h;
@@ -493,9 +533,10 @@ export default {
         const g = s('g', { class: ['sp-scale', cls] });
         const segs = [0, 1, 2, 3].map((i) => g.appendChild(s('rect', { y: sy, height: 8, class: i % 2 ? 'sp-scale-light' : 'sp-scale-dark' })));
         const frame = g.appendChild(s('rect', { x: sx, y: sy, height: 8, class: 'sp-scale-frame' }));
-        g.appendChild(s('text', { x: sx, y: sy - 6, class: 'sp-furn-small', text: fmt.num(0) }));
-        const tHalf = g.appendChild(s('text', { y: sy - 6, 'text-anchor': 'middle', class: 'sp-furn-small' }));
-        const tEnd = g.appendChild(s('text', { y: sy - 6, 'text-anchor': 'middle', class: 'sp-furn-small' }));
+        // the bar's numbers stay on narrow plans (enlarged there, css: sp-scale-label) — a bar without them says nothing
+        g.appendChild(s('text', { x: sx, y: sy - 6, class: 'sp-furn-small sp-scale-label', 'text-anchor': 'start', text: fmt.num(0) }));
+        const tHalf = g.appendChild(s('text', { y: sy - 6, 'text-anchor': 'middle', class: 'sp-furn-small sp-scale-label' }));
+        const tEnd = g.appendChild(s('text', { y: sy - 6, 'text-anchor': 'middle', class: 'sp-furn-small sp-scale-label' }));
         let last = '';
         const update = (k = 1) => {
           const target = ((plan.widthM || 200) * 0.18) / k;
@@ -536,6 +577,8 @@ export default {
       const activate = (target) => {
         const zEl = target.closest && target.closest('.sp-zone');
         const cEl = target.closest && target.closest('.sp-cam');
+        const pEl = target.closest && target.closest('.sp-p360');
+        if (pEl) { openPano(pEl.getAttribute('data-pano'), { returnFocus: pEl }); return true; }
         if (cEl) { openViewer(cEl.getAttribute('data-camera'), { returnFocus: cEl }); return true; }
         if (zEl) { selectZone(zEl.getAttribute('data-zone'), { push: true, focusPanel: false, user: true }); return true; }
         return false;
@@ -545,7 +588,7 @@ export default {
         if (e.key !== 'Enter' && e.key !== ' ') return;
         if (activate(e.target)) e.preventDefault();
       });
-      return { svg, world, viewport, portRect, portClip, scaleZoom, focusName, zoneEls, camEls, badgeEls, hitEls, nameEls, layoutLabels, layout: () => lay, obstaclesNarrow: () => obsNarrow, layoutSeq: () => layoutSeq };
+      return { svg, world, viewport, portRect, portClip, scaleZoom, focusName, zoneEls, camEls, badgeEls, hitEls, nameEls, codeEls, p360Els, layoutLabels, layout: () => lay, obstaclesNarrow: () => obsNarrow, layoutSeq: () => layoutSeq };
     }
 
     function polyPath(pts) {
@@ -779,28 +822,55 @@ export default {
         const cam = SP.cameraById(id);
         el.classList.toggle('in-zone', Boolean(cam && zoneId && cam.zoneId === zoneId));
       });
+      refs.plan.p360Els.forEach((el, id) => el.classList.toggle('is-active', id === openPanoId));
       refs.planFigure.classList.toggle('has-selection', Boolean(zoneId));
       // the enlarged name belongs to one zone: a new selection drops it until its own framing settles (afterView)
       if (refs.focusKey && !refs.focusKey.startsWith(`${zoneId}|`)) { refs.plan.focusName.replaceChildren(); refs.focusKey = ''; }
     }
 
+    /* ───────────── plan layers (v4) ───────────── */
+    function hiddenLayers() {
+      try { const v = JSON.parse(localStorage.getItem(LAYERS_KEY) || '[]'); return Array.isArray(v) ? v.filter((k) => SP.PLAN_LAYERS.includes(k)) : []; } catch { return []; }
+    }
+    function setLayer(k, on) {
+      const set = new Set(hiddenLayers());
+      if (on) set.delete(k); else set.add(k);
+      try { localStorage.setItem(LAYERS_KEY, JSON.stringify(Array.from(set))); } catch { /* private mode: this page only */ }
+      if (refs) { const v = Array.from(set).join(' '); if (v) refs.planFigure.setAttribute('data-hide', v); else refs.planFigure.removeAttribute('data-hide'); }
+    }
+    /** A dialog is open over the page (command palette, drawer, modal): the zone panel holds its re-render. */
+    function dialogOpen() {
+      try { return Boolean(document.querySelector('#cmdk:not([hidden]), .modal-backdrop, .drawer-backdrop, dialog[open][aria-modal="true"]')); } catch { return false; }
+    }
+
     /* ───────────── build per site ───────────── */
     function buildSite({ animate = false } = {}) {
       closeViewer('site');
+      closePano('site');
       stopView();
       if (planRO) { try { planRO.disconnect(); } catch { /* ignore */ } planRO = null; }
       const site = siteById(siteId);
       const plan = SP.planFor(siteId) || { footprints: [] };
       const planRefs = buildPlan(site, plan);
       const legend = h('ul', { class: 'sp-legend', role: 'list', 'aria-label': t('spatial.legend.aria') },
-        ...[['zone', 'sp-lg-zone'], ['footprint', 'sp-lg-footprint'], ['crane', 'sp-lg-crane'], ['road', 'sp-lg-road'], ['sensor', 'sp-lg-sensor'], ['camera', 'sp-lg-camera'], ['risk', 'sp-lg-risk']]
+        ...[['zone', 'sp-lg-zone'], ['footprint', 'sp-lg-footprint'], ['crane', 'sp-lg-crane'], ['road', 'sp-lg-road'], ['sensor', 'sp-lg-sensor'], ['camera', 'sp-lg-camera'], ['risk', 'sp-lg-risk'],
+          ...(SP.qrPointsFor(siteId).length ? [['qr', 'sp-lg-qr']] : []), ...(SP.capturesFor(siteId).length ? [['p360', 'sp-lg-p360']] : [])]
           .map(([k, cls]) => h('li', { class: 'sp-legend-item' }, h('span', { class: ['sp-legend-key', cls], 'aria-hidden': 'true' }), h('span', {}, t(`spatial.legend.${k}`)))));
       const fitBtn = h('button', { type: 'button', class: 'btn btn-sm sp-fit', hidden: true, dir: I.dir(), onClick: () => fitSite() }, ico('maximize', 15), h('span', { class: 'btn-label' }, t('spatial.plan.fit')));
       // the drawing never mirrors: the button sits in its top end margin (by the north arrow) in both languages
-      const planFigure = h('figure', { class: 'sp-plan' }, planRefs.svg, h('div', { class: 'sp-fit-dock', dir: 'ltr' }, fitBtn));
+      const planFigure = h('figure', { class: 'sp-plan', 'data-hide': hiddenLayers().join(' ') || null }, planRefs.svg, h('div', { class: 'sp-fit-dock', dir: 'ltr' }, fitBtn));
+      // v4: plan layers (toggle buttons; this browser remembers them) and the drawing register chip
+      const layerBtns = SP.PLAN_LAYERS.filter((k) => (k === 'qr' ? SP.qrPointsFor(siteId).length : k === 'p360' ? SP.capturesFor(siteId).length : true)).map((k) => h('button', {
+        type: 'button', class: 'sp-layer', 'data-layer': k, 'aria-pressed': hiddenLayers().includes(k) ? 'false' : 'true',
+        onClick: (e) => { const on = e.currentTarget.getAttribute('aria-pressed') !== 'true'; e.currentTarget.setAttribute('aria-pressed', on ? 'true' : 'false'); setLayer(k, on); },
+      }, h('span', { class: ['sp-layer-key', `sp-lg-${k === 'zones' ? 'zone' : k === 'cranes' ? 'crane' : k === 'cameras' ? 'camera' : k}`], 'aria-hidden': 'true' }), h('span', {}, t(`spatial.layers.${k}`))));
+      const drawing = SP.drawingFor(siteId);
+      const toolbar = h('div', { class: 'sp-toolbar' },
+        h('div', { class: 'sp-layers', role: 'group', 'aria-label': t('spatial.layers.aria') }, h('span', { class: 'sp-layers-title t-label', 'aria-hidden': 'true' }, t('spatial.layers.title')), ...layerBtns),
+        drawing ? h('span', { class: 'sp-drawing-chip', title: t('spatial.drawing.title') }, ico('file-text', 14), h('span', {}, t('spatial.drawing.chip', { number: drawing.number, rev: drawing.rev })), h('span', { class: 'sr-only' }, ` — ${t('spatial.drawing.title')}`)) : null);
       const planCard = C.card({
         code: 'MAP-01', title: t('spatial.plan.title', { site: siteName(site) }), subtitle: t('spatial.plan.subtitle', { code: site.code, city: L(site, 'city', 'sites') || site.city }),
-        body: h('div', { class: 'sp-plan-body' }, planFigure, legend, h('p', { class: 't-helper sp-plan-note' }, `${t('spatial.plan.note')} ${t('spatial.plan.camerasNote')}`)),
+        body: h('div', { class: 'sp-plan-body' }, toolbar, planFigure, legend, h('p', { class: 't-helper sp-plan-note' }, `${t('spatial.plan.note')} ${t('spatial.plan.camerasNote')}`)),
         className: 'sp-plan-card',
       });
       const zoneTitle = h('span', {});
@@ -811,16 +881,31 @@ export default {
       // live data that arrived while focus was inside the panel is applied once focus leaves it
       // — except while a dialog opened from the panel (the camera viewer) is open: its return-focus control must
       // stay in the document, so the panel follows when the dialog closes (openViewer › onClose)
+      // — and not while any dialog is open (command palette, a drawer, a modal): when it closes, focus returns to the
+      // same panel row, which must still be in the document; the panel follows when focus next leaves it
       zoneBody.addEventListener('focusout', () => {
         if (!refs || !refs.panelDirty || panelHold) return;
-        setTimeout(() => { if (!destroyed && refs && refs.zoneBody === zoneBody && refs.panelDirty && !panelHold && !zoneBody.contains(document.activeElement)) renderZonePanel(); }, 0);
+        setTimeout(() => { if (!destroyed && refs && refs.zoneBody === zoneBody && refs.panelDirty && !panelHold && !dialogOpen() && !zoneBody.contains(document.activeElement)) renderZonePanel(); }, 0);
       });
       const camCard = C.card({ code: 'CAM-01', title: t('spatial.cameras.title'), subtitle: t('spatial.cameras.subtitle', { n: tn('spatial.n.cameras', SP.camerasFor(siteId).length, { count: fmt.num(SP.camerasFor(siteId).length) }) }), body: h('div', {}, h('p', { class: 'sp-honest-line' }, ico('flask', 16), h('span', {}, t('spatial.cameras.honest'))), buildCameras(site)), className: 'sp-cam-card' });
       const listParts = buildList(site);
       const listCard = C.card({ code: 'LIST', title: t('spatial.list.title'), subtitle: t('spatial.list.subtitle'), body: listParts.wrap, className: 'sp-list-card' });
+      const caps = SP.capturesFor(siteId);
+      const panoCard = C.card({ code: '360-01', title: t('spatial.p360.title'), subtitle: t('spatial.p360.subtitle', { n: fmt.num(caps.length) }),
+        body: h('div', {}, h('p', { class: 'sp-honest-line' }, ico('flask', 16), h('span', {}, t('spatial.p360.honest'))),
+          caps.length ? h('ul', { class: 'sp-cam-grid', role: 'list' }, caps.map((cp) => {
+            const real = arr(cp.captures).find((c) => c.src);
+            return h('li', { class: 'sp-cam-tile sp-p360-tile', 'data-pano': cp.id },
+              real && real.preview ? h('img', { class: 'sp-p360-thumb', src: real.preview, alt: '', loading: 'lazy', decoding: 'async', width: 1024, height: 434 }) : null,
+              h('div', { class: 'sp-cam-tile-head' }, h('span', { class: 'sp-cam-ico' }, ico('eye', 18)), codeSpan(cp.id), C.statusBadge('demo', { label: t('spatial.viewer.simulated'), size: 'sm', title: t('spatial.p360.simulatedDesc') })),
+              h('p', { class: 'sp-cam-purpose' }, isEn() ? (cp.labelEn || cp.label) : cp.label),
+              h('button', { type: 'button', class: 'sp-cam-zone', onClick: () => selectZone(cp.zoneId, { push: true, focusPanel: true, user: true }) }, ico('map-pin', 14), h('span', {}, zoneName(site, cp.zoneId))),
+              C.button(t('spatial.p360.open'), { variant: 'outline', size: 'sm', icon: 'eye', onClick: (e) => openPano(cp.id, { returnFocus: e.currentTarget }), attrs: { 'aria-label': t('spatial.p360.openAria', { code: cp.id }) } }));
+          })) : h('p', { class: 'sp-empty t-helper' }, t('spatial.p360.none'))),
+        className: 'sp-p360-card' });
       const grid = h('div', { class: 'sp-grid' }, planCard, zoneCard);
-      bodyHost.replaceChildren(grid, camCard, listCard);
-      refs = { plan: planRefs, planFigure, fitBtn, zoneBody, zoneTitle, zoneCard, listBody: listParts.tbody, panelSig: '', panelDirty: false, hitKey: '', focusKey: '' };
+      bodyHost.replaceChildren(grid, camCard, panoCard, listCard);
+      refs = { plan: planRefs, planFigure, fitBtn, zoneBody, zoneTitle, zoneCard, listBody: listParts.tbody, panelSig: '', panelDirty: false, hitKey: '', focusKey: '', boostKey: '' };
       view = { ...FULL_VIEW };
       port = { ...FULL_VIEW };
       printSaved = null;
@@ -854,7 +939,7 @@ export default {
       try {
         if (document.fonts && document.fonts.status !== 'loaded') {
           const planAtBuild = planRefs;
-          document.fonts.ready.then(() => { if (!destroyed && refs && refs.plan === planAtBuild) { planAtBuild.layoutLabels(); paintPlan(); refs.hitKey = ''; updateHits(); } });
+          document.fonts.ready.then(() => { if (!destroyed && refs && refs.plan === planAtBuild) { planAtBuild.layoutLabels(); paintPlan(); refs.hitKey = ''; refs.boostKey = ''; updateHits(); } });
         }
       } catch { /* ignore */ }
       if (animate && motion && typeof motion.enter === 'function') motion.enter([planCard, zoneCard, camCard, listCard], { y: 10 });
@@ -882,6 +967,36 @@ export default {
         fig.classList.toggle('is-touch', touch);
       }
       paintFocusName(widthPx, scale);
+      paintLabelBoost(widthPx, scale);
+    }
+
+    /**
+     * Framed plans wider than the narrow breakpoint (e.g. a 681–700 px plan at 1440): the zoom alone can leave zone
+     * names, codes and badges under FRAMED_LABEL_PX. Each label is then scaled about its own anchor (one transform per
+     * label, set once the framing has settled — never during the tween) so the smallest (the badge number, 12.5 units)
+     * renders at ≥ 12 CSS px. Whole-site and narrow plans keep their own rules (names in the table, enlarged codes).
+     */
+    function paintLabelBoost(widthPx, scale) {
+      if (!refs || !refs.plan) return;
+      const framed = !isFull(view) && !viewRaf;
+      const narrow = widthPx > 0 && widthPx <= NARROW_PLAN_PX;
+      const k = framed && !narrow && scale > 0 ? Math.max(1, FRAMED_LABEL_PX / (12.5 * scale)) : 1;
+      const key = `${k.toFixed(3)}|${refs.plan.layoutSeq()}`;
+      if (key === refs.boostKey) return;
+      refs.boostKey = key;
+      const lay = refs.plan.layout();
+      const about = (x, y) => (k > 1.001 ? `translate(${r1(x)} ${r1(y)}) scale(${+k.toFixed(3)}) translate(${r1(-x)} ${r1(-y)})` : null);
+      zonesOf(siteById(siteId)).forEach((z) => {
+        const L0 = lay.get(z.id);
+        if (!L0) return;
+        const nm = refs.plan.nameEls.get(z.id);
+        if (nm && L0.name) { const r = L0.name.rect; const v = about((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2); if (v) setAttr(nm, 'transform', v); else nm.removeAttribute('transform'); }
+        const cd = refs.plan.codeEls.get(z.id);
+        if (cd && L0.code) { const v = about(L0.code.x, L0.code.y); if (v) setAttr(cd, 'transform', v); else cd.removeAttribute('transform'); }
+        const b = refs.plan.badgeEls.get(z.id);
+        if (b && L0.badge) setAttr(b.g, 'transform', `translate(${r1(L0.badge.cx)} ${r1(L0.badge.cy)})${k > 1.001 ? ` scale(${+k.toFixed(3)})` : ''}`);
+      });
+      refs.planFigure.classList.toggle('is-boosted', k > 1.001);
     }
 
     /** A framed zone on a small plan shows its own name again, sized so it renders at ≥ FOCUS_NAME_PX. */
@@ -998,7 +1113,8 @@ export default {
       const t0 = performance.now();
       const ease = (k) => (k < 0.5 ? 4 * k * k * k : 1 - ((-2 * k + 2) ** 3) / 2);   // ease-in-out (cubic)
       refs.planFigure.classList.add('is-moving');
-      if (!isFull(target)) setZoomed(true);   // the sheet border appears as the framing starts, leaves when it ends
+      if (!isFull(target)) setZoomed(true);
+      if (refs.boostKey && !refs.boostKey.startsWith('1.000|')) { refs.boostKey = ''; paintLabelBoost(0, 0); }   // the sheet border appears as the framing starts, leaves when it ends
       tweenTo = { view: { ...target }, port: toPort };
       const step = (now) => {
         if (destroyed || !refs) { viewRaf = 0; return; }
@@ -1129,10 +1245,11 @@ export default {
           C.statusBadge('demo', { label: t('spatial.viewer.simulatedEvent'), size: 'sm', title: false })))));
     }
 
-    function openViewer(id, { returnFocus = null } = {}) {
+    function openViewer(id, { returnFocus = null, say = true } = {}) {
       const cam = SP.cameraById(id);
       if (!cam || cam.siteId !== siteId || destroyed) return;
       if (viewer) closeViewer('swap');
+      if (pano) closePano('swap');
       // opened from the zone panel: hold the panel as it is until the viewer closes (focus returns to that control)
       const fromPanel = Boolean(returnFocus && refs && refs.zoneBody.contains(returnFocus));
       const hold = fromPanel ? { key: panelKeyOf(returnFocus) } : null;
@@ -1245,7 +1362,8 @@ export default {
       feed.start();
       caption();
       feedStartup(feedShell, feedHost, feed);
-      announce(t('spatial.announce.camera', { code: cam.id, zone: zName }));
+      // a deep link (URL load / back-forward) opens the viewer without a live-region message: only a user action speaks
+      if (say) announce(t('spatial.announce.camera', { code: cam.id, zone: zName }));
     }
 
     /** Until the feed's first frame is really on screen (feed.ready: the worker's 'first-frame' message, or the
@@ -1299,6 +1417,102 @@ export default {
         } catch { el.style.clipPath = ''; el.classList.remove('is-iris'); }
       };
     }
+    /* ───────────── 360° viewer (v4): simulated capture, AI-generated image ───────────── */
+    function openPano(id, { returnFocus = null, say = true } = {}) {
+      const cp = SP.captureById(id);
+      if (!cp || cp.siteId !== siteId || destroyed) return;
+      if (viewer) closeViewer('swap');
+      if (pano) closePano('swap');
+      const site = siteById(siteId);
+      // the zone selection stays as it is: a capture point looks across zones (the hotspots link to them)
+      openPanoId = cp.id;
+      writeUrl('replace');
+      paintPlan();
+      const label = isEn() ? (cp.labelEn || cp.label) : cp.label;
+      const today = nowDate();
+      const dateOf = (c) => { const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + (Number(c.dayOffset) || 0)); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+      const caps = arr(cp.captures);
+      let current = caps.find((c) => c.src) || caps[0];
+      const selId = `${uid}-pano-date`;
+      const dateSel = h('select', { class: 'field-control sp-pano-date', id: selId },
+        caps.map((c) => h('option', { value: c.key, selected: c === current ? '' : null }, t(c.src ? 'spatial.p360.dateReal' : 'spatial.p360.datePlaceholder', { date: fmt.date(dateOf(c)) }))));
+      const captionText = h('span', {});
+      const paintCaption = () => { captionText.textContent = t('spatial.p360.caption', { label, date: fmt.date(dateOf(current)), level: t('spatial.p360.level', { level: cp.level || '—' }) }); };
+      paintCaption();
+      const host = h('div', { class: 'sp-pano-host' });
+      const capId = `${uid}-pano-cap`;
+      let closeThen = null;
+      const act = (hs) => {
+        if (hs.kind === 'zone') { closeThen = () => selectZone(hs.ref, { push: true, focusPanel: true, user: true }); api.close('close'); return; }
+        if (hs.kind === 'aiRisk') { closeThen = () => router.navigate('airisks', { risk: hs.code }); api.close('navigate'); return; }
+        if (hs.kind === 'submittal') { closeThen = () => router.navigate('bom', {}); api.close('navigate'); }
+      };
+      const spotLabel = (hs) => (isEn() ? (hs.labelEn || hs.label) : hs.label);
+      const spots = arr(cp.hotspots).map((hs) => ({ ...hs, label: spotLabel(hs), short: hs.code, rtl: !isEn(), onActivate: () => act(hs) }));
+      const linkList = h('ul', { class: 'sp-list', role: 'list' }, arr(cp.hotspots).map((hs) => h('li', { class: 'sp-item' },
+        h('button', { type: 'button', class: 'sp-link is-button', onClick: () => act(hs) },
+          h('span', { class: 'sp-link-main' }, codeSpan(hs.code), dataText(spotLabel(hs), 'sp-link-text')),
+          h('span', { class: 'sp-link-meta' }, C.badge(t(`spatial.p360.kind.${hs.kind}`), hs.tone === 'critical' ? 'critical' : 'neutral'))))));
+      const body = h('div', { class: 'sp-viewer sp-pano' },
+        h('div', { class: 'sp-viewer-status' },
+          C.statusBadge('demo', { label: t('spatial.p360.simulated'), title: t('spatial.p360.simulatedDesc'), size: 'sm' }),
+          C.statusBadge('not_connected', { label: t('spatial.p360.notConnected'), size: 'sm', title: false })),
+        h('p', { class: 'sp-viewer-honest' }, ico('info', 16), h('span', {}, t('spatial.p360.honest'))),
+        h('div', { class: 'sp-site-field' }, h('label', { class: 't-label', for: selId }, t('spatial.p360.date')), dateSel),
+        h('figure', { class: 'sp-feed-figure', 'aria-labelledby': capId }, host, h('figcaption', { class: 'sp-feed-caption t-helper', id: capId }, captionText)),
+        h('section', { class: 'sp-viewer-sec', 'aria-labelledby': `${capId}-l` },
+          h('h3', { class: 'sp-sec-title', id: `${capId}-l` }, ico('link', 15), h('span', {}, t('spatial.p360.hotspots'))),
+          linkList,
+          h('p', { class: 't-helper sp-ppe-note' }, t('spatial.p360.hotspotsNote'))));
+      const api = C.modal({
+        title: label,
+        subtitle: `${cp.id} · ${zoneName(site, cp.zoneId)} · ${siteName(site)}`,
+        body, size: 'lg', returnFocus,
+        actions: [{ label: t('spatial.viewer.close'), variant: 'primary' }],
+        onClose: (reason) => {
+          if (pano && pano.api === api) teardownPano();
+          if (!destroyed && reason !== 'swap' && reason !== 'site' && reason !== 'route') {
+            openPanoId = null;
+            if (reason !== 'navigate') { writeUrl('replace'); paintPlan(); }
+            const fn = closeThen; closeThen = null;
+            if (fn) fn();
+          }
+        },
+      });
+      api.el.classList.add('sp-viewer-dialog', 'sp-pano-dialog');
+      api.open();
+      const viewerApi = createPano360(host, {
+        src: current && current.src ? current.src : null,
+        yaw: cp.yaw, pitch: cp.pitch, fov: cp.fov,
+        hotspots: spots,
+        rtl: !isEn(),
+        labels: {
+          title: t('spatial.p360.title'), alt: `${t('spatial.p360.simulated')} — ${label}`, simulated: t('spatial.p360.simulated'),
+          help: t('spatial.p360.help'), zoomIn: t('spatial.p360.zoomIn'), zoomOut: t('spatial.p360.zoomOut'), reset: t('spatial.p360.reset'),
+          gyro: t('spatial.p360.gyro'), gyroDenied: t('spatial.p360.gyroDenied'), empty: t('spatial.p360.empty'),
+        },
+      });
+      dateSel.addEventListener('change', () => {
+        current = caps.find((c) => c.key === dateSel.value) || current;
+        viewerApi.setSource(current && current.src ? current.src : null, { empty: t('spatial.p360.empty') });
+        paintCaption();
+      });
+      pano = { api, viewer: viewerApi, id: cp.id };
+      if (say) announce(t('spatial.p360.announce', { code: cp.id }));
+    }
+    function teardownPano() {
+      if (!pano) return;
+      try { pano.viewer.destroy(); } catch { /* ignore */ }
+      pano = null;
+    }
+    function closePano(reason) {
+      if (!pano) return;
+      const { api } = pano;
+      teardownPano();
+      try { api.close(reason); } catch { /* ignore */ }
+      if (reason === 'site' || reason === 'route') openPanoId = null;
+    }
+
     function teardownViewer() {
       if (!viewer) return;
       try { viewer.feed.destroy(); } catch { /* ignore */ }
@@ -1326,7 +1540,7 @@ export default {
           // is inside the panel it is marked dirty instead: counts are patched in place now, the lists and links
           // follow on focusout, so the reader keeps their place and nothing stays stale.
           if (panelSignature() !== refs.panelSig) {
-            if (refs.zoneBody.contains(document.activeElement) || panelHold) { refs.panelDirty = true; patchCounts(); }
+            if (refs.zoneBody.contains(document.activeElement) || panelHold || dialogOpen()) { refs.panelDirty = true; patchCounts(); }
             else renderZonePanel();
           }
         } finally { linkMemo = null; }
@@ -1374,7 +1588,11 @@ export default {
     if (pendingCamera) {
       const camId = pendingCamera;
       pendingCamera = null;
-      requestAnimationFrame(() => { if (!destroyed) openViewer(camId, { returnFocus: refs && refs.plan.camEls.get(camId) }); });
+      requestAnimationFrame(() => { if (!destroyed) openViewer(camId, { returnFocus: refs && refs.plan.camEls.get(camId), say: false }); });
+    } else if (pendingPano) {
+      const pid = pendingPano;
+      pendingPano = null;
+      requestAnimationFrame(() => { if (!destroyed) openPano(pid, { returnFocus: refs && refs.plan.p360Els.get(pid), say: false }); });
     } else if (sameRouteRemount && zoneId && refs) {
       // back / forward inside the view: keep the reader on the selected zone instead of the heading
       requestAnimationFrame(() => { const el = refs && refs.plan.zoneEls.get(zoneId); if (el && !destroyed) try { el.focus({ preventScroll: true }); } catch { /* ignore */ } });
@@ -1385,6 +1603,7 @@ export default {
       destroyed = true;
       lastCleanupAt = Date.now();
       closeViewer('route');
+      closePano('route');
       subs.splice(0).forEach((off) => { try { off(); } catch { /* ignore */ } });
       timers.splice(0).forEach((x) => { clearInterval(x); clearTimeout(x); });
       if (refreshRaf) { cancelAnimationFrame(refreshRaf); refreshRaf = 0; }
