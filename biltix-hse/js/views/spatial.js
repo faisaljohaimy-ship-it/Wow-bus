@@ -1490,6 +1490,9 @@ export default {
           title: t('spatial.p360.title'), alt: `${t('spatial.p360.simulated')} — ${label}`, simulated: t('spatial.p360.simulated'),
           help: t('spatial.p360.help'), zoomIn: t('spatial.p360.zoomIn'), zoomOut: t('spatial.p360.zoomOut'), reset: t('spatial.p360.reset'),
           gyro: t('spatial.p360.gyro'), gyroDenied: t('spatial.p360.gyroDenied'), empty: t('spatial.p360.empty'),
+          // asked when a load fails: the full panorama is not precached (docs/offline.md), so offline it is missing
+          // until it has been opened once online
+          failed: () => t(typeof navigator !== 'undefined' && navigator.onLine === false ? 'spatial.p360.offline' : 'spatial.p360.loadFailed'),
         },
       });
       dateSel.addEventListener('change', () => {

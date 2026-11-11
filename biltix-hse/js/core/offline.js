@@ -5,7 +5,9 @@
  *                checklist.tick), each with an idempotency key. enqueue() refuses a key it has seen (pending, synced
  *                or applied before), replay() applies pending entries in order and records each applied key so a
  *                second replay never applies twice; a failed entry stays visible ("needs attention") and is retried
- *                by the next replay. Storage: IndexedDB → localStorage → memory (node tests use memoryStorage()).
+ *                by the next replay. It keeps why it failed (`why` = { key, params }) next to the sentence it was
+ *                first shown as, so errorText(entry) can say it in the language the page is in now.
+ *                Storage: IndexedDB → localStorage → memory (node tests use memoryStorage()).
  *   Demo truth   There is no server. "Sync" replays the queued actions into the local store of this browser and
  *                the UI says so. Actions taken on other pages save to this browser directly (no queue).
  *   Network      isOnline() = navigator.onLine and not the field kit's "simulate offline" switch.
@@ -162,19 +164,21 @@ export function createOutbox({ storage = memoryStorage(), now = () => new Date()
         for (const e of sorted()) {
           if (e.status === 'synced') continue;
           e.attempts += 1;
-          if (data.applied.includes(e.key)) { e.status = 'synced'; e.syncedAt = iso(now()); e.error = null; res.skipped += 1; continue; }
+          if (data.applied.includes(e.key)) { e.status = 'synced'; e.syncedAt = iso(now()); e.error = null; e.why = null; res.skipped += 1; continue; }
           try {
             if (typeof applyFn !== 'function') throw new Error('no apply handler');
             const out = await applyFn(clone(e));
-            if (out && out.ok === false) throw Object.assign(new Error(out.message || out.reason || 'rejected'), { conflict: out.reason === 'conflict' });
+            if (out && out.ok === false) throw Object.assign(new Error(out.message || out.reason || 'rejected'), { conflict: out.reason === 'conflict', why: out.why || null });
             data.applied.push(e.key);
             e.status = 'synced';
             e.syncedAt = iso(now());
             e.error = null;
+            e.why = null;
             res.applied += 1;
           } catch (err) {
             e.status = 'failed';
             e.error = String((err && err.message) || err).slice(0, 200);
+            e.why = err && err.why && typeof err.why.key === 'string' ? clone(err.why) : null;   // the reason, language-neutral
             res.failed += 1;
           }
         }
@@ -217,7 +221,24 @@ export function setSimulatedOffline(on) {
   if (!field.simulated && isOnline()) syncNow({ announce: true });
 }
 
-const localized = (out) => (out && (i18n.lang() === 'en' ? (out.messageEn || out.message) : out.message)) || '';
+/** The sentence for a failure reason { key: 'missing' | 'conflict' | 'rejected', params } in the current language. */
+function whyText(why) {
+  const params = { ...((why && why.params) || {}) };
+  if (params.status) params.status = i18n.label('taskStatus', params.status);   // stored as the enum value
+  return t(`fieldkit.outbox.err.${why.key}`, params);
+}
+/** A refused action: the reason for errorText(), and the sentence as it reads now (kept as `entry.error`). */
+const refuse = (key, params = {}, extra = {}) => { const why = { key, params }; return { ok: false, ...extra, why, message: whyText(why) }; };
+
+/**
+ * A failed entry's message in the language the page is in now. An entry saved before the reason was kept only has
+ * the sentence it was first shown as (`error`); that is shown until the next replay rewrites it.
+ */
+export function errorText(entry) {
+  const why = entry && entry.why;
+  if (why && typeof why.key === 'string' && ['missing', 'conflict', 'rejected'].includes(why.key)) return whyText(why);
+  return (entry && entry.error) || '';
+}
 
 /** The apply handler for `store`: one outbox entry → the local store (the demo's stand-in for the server). */
 export function storeApplier(store) {
@@ -229,30 +250,30 @@ function applyEntry(store, entry) {
   const p = entry.payload || {};
   if (entry.kind === 'risk.add') {
     const risk = store.addRisk({ ...p.risk, source: 'عُدّة الميدان', sourceEn: 'Field kit' });
-    return risk ? { ok: true, id: risk.id } : { ok: false, message: t('fieldkit.outbox.err.rejected') };
+    return risk ? { ok: true, id: risk.id } : refuse('rejected');
   }
   if (entry.kind === 'alert.ack') {
     const alert = store.ackAlert(p.alertId, p.by || FIELD_ACTOR);
-    return alert ? { ok: true } : { ok: false, message: t('fieldkit.outbox.err.missing', { code: p.code || p.alertId }) };
+    return alert ? { ok: true } : refuse('missing', { code: p.code || p.alertId });
   }
   if (entry.kind === 'task.status') {
     const tasks = (store.state && store.state.platform && store.state.platform.tasks) || [];
     const task = tasks.find((x) => x && x.id === p.taskId);
-    if (!task) return { ok: false, message: t('fieldkit.outbox.err.missing', { code: p.code || p.taskId }) };
+    if (!task) return refuse('missing', { code: p.code || p.taskId });
     if (task.status === p.to) return { ok: true };
     // Conflict: the task moved since the action was queued — overwrite nothing.
-    if (p.from && task.status !== p.from) return { ok: false, reason: 'conflict', message: t('fieldkit.outbox.err.conflict', { code: task.code, status: i18n.label('taskStatus', task.status) }) };
+    if (p.from && task.status !== p.from) return refuse('conflict', { code: task.code, status: task.status }, { reason: 'conflict' });
     const out = store.updateTask(task.id, { status: p.to, by: p.by || FIELD_ACTOR });
-    return out ? { ok: true } : { ok: false, message: localized(out) || t('fieldkit.outbox.err.rejected') };
+    return out ? { ok: true } : refuse('rejected');
   }
   if (entry.kind === 'checklist.tick') {
     const insp = ((store.state && store.state.inspections) || []).find((x) => x && x.id === p.inspectionId);
-    if (!insp) return { ok: false, message: t('fieldkit.outbox.err.missing', { code: p.code || p.inspectionId }) };
+    if (!insp) return refuse('missing', { code: p.code || p.inspectionId });
     const total = Number(insp.checklistTotal) || 0;
     const done = Math.min(total || Infinity, (Number(insp.checklistDone) || 0) + 1);
-    return store.updateInspection(insp.id, { checklistDone: done }) ? { ok: true } : { ok: false, message: t('fieldkit.outbox.err.rejected') };
+    return store.updateInspection(insp.id, { checklistDone: done }) ? { ok: true } : refuse('rejected');
   }
-  return { ok: false, message: t('fieldkit.outbox.err.rejected') };
+  return refuse('rejected');
 }
 
 /**
@@ -485,4 +506,4 @@ async function startOffline({ store, bus, toast } = {}) {
   return field.outbox;
 }
 
-export default { createOutbox, storeApplier, memoryStorage, localStorageAdapter, idbStorage, idemKey, randomKey, initOffline, offlineReady, act, syncNow, isOnline, setSimulatedOffline, isSimulatedOffline, outbox, swInfo, swSkipReason, registerServiceWorker, cacheInfo, storageInfo, requestPersistence, clearOfflineCache, buildStamp, paintIndicator };
+export default { createOutbox, storeApplier, errorText, memoryStorage, localStorageAdapter, idbStorage, idemKey, randomKey, initOffline, offlineReady, act, syncNow, isOnline, setSimulatedOffline, isSimulatedOffline, outbox, swInfo, swSkipReason, registerServiceWorker, cacheInfo, storageInfo, requestPersistence, clearOfflineCache, buildStamp, paintIndicator };

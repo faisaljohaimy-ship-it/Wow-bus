@@ -27,7 +27,9 @@ Status: **demo**. Offline work and QR workflows are not in the approved scope ye
 - **Precache:** `./`, every `js/**/*.js`, `css/*.css`, fonts, explainer posters and captions, the previews of the
   simulated 360° captures, favicon, manifest (135 files, ≈ 6.1 MB uncompressed at v3.8). Never the MP4s: media and
   Range requests bypass the worker. Never the full panoramas (≈ 1 MB each): one is cached at runtime the first
-  time it is opened, so the 360° viewer shows its "no picture" state offline until then.
+  time it is opened; until then the 360° viewer, offline, says that the picture is not in the offline copy on this
+  device (`spatial.p360.offline` — not the "no capture for this date" text of a placeholder date; a failed request
+  while online reads `spatial.p360.loadFailed`).
   After adding or removing a file run `node tools/sw-precache.mjs`; the test suite fails when the list drifts.
   The list holds file names only (it does not depend on the build stamp); the caches are named after the stamp.
   Publish order: `stamp-shell` → `stamp-build` → `sw-precache` → tests → commit (`AGENTS.md` "Publishing").
@@ -61,6 +63,10 @@ Kinds: `risk.add` (field observation from a zone label), `alert.ack`, `task.stat
 `replay()` applies pending entries in order, records applied keys (a key is never applied twice, even after the
 list is cleared), keeps failures visible as "needs attention" and retries them on the next replay. A task
 transition queued from status A is refused if the task is no longer in A (conflict — nothing overwritten).
+A failed entry keeps why it failed as `why = { key: 'missing' | 'conflict' | 'rejected', params }` (the task status
+as its enum value) next to `error`, the sentence as it was first shown; `errorText(entry)` builds the message in the
+language the page is in now, so it follows a language switch (an entry saved before v3.8.2 has only `error` and
+shows that until its next replay).
 
 Storage: IndexedDB (`biltix-hse-field` / `kv` / `outbox`) → localStorage (`biltix-hse:outbox`) → memory.
 **Demo truth:** there is no server; "sync" replays the queue into this browser's store and the UI says so.
@@ -78,6 +84,16 @@ live data. The field-action lists are rebuilt only when their rows change; a foc
 moves to the group heading when the row left the list (never to the next row's button). A ticked checklist item is
 locked (`aria-disabled`), not disabled, so it keeps the focus. Each opened form gets its own idempotency key: a
 second observation from the same scan is a new record.
+
+A language switch re-mounts the view (the router re-renders the current page). The router announces it first
+(`ui:route-leave` with `from` = `to` = `fieldkit`), and the page hands the open record — and an open form with its
+idempotency key and what was typed and chosen — to the new render; a navigation to another page hands nothing over.
+
+**Form errors.** "Save observation" on an incomplete form names the missing fields in one message
+("Complete the required fields: Hazard observed, Category."), marks each with `aria-invalid` and
+`aria-describedby` (the message), and moves the focus to the first one; a mark leaves when its field is filled.
+**Field actions.** Each "Acknowledge" / "Start work" button is named by its visible label and then the record code
+("Acknowledge AL-0412"), so no two buttons share a name.
 
 ## QR payloads and labels
 

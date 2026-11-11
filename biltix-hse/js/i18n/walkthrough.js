@@ -48,6 +48,7 @@ export default {
       decision: {
         title: 'القرار البشري',
         body: 'المنصة توصي؛ القرار لشخص. السجل أدناه هو قرار السيناريو في {time} ({date}) — إسقاط لم يُسجَّل بعد.',
+        bodyDay: 'المنصة توصي؛ القرار لشخص. السجل أدناه هو القرار الذي يتوقعه السيناريو بتاريخ {date} — إسقاط لم يُسجَّل بعد.',
         by: 'صاحب القرار',
         accept: 'قبول',
         hedge: 'تحوّط',
@@ -122,6 +123,7 @@ export default {
       decision: {
         title: 'The human decision',
         body: 'The platform recommends; a person decides. Below is the scenario\'s decision at {time} ({date}) — a projection, not yet recorded.',
+        bodyDay: 'The platform recommends; a person decides. Below is the decision the scenario projects for {date} — a projection, not yet recorded.',
         by: 'Decided by',
         accept: 'Accept',
         hedge: 'Hedge',

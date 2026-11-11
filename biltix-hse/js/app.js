@@ -510,6 +510,12 @@ function applyBrandText(brand) {
     clear(mark);
     mountLogo(mark);
     mark.dataset.mode = 'art'; delete mark.dataset.src;
+  } else {
+    // Same mark, new language: its label and tooltip follow (art.logoMark() wrote them once, when it was built).
+    const svg = mark.querySelector('svg.logo-mark');
+    const title = svg ? svg.querySelector('title') : null;
+    if (svg) setAttr(svg, 'aria-label', t('ui.brand.logo'));
+    if (title) setText(title, t('ui.brand.name'));
   }
 }
 
@@ -1529,6 +1535,7 @@ function buildActivityPanel() {
     if (e.key !== 'Escape' || !panel.open || (panel.pinned && wideQuery().matches)) return;
     if (document.body.classList.contains('has-modal') || document.body.classList.contains('has-drawer') || cmdk.open) return;
     setPanelOpen(false);
+    e.preventDefault();   // this Escape is used: one key closes one thing (the guided tour skips a prevented Escape)
   });
   const wide = wideQuery();
   const onWide = () => {
@@ -2220,7 +2227,7 @@ function buildToggles() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (document.body.classList.contains('rail-open')) setRailOpen(false);
+    if (document.body.classList.contains('rail-open')) { setRailOpen(false); e.preventDefault(); }   // used, as above
   });
 }
 

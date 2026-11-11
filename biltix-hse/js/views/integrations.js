@@ -541,7 +541,7 @@ export default {
       const testBtn = testType ? button(t('integrations.modal.test'), { variant: 'outline', icon: svgIcon('plug', 16), onClick: () => { runTest(testBtn); } }) : null;
       openModal = modal({
         title: t('integrations.modal.title', { name: nameOf(fresh) }),
-        subtitle: rec.api ? String(rec.api) : (testType ? TYPE_LABEL[testType] : ''),
+        subtitle: rec.api ? String(i18n.L(rec, 'api', fresh.ns) || rec.api) : (testType ? TYPE_LABEL[testType] : ''),
         size: 'md',
         body,
         returnFocus: returnFocus || null,

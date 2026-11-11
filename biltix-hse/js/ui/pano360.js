@@ -14,6 +14,11 @@
  * drawn after an input, a resize or a hotspot change, so nothing runs or replays while the viewer sits still.
  * Hotspots are real <button>s positioned over the picture (keyboard reachable, named); behind-the-camera hotspots
  * are hidden (and leave the tab order). The picture never mirrors in Arabic (dir="ltr"); text follows its language.
+ * First view: `yaw / pitch / fov` are authored for a 16:9 frame. A narrower frame (4:3 on phones) keeps the same
+ * horizontal reach by opening the vertical field of view, so the markers of the first view stay on the picture;
+ * this holds until the reader moves the view and again after "back to the first view".
+ * A picture that cannot be loaded shows `labels.failed` (a string, or a function asked at that moment — e.g. "not in
+ * the offline copy"), never the `labels.empty` text of a date without a capture.
  *
  *   createPano360(host, { src, yaw, pitch, fov, hotspots:[{ id, yaw, pitch, label, tone, onActivate }], labels,
  *                         mode: 'auto'|'webgl'|'canvas'|'static', onView })
@@ -25,6 +30,18 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const wrap180 = (d) => ((((d + 180) % 360) + 360) % 360) - 180;
 const MIN_FOV = 30;
 const MAX_FOV = 100;
+const DESIGN_ASPECT = 16 / 9;   // the frame the first view of a capture is authored for
+
+/**
+ * The vertical field of view that keeps, in a frame of `aspect` (width / height), the horizontal reach `base` has in
+ * the 16:9 frame the view was authored for. Wider frames keep `base`; `cylindrical` = the Canvas 2D fallback, where
+ * the horizontal field is fov × aspect.
+ */
+export function fitFov(base, aspect, cylindrical = false) {
+  if (!(aspect > 0) || aspect >= DESIGN_ASPECT) return base;
+  const k = DESIGN_ASPECT / aspect;
+  return clamp(cylindrical ? base * k : (2 * Math.atan(Math.tan((base * DEG) / 2) * k)) / DEG, MIN_FOV, MAX_FOV);
+}
 
 function reducedMotion() {
   try {
@@ -95,7 +112,7 @@ function makeGL(canvas) {
 }
 
 export function createPano360(host, opts = {}) {
-  const labels = { title: '360°', help: '', simulated: '', zoomIn: '+', zoomOut: '−', reset: '0', gyro: '', gyroDenied: '', loading: '', empty: '', ...(opts.labels || {}) };
+  const labels = { title: '360°', help: '', simulated: '', zoomIn: '+', zoomOut: '−', reset: '0', gyro: '', gyroDenied: '', loading: '', empty: '', failed: '', ...(opts.labels || {}) };
   const reduced = reducedMotion();
   let mode = opts.mode && opts.mode !== 'auto' ? opts.mode : (reduced ? 'static' : 'webgl');
   let yaw = Number(opts.yaw) || 0;
@@ -103,6 +120,11 @@ export function createPano360(host, opts = {}) {
   let fov = clamp(Number(opts.fov) || 75, MIN_FOV, MAX_FOV);   // vertical field of view (degrees)
   let hotspots = Array.isArray(opts.hotspots) ? opts.hotspots.slice() : [];
   let img = null; let vCover = 152; let destroyed = false; let raf = 0; let glx = null; let ctx2d = null;
+  let moved = false;              // the reader moved or zoomed the view: the first-view fit no longer applies
+  let emptyText = labels.empty;   // the text of a date without a capture (setSource may replace it)
+  let picFailed = false;          // still-picture mode: the last load failed
+  let wanted = opts.src || null;  // the source the reader is looking at (null = a date without a capture)
+  let loadSeq = 0;                // a load that was replaced by a later one reports nothing
   const sky = [0.62, 0.76, 0.9]; const ground = [0.78, 0.78, 0.76];
   let readyResolve; const ready = new Promise((r) => { readyResolve = r; });
 
@@ -121,10 +143,18 @@ export function createPano360(host, opts = {}) {
   const root = el('div', { class: `pano is-${mode}`, dir: 'ltr' }, stage, help);
   host.appendChild(root);
   const home = { yaw, pitch, fov };
+  /** The message layer over the stage: a date without a capture, or why the picture could not be loaded. */
+  const showEmpty = (text) => { empty.firstChild.textContent = text; empty.hidden = false; };
+  const failedText = () => { let f = labels.failed; if (typeof f === 'function') { try { f = f(); } catch { f = ''; } } return f || emptyText; };
 
   /* ───────── geometry ───────── */
   const size = () => ({ w: stage.clientWidth || 1, h: stage.clientHeight || 1 });
   const tanV = () => Math.tan((fov * DEG) / 2);
+  /** The authored vertical field of view, opened for a frame narrower than 16:9 so the horizontal reach is kept. */
+  function homeFov() {
+    const w = stage.clientWidth; const h = stage.clientHeight;
+    return mode === 'static' || !(w > 1) || !(h > 1) ? home.fov : fitFov(home.fov, w / h, mode === 'canvas');
+  }
   const latTop = () => (vCover / 2) * DEG;
   function clampView() {
     fov = clamp(fov, MIN_FOV, MAX_FOV);
@@ -162,6 +192,7 @@ export function createPano360(host, opts = {}) {
   function draw() {
     raf = 0;
     if (destroyed || !img) return;
+    if (!moved) { const f = homeFov(); if (f !== fov) { fov = f; clampView(); } }   // first view: fitted to this frame
     const { w, h } = size();
     if (mode === 'webgl' && glx) {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -240,9 +271,10 @@ export function createPano360(host, opts = {}) {
     if (pointers.size >= 2) {
       const [a, b] = [...pointers.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
-      if (pinch0 > 0 && d > 0) { fov = fov0 * (pinch0 / d); clampView(); render(); }
+      if (pinch0 > 0 && d > 0) { moved = true; fov = fov0 * (pinch0 / d); clampView(); render(); }
       return;
     }
+    moved = true;
     const { w, h } = size();
     const fovH = mode === 'canvas' ? fov * (w / h) : 2 * Math.atan(tanV() * (w / h)) / DEG;
     yaw -= ((cur.x - prev.x) / w) * fovH;
@@ -254,6 +286,7 @@ export function createPano360(host, opts = {}) {
     if (mode === 'static') return;
     if (!e.ctrlKey && document.activeElement !== canvas) return;
     e.preventDefault();
+    moved = true;
     fov *= Math.exp(e.deltaY * 0.0015); clampView(); render();
   }
   function onKey(e) {
@@ -267,10 +300,10 @@ export function createPano360(host, opts = {}) {
       case 'ArrowDown': pitch -= step; break;
       case '+': case '=': fov -= 8; break;
       case '-': case '_': fov += 8; break;
-      case '0': case 'Home': yaw = home.yaw; pitch = home.pitch; fov = home.fov; break;
+      case '0': case 'Home': yaw = home.yaw; pitch = home.pitch; fov = homeFov(); break;
       default: used = false;
     }
-    if (used) { e.preventDefault(); clampView(); render(); }
+    if (used) { e.preventDefault(); moved = !(e.key === '0' || e.key === 'Home'); clampView(); render(); }
   }
   canvas.addEventListener('pointerdown', onDown);
   canvas.addEventListener('pointermove', onMove);
@@ -278,15 +311,16 @@ export function createPano360(host, opts = {}) {
   canvas.addEventListener('pointercancel', onUp);
   canvas.addEventListener('wheel', onWheel, { passive: false });
   canvas.addEventListener('keydown', onKey);
-  btnIn.addEventListener('click', () => { fov -= 10; clampView(); render(); });
-  btnOut.addEventListener('click', () => { fov += 10; clampView(); render(); });
-  btnReset.addEventListener('click', () => { yaw = home.yaw; pitch = home.pitch; fov = home.fov; clampView(); render(); });
+  btnIn.addEventListener('click', () => { moved = true; fov -= 10; clampView(); render(); });
+  btnOut.addEventListener('click', () => { moved = true; fov += 10; clampView(); render(); });
+  btnReset.addEventListener('click', () => { moved = false; yaw = home.yaw; pitch = home.pitch; fov = homeFov(); clampView(); render(); });
 
   // device orientation: offered on touch devices only, never under reduced motion; iOS asks for permission
   let gyroOn = false; let gyroBase = null;
   const onOrient = (e) => {
     if (!gyroOn || e.alpha === null) return;
     if (!gyroBase) gyroBase = { alpha: e.alpha, yaw };
+    moved = true;
     yaw = gyroBase.yaw - wrap180(e.alpha - gyroBase.alpha);
     pitch = clamp((e.beta || 90) - 90, -80, 80);
     clampView(); render();
@@ -323,8 +357,13 @@ export function createPano360(host, opts = {}) {
     root.className = 'pano is-static';
     const pic = el('img', { class: 'pano-static-img', alt: labels.alt || labels.title, src: opts.src, decoding: 'async' });
     stage.replaceChildren(pic, spotsHost, osd, empty);
-    pic.addEventListener('load', () => { img = pic; vCover = 360 * (pic.naturalHeight / pic.naturalWidth); stage.style.aspectRatio = `${pic.naturalWidth} / ${pic.naturalHeight}`; buildSpots(); readyResolve(mode); }, { once: true });
-    pic.addEventListener('error', () => readyResolve('error'), { once: true });
+    pic.addEventListener('load', () => {
+      picFailed = false; img = pic; vCover = 360 * (pic.naturalHeight / pic.naturalWidth); stage.style.aspectRatio = `${pic.naturalWidth} / ${pic.naturalHeight}`;
+      const on = Boolean(wanted);   // a date without a capture may have been chosen while this was loading
+      pic.hidden = !on; empty.hidden = on; spotsHost.hidden = !on; buildSpots(); readyResolve(mode);
+    });
+    // no broken image: the reason takes the picture's place (and a later setSource() tries again)
+    pic.addEventListener('error', () => { picFailed = true; pic.hidden = true; spotsHost.hidden = true; if (wanted) showEmpty(failedText()); readyResolve('error'); });
   }
   function mountCanvas(kind) {
     stage.replaceChildren(canvas, spotsHost, osd, empty);
@@ -356,18 +395,20 @@ export function createPano360(host, opts = {}) {
   function load(src) {
     if (mode === 'static') { empty.hidden = Boolean(src); spotsHost.hidden = !src; return; }
     img = null;
+    const seq = ++loadSeq;
     root.classList.add('is-loading');
-    if (!src) { empty.hidden = false; root.classList.remove('is-loading'); placeSpots(); readyResolve('empty'); return; }
+    if (!src) { showEmpty(emptyText); root.classList.remove('is-loading'); placeSpots(); readyResolve('empty'); return; }
     empty.hidden = true;
     const im = new Image();
     im.decoding = 'async';
     im.onload = () => {
-      if (destroyed) return;
+      if (destroyed || seq !== loadSeq) return;
       img = im; vCover = clamp(360 * (im.naturalHeight / im.naturalWidth), 30, 180);
       try { upload(im); } catch { mountCanvas('canvas'); }
       clampView(); buildSpots(); root.classList.remove('is-loading'); draw(); readyResolve(mode);
     };
-    im.onerror = () => { root.classList.remove('is-loading'); empty.hidden = false; readyResolve('error'); };
+    // not "no capture for this date": the capture exists, its picture could not be loaded (offline, or the request failed)
+    im.onerror = () => { if (destroyed || seq !== loadSeq) return; root.classList.remove('is-loading'); showEmpty(failedText()); placeSpots(); readyResolve('error'); };
     im.src = src;
   }
 
@@ -379,16 +420,17 @@ export function createPano360(host, opts = {}) {
     get mode() { return mode; },
     ready,
     view: () => ({ yaw, pitch, fov }),
-    lookAt(y, p, f) { if (Number.isFinite(y)) yaw = y; if (Number.isFinite(p)) pitch = p; if (Number.isFinite(f)) fov = f; clampView(); render(); },
+    lookAt(y, p, f) { moved = true; if (Number.isFinite(y)) yaw = y; if (Number.isFinite(p)) pitch = p; if (Number.isFinite(f)) fov = f; clampView(); render(); },
     setHotspots(list) { hotspots = Array.isArray(list) ? list.slice() : []; buildSpots(); },
     setSource(src, { empty: msg = null } = {}) {
-      if (msg) empty.firstChild.textContent = msg;
+      if (msg) emptyText = msg;
+      wanted = src || null;
       if (mode === 'static') {
         const pic = stage.querySelector('.pano-static-img');
-        if (pic) pic.hidden = !src;
-        empty.hidden = Boolean(src);
-        spotsHost.hidden = !src;
-        if (src && pic && pic.getAttribute('src') !== src) pic.src = src;
+        if (!src || !pic) { if (pic) pic.hidden = true; spotsHost.hidden = true; showEmpty(emptyText); return; }
+        // a new source, or one that failed last time: load it (its handlers show the picture or the reason)
+        if (picFailed || pic.getAttribute('src') !== src) { picFailed = false; pic.src = src; return; }
+        pic.hidden = false; empty.hidden = true; spotsHost.hidden = false;
         return;
       }
       spotsHost.hidden = !src;
@@ -406,4 +448,4 @@ export function createPano360(host, opts = {}) {
   };
 }
 
-export default { createPano360 };
+export default { createPano360, fitFov };

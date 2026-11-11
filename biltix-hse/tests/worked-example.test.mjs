@@ -6,7 +6,7 @@
 import { assert, freshStore, instants, NOW } from './helpers.mjs';
 import * as SP from '../js/data/spatial-seed.js';
 
-const { walkthroughAvailable, WORKED_RISK } = await import('../js/ui/walkthrough.js').catch(() => ({}));
+const { walkthroughAvailable, projectedDecision, WORKED_RISK } = await import('../js/ui/walkthrough.js').catch(() => ({}));
 const day = (iso) => String(iso).slice(0, 10);
 const risk = (st, id) => st.platform.aiRisks.find((r) => r.id === id);
 
@@ -126,6 +126,32 @@ export const tests = [
       assert.deepEqual(SP.spatialParams({ site: 'S1', zone: 'S1-Z2', pano: 'P360-S1-01' }), { site: 'S1', zone: 'S1-Z2', camera: null, risk: null, pano: 'P360-S1-01' });
       assert.equal(SP.drawingFor('S1').number, 'S1-A-101');
       assert.deepEqual([...SP.PLAN_LAYERS], ['zones', 'cranes', 'cameras', 'qr', 'p360']);
+    },
+  },
+  {
+    name: 'walkthrough step 5: the projected decision shows its clock time only while that time is still to come',
+    async fn() {
+      const st = freshStore();
+      const sc = risk(st, 'AR69').scenario;
+      assert.equal(typeof projectedDecision, 'function');
+      const at = `${sc.decisionDate}T10:05:00+03:00`;
+      // before 10:05 Riyadh on the decision day: the scenario's time is ahead and is shown
+      assert.deepEqual(projectedDecision(sc, new Date(`${sc.decisionDate}T08:30:00+03:00`)), { at, ahead: true });
+      // at 10:05 and later the same day (the reported case: 21:09) it is not printed next to "not happened yet"
+      assert.equal(projectedDecision(sc, new Date(at)).ahead, false);
+      assert.equal(projectedDecision(sc, new Date(`${sc.decisionDate}T21:09:00+03:00`)).ahead, false);
+      // the store's clock (NOW = 09:00 Riyadh on the anchor day) is before the decision, and the detection is before both
+      assert.equal(projectedDecision(sc, NOW).ahead, true);
+      assert.ok(Date.parse(risk(st, 'AR69').detectedAt) <= NOW.getTime());
+      // a scenario without a clock time never claims one
+      assert.deepEqual(projectedDecision({ decisionDate: sc.decisionDate }, NOW), { at: '', ahead: false });
+      assert.deepEqual(projectedDecision(null, NOW), { at: '', ahead: false });
+      // both languages carry the sentence with the time and the one with the day only
+      const wt = (await import('../js/i18n/walkthrough.js')).default;
+      for (const lang of ['ar', 'en']) {
+        assert.ok(/\{time\}/.test(wt[lang].steps.decision.body) && /\{date\}/.test(wt[lang].steps.decision.body), `${lang}.body`);
+        assert.ok(!/\{time\}/.test(wt[lang].steps.decision.bodyDay) && /\{date\}/.test(wt[lang].steps.decision.bodyDay), `${lang}.bodyDay`);
+      }
     },
   },
   {

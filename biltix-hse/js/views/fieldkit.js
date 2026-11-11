@@ -17,6 +17,8 @@
  * Repaints: the page repaints on outbox, network, filter and live-data events (paintAll, one per frame). Those
  * never rebuild the open scan result or an open form — refreshResult() patches the live parts in place — and the
  * field-action lists are rebuilt only when their rows change, with the focus kept (docs/offline.md "Repaints").
+ * A re-mount in place (the router re-renders the view on a language switch) hands the open record and an open
+ * form's input to the new view (`carry`); a navigation away does not.
  */
 import { components } from '../ui/components.js';
 import { i18n, t, tn, L } from '../core/i18n.js';
@@ -45,6 +47,9 @@ const FIELD_ACTOR = 'عُدّة الميدان';
 
 const arr = (v) => (Array.isArray(v) ? v : []);
 const platformOf = (state) => (state && state.platform) || {};
+/** What a re-mount in place hands to the next render: the open record, and the open form with what was typed. */
+let carry = null;
+const FORM_FIELDS = ['hazard', 'category', 'likelihood', 'severity'];
 
 /* ------------------------------------------------------------------ */
 /* Label registry (from the seed data in the store)                   */
@@ -187,7 +192,7 @@ export default {
           h('div', { class: 'fk-ob-main' },
             h('strong', { class: 'text-sm' }, t(`fieldkit.outbox.kinds.${e.kind}`)),
             h('span', { class: 'fk-ob-desc text-sm' }, describe(e)),
-            e.error ? h('span', { class: 'fk-ob-err text-xs' }, e.error) : null,
+            e.status === 'failed' && off.errorText(e) ? h('span', { class: 'fk-ob-err text-xs' }, off.errorText(e)) : null,
             h('span', { class: 'fk-ob-key mono text-xs', dir: 'ltr', title: t('fieldkit.outbox.key') }, e.key)),
           h('div', { class: 'fk-ob-side' }, chip(e.status), h('span', { class: 'mono text-xs muted', dir: 'ltr' }, time(e.createdAt)))));
       }
@@ -333,7 +338,7 @@ export default {
         if (sig === sentSig) return;
         sentSig = sig;
         if (!e) { sent.remove(); return; }
-        sent.replaceChildren(chip(e.status), h('span', {}, e.status === 'synced' ? t('fieldkit.form.saved') : (e.status === 'failed' ? (e.error || '') : t('fieldkit.form.queued'))));
+        sent.replaceChildren(chip(e.status), h('span', {}, e.status === 'synced' ? t('fieldkit.form.saved') : (e.status === 'failed' ? off.errorText(e) : t('fieldkit.form.queued'))));
         if (!sent.isConnected) body.appendChild(sent);
       };
       if (current.formOpen) body.appendChild(reportForm(label, site));
@@ -345,10 +350,17 @@ export default {
     function reportForm(label, site) {
       const opt = (v, text) => h('option', { value: String(v) }, text);
       const lvl = (name, id) => h('select', { class: 'field-control', name, id, required: true }, opt('', t('fieldkit.form.choose')), ...[1, 2, 3, 4, 5].map((n) => opt(n, num(n))));
-      const err = h('p', { class: 'fk-err text-sm', role: 'status', 'aria-live': 'polite' });
+      const err = h('p', { class: 'fk-err text-sm', id: 'fkFormErr', role: 'status', 'aria-live': 'polite' });
       const cur = current;
       let sending = false;
-      const form = h('form', { class: 'fk-form', novalidate: true, onSubmit: async (e) => {
+      // A missing field is marked (aria-invalid), tied to the message (aria-describedby) and named in it; the mark
+      // leaves as soon as the reader fills that field.
+      const mark = (name, bad) => {
+        const c = form.elements[name];
+        if (!c) return;
+        if (bad) { c.setAttribute('aria-invalid', 'true'); c.setAttribute('aria-describedby', err.id); } else { c.removeAttribute('aria-invalid'); c.removeAttribute('aria-describedby'); }
+      };
+      const form = h('form', { class: 'fk-form', novalidate: true, onInput: (e) => { if (e.target && e.target.name) mark(e.target.name, false); }, onSubmit: async (e) => {
         e.preventDefault();
         if (sending) return;
         const fd = new FormData(form);
@@ -356,7 +368,14 @@ export default {
         const categoryId = String(fd.get('category') || '');
         const likelihood = Number(fd.get('likelihood'));
         const severity = Number(fd.get('severity'));
-        if (!hazard || !categoryId || !likelihood || !severity) { err.textContent = t('fieldkit.form.required'); return; }
+        const missing = FORM_FIELDS.filter((name) => !({ hazard, category: categoryId, likelihood, severity })[name]);
+        FORM_FIELDS.forEach((name) => mark(name, missing.includes(name)));
+        if (missing.length) {
+          err.textContent = t('fieldkit.form.required', { fields: missing.map((name) => t(`fieldkit.form.${name}`)).join(t('ui.sep')) });
+          try { form.elements[missing[0]].focus(); } catch { /* not focusable */ }
+          return;
+        }
+        err.textContent = '';
         sending = true;
         const key = cur.formKey;
         let res = null;
@@ -497,7 +516,8 @@ export default {
         quickBody.appendChild(h('h3', { class: 'fk-h3', tabindex: '-1', 'data-group': g.id }, g.title));
         quickBody.appendChild(g.rows.length ? h('ul', { class: 'fk-q', 'data-group': g.id }, ...g.rows.map((r) => h('li', { class: 'fk-q-item', tabindex: '-1', 'data-key': r.key },
           h('div', { class: 'fk-q-main' }, h('span', { class: 'mono text-xs', dir: 'ltr' }, r.code), h('span', { class: 'text-sm fk-q-title' }, r.title)),
-          r.status ? (r.status === 'synced' ? h('span', { class: 'fk-chip', 'data-state': 'synced' }, r.done) : chip(r.status)) : button(r.label, { variant: 'outline', size: 'sm', onClick: async () => { await r.act(); paintAll(); } })))) : h('p', { class: 'text-sm muted fk-m0' }, t('fieldkit.quick.none')));
+          // Named by its visible label, then the record code ("Acknowledge AL-0412"): one name per button, label first (WCAG 2.5.3).
+          r.status ? (r.status === 'synced' ? h('span', { class: 'fk-chip', 'data-state': 'synced' }, r.done) : chip(r.status)) : components.setLabelInName(button(r.label, { variant: 'outline', size: 'sm', onClick: async () => { await r.act(); paintAll(); } }), `${r.label} — ${r.code}`)))) : h('p', { class: 'text-sm muted fk-m0' }, t('fieldkit.quick.none')));
       }
       if (held) {
         const row = held.key ? Array.from(quickBody.querySelectorAll('[data-key]')).find((n) => n.getAttribute('data-key') === held.key) : null;
@@ -570,7 +590,18 @@ export default {
     // (idempotent) so the outbox and the field actions are usable without waiting for the live engines.
     off.initOffline({ store, bus, toast }).then(() => { if (alive) paintAll(); }).catch(() => { /* app.js reports it */ });
     paintLabels();
-    if (params.code) { input.value = String(params.code); openCode(String(params.code)); }
+    // A re-mount in place (language switch): the record that was open is open again, and an open form keeps its
+    // idempotency key and what was typed. A deep link to another code wins.
+    const kept = carry && Date.now() - carry.at < 5000 ? carry : null;   // handed over just now, not left from an earlier visit
+    carry = null;
+    const keptLabel = kept && (!params.code || String(params.code) === kept.input) ? buildRegistry(state()).find((l) => l.payload === kept.payload) : null;
+    if (keptLabel) {
+      input.value = kept.input;
+      current = { label: keptLabel, formKey: kept.formKey, sentKey: kept.sentKey, formOpen: kept.formOpen, live: null };
+      paintResult();
+      const form = resultHost.querySelector('.fk-form');
+      if (form && kept.values) FORM_FIELDS.forEach((name) => { if (form.elements[name]) form.elements[name].value = kept.values[name] || ''; });
+    } else if (params.code) { input.value = String(params.code); openCode(String(params.code)); }
 
     let raf = 0;
     const schedule = () => { if (!alive || raf) return; raf = requestAnimationFrame(() => { raf = 0; paintAll(); }); };
@@ -580,6 +611,15 @@ export default {
       if (path === '*' || /^(platform\.(alerts|tasks|aiRisks)|inspections|risks|permits|platform$)/.test(path)) schedule();
     }));
     unsubs.push(bus.on('filters:change', schedule));
+    // The router says where it is going before it unmounts this view: to this same page (a re-mount in place) the
+    // open record and form are handed over; to any other page nothing is kept.
+    unsubs.push(bus.on('ui:route-leave', (p) => {
+      const form = current && current.formOpen ? resultHost.querySelector('.fk-form') : null;
+      carry = p && p.from === 'fieldkit' && p.to === 'fieldkit' && current
+        ? { at: Date.now(), payload: current.label.payload, input: input.value, formOpen: Boolean(form), formKey: form ? current.formKey : null, sentKey: current.sentKey,
+          values: form ? Object.fromEntries(FORM_FIELDS.map((name) => [name, form.elements[name] ? form.elements[name].value : ''])) : null }
+        : null;
+    }));
 
     return () => {
       alive = false;

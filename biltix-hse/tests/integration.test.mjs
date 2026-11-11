@@ -307,8 +307,9 @@ export const tests = [
   },
   {
     name: 'field kit: a background repaint (outbox, network, live data, filters) never rebuilds the open result — an open observation form keeps its input',
-    fn() {
+    async fn() {
       const src = read('js/views/fieldkit.js');
+      const fk = (await import('../js/i18n/fieldkit.js')).default;
       const paintAll = /function paintAll\(\) \{([^\n]*)\}\n/.exec(src);
       assert.ok(paintAll, 'paintAll is one line');
       assert.ok(!/paintResult\(/.test(paintAll[1]) && /refreshResult\(\)/.test(paintAll[1]), 'paintAll refreshes the result in place');
@@ -323,6 +324,15 @@ export const tests = [
       assert.ok(/current\.formKey = off\.randomKey\('risk\.add'\)/.test(src) && !/current\.formKey \|\|/.test(src));
       // a ticked checklist item is locked, not disabled, so it keeps the focus
       assert.ok(/setAttribute\('aria-disabled', 'true'\)/.test(src) && !/cb\.disabled = true/.test(src));
+      // v3.8.2 — a failed action is shown through errorText() (current language), never as the stored sentence
+      assert.ok(/off\.errorText\(e\)/.test(src) && !/\}, e\.error\)/.test(src) && !/\(e\.error \|\| ''\) :/.test(src));
+      // an incomplete form names its missing fields, marks them and moves the focus to the first one
+      assert.ok(/setAttribute\('aria-invalid', 'true'\)/.test(src) && /setAttribute\('aria-describedby', err\.id\)/.test(src) && /form\.elements\[missing\[0\]\]\.focus\(\)/.test(src));
+      for (const lang of ['ar', 'en']) assert.ok(/\{fields\}/.test(fk[lang].form.required), `${lang}.form.required names the fields`);
+      // field-action buttons: the visible label, then the record code (one accessible name per button)
+      assert.ok(/components\.setLabelInName\(button\(r\.label,[\s\S]{0,160}`\$\{r\.label\} — \$\{r\.code\}`\)/.test(src));
+      // a re-mount in place (language switch) hands the open record and form over; a navigation away does not
+      assert.ok(/p\.from === 'fieldkit' && p\.to === 'fieldkit' && current/.test(src) && /const kept = carry && Date\.now\(\) - carry\.at < 5000 \? carry : null;/.test(src));
     },
   },
   {
@@ -343,6 +353,18 @@ export const tests = [
       const C = await import('../js/ui/components.js');
       assert.equal(typeof C.focusables, 'function');
       assert.equal(C.components.focusables, C.focusables);
+      // v3.8.2 — the tour closes when the reader leaves what it explains (a route change, the explained drawer closed),
+      // never on its own moves; a numerals change repaints it like a language change; its layout class leaves with it
+      assert.ok(/bus\.on\('ui:route-leave', \(p\) => \{[\s\S]*?!a\.busy && p && p\.to && p\.to !== screenOf\(a\.step\)\) stopWalkthrough\('route'\)/.test(src), 'route leave');
+      assert.ok(/if \(!a\.busy && DRAWER_TAB\[STEPS\[a\.step\]\] && !openDrawerEl\(\)\) \{ stopWalkthrough\('drawer'\); return; \}/.test(src), 'drawer closed by the reader');
+      assert.ok(/bus\.on\('lang:change', repaint\)/.test(src) && /bus\.on\('settings:change'/.test(src) && /offSettings\(\); offRoute\(\);/.test(src), 'numerals + cleanup');
+      assert.ok(/classList\.add\('wt-on'\)/.test(src) && /classList\.remove\('wt-anim', 'wt-on'\)/.test(src));
+      // launched from the drawer on another page: the drawer that slides out with that page is not the step's drawer
+      assert.ok(/await sleep\(120\);\n[\s\S]{0,360}if \(unsettled\(\)\) await waitFor\(\(\) => !unsettled\(\), 2000\);\n  \}\n  let d = openDrawerEl\(\);/.test(src));
+      // one Escape closes one thing: the shell's own handlers mark the key as used, the tour skips a used key
+      const app = read('js/app.js');
+      assert.ok(/setPanelOpen\(false\);\n    e\.preventDefault\(\);/.test(app) && /setRailOpen\(false\); e\.preventDefault\(\);/.test(app));
+      assert.ok(/if \(e\.key !== 'Escape' \|\| e\.defaultPrevented \|\| e\.isComposing \|\| !active \|\| active\.away\) return;/.test(src));
       assert.ok(/components\.focusables\(a\.root\)/.test(src) && /components\.focusables\(drawer\)/.test(src));
       // another dialog on top hides the panel and the ring
       assert.ok(/\.wt-panel\[data-away\], \.wt-ring\[data-away\] \{ display: none; \}/.test(src) && /function dialogOnTop\(\)/.test(src));

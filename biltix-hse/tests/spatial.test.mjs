@@ -155,4 +155,36 @@ export const tests = [
       assert.deepEqual(SP.spatialParams({ site: 'S1', zone: 'S1-Z2', camera: 'CAM-S1-03' }), { site: 'S1', zone: 'S1-Z2', camera: 'CAM-S1-03', risk: null });
     },
   },
+  {
+    name: '360° viewer: the first view keeps its horizontal reach in a narrower frame, so the AIR-1069 marker stays on a phone picture',
+    async fn() {
+      const { fitFov } = await import('../js/ui/pano360.js');
+      const DEG = Math.PI / 180;
+      const halfH = (fov, aspect) => Math.atan(Math.tan((fov * DEG) / 2) * aspect) / DEG;
+      // the authored frame (16:9) and wider frames keep the authored field of view
+      assert.equal(fitFov(78, 16 / 9), 78);
+      assert.equal(fitFov(78, 2), 78);
+      // 4:3 (the phone frame): the vertical field opens until the horizontal half-angle is the 16:9 one
+      const f = fitFov(78, 4 / 3);
+      assert.ok(f > 78 && f < 100, String(f));
+      assert.ok(Math.abs(halfH(f, 4 / 3) - halfH(78, 16 / 9)) < 1e-9);
+      // limits: never past the viewer's widest field; nonsense frames change nothing; the 2D fallback is linear
+      assert.equal(fitFov(78, 0.5), 100);
+      assert.equal(fitFov(78, 0), 78);
+      assert.equal(fitFov(78, NaN), 78);
+      assert.equal(fitFov(60, 4 / 3, true), 80);
+      // the marker of the worked example, projected as the viewer does (js/ui/pano360.js project()), on a 330 × 248 frame
+      const cp = SP.captureById('P360-S1-01');
+      const hs = cp.hotspots.find((h) => h.code === 'AIR-1069');
+      const xOf = (fov, w, h) => {
+        const cyw = Math.cos(cp.yaw * DEG); const syw = Math.sin(cp.yaw * DEG); const cpp = Math.cos(cp.pitch * DEG); const spp = Math.sin(cp.pitch * DEG);
+        const x0 = Math.cos(hs.pitch * DEG) * Math.sin(hs.yaw * DEG); const y0 = Math.sin(hs.pitch * DEG); const z0 = Math.cos(hs.pitch * DEG) * Math.cos(hs.yaw * DEG);
+        const x1 = x0 * cyw - z0 * syw; const z1 = x0 * syw + z0 * cyw; const z2 = y0 * spp + z1 * cpp;
+        return ((x1 / z2 / (Math.tan((fov * DEG) / 2) * (w / h)) + 1) / 2) * w;
+      };
+      const [w, h, margin] = [330, 248, 16];
+      assert.ok(xOf(cp.fov, w, h) > w - margin, 'with the authored field of view the marker is cut by the phone frame (the reported state)');
+      assert.ok(xOf(fitFov(cp.fov, w / h), w, h) <= w - margin, 'with the fitted first view it is on the picture');
+    },
+  },
 ];

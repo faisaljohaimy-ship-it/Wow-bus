@@ -183,6 +183,16 @@ The URL is the truth (the view reads `location.hash`, so a router re-mount after
 - **Viewer modes**: WebGL sphere (ray-cast equirectangular, on-demand frames, no loop) → Canvas 2D cylindrical without
   WebGL → a static picture with the same hotspots under reduced motion / Static. Drag, pinch, wheel (Ctrl or focused),
   keyboard (arrows, + / −, 0), optional device orientation (iOS permission; never under reduced motion).
+- **First view** (v3.8.2): `yaw / pitch / fov` of a capture are authored for the 16:9 frame. In a narrower frame
+  (4:3 at ≤ 640 px) the viewer opens the vertical field of view until the horizontal reach is the same (`fitFov`,
+  78° → 94° at 4:3), so the markers of the first view — AIR-1069 and TC-2 on P360-S1-01 — are on the picture on a
+  phone as on a desktop (a marker within 16 px of the edge is still hidden rather than cut). The fit holds until the
+  reader moves or zooms and again after "back to the first view".
+- **A picture that cannot be loaded** (v3.8.2): the stage shows why — offline and not in this device's offline copy
+  (`spatial.p360.offline`; the full panorama is not precached, see `docs/offline.md`), or "could not be loaded"
+  (`spatial.p360.loadFailed`) — never the "no capture for this date" text, which belongs to the placeholder dates.
+  Under reduced motion the still picture is replaced by the same message (no broken image); choosing the date again
+  retries the load.
 - **Fixes in the same pass**: framed plans wider than 620 px scale each zone name / code / badge about its anchor so the
   smallest renders ≥ 12 px (`paintLabelBoost`, after the tween); "Show whole site" sits in a strip under the drawing at
   every width; the scale bar keeps its numbers on narrow plans; the zones table's stacked cells beat `.num-col`

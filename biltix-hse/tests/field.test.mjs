@@ -274,6 +274,49 @@ export const tests = [
     },
   },
   {
+    name: 'a failed action keeps why it failed: its message follows the language (it used to stay in the language it was created in)',
+    async fn() {
+      const { i18n } = await import('../js/core/i18n.js');
+      const enums = (await import('../js/i18n/enums.js')).default;
+      const unwrap = (d) => (d && d.enum ? d.enum : d);
+      i18n.register('enum', { ar: unwrap(enums.ar), en: unwrap(enums.en) });
+      freshStore();
+      const task = store.state.platform.tasks.find((t) => t.status === 'جديدة');
+      const outbox = off.createOutbox({ storage: off.memoryStorage() });
+      await outbox.enqueue('task.status', { taskId: task.id, code: task.code, from: 'متأخرة', to: 'قيد التنفيذ' }, { key: 'stale' });
+      await outbox.enqueue('alert.ack', { alertId: 'AL-none', code: 'AL-9999' }, { key: 'gone' });
+      const before = i18n.lang();
+      try {
+        await i18n.setLang('ar');
+        assert.deepEqual(await outbox.replay(off.storeApplier(store)), { applied: 0, skipped: 0, failed: 2 });
+        const stale = outbox.list().find((e) => e.key === 'stale');
+        const gone = outbox.list().find((e) => e.key === 'gone');
+        // the reason is stored language-neutral: a key and raw parameters (the status as its enum value)
+        assert.deepEqual(stale.why, { key: 'conflict', params: { code: task.code, status: 'جديدة' } });
+        assert.deepEqual(gone.why, { key: 'missing', params: { code: 'AL-9999' } });
+        assert.ok(/[\u0600-\u06FF]/.test(stale.error) && stale.error.includes(task.code), 'the sentence as first shown is kept too');
+        assert.equal(off.errorText(stale), stale.error, 'Arabic page: the Arabic sentence');
+        await i18n.setLang('en');
+        const en = off.errorText(stale);
+        assert.ok(!/[\u0600-\u06FF]/.test(en), `English page: no Arabic left ("${en}")`);
+        assert.ok(en.includes(task.code) && en.includes(i18n.label('taskStatus', 'جديدة')) && /Conflict/.test(en), en);
+        assert.ok(!/[\u0600-\u06FF]/.test(off.errorText(gone)) && off.errorText(gone).includes('AL-9999'));
+        // an entry saved before the reason was kept falls back to its sentence; no entry, no text
+        assert.equal(off.errorText({ status: 'failed', error: 'تعارض قديم' }), 'تعارض قديم');
+        assert.equal(off.errorText({ status: 'failed', error: 'x', why: { key: 'nope' } }), 'x');
+        assert.equal(off.errorText(null), '');
+        // a later successful replay clears both
+        store.updateTask(task.id, { status: 'متأخرة', by: 'اختبار' });
+        const res = await outbox.replay(off.storeApplier(store));
+        assert.equal(res.applied, 1);
+        const done = outbox.list().find((e) => e.key === 'stale');
+        assert.equal(done.status, 'synced'); assert.equal(done.error, null); assert.equal(done.why, null);
+      } finally {
+        await i18n.setLang(before);
+      }
+    },
+  },
+  {
     name: 'service worker: precache list matches the files on disk, never the MP4s; versioned caches',
     async fn() {
       const { precacheList, renderBlock } = await import('../tools/sw-precache.mjs');

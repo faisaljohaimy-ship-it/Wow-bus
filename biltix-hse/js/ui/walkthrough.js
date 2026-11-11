@@ -23,8 +23,15 @@
  * cycle would never reach the panel), and Esc closes the tour first — from the panel, from the drawer and from the
  * page — and leaves the drawer open. Any other dialog on top (the 360° viewer the last step opens, a shell drawer)
  * hides the panel and the ring until it closes, so the panel never covers it.
- * Language: on bus 'lang:change' the panel takes the new language and direction and puts the step's screen back
- * (the router re-mounts the view, and the risk drawer closes with it).
+ * Leaving: the tour closes when the reader leaves what it explains — a navigation away from the step's screen
+ * (a link, the tab bar, browser Back; bus 'ui:route-leave') or the explained drawer closed with its X / backdrop.
+ * The tour's own moves (Next / Back, a language or numerals re-mount) happen while `busy` is set and never close it.
+ * Language / numerals: on bus 'lang:change' and on a numerals change the panel is repainted at once (language,
+ * direction, digits) and the step's screen is put back (the router re-mounts the view, and the risk drawer closes
+ * with it).
+ * Room: below 960 px the panel sits above the tab bar while no drawer covers it; from 641 px up the drawer the
+ * tour explains leaves a 300 px column for the panel (they never overlap); on a short screen (a phone on its side)
+ * the page leaves the same column on the page steps.
  * Motion: one opacity/transform entrance of the panel and an opacity fade of the highlight ring — compositor
  * only, nothing replays on live updates (content renders on step change only), off under reduced motion,
  * the Static setting, forced colours and print (hidden in print).
@@ -61,6 +68,8 @@ const isEn = () => i18n.lang() !== 'ar';
 const pick = (ar, en) => (isEn() && en ? en : ar);
 const arr = (v) => (Array.isArray(v) ? v : []);
 const routeId = () => { try { return ((location.hash || '').replace(/^#\/?/, '').split('?')[0]) || ''; } catch { return ''; } };
+/** The route a step lives on. */
+const screenOf = (index) => (STEPS[index] === 'site' ? 'spatial' : 'airisks');
 const hashQuery = () => { try { const q = (location.hash || '').indexOf('?'); return new URLSearchParams(q === -1 ? '' : location.hash.slice(q + 1)); } catch { return new URLSearchParams(); } };
 const reduced = () => { try { return Boolean(components.reducedMotion()) || document.documentElement.getAttribute('data-bg') === 'static' || matchMedia('(forced-colors: active)').matches; } catch { return true; } };
 const cssEscape = (v) => (typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(String(v)) : String(v).replace(/["\\]/g, '\\$&'));
@@ -83,6 +92,18 @@ export function walkthroughAvailable(state, riskId = WORKED_RISK) {
   return Boolean(r && r.worked && arr(r.recommendationOptions).length);
 }
 const person = (name) => (name ? i18n.term(String(name)) : '—');
+/**
+ * Step 5's projected decision: `at` = the scenario's decision as an ISO instant in Riyadh time (the seed's zone; ''
+ * when it has no clock time) and `ahead` = that instant is still after `now`. The clock time is printed only while
+ * it is ahead: the record's instants move with the real clock (detection = now − 2 h 50) while the scenario keeps
+ * its calendar day and "10:05", so later in the day that time is past — and earlier than the detection of step 1 —
+ * next to the tag "Projected — not happened yet".
+ */
+export function projectedDecision(sc, now = new Date()) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String((sc && sc.decisionTime) || ''));
+  const at = sc && sc.decisionDate && m ? `${sc.decisionDate}T${m[1].padStart(2, '0')}:${m[2]}:00+03:00` : '';
+  return { at, ahead: Boolean(at) && Date.parse(at) > now.getTime() };
+}
 const sar = (n) => fmt.currency(n, { compact: true, digits: 1 });
 function addDays(iso, n) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
@@ -140,6 +161,24 @@ const STYLE_TEXT = `
   .drawer-head:has(> .wt-launch) { flex-wrap: wrap; }
   .drawer-head:has(> .wt-launch) > .drawer-titles { flex: 1 1 0; min-inline-size: 0; }
   .drawer-head > .wt-launch { order: 3; flex-basis: 100%; justify-content: center; }
+}
+/* Below 960 px the tab bar is the page's navigation: while no drawer covers it (data-side="end") the panel sits above it. */
+@media (max-width: 959.98px) {
+  .wt-panel[data-side="end"] { inset-block-end: calc(var(--tabbar-h, 60px) + env(safe-area-inset-bottom, 0px) + 8px); }
+}
+/* From 641 px up the drawer and the panel stand side by side: where the screen cannot hold both at full width
+   (below 1204 px) the drawer the tour explains leaves a 300 px column and the panel takes it. */
+@media (min-width: 641px) {
+  html.wt-on dialog.drawer.risk-drawer { inline-size: min(760px, calc(100% - 300px)); }
+  .wt-panel[data-side="start"] { inline-size: min(420px, max(276px, calc(100vw - 784px))); }
+}
+/* A short screen (a phone on its side) has no room above a bottom panel: on the page steps the page leaves the same
+   column, and the panel takes the height between the app bar and the tab bar. */
+@media (max-height: 480px) and (min-width: 641px) {
+  html.wt-on .main { padding-inline-end: 300px; }
+  .wt-panel { max-block-size: calc(100vh - var(--appbar-h, 56px) - 24px); }
+  .wt-panel[data-side="end"] { inline-size: 276px; max-block-size: calc(100vh - var(--appbar-h, 56px) - var(--tabbar-h, 60px) - env(safe-area-inset-bottom, 0px) - 24px); }
+  .wt-foot .wt-hint { display: none; }
 }
 @media (forced-colors: active) { .wt-ring { box-shadow: none; outline: 3px solid Highlight; } .wt-bar-fill { background: Highlight; } }
 @media print { .wt-panel, .wt-ring { display: none !important; } }
@@ -212,7 +251,8 @@ function content(stepId, risk, ctx) {
       break;
     }
     case 'decision': {
-      nodes.push(h('p', {}, P('body', { time: sc.decisionTime || '—', date: sc.decisionDate ? fmt.date(sc.decisionDate) : '—' })));
+      const { at, ahead } = projectedDecision(sc, nowOf(ctx));   // the clock time only while it is still to come
+      nodes.push(h('p', {}, P(ahead ? 'body' : 'bodyDay', { time: ahead ? fmt.time(at) : '', date: sc.decisionDate ? fmt.date(sc.decisionDate) : '—' })));
       const rows = [
         [P('by'), person(sc.decidedBy)],
         [P('accept'), code(arr(sc.accept).join(' + '))],
@@ -321,6 +361,9 @@ async function ensureScreen(stepId) {
     location.hash = '#/airisks?domain=bom';
     await waitFor(() => document.querySelector('.view-airisks'));
     await sleep(120);
+    // The drawer of the page just left (the tour was launched from it on #/bom) is still sliding out, still [open]
+    // and shows the same risk: it is not this step's drawer. Wait for it to go, then open the register's own.
+    if (unsettled()) await waitFor(() => !unsettled(), 2000);
   }
   let d = openDrawerEl();
   if (!tab) {
@@ -391,6 +434,8 @@ function placeRing() {
  * and a matching scroll padding, so scrollIntoView stops the target clear of the panel and the reader can still
  * scroll the end of that container into view. Kept while the next step uses the same container (no jump of its
  * scroll position in between); undone when the container changes and when the tour ends.
+ * A page target beside the panel (a short screen) still has the tab bar over the end of the page: the same room is
+ * made for the bar alone.
  */
 function undock() {
   const a = active;
@@ -423,6 +468,10 @@ function dock(target) {
     if (pr.height && tr.right > pr.left + 1 && tr.left < pr.right - 1) {   // not beside the panel
       sc = scrollerOf(target);
       room = Math.max(0, Math.round(window.innerHeight - pr.top + 12));
+    } else if (!target.closest('dialog[open]')) {                           // beside it: only the tab bar is in the way
+      const bar = document.getElementById('tabbar');
+      const br = bar && bar.getClientRects().length ? bar.getBoundingClientRect() : null;
+      if (br && br.height && br.top < window.innerHeight) { sc = scrollerOf(target); room = Math.max(0, Math.round(window.innerHeight - br.top + 12)); }
     }
   }
   if (a.docked && (a.docked.el !== sc || !room)) undock();
@@ -460,6 +509,9 @@ async function go(index, { focus = true } = {}) {
   }
   a.busy = false;
   a.resume = null;
+  // The reader went elsewhere while the step was on its way (a tap on the tab bar, Back): the tour does not stay
+  // over another page.
+  if (routeId() !== screenOf(n)) { stopWalkthrough('route'); return; }
   a.target = target;
   paint(stepId, { loading: false });   // first: the panel takes its height for this step, then the target is placed
   dock(target);
@@ -515,11 +567,14 @@ function dialogOnTop() {
 /**
  * Runs when a dialog opens or closes. Another dialog on top: the panel and the ring step aside (hidden) until it
  * closes — the panel is drawn above every dialog and would cover it (on a phone: most of the 360° picture and all
- * of its controls). The explained drawer closed under the tour: the ring leaves with its target.
+ * of its controls). The explained drawer closed by the reader: the tour closes.
  */
 function syncOverlays() {
   const a = active;
   if (!a) return;
+  // The reader closed the drawer this step explains (its X, the backdrop): the tour closes with it. The tour's own
+  // moves and a language / numerals re-mount close and reopen the drawer while `busy` is set.
+  if (!a.busy && DRAWER_TAB[STEPS[a.step]] && !openDrawerEl()) { stopWalkthrough('drawer'); return; }
   const away = Boolean(dialogOnTop());
   if (away !== a.away) {
     a.away = away;
@@ -596,6 +651,7 @@ export function startWalkthrough(ctx = {}, { riskId = WORKED_RISK, step = 0, ret
   const ring = h('div', { class: 'wt-ring', 'aria-hidden': 'true' });
   const animOn = !reduced();
   if (animOn) document.documentElement.classList.add('wt-anim');
+  document.documentElement.classList.add('wt-on');   // the layout rules that make room for the panel (STYLE_TEXT)
   document.body.append(ring, root);
   // a drawer / modal makes the rest of the page inert while it is open; the tour panel stays usable
   const inertGuard = new MutationObserver(() => { if (root.inert) root.inert = false; if (root.hasAttribute('inert')) root.removeAttribute('inert'); });
@@ -632,23 +688,41 @@ export function startWalkthrough(ctx = {}, { riskId = WORKED_RISK, step = 0, ret
   // Dialogs open and close in the overlay host: another dialog on top hides the panel, a closed drawer frees the ring.
   const overlayWatch = new MutationObserver(() => syncOverlays());
   overlayWatch.observe(document.getElementById('modals') || document.body, { childList: true });
-  // Language: new labels, text and direction at once. The router re-mounts the current view in the new language and
+  // Language or numerals: new labels, text, digits and direction at once. The router re-mounts the current view and
   // the risk drawer closes with it, so when the step lives on this route its screen is put back afterwards (drawer,
-  // target, ring) without moving the focus; ensureScreen() waits for the re-mount and the closing drawer.
-  const offLang = bus.on('lang:change', () => {
+  // target, ring) without moving the focus; ensureScreen() waits for the re-mount and the closing drawer. `busy` is
+  // set at once: the drawer that closes with the re-mount is not the reader closing it (syncOverlays).
+  const repaint = () => {
     const a = active;
     if (!a) return;
     paintChrome();
     paint(STEPS[a.step], { loading: false });
     scheduleRing();
-    if (routeId() !== (STEPS[a.step] === 'site' ? 'spatial' : 'airisks')) return;
+    if (routeId() !== screenOf(a.step)) return;
     const seq = ++a.seq;   // a step change still on its way is replaced by this one
+    a.busy = true;
     setTimeout(() => { if (active === a && seq === a.seq) go(a.step, { focus: false }); }, 0);
+  };
+  const offLang = bus.on('lang:change', repaint);
+  // The shell applies the new numerals to fmt before this runs (its listener is older), so the repaint has them.
+  const numeralsOf = (st) => (st && st.numerals === 'arab' ? 'arab' : 'latn');
+  let numerals = numeralsOf(stateOf(ctx).settings);
+  const offSettings = bus.on('settings:change', (p) => {
+    const next = numeralsOf((p && p.settings) || stateOf(active ? active.ctx : ctx).settings);
+    if (next === numerals) return;
+    numerals = next;
+    repaint();
+  });
+  // The reader leaves the step's screen (a link, the tab bar, browser Back): the tour closes instead of staying on
+  // its step over another page. The router emits this before it swaps the view; the tour's own moves are `busy`.
+  const offRoute = bus.on('ui:route-leave', (p) => {
+    const a = active;
+    if (a && !a.busy && p && p.to && p.to !== screenOf(a.step)) stopWalkthrough('route');
   });
   const opener = returnFocus || (document.activeElement && document.activeElement !== document.body ? document.activeElement : null);
   active = { ctx: ctx || {}, riskId: risk.id, step: 0, seq: 0, root, ring, kicker, title, progress, body, prev, next, closeX, hint, target: null, ringRaf: 0, opener, docked: null, away: false, busy: false, resume: null,
     cleanup: () => {
-      inertGuard.disconnect(); overlayWatch.disconnect(); offLang();
+      inertGuard.disconnect(); overlayWatch.disconnect(); offLang(); offSettings(); offRoute();
       document.removeEventListener('keydown', onKeyCapture, true); window.removeEventListener('keydown', onKeyLate);
       window.removeEventListener('resize', onMove); document.removeEventListener('scroll', onMove, true); window.removeEventListener('hashchange', onHash);
     } };
@@ -661,7 +735,10 @@ export function startWalkthrough(ctx = {}, { riskId = WORKED_RISK, step = 0, ret
   return true;
 }
 
-/** Closes the walkthrough and returns focus to the control that opened it (or the page heading). */
+/**
+ * Closes the walkthrough and returns focus to the control that opened it (or the page heading). `reason` 'route'
+ * (the reader navigated away): the router moves the focus to the new page's heading, so it is left alone here.
+ */
 export function stopWalkthrough(reason = 'close') {
   const a = active;
   if (!a) return;
@@ -674,7 +751,8 @@ export function stopWalkthrough(reason = 'close') {
   const keepFocus = Boolean(at && at !== document.body && at !== document.documentElement && at.isConnected && !a.root.contains(at) && !at.closest('[inert]'));
   a.root.remove();
   a.ring.remove();
-  document.documentElement.classList.remove('wt-anim');
+  document.documentElement.classList.remove('wt-anim', 'wt-on');
+  if (reason === 'route') return reason;
   // Focus goes back to the opener; when that is gone, into the dialog that is open (the page behind it is inert:
   // the risk drawer's selected tab, the 360° viewer's close button), else to the page heading. A focus that is
   // already on a live control outside the panel (inside the drawer, on the page) stays where the reader put it.
@@ -720,4 +798,4 @@ export function installDrawerHook(ctx = {}) {
   check();
 }
 
-export default { startWalkthrough, stopWalkthrough, isWalkthroughActive, installDrawerHook, attachTourButton, walkthroughAvailable, WORKED_RISK };
+export default { startWalkthrough, stopWalkthrough, isWalkthroughActive, installDrawerHook, attachTourButton, walkthroughAvailable, projectedDecision, WORKED_RISK };
