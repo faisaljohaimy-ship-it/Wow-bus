@@ -14,6 +14,34 @@ Styles: `css/base.css` (shell), `css/components.css`, `css/charts.css`, `css/pla
 - Interactive targets ≥ 40 px on coarse pointers; focus ring = 2 px `--focus`, 2 px offset.
 - Motion: transform/opacity, 160 ms (micro) / 260 ms (main). No infinite animation except the live
   dot and the cinematic background.
+- Shapes follow one language (below): squircle tiles, pills, capsule lights, curved corner accents.
+  No sharp squares or square tabs in new components.
+
+## Shape language (v3.5)
+
+Defined once at the top of `css/components.css` ("Shape language"), tuned per theme with custom properties
+(`--tile-*`, `--pill-hl`, `--corner-*`, `--seg-*`, `--tab-light`, `--tab-glow`). CSS only: no markup or
+script changes.
+
+| Shape | Where | Rule |
+|---|---|---|
+| **Squircle tile** | `.metric-icon`, `.domain-icon`, `.tile-icon`, `.int-icon`, `.evidence-icon`, `.feed-icon`, `.urgent-icon`, `.state-icon` / `.empty-icon`, `.priority-rank` | 30 % round corners; where `corner-shape` is supported a true squircle (`border-radius: 50%; corner-shape: squircle`, the same visual weight). Soft tonal gradient (`--tile-tone` at 26 → 11 % over `--bg-2` dark, 17 → 6 % over white light), a top-start sheen, an inner top highlight and a small drop tinted by the tone. The tone comes from the nearest `--tone` (tile, row, card); a component sets only its size and, when it must differ, `--tile-tone` / `--tile-ink`. Category icons (domain, integration, evidence link) are brand-tinted neutrals: their state lives in the badge beside them. |
+| **Pill** | `.chip`, `.badge`, `.status-badge`, `.seg`, `.tab-count`, `.chip-count`, `.kanban-count`, `.filter-bar-count`, `.sim-tag`, `.evidence-local`, `.feed-source`, `.feed-sim`, `.controls-type`, `.site-code`, `.countdown` | Full-round ends and one height scale: counts 18 · badges 20 / 22 / 26 · chips 26 / 32 · segmented `--ctl-h`. Light theme adds a 1 px inner top highlight (`--pill-hl`). `.badge.is-square` is a soft 7 px rectangle, never a sharp box. |
+| **Capsule light** | tone stripes of `.tile`, `.metric-tile`, `.domain-card`, `.int-card`, `.kanban-card`, `.kanban-col-head`, `.alert-item`, `.urgent-item`, `.toast` | A 4 px capsule set into the frame (it straddles the border) with a faint glow in its tone. Card-like hosts carry a 24 px light level with their head; list rows a light the height of the row; metric tiles and kanban column heads a tapered light along the top edge. Decoration only: the icon + word next to it carry the state. |
+| **Corner accent** | `.card.is-framed` (not hero, plain or nested) | Four curved nickel-orange arcs, concentric with the card corner (1.5 px ring inset 5 px, radius = card radius − edge − 5 px), bright on the block-start / inline-start sides and deep on the others (mirrors in Arabic), faded along each edge by a mask over ~24 px. Static: painted once; only a clickable card's hover / focus raises its opacity. Cards whose body is a flush table drop the two corners the table touches. Replaces the v3.0 CAD brackets (the Edges rule keeps their transparent layers so the metal rule stays untouched). |
+| **Glide** | `.seg` thumb, tab light | See "Segmented, chips, tabs". Transform + opacity only, 220–240 ms on `--ease-glide`. |
+
+Micro-motion: icon tiles lift 1 px and grow 6 % when their own clickable host is hovered or focused;
+chips lift 1 px on hover and press to 97 %; all offsets are multiplied by `--shell-fx` (0 under reduced
+motion) and transitions are 160 ms. Nothing moves at rest: no shape adds an idle animation, so the
+Static background, reduced motion and print need no extra switch.
+Forced colours: tiles become Canvas squircles with a CanvasText border, the selected segment is filled
+with Highlight, the tab light is Highlight, corner accents are dropped, capsule lights are CanvasText.
+Print: shadows and glows are dropped, corner accents are dropped, the selected segment keeps its thumb
+with a grey outline.
+
+**Do** give a new icon box one of the tile classes (or the same rule set) and let it inherit `--tone`.
+**Don't** add a square status marker, a full-height square stripe or an idle animation to a shape.
 
 ---
 
@@ -43,7 +71,8 @@ See tokens §2. `.view-head` holds `.code-tag` (mono module code, gold diamond) 
 
 `.card` > `.card-head` (`.card-titles`: `.card-code`, `.card-title`, `.card-sub`; `.card-actions`)
 + `.card-body` (+ `.card-foot`). Variants: `.is-hero` (one per screen: gold hairline + faint inner
-light), `.is-framed` (quiet CAD corner brackets), `.is-plain` (nested, no shadow), `.is-compact`,
+light), `.is-framed` (curved nickel-orange corner accents, see Shape language; the default of
+`components.card()`), `.is-plain` (nested, no shadow), `.is-compact`,
 `.is-flat`, `.is-fill`, `.is-clickable` (hover border; otherwise cards do not react to hover),
 `.card-body.is-flush` (tables edge to edge).
 Edges (tokens §3.1): every top-level card and tile has the nickel-orange metal border and evenly
@@ -64,7 +93,8 @@ columns hide below 720 / 520 px, lifecycle and priority list re-flow.
 with arrow icon + `.metric-helper` comparison period). Four across ≥ 1080 px of content, 2 × 2 below.
 (v3.1: the line `svg.metric-spark` and the completion tile's `.metric-progress` are no longer used by
 the cockpit; the ring shows the same ratio.)
-The tone sets the top accent bar and icon only — the number stays `--ink-1`.
+The tone sets the top capsule light (tapered, set into the top frame) and the squircle icon tile only —
+the number stays `--ink-1`.
 **Do** state the comparison period in `.metric-helper`. **Don't** colour the number.
 
 ## Domain cards — `.domain-grid` > `.domain-card[data-rating]`
@@ -72,17 +102,20 @@ The tone sets the top accent bar and icon only — the number stays `--ink-1`.
 `.domain-head` (`.domain-icon`, `.domain-name`, `.rating`) + `.domain-score` (`.t-metric` +
 `.domain-scale` "/100", one LTR run, now centred in the dial) + `.ck-dial` (score/100 ring coloured
 by the rating, 12 radial weekly bars; see Charts) + `.domain-meta` (`strong` counts) + optional
-`.domain-foot`. Five across at ≥ 1240 px content, 3 / 2 / 1 below. The rating sets the
-inline-start stripe; the rating badge carries icon + word.
+`.domain-foot`. Five across at ≥ 1240 px content, 3 / 2 / 1 below. The rating sets the 24 px capsule
+light in the inline-start frame, level with the head; the rating badge carries icon + word.
+`.domain-icon` is a brand-tinted squircle (a category, not a state).
 
 ## Badges
 
-- `.badge.tone-*` (+ `.is-solid`, `.is-lg`, `.is-code`, `.is-square`): generic labels.
+- `.badge.tone-*` (+ `.is-solid`, `.is-lg`, `.is-code`, `.is-square` = soft 7 px rectangle): generic
+  labels, pills 22 px (`.is-lg` 26).
 - `.rating.is-red|is-yellow|is-green` (or `[data-rating]`): risk rating with an icon.
 - `.status-badge[data-status]` (`demo | live | offline | stale | error | not_connected`, also
   `.is-<status>`, `.is-sm`, `.is-lg`) > icon + `.status-badge-label`. Owns its colours; never add a
   `.tone-*` to it. Dashed border = simulated / not connected.
-- `.sim-tag` / `.illustrative`: inline "Illustrative values / Simulated" marker next to demo numbers.
+- `.sim-tag` / `.illustrative`: inline "Illustrative values / Simulated" marker next to demo numbers
+  (dashed pill, 20 px).
 - `.type-chip`, `.cat-chip`, `.source-chip`, `.writeback-chip[data-status]` (platform.css).
 
 ## Buttons — `.btn`
@@ -115,15 +148,29 @@ displayed dates with `fmt` (`fmt.date`, `fmt.dateTime`, `fmt.time`, which show i
 
 ## Segmented, chips, tabs
 
-- `.seg` > `.seg-btn[aria-pressed|aria-checked|aria-selected]` (`.seg-sm`, `.is-block`). Dark:
-  brand-tinted selection; light: raised white pill.
+- `.seg` > `.seg-btn[aria-pressed|aria-checked|aria-selected|.is-active]` (`.seg-sm`, `.is-block`): a
+  recessed pill track with a raised thumb (light: white pill with a hairline ring and soft drop; dark:
+  brand-tinted pill with a brand ring). The selected label is `--seg-on-ink` (brand text light, ink-1
+  dark) at 600 weight. The radius is half of one row (`--seg-btn-h / 2 + --seg-pad + 1px`), so a group
+  that wraps (filter bars and settings on phones) stays a rounded panel rather than a stadium.
+  **Gliding thumb, CSS only:** each button's `::before` is a thumb. Hidden thumbs rest one button-width
+  toward the selected button (`--seg-from`: +1 for buttons before it via `:has(~ …)`, −1 after it, times
+  `--dir`). On a change the old thumb travels toward the new option while it fades (opacity ease-in) and
+  the new one arrives from the old side while it appears (ease-out), both on `--ease-glide` in 220 ms, so
+  the light moves from one option to the other on transform + opacity alone. Exact for neighbours; a
+  jump across several options travels one width. Size variants only set `--seg-pad` / `--seg-btn-h`
+  (`.filter-bar .seg` is 2 / `--ctl-h-sm − 6`; coarse pointers 40 px).
 - `.chips` / `.chip-group` > `.chip[aria-pressed]` (`.chip-count`, `.chip-remove`, `.is-sm`,
   `.chips.is-scroll` = single swipe row below 600 px; a filter-bar chip group marked
   `.chips.is-scroll` stays a swipe row at any width, other rows wrap from 600 px).
 - Counts and auto-numbers (`.chip-count`, `.tab-count`, `.drawer-tab-count`, `.kanban-count`,
   `.priority-rank`, `.lifecycle-dot`, `.step-dot`) use `--font-mono-mixed`: IBM Plex Mono has no
   Arabic-Indic digits, so with `data-numerals="arab"` they come from the Plex Arabic face, not a system font.
-- `.tabs` > `.tab[role=tab][aria-selected]` (+ `.tab-count`): underline tabs for page / card views.
+- `.tabs` > `.tab[role=tab][aria-selected]` (+ `.tab-count`), and `.drawer-tabs` > `.drawer-tab`: the
+  selected tab carries a 3 px brand → accent capsule light on the list hairline (`::after`, with a soft
+  glow) plus ink-1 / 600 text; hover shows a rounded plate behind the label (`::before`). The light
+  glides between tabs with the same resting-side rule as the segmented thumb (`--tab-from`, 240 ms).
+  Focus ring: 2 px, inset 4 px, radius 10.
 
 ## Filter bar — `.filter-bar` (components.filterBar)
 
@@ -176,7 +223,7 @@ holding `video[controls]` (captions styled via `::cue`) or `button.video-poster`
 - Chart tooltip `#tooltip` (charts.css): bg-3 dark / white light. Static hints: `[data-tip]`
   (pure CSS, not inside scrolling containers). Collapsed rail: `.rail-tip`.
 - `.toast-stack` > `.toast.tone-*.is-in` (`.toast-icon`, `.toast-text`: `.toast-title`,
-  `.toast-msg`; `.toast-action`, `.toast-close`). Tone stripe at inline-start. Toasts never claim a
+  `.toast-msg`; `.toast-action`, `.toast-close`). Tone capsule light at inline-start. Toasts never claim a
   success that did not happen; simulated operations say "Simulated". While a modal or drawer is open,
   components.js docks `#toasts` inside the topmost dialog (`.toast-stack.is-docked`, in flow between the
   body and the footer): a toast never covers the dialog's controls and stays outside the inert page.
@@ -192,14 +239,16 @@ holding `video[controls]` (captions styled via `::cue`) or `button.video-poster`
 
 ## Kanban
 
-`.kanban` > `.kanban-col` (`.kanban-col-head` with tone top bar, `.kanban-col-title`, `.kanban-count`)
+`.kanban` > `.kanban-col` (`.kanban-col-head`: a tapered capsule light in the column tone set into the
+top frame over a faint tonal wash, live dot, `.kanban-col-title`, `.kanban-count` pill)
 > `.kanban-cards` > `.kanban-card[.tone-*]` (`.kanban-card-bar`, `.kanban-card-title`,
-`.kanban-card-meta`, `.kanban-card-foot`). States: `.is-over` (drop target), `.is-dragging`;
+`.kanban-card-meta`, `.kanban-card-foot`; a 22 px capsule light by the card head). States: `.is-over` (drop target), `.is-dragging`;
 overflow fade via `.is-overflowing` + `.is-scroll-start|end`; `.kanban-hint`.
 
 ## States — empty, loading, error, offline, skeleton
 
-`.state.state-loading|state-error|state-offline` > `.state-icon` + `.state-title` + `.state-text`
+`.state.state-loading|state-error|state-offline` > `.state-icon` (squircle tile: brand while loading,
+critical on error, dashed neutral offline) + `.state-title` + `.state-text`
 (+ `.state-detail` mono, `.state-actions` > `.state-action`). Variants: `.is-compact`, `.is-inline`
 (row, for inside cards), `.is-cancelled`. Legacy `.empty` shares the look. `.skeleton` >
 `.skeleton-line` (finite pulse, static under reduced motion; `.skeleton.is-card`, `.skeleton-block`).
@@ -209,7 +258,8 @@ for data that is already local.
 
 ## Priority actions — `ol.priority-list` > `li.priority-item.tone-*`
 
-`.priority-rank` (auto-numbered, Arabic-Indic with `data-numerals="arab"`) + `.priority-main`
+`.priority-rank` (squircle number tile in the row's tone; auto-numbered, Arabic-Indic with
+`data-numerals="arab"`; the number keeps ≥ 4.5:1 on the tile in both themes) + `.priority-main`
 (`.priority-title`, `.priority-meta`) + `.priority-side` (`.rating`, `.priority-due[.is-overdue]`) +
 optional `.priority-action`. Rows ≥ 60 px; re-flows in narrow cards.
 
@@ -231,8 +281,8 @@ optional `.lifecycle-action`. Horizontal in wide cards (scrolls if needed); 2-co
 
 ## Evidence attachments — `ul.evidence-list` > `li.evidence-item[data-kind]`
 
-`data-kind="link|note|file"` > `.evidence-icon` + `.evidence-body` (`.evidence-title` — an `a` for
-links, `.evidence-meta`) + `.evidence-local` ("Local only", dashed) + `.evidence-actions`. Adding:
+`data-kind="link|note|file"` > `.evidence-icon` (squircle: neutral note, brand link, accent file) + `.evidence-body` (`.evidence-title` — an `a` for
+links, `.evidence-meta`) + `.evidence-local` ("Local only", dashed pill) + `.evidence-actions`. Adding:
 `.evidence-add`, `.evidence-dropzone[.is-over]`. Platform evidence quotes: `.evidence`
 (`.evidence-ref`, `.source-chip`, `.evidence-excerpt` with «» in Arabic, “ ” in English).
 
