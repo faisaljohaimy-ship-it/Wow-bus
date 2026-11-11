@@ -99,7 +99,8 @@
   <!-- Module preloads: the whole static graph of js/app.js (core, i18n runtime + shell/UI dictionaries, status,
        motion, components, view registry), the boot-time dynamic imports (enum labels, charts, radar, art, both
        seeds, platform selectors) and the home view with its explainer hero (component + media manifest). The English data dictionaries (js/i18n/data/) are NOT
-       preloaded: they load on the first switch to English. Other views load on first navigation. -->
+       preloaded: English sessions (the default) load them at boot in parallel with the optional modules (a modulepreload
+       measured no gain), Arabic sessions only on a switch to English. Other views load on first navigation. -->
   <link rel="modulepreload" href="js/app.js">
   <link rel="modulepreload" href="js/core/bus.js">
   <link rel="modulepreload" href="js/core/i18n.js">
@@ -130,26 +131,26 @@
   <link rel="modulepreload" href="js/data/explainer-media.js">
 </head>
 <body class="app" data-view="cockpit">
-  <a class="skip-link" href="#main" data-i18n="core.shell.skip">تخطي إلى المحتوى</a>
+  <a class="skip-link" href="#main" data-i18n="core.shell.skip">Skip to content</a>
 
   <div class="backdrop" id="backdrop" aria-hidden="true"></div>
 
   <header class="appbar" id="appbar">
     <div class="appbar-start">
-      <button type="button" class="rail-toggle btn btn-ghost btn-icon" id="railToggle" aria-label="طيّ شريط التنقل" aria-expanded="true" aria-controls="rail">
+      <button type="button" class="rail-toggle btn btn-ghost btn-icon" id="railToggle" aria-label="Collapse navigation" aria-expanded="true" aria-controls="rail">
         <span class="rail-toggle-bars" aria-hidden="true"><i></i><i></i><i></i></span>
       </button>
-      <a class="brand" href="#/cockpit" id="brandLink" aria-label="بلتكس Risk AI — قمرة قيادة المخاطر (الرئيسية)">
+      <a class="brand" href="#/cockpit" id="brandLink" aria-label="BILTIX Risk AI — risk cockpit (home)">
         <span class="brand-mark" aria-hidden="true"></span>
         <span class="brand-text">
-          <span class="brand-name" id="brandName">بلتكس Risk AI</span>
-          <span class="brand-tag" id="brandTag" data-i18n="core.app.tagline">قمرة قيادة المخاطر — خمسة مجالات، تصنيف فوري، معالجة مُتتبعة</span>
+          <span class="brand-name" id="brandName">BILTIX Risk AI</span>
+          <span class="brand-tag" id="brandTag" data-i18n="core.app.tagline">Risk cockpit — five domains, instant rating, tracked mitigation</span>
         </span>
       </a>
     </div>
 
     <div class="appbar-center">
-      <div class="clock" id="clock" role="group" aria-label="الوقت والتاريخ — توقيت الرياض" data-i18n-aria="core.shell.clockAria">
+      <div class="clock" id="clock" role="group" aria-label="Time and date — Riyadh time" data-i18n-aria="core.shell.clockAria">
         <time class="clock-time mono" id="clockTime" aria-live="off">--:--:--</time>
         <span class="clock-dates">
           <span class="clock-date" id="clockDate"></span>
@@ -159,7 +160,7 @@
       </div>
       <button type="button" class="cmdk-btn" id="cmdkBtn" aria-haspopup="dialog" aria-controls="cmdk" aria-expanded="false">
         <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
-        <span class="cmdk-btn-label" data-i18n="core.shell.search">بحث…</span>
+        <span class="cmdk-btn-label" data-i18n="core.shell.search">Search…</span>
         <kbd class="cmdk-kbd mono" aria-hidden="true">Ctrl+K</kbd>
       </button>
     </div>
@@ -169,39 +170,39 @@
         <span class="rating-dot" id="scoreDot" aria-hidden="true"></span>
         <span class="pill-value mono" id="scoreValue">—</span>
         <span class="score-pill-delta mono" id="scoreDelta" hidden></span>
-        <span class="pill-label" id="scoreLabel">الدرجة الموحدة</span>
+        <span class="pill-label" id="scoreLabel">Consolidated score</span>
       </button>
       <!-- Data status (CONTRACT §5): Demo · local data / Live / Stale / Error / Offline, with an explanatory popover. -->
       <div class="data-status data-chip-wrap" id="dataStatus">
         <button type="button" class="data-chip" id="dataChip" data-status="demo" aria-haspopup="dialog" aria-expanded="false" aria-controls="dataPopover">
           <span class="data-chip-icon" id="dataChipIcon" aria-hidden="true"></span>
-          <span class="data-chip-label" id="dataChipLabel">تجريبي · بيانات محلية</span>
+          <span class="data-chip-label" id="dataChipLabel">Demo · local data</span>
           <span class="data-chip-offline" id="dataChipOffline" hidden></span>
         </button>
         <div class="data-popover" id="dataPopover" role="dialog" aria-modal="false" aria-labelledby="dataPopoverTitle" hidden></div>
       </div>
-      <button type="button" class="btn btn-ghost btn-icon activity-toggle" id="activityToggle" aria-controls="activityPanel" aria-expanded="false" aria-label="النشاط">
+      <button type="button" class="btn btn-ghost btn-icon activity-toggle" id="activityToggle" aria-controls="activityPanel" aria-expanded="false" aria-label="Activity">
         <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 12h4l3-8 4 16 3-8h4"></path></svg>
         <span class="activity-count mono" id="activityCount" hidden>0</span>
       </button>
-      <button type="button" class="btn btn-ghost btn-icon bell-btn" id="bellBtn" aria-label="التنبيهات" aria-haspopup="dialog">
+      <button type="button" class="btn btn-ghost btn-icon bell-btn" id="bellBtn" aria-label="Alerts" aria-haspopup="dialog">
         <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"></path><path d="M10 20a2 2 0 0 0 4 0"></path></svg>
         <span class="bell-count mono" id="bellCount" hidden>0</span>
       </button>
       <!-- Language switch "ع | EN" (each option names its language in that language). -->
-      <div class="lang-switch" id="langSwitch" role="group" aria-label="لغة الواجهة">
+      <div class="lang-switch" id="langSwitch" role="group" aria-label="Interface language">
         <button type="button" class="lang-opt" data-lang="ar" lang="ar" aria-label="العربية" aria-pressed="false">ع</button>
         <button type="button" class="lang-opt" data-lang="en" lang="en" aria-label="English" aria-pressed="true">EN</button>
       </div>
-      <button type="button" class="btn btn-ghost btn-icon theme-btn" id="themeBtn" aria-label="تبديل السمة" aria-pressed="false">
+      <button type="button" class="btn btn-ghost btn-icon theme-btn" id="themeBtn" aria-label="Switch to the dark theme" aria-pressed="false">
         <svg class="icon theme-icon-dark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"></path></svg>
         <svg class="icon theme-icon-light" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
       </button>
       <button type="button" class="user-chip" id="userChip">
-        <span class="user-avatar" id="userAvatar" aria-hidden="true">ف</span>
+        <span class="user-avatar" id="userAvatar" aria-hidden="true">F</span>
         <span class="user-text">
-          <span class="user-name" id="userName">م. فيصل الحربي</span>
-          <span class="user-role" id="userRole">ملف تجريبي</span>
+          <span class="user-name" id="userName">Eng. Faisal Al-Harbi</span>
+          <span class="user-role" id="userRole">Demo profile</span>
         </span>
       </button>
     </div>
@@ -211,9 +212,9 @@
   </header>
 
   <!-- Visual banner only: the alert is spoken once through #liveAnnouncer, so no role="alert" here. -->
-  <div class="alert-banner" id="alertBanner" role="region" aria-label="تنبيه حرج" hidden></div>
+  <div class="alert-banner" id="alertBanner" role="region" aria-label="Critical alert" hidden></div>
 
-  <nav class="rail" id="rail" aria-label="التنقل الرئيسي">
+  <nav class="rail" id="rail" aria-label="Main navigation">
     <ul class="rail-list" id="railList" role="list"></ul>
     <div class="rail-foot">
       <a class="rail-site mono" href="https://biltix.sa" target="_blank" rel="noopener noreferrer">biltix.sa</a>
@@ -221,22 +222,47 @@
     </div>
   </nav>
 
-  <div class="filters" id="filters" role="region" aria-label="عوامل التصفية العامة">
+  <div class="filters" id="filters" role="region" aria-label="Global filters">
     <div class="filters-group">
-      <label class="filters-label" for="siteSelect" id="siteLabel">المشروع</label>
+      <label class="filters-label" for="siteSelect" id="siteLabel">Project</label>
       <select class="field-control filters-site" id="siteSelect" name="siteId">
-        <option value="all">جميع المشاريع</option>
+        <option value="all">All projects</option>
       </select>
     </div>
     <div class="filters-group">
-      <span class="filters-label" id="rangeLabel">الفترة</span>
+      <span class="filters-label" id="rangeLabel">Period</span>
       <div class="filters-range" id="rangeSeg" aria-labelledby="rangeLabel"></div>
     </div>
     <div class="filters-group filters-search">
-      <label class="sr-only" for="searchInput" id="searchLabel">بحث في المخاطر الذكية والعقود والمهام والحوادث والتصاريح</label>
-      <input class="field-control" id="searchInput" name="search" type="search" placeholder="ابحث بالرمز أو العنوان…" autocomplete="off" spellcheck="false" enterkeyhint="search">
+      <label class="sr-only" for="searchInput" id="searchLabel">Search AI risks, contracts, tasks, incidents and permits</label>
+      <input class="field-control" id="searchInput" name="search" type="search" placeholder="Search by code or title…" autocomplete="off" spellcheck="false" enterkeyhint="search">
     </div>
   </div>
+
+  <script>
+    /*
+     * Pre-paint, part 2. The static labels above are the English (default) values of js/i18n/core.js. An Arabic session
+     * (html[lang="ar"], set by the head script) gets the visible ones in Arabic before the first frame, so neither language
+     * flashes the other; js/app.js then localises the whole shell from the dictionaries. Keep in step with core.ar.
+     */
+    (function () {
+      if (document.documentElement.getAttribute('lang') !== 'ar') return;
+      var text = {
+        brandName: 'بلتكس Risk AI', brandTag: 'قمرة قيادة المخاطر — خمسة مجالات، تصنيف فوري، معالجة مُتتبعة',
+        scoreLabel: 'الدرجة الموحدة', dataChipLabel: 'تجريبي · بيانات محلية',
+        userAvatar: 'ف', userName: 'م. فيصل الحربي', userRole: 'ملف تجريبي',
+        siteLabel: 'المشروع', rangeLabel: 'الفترة', searchLabel: 'بحث في المخاطر الذكية والعقود والمهام والحوادث والتصاريح',
+      };
+      try {
+        for (var id in text) { var el = document.getElementById(id); if (el) el.textContent = text[id]; }
+        var q = function (sel) { return document.querySelector(sel); };
+        if (q('.skip-link')) q('.skip-link').textContent = 'تخطي إلى المحتوى';
+        if (q('#cmdkBtn .cmdk-btn-label')) q('#cmdkBtn .cmdk-btn-label').textContent = 'بحث…';
+        if (q('#siteSelect option[value="all"]')) q('#siteSelect option[value="all"]').textContent = 'جميع المشاريع';
+        if (q('#searchInput')) q('#searchInput').setAttribute('placeholder', 'ابحث بالرمز أو العنوان…');
+      } catch (e) { /* js/app.js localises the shell anyway */ }
+    })();
+  </script>
 
   <main id="main" class="main" tabindex="-1"></main>
 
@@ -244,13 +270,13 @@
        critical alerts are announced once through #liveAnnouncer. -->
   <aside class="activity-panel" id="activityPanel" aria-labelledby="activityTitle" data-state="closed" inert>
     <header class="activity-head feed-head">
-      <h2 class="activity-title feed-title" id="activityTitle">النشاط</h2>
+      <h2 class="activity-title feed-title" id="activityTitle">Activity</h2>
       <span class="activity-mode" id="activityMode"></span>
       <span class="feed-count mono" id="feedCount"><span class="sr-only" id="feedCountLabel"></span><span id="feedCountValue" aria-hidden="true">0</span></span>
       <div class="activity-actions">
         <button type="button" class="btn btn-ghost btn-sm activity-pause" id="activityPause" aria-pressed="false">
           <span class="live-dot tone-accent" aria-hidden="true"></span>
-          <span class="activity-pause-label" id="activityPauseLabel">إيقاف مؤقت</span>
+          <span class="activity-pause-label" id="activityPauseLabel">Pause</span>
         </button>
         <button type="button" class="btn btn-ghost btn-icon activity-pin" id="activityPin" aria-pressed="false" hidden>
           <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 4h6l-1 6 3 3H7l3-3-1-6z"></path><path d="M12 13v7"></path></svg>
@@ -264,11 +290,11 @@
     <ul class="feed-list activity-list" id="feedList" role="log" aria-live="off"></ul>
     <footer class="activity-foot feed-foot">
       <span class="feed-status activity-status" id="feedStatus"></span>
-      <button type="button" class="btn btn-ghost btn-sm" id="feedAll">عرض الكل</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="feedAll">View all</button>
     </footer>
   </aside>
 
-  <nav class="tabbar" id="tabbar" aria-label="التنقل السريع"></nav>
+  <nav class="tabbar" id="tabbar" aria-label="Quick navigation"></nav>
 
   <!-- Single assertive live region: app.js announces each critical / serious alert here exactly once. -->
   <div class="sr-only" id="liveAnnouncer" aria-live="assertive" aria-atomic="true"></div>
@@ -279,18 +305,18 @@
 
   <div class="cmdk" id="cmdk" hidden>
     <div class="cmdk-backdrop" data-cmdk-close></div>
-    <div class="cmdk-panel" role="dialog" aria-modal="true" aria-label="لوحة الأوامر" id="cmdkPanel">
+    <div class="cmdk-panel" role="dialog" aria-modal="true" aria-label="Command palette" id="cmdkPanel">
       <div class="cmdk-search">
         <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
-        <label class="sr-only" for="cmdkInput" id="cmdkInputLabel">ابحث عن صفحة أو إجراء أو رمز</label>
+        <label class="sr-only" for="cmdkInput" id="cmdkInputLabel">Search for a section, an action or a code</label>
         <input class="cmdk-input" id="cmdkInput" type="text" placeholder="" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="cmdkList" aria-autocomplete="list" aria-activedescendant="">
         <kbd class="cmdk-kbd mono" aria-hidden="true">Esc</kbd>
       </div>
-      <ul class="cmdk-list" id="cmdkList" role="listbox" aria-label="النتائج"></ul>
+      <ul class="cmdk-list" id="cmdkList" role="listbox" aria-label="Results"></ul>
       <footer class="cmdk-foot" aria-hidden="true">
-        <span><kbd class="mono">↑</kbd><kbd class="mono">↓</kbd> <span id="cmdkFootNav">تنقّل</span></span>
-        <span><kbd class="mono">Enter</kbd> <span id="cmdkFootRun">تنفيذ</span></span>
-        <span><kbd class="mono">Esc</kbd> <span id="cmdkFootClose">إغلاق</span></span>
+        <span><kbd class="mono">↑</kbd><kbd class="mono">↓</kbd> <span id="cmdkFootNav">Navigate</span></span>
+        <span><kbd class="mono">Enter</kbd> <span id="cmdkFootRun">Run</span></span>
+        <span><kbd class="mono">Esc</kbd> <span id="cmdkFootClose">Close</span></span>
       </footer>
     </div>
   </div>

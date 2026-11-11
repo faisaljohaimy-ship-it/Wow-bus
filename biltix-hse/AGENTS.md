@@ -31,7 +31,7 @@ real BILTIX, Primavera P6, Autodesk APS, Oracle or sensor system. The UI must sa
 ## Commands
 
 ```bash
-python3 -m http.server 8080            # serve; open http://localhost:8080 (English: ?lang=en)
+python3 -m http.server 8080            # serve; open http://localhost:8080 (English by default; Arabic: ?lang=ar)
 node tests/run.mjs                     # unit tests: scoring, metrics, lifecycle, import, report, time, settings
 node --check js/path/to/file.js        # syntax check a module (there is no bundler to catch it)
 node tools/qa.mjs --lang ar,en --theme dark,light --viewport 1440x900,390x844 --out ./qa-out

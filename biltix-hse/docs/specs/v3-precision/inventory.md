@@ -22,7 +22,7 @@ repository.
 
 | Function | Status | Notes | Evidence |
 |---|---|---|---|
-| Arabic / English switch (app bar, Settings), persisted, `html[lang][dir]` | Complete | Survives reload; deep links keep the language. After the first switch the rail plate can sit 12 px off (see "Cinematic shell") | Q P V |
+| Arabic / English switch (app bar, Settings), persisted, `html[lang][dir]` | Complete | **English is the default** (v3.7.1, `780c621`); settings saved before that open in English unless Arabic was chosen explicitly (`settings.langChosen`). Survives reload; deep links keep the language. After the first switch the rail plate can sit 12 px off (see "Cinematic shell") | Q P V |
 | Numerals (Latin / Arabic-Indic) independent of language | Complete | Codes and IDs stay Latin | P U V |
 | Calendar (Gregorian / Hijri / both) | Complete | Drives the app-bar date | P |
 | Times shown in Asia/Riyadh | Complete | Calendar days are formatted from their own date | U |

@@ -2433,7 +2433,7 @@ function renderShellEmpty(main) {
 }
 
 // First chrome pass as soon as this module evaluates (before the optional modules load), so an
-// English session never shows the Arabic placeholders of index.html for long.
+// Arabic session never shows the English placeholders of index.html for long (they are English, the default language).
 try { localizeStaticChrome(); } catch { /* DOM not ready: boot() localises again */ }
 
 async function boot() {

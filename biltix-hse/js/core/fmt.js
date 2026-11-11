@@ -132,7 +132,7 @@ function cached(kind, locale, options) {
 
 /** Active UI language ('ar' | 'en'); defensive when i18n is unavailable. */
 function lang() {
-  try { return i18n.lang() === 'en' ? 'en' : 'ar'; } catch { return 'ar'; }
+  try { return i18n.lang() === 'ar' ? 'ar' : 'en'; } catch { return 'en'; }
 }
 
 function baseLocale() {

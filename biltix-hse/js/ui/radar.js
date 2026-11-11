@@ -225,8 +225,8 @@ export function readPalette(force = false) {
   p.light = p.theme === 'light';
   p.numerals = root.getAttribute('data-numerals') === 'arab' ? 'arab' : 'latn';
   // Direction / language drive canvas text direction and the mirrored placement of labels (v3, LTR).
-  p.rtl = (root.getAttribute('dir') || (String(root.getAttribute('lang') || 'ar').startsWith('en') ? 'ltr' : 'rtl')) !== 'ltr';
-  p.lang = String(root.getAttribute('lang') || 'ar').startsWith('en') ? 'en' : 'ar';
+  p.rtl = (root.getAttribute('dir') || (String(root.getAttribute('lang') || 'en').startsWith('ar') ? 'rtl' : 'ltr')) !== 'ltr';
+  p.lang = String(root.getAttribute('lang') || 'en').startsWith('ar') ? 'ar' : 'en';
   p.tone = (name) => (name && Object.prototype.hasOwnProperty.call(TONE_ORDER, name) ? p[name] : p.accent);
   paletteCache = p;
   paletteCacheVersion = paletteVersion;

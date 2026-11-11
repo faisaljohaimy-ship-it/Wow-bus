@@ -41,8 +41,9 @@ const PLURAL_CATEGORIES = new Set(['zero', 'one', 'two', 'few', 'many', 'other']
 const PARAM_RE = /\{(\w+)\}/g;
 
 /**
- * English data dictionaries (js/i18n/data/*.js, owner A-DATA-EN), imported on the first switch to
- * English only — Arabic sessions never download them. Each file:
+ * English data dictionaries (js/i18n/data/*.js, owner A-DATA-EN), imported only when English is in use: at boot
+ * for English sessions (the default, js/app.js boot()) or on the first switch to English — Arabic sessions never
+ * download them. Each file:
  *   export default { <collection>: { <recordId>: <mirror> }, terms: { 'عربي': 'English' } }
  * Add a new file here when it lands (a missing path would surface as a 404 in the console).
  */

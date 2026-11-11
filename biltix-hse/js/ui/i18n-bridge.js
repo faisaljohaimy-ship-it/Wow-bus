@@ -27,7 +27,7 @@ if (hasApi('register')) {
 /** 'ar' | 'en' — from the runtime, else from <html lang>. */
 export function lang() {
   if (hasApi('lang')) { try { const l = i18n.lang(); if (l === 'ar' || l === 'en') return l; } catch { /* fall through */ } }
-  try { return String(document.documentElement.getAttribute('lang') || 'ar').toLowerCase().startsWith('en') ? 'en' : 'ar'; } catch { return 'ar'; }
+  try { return String(document.documentElement.getAttribute('lang') || 'en').toLowerCase().startsWith('ar') ? 'ar' : 'en'; } catch { return 'en'; }
 }
 
 /** 'rtl' | 'ltr' — the document direction wins (it is what the browser lays out). */
