@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <!-- BILTIX Risk AI / بلتكس Risk AI — AI risk management platform. Static app shell: plain ES modules, no build step. -->
-<html lang="ar" dir="rtl" data-theme="light" data-input="pointer" data-bg="subtle" data-density="comfortable">
+<html lang="en" dir="ltr" data-theme="light" data-input="pointer" data-bg="subtle" data-density="comfortable">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>BILTIX Risk AI — بلتكس Risk AI</title>
+  <title>BILTIX Risk AI</title>
   <meta name="description" content="BILTIX Risk AI — AI risk management for Saudi construction: one cockpit for contract, materials, schedule, site safety and cost risk. بلتكس Risk AI — منصة إدارة المخاطر بالذكاء الاصطناعي لمشاريع البناء.">
   <meta name="application-name" content="BILTIX Risk AI">
   <!-- Build stamp (tools/stamp-build.mjs, run before each publish): an open page compares it with the
        published index.html when it becomes visible again and offers a reload when they differ. -->
-  <meta name="biltix-build" content="3.7.0+202611111421">
+  <meta name="biltix-build" content="3.7.1+202611111455">
   <meta name="color-scheme" content="dark light">
   <meta name="theme-color" content="#080F1B" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#F4F7FB" media="(prefers-color-scheme: light)">
@@ -32,7 +32,9 @@
         var saved = raw ? JSON.parse(raw) : null;
         if (saved && saved.settings && typeof saved.settings === 'object') s = saved.settings;
       } catch (e) { /* storage unavailable: defaults */ }
-      var lang = s.lang === 'en' ? 'en' : 'ar';
+      // English is the default. A saved 'ar' applies only when the user chose it (settings.langChosen, set by any
+      // language change); older saved settings without that flag open in English. Mirrors sanitizeSettings() in store.js.
+      var lang = s.lang === 'ar' && s.langChosen === true ? 'ar' : 'en';
       try {
         var q = new URLSearchParams(location.search).get('lang');
         if (!q) {
@@ -188,8 +190,8 @@
       </button>
       <!-- Language switch "ع | EN" (each option names its language in that language). -->
       <div class="lang-switch" id="langSwitch" role="group" aria-label="لغة الواجهة">
-        <button type="button" class="lang-opt" data-lang="ar" lang="ar" aria-label="العربية" aria-pressed="true">ع</button>
-        <button type="button" class="lang-opt" data-lang="en" lang="en" aria-label="English" aria-pressed="false">EN</button>
+        <button type="button" class="lang-opt" data-lang="ar" lang="ar" aria-label="العربية" aria-pressed="false">ع</button>
+        <button type="button" class="lang-opt" data-lang="en" lang="en" aria-label="English" aria-pressed="true">EN</button>
       </div>
       <button type="button" class="btn btn-ghost btn-icon theme-btn" id="themeBtn" aria-label="تبديل السمة" aria-pressed="false">
         <svg class="icon theme-icon-dark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"></path></svg>
@@ -215,7 +217,7 @@
     <ul class="rail-list" id="railList" role="list"></ul>
     <div class="rail-foot">
       <a class="rail-site mono" href="https://biltix.sa" target="_blank" rel="noopener noreferrer">biltix.sa</a>
-      <span class="rail-version mono" id="railVersion">v3.7.0</span>
+      <span class="rail-version mono" id="railVersion">v3.7.1</span>
     </div>
   </nav>
 

@@ -17,7 +17,7 @@ const root = args.root || fileURLToPath(new URL('..', import.meta.url));
 const routes = (args.routes || 'cockpit,airisks,tasks,alerts,contracts,bom,schedule,cost,overview,radar,spatial,risks,incidents,permits,inspections,training,compliance,engine,dataquality,integrations,reports,roadmap,settings').split(',').filter(Boolean);
 const viewports = (args.viewport || '1440x900').split(',').map(v => { const [w, h] = v.split('x').map(Number); return { width: w, height: h }; });
 const themes = (args.theme || 'dark').split(',');
-const langs = (args.lang || 'ar').split(',');
+const langs = (args.lang || 'en').split(',');
 const freeze = args.clock ? new Date(args.clock) : null;
 const out = args.out || `${process.cwd()}/qa-out`;
 const waitMs = Number(args.wait || 3000);
@@ -46,7 +46,7 @@ for (const lang of langs) for (const theme of themes) for (const vp of viewports
   page.on('response', r => { if (r.status() >= 400 && !r.url().includes('fonts.g')) failedReqs.push(`${r.url()} :: HTTP ${r.status()}`); });
   for (const route of routes) {
     errors.length = 0; pageErrors.length = 0; failedReqs.length = 0; warnings.length = 0;
-    const url = `http://127.0.0.1:${port}/${lang !== 'ar' ? '?lang=' + lang : ''}#/${route}`;
+    const url = `http://127.0.0.1:${port}/?lang=${lang}#/${route}`;
     try {
       await page.goto(url, { waitUntil: 'domcontentloaded' });
       try { await page.waitForFunction(() => window.biltix && window.biltix.store && typeof window.biltix.store.setSettings === 'function', null, { timeout: 8000 }); } catch (e) {}

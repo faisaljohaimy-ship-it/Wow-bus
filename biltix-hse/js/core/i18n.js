@@ -3,7 +3,7 @@
  *
  * Contract: docs/specs/v3-precision/CONTRACT.md §4. Guide: docs/i18n.md.
  *
- *   i18n.lang()                 'ar' | 'en'   (settings.lang, default 'ar')
+ *   i18n.lang()                 'ar' | 'en'   (settings.lang, default 'en')
  *   i18n.dir()                  'rtl' | 'ltr'
  *   i18n.locale()               'ar-SA' | 'en-GB'   (fmt adds -u-nu-latn|arab and the calendar)
  *   i18n.setLang(lang)          → Promise. Persists store.setSettings({ lang }), sets html[lang][dir],
@@ -81,7 +81,7 @@ function initialLang() {
       if (fromHtml) return fromHtml;
     }
   } catch { /* no DOM (node) */ }
-  return 'ar';
+  return 'en';
 }
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)

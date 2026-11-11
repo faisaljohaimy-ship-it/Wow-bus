@@ -80,13 +80,13 @@ export const tests = [
     name: 'v3 settings defaults and normalisation (lang, appearance, calendar, motion, dataSource.last*)',
     fn() {
       const st = freshStore();
-      assert.equal(st.settings.lang, 'ar');
+      assert.equal(st.settings.lang, 'en');
       assert.deepEqual(st.settings.appearance, { background: 'subtle', density: 'comfortable' });
       assert.equal(st.settings.calendar, 'both');
       assert.equal(st.settings.motion, 'auto');
       assert.equal(st.settings.dataSource.lastSuccessAt, null);
       store.setSettings({ lang: 'fr', appearance: { background: 'neon', density: 'compact' }, calendar: 'hijri', motion: 'full' });
-      assert.equal(st.settings.lang, 'ar');
+      assert.equal(st.settings.lang, 'en');
       assert.deepEqual(st.settings.appearance, { background: 'subtle', density: 'compact' });
       store.setSettings({ lang: 'en', appearance: { background: 'cinematic' } });
       assert.equal(st.settings.lang, 'en');

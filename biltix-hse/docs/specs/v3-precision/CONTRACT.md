@@ -64,7 +64,7 @@ active language's 400 weight (`plex-arabic-arabic-400.woff2` or `plex-sans-latin
 
 ```js
 export const i18n = {
-  lang(),            // 'ar' | 'en' (settings.lang, default 'ar')
+  lang(),            // 'ar' | 'en' (settings.lang, default 'en' since v3.7.1; a saved 'ar' needs settings.langChosen)
   dir(),             // 'rtl' | 'ltr'
   locale(),          // 'ar-SA' | 'en-GB' (numerals applied by fmt via -u-nu-latn|arab)
   setLang(lang),     // store.setSettings({ lang }); html[lang][dir]; bus.emit('lang:change', { lang, dir })

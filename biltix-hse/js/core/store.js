@@ -121,7 +121,10 @@ export const DEFAULT_SETTINGS = deepFreeze({
   themeChosen: false,
   numerals: 'latn',
   // v3: interface language, appearance, calendar and motion (the shell's pre-paint script reads these).
-  lang: 'ar',
+  // English is the default interface language (v3.7.1). langChosen turns true on any language change through
+  // setSettings(); only then does a saved 'ar' apply, so settings saved while Arabic was the default open in English.
+  lang: 'en',
+  langChosen: false,
   appearance: { background: 'subtle', density: 'comfortable' },
   calendar: 'both',
   motion: 'auto',
@@ -792,7 +795,8 @@ export function sanitizeSettings(input, current = DEFAULT_SETTINGS) {
   merged.themeChosen = merged.themeChosen === true;
   merged.theme = merged.theme === 'dark' && merged.themeChosen ? 'dark' : 'light';
   merged.numerals = merged.numerals === 'arab' ? 'arab' : 'latn';
-  merged.lang = pickEnum(merged.lang, LANGS, 'ar');
+  merged.langChosen = merged.langChosen === true;
+  merged.lang = merged.lang === 'ar' && merged.langChosen ? 'ar' : 'en';
   merged.calendar = pickEnum(merged.calendar, CALENDAR_MODES, 'both');
   merged.motion = pickEnum(merged.motion, MOTION_MODES, 'auto');
   const ap = isPlainObject(merged.appearance) ? merged.appearance : {};
@@ -2303,6 +2307,8 @@ export const store = {
     let input = patch;
     // Any theme change is an explicit choice: it is kept across reloads (see DEFAULT_SETTINGS.themeChosen).
     if (Object.prototype.hasOwnProperty.call(patch, 'theme')) input = { ...input, themeChosen: true };
+    // Any language change is an explicit choice too (see DEFAULT_SETTINGS.langChosen).
+    if (Object.prototype.hasOwnProperty.call(patch, 'lang')) input = { ...input, langChosen: true };
     if (isPlainObject(patch.platform)) {
       const p = { ...patch.platform };
       if (p.weights !== undefined) {

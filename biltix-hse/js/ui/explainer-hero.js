@@ -16,10 +16,12 @@
  *   - The poster paints at once (fixed 16:9 box, no layout shift). The video gets its src only after window load +
  *     an idle callback, then autoplays when autoplayDecision() allows it (reduced motion, settings.motion 'reduce',
  *     Save-Data, a collapsed hero or one finished viewing in this tab session all say no).
- *   - Sound: with a narrated file (manifest voice ≠ null) and a page that has already had a user gesture, unmuted play
- *     is tried first; a NotAllowedError falls back to muted play, and the sound control next to play/pause becomes a
- *     prominent labelled "Turn sound on" pill — under the picture, so it never covers the burned-in captions. Silent
- *     files show no sound control at all, only the note "Silent — captions in picture".
+ *   - Sound on by default (v3.7.1): with a narrated file (manifest voice ≠ null) unmuted play is always tried first,
+ *     unless the reader turned the sound off. A browser that refuses unmuted autoplay (NotAllowedError) gets muted play,
+ *     the sound control next to play/pause becomes a prominent labelled "Turn sound on" pill — under the picture, so it
+ *     never covers the burned-in captions — and the reader's first gesture anywhere on the page turns the sound on
+ *     (armSoundOnGesture). Browsers decide this, not the page: no site can force sound before a gesture where the
+ *     browser forbids it. Silent files show no sound control at all, only the note "Silent — captions in picture".
  *   - It plays only while ≥ 35 % of the stage is on screen and the tab is visible; it resumes by itself only when it was
  *     playing (automatically or by the reader) and the reader had not paused it. No loop: the end shows a replay state.
  *     Below 960 px the app bar and tab bar are fixed over the page: "on screen" leaves the strips they cover out
@@ -724,9 +726,38 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
     try { video.removeAttribute('src'); video.load(); } catch { /* noop */ }
   }
 
-  function hasActivation() {
-    try { return !!(navigator.userActivation && navigator.userActivation.hasBeenActive); } catch { return false; }
+  /*
+   * Sound on by default (v3.7.1). When the browser refuses unmuted autoplay, the film plays muted with the "Turn sound
+   * on" pill, and the reader's first gesture anywhere on the page turns the sound on — inside that gesture, so engines
+   * that need transient activation allow it. Gestures inside the hero are left to its own controls (the pill, play /
+   * pause, …). Disarmed once used, when the reader picks sound on or off, or when the hero is destroyed.
+   */
+  const SOUND_GESTURES = ['pointerdown', 'keydown', 'touchend'];
+  const SOUND_OPTS = { capture: true, passive: true };
+  const IGNORED_KEYS = new Set(['Escape', 'Tab', 'Shift', 'Control', 'Alt', 'Meta', 'CapsLock']);
+  let soundArmed = false;
+  function onSoundGesture(ev) {
+    if (destroyed || !voice || session.soundPref !== null) { disarmSound(); return; }
+    if (ev.type === 'keydown' && IGNORED_KEYS.has(ev.key)) return;
+    if (ev.target && typeof ev.target.nodeType === 'number' && el.contains(ev.target)) return;
+    if (!wantPlay || !video.muted) return;      // only while it plays (or waits to play) without sound
+    video.muted = false;
+    session.soundPref = 'on';
+    renderSound();
+    disarmSound();
+    if (video.paused) apply();
   }
+  function armSoundOnGesture() {
+    if (soundArmed || destroyed || !voice || session.soundPref !== null) return;
+    soundArmed = true;
+    SOUND_GESTURES.forEach((type) => document.addEventListener(type, onSoundGesture, SOUND_OPTS));
+  }
+  function disarmSound() {
+    if (!soundArmed) return;
+    soundArmed = false;
+    SOUND_GESTURES.forEach((type) => document.removeEventListener(type, onSoundGesture, SOUND_OPTS));
+  }
+  offs.push(disarmSound);
 
   async function doPlay() {
     if (destroyed || errored || playPending) return;
@@ -981,10 +1012,12 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
     revealStage({ full: true });
     if (!(wantPlay && (state === 'playing' || state === 'loading'))) userPlay({ sound: state === 'idle' ? 'auto' : 'keep', reveal: false });
   });
-  // Clicking the picture toggles playback (pointer convenience; the buttons carry the keyboard path).
+  // Clicking the picture toggles playback (pointer convenience; the buttons carry the keyboard path) — except while a
+  // narrated film plays by itself without sound because the browser refused it: then the first tap turns the sound on.
   on(stage, 'click', (e) => {
     if (e.target !== video && e.target !== poster && e.target !== shade && e.target !== stage) return;
     if (errored) return;
+    if (voice && video.muted && session.soundPref === null && wantPlay && (state === 'playing' || state === 'loading')) { setMuted(false); return; }
     togglePlay();
   });
 
@@ -1148,7 +1181,7 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
       if (decision.resume && okLang(vlang)) {
         wantPlay = true;
         auto = session.auto;
-        if (voice) video.muted = !(session.soundPref === 'on' || (session.soundPref === null && hasActivation() && !session.auto));
+        if (voice) { video.muted = session.soundPref === 'off'; armSoundOnGesture(); }
         if (shouldPlay()) setState('loading');   // off screen: the big play button stays until it scrolls into view
         apply();
       }
@@ -1161,7 +1194,11 @@ export function createExplainerHero({ manifest, uiLang = 'ar', t, digits = (s) =
     if (!decision.autoplay || !okLang(vlang)) return;
     wantPlay = true;
     auto = true;
-    video.muted = !(voice && hasActivation() && session.soundPref !== 'off');
+    // Sound on by default (v3.7.1): a narrated file always tries unmuted play first; a browser that refuses unmuted
+    // autoplay gets muted play + the "Turn sound on" pill, and the reader's first gesture anywhere turns the sound on
+    // (armSoundOnGesture). Only the reader's own "sound off" keeps it muted.
+    video.muted = !(voice && session.soundPref !== 'off');
+    armSoundOnGesture();
     // Off screen (scrolled away, or under the fixed bars): no spinner and the big play button stays; it starts when
     // ≥ 35 % of the stage scrolls into view (the observer calls apply()).
     if (shouldPlay()) setState('loading');
