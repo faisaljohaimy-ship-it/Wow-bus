@@ -1,72 +1,401 @@
 /* ==========================================================================
-   Biltix HSE — design tokens (css/tokens.css)
-   Single source of truth for colour, type, spacing, radii, motion and shell
-   dimensions. Dark is the default theme; light is <html data-theme="light">.
-   Names and values mirror docs/ARCHITECTURE.md §2 exactly.
+   BILTIX Risk AI — design tokens v3 "Precision" (css/tokens.css)
+   Single source of truth for colour, type, spacing, radii, elevation, motion,
+   density and shell geometry, plus the self-hosted @font-face rules.
+   Dark is the default theme; light is <html data-theme="light">. Both themes
+   are tuned separately (not inverted). Contract: docs/specs/v3-precision/CONTRACT.md §2/§3.1.
+   Reference: docs/design/tokens.md. Every pre-v3 variable name keeps working
+   (aliases at the end of each block).
+
+   MEASURED CONTRAST (WCAG 2.x ratio, contrast() of the dataviz validator;
+   full table and method: docs/design/tokens.md §1)
+   ----------------------------------------------------------------------------
+   Dark  surfaces  bg-0 #080F1B · bg-1 #111D2E · bg-2 #17263B · bg-3 #1D2F48
+     ink-1 #F4F7FB        17.86 · 15.77 · 14.19 · 12.59
+     ink-2 #B8C6D8        11.06 ·  9.77 ·  8.79 ·  7.80
+     ink-3 #93A3BA         7.48 ·  6.61 ·  5.95 ·  5.27
+     brand-text #7FA6FF    8.04 ·  7.10 ·  6.39 ·  5.67
+     accent-text #19C6E6   9.38 ·  8.28 ·  7.45 ·  6.61
+     good-text #45D145     9.56 ·  8.44 ·  7.60 ·  6.74   (on its 14% tint: 7.08)
+     warning-text #FBBD3C 11.37 · 10.05 ·  9.04 ·  8.02   (tint 7.65)
+     serious-text #F29C78  8.96 ·  7.91 ·  7.12 ·  6.31   (tint 6.45)
+     critical-text #F2837B 7.59 ·  6.71 ·  6.03 ·  5.35   (tint 6.08)
+     line-strong #62789A   4.27 ·  3.77 ·  3.39 ·  3.01   (control boundaries ≥ 3:1)
+     focus #19C6E6         9.38 ·  8.28 ·  7.45 ·  6.61
+     white on brand #2F6FED 4.55
+   Light surfaces  bg-0 #F4F7FB · bg-1 #FFFFFF · bg-2 #F3F6FA · bg-3 #E8EEF6
+     ink-1 #132238        14.88 · 15.99 · 14.75 · 13.70
+     ink-2 #3D4F69         7.75 ·  8.33 ·  7.69 ·  7.14
+     ink-3 #55647C         5.58 ·  6.00 ·  5.54 ·  5.14
+     brand-text #1F5AD6    5.60 ·  6.01 ·  5.55 ·  5.15
+     accent-text #0A7489   5.05 ·  5.42 ·  5.00 ·  4.65
+     good-text #087208     5.71 ·  6.14 ·  5.66 ·  5.26   (on its 11% tint: 5.40)
+     warning-text #8A5A00  5.52 ·  5.93 ·  5.47 ·  5.08   (tint 5.55)
+     serious-text #A4471F  5.58 ·  6.00 ·  5.54 ·  5.14   (tint 5.42)
+     critical-text #B42318 6.12 ·  6.57 ·  6.07 ·  5.63   (tint 5.60)
+     line-strong #7888A0   3.35 ·  3.60 ·  3.32 ·  3.09   (control boundaries ≥ 3:1)
+     focus #0A7489         5.05 ·  5.42 ·  5.00 ·  4.65
+     accent-text-strong #086A7D on the accent tint 5.48 (bg-1) / 5.09 (bg-2)
+   Status MARK colours (--good/--warning/--serious/--critical) are identical in
+   both themes and are for marks only (dots, bars, cells, stripes); text uses
+   the --*-text variants and status always ships with an icon + label.
+   Series --s1..--s8 unchanged; validator: dark on #111D2E all PASS; light on
+   #FFFFFF PASS with the documented sub-3:1 relief (labels / table view).
    ========================================================================== */
 
-:root, :root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg-0: #070D18;  /* page plane */
-  --bg-1: #0B1322;  /* card / chart surface  (validator surface) */
-  --bg-2: #111C2E;  /* raised: inputs, hover, nested */
-  --bg-3: #182540;  /* active / pressed */
-  --line: #1E2B45;         /* hairline borders & gridlines */
-  --line-2: #2A3A5C;       /* axis baseline / stronger border */
-  --ink-1: #EEF2F8;  --ink-2: #AAB6CC;  --ink-3: #8290AA;  /* primary / secondary / muted text (ink-3 ≥4.7:1 on bg-0…bg-3) */
-  --brand: #2F6FED;  --brand-ink: #FFFFFF;   /* buttons, active nav, links */
-  --accent: #19C6E6;                          /* radar sweep, live indicators, focus ring, highlights */
-  --gold: #D4A017;                            /* logo + architectural ornament lines ONLY (never status) */
-  --good: #0CA30C; --warning: #FAB219; --serious: #EC835A; --critical: #D03B3B;   /* status — fixed, icon+label always */
-  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767; /* categorical series, fixed order */
-  --seq-100:#cde2fb; --seq-200:#9ec5f4; --seq-300:#6da7ec; --seq-400:#3987e5; --seq-500:#256abf; --seq-600:#184f95; --seq-700:#0d366b; /* sequential blue */
-  --div-neg: #e66767; --div-mid: #383835; --div-pos: #3987e5;  /* diverging */
-  --shadow-1: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
-  --glow-accent: 0 0 0 1px rgba(25,198,230,.35), 0 0 24px -6px rgba(25,198,230,.6);
-  --radius-card: 14px; --radius-ctl: 9px; --radius-pill: 999px;
-  --font-sans: "IBM Plex Sans Arabic", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --fs-xs: 12px; --fs-sm: 13px; --fs-md: 14px; --fs-lg: 16px; --fs-xl: 20px; --fs-2xl: 28px; --fs-hero: 48px;
-  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px;
-  --rail-w: 236px; --rail-w-collapsed: 72px; --feed-w: 320px; --appbar-h: 64px;
-  --ease: cubic-bezier(.2,.8,.2,1); --dur-1: 160ms; --dur-2: 320ms;
-}
-:root[data-theme="light"] {
-  color-scheme: light;
-  --bg-0: #F2F5FA; --bg-1: #FFFFFF; --bg-2: #F6F8FC; --bg-3: #EAF0F9;
-  --line: #E3E8F0; --line-2: #C9D3E3;
-  --ink-1: #0E1726; --ink-2: #4A5568; --ink-3: #5B6880;   /* ink-3 ≥4.9:1 on bg-0…bg-3 */
-  --brand: #2F6FED; --brand-ink: #FFFFFF; --accent: #0E93AC; --gold: #B8860B;
-  --good: #0CA30C; --warning: #FAB219; --serious: #EC835A; --critical: #D03B3B;
-  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
-  --div-mid: #f0efec;
-  --shadow-1: 0 1px 2px rgba(14,23,38,.06), 0 8px 24px -12px rgba(14,23,38,.18);
-  --glow-accent: 0 0 0 1px rgba(14,147,172,.35), 0 0 24px -6px rgba(14,147,172,.45);
-}
+/* --------------------------------------------------------------------------
+   Self-hosted fonts (assets/fonts, OFL — see assets/fonts/OFL.txt)
+   Arabic family: Arabic + Latin subsets 400–700. Latin family: 400–600 (the
+   600 face also answers 700, so English bold is never synthesised). Mono:
+   400–500 (500 also answers 600/700). No Google Fonts.
+   -------------------------------------------------------------------------- */
+
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("../assets/fonts/plex-arabic-arabic-400.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("../assets/fonts/plex-arabic-arabic-500.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 600; font-display: swap;
+  src: url("../assets/fonts/plex-arabic-arabic-600.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 700; font-display: swap;
+  src: url("../assets/fonts/plex-arabic-arabic-700.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("../assets/fonts/plex-arabic-latin-400.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("../assets/fonts/plex-arabic-latin-500.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 600; font-display: swap;
+  src: url("../assets/fonts/plex-arabic-latin-600.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 700; font-display: swap;
+  src: url("../assets/fonts/plex-arabic-latin-700.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("../assets/fonts/plex-sans-latin-400.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("../assets/fonts/plex-sans-latin-500.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 600 700; font-display: swap;
+  src: url("../assets/fonts/plex-sans-latin-600.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("../assets/fonts/plex-mono-latin-400.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500 700; font-display: swap;
+  src: url("../assets/fonts/plex-mono-latin-500.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+/* Metric-compatible local() fallbacks: shown during the swap period, scaled so
+   the swap does not reflow text (CLS ≈ 0). Overrides were computed with fontkit
+   from the real woff2 files against the local faces: size-adjust = Plex advance
+   width ÷ fallback advance width over a mixed UI sample; ascent/descent = Plex
+   hhea metrics ÷ size-adjust (Plex: UPM 1000, Arabic 1085/415, Latin & Mono 1025/275).
+   Each fallback carries the unicode-range of the face it stands in for, so a
+   script the real face lacks still falls through to the right family.
+   Glyph coverage (cmap of the woff2 files, checked with fontTools): beyond Latin-1
+   the punctuation and symbols the Latin subsets hold include – — ‘ ’ ‚ “ ” „ • … ‹ › ⁄ € ™ ↑ ↓
+   − ∕ (Sans and Mono add ′ ″), plus a few letters and combining marks; there is no → ← ↔ ≥ ≤ ≈ ₂ σ Δ ✓ ✕ in any file, so copy should not use
+   those characters (they render and print in a system font). Neither Latin subset
+   has U+2010/U+2011 (hyphen, non-breaking hyphen): the two Latin fallbacks leave
+   U+2010-2011 out of their range so these fall through to the Plex Sans Arabic
+   hyphen (HarfBuzz draws U+2011 with the U+2010 glyph) instead of a local
+   Arial/Liberation glyph. */
+@font-face { font-family: "Plex Arabic Fallback";
+  src: local("Arial"), local("ArialMT"), local("Liberation Sans"), local("Helvetica Neue"), local("Helvetica");
+  size-adjust: 100.87%; ascent-override: 107.56%; descent-override: 41.14%; line-gap-override: 0%; }
+@font-face { font-family: "Plex Arabic Fallback Naskh";
+  src: local("DejaVu Sans"), local("DejaVuSans"), local("Noto Sans Arabic");
+  unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFC;
+  size-adjust: 87.74%; ascent-override: 123.66%; descent-override: 47.30%; line-gap-override: 0%; }
+@font-face { font-family: "Plex Sans Fallback";
+  src: local("Arial"), local("ArialMT"), local("Liberation Sans"), local("Helvetica Neue"), local("Helvetica");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-200F, U+2012-206F, U+20AC, U+2122, U+2212;
+  size-adjust: 100.87%; ascent-override: 101.62%; descent-override: 27.26%; line-gap-override: 0%; }
+@font-face { font-family: "Plex Mono Fallback";
+  src: local("Courier New"), local("CourierNewPSMT"), local("Liberation Mono"), local("Menlo");
+  unicode-range: U+0000-00FF, U+2000-200F, U+2012-206F, U+2212;
+  size-adjust: 100%; ascent-override: 102.50%; descent-override: 27.50%; line-gap-override: 0%; }
 
 /* --------------------------------------------------------------------------
-   Derived helper tokens (outside the §2 contract block; the only other place
-   a literal colour may appear). Text on solid fills is theme-independent; the
-   <select> chevron is a data-URI so its stroke is declared per theme here.
+   Theme-independent tokens: type, spacing, radii, motion, layout, density
    -------------------------------------------------------------------------- */
 
 :root {
-  --ink-on-dark: #F5F8FD;   /* text on solid brand / status fills */
-  --ink-on-light: #0E1726;  /* text on warning / accent / gold fills */
-  /* IBM Plex Mono has no Arabic glyphs: mixed strings such as "5س 12د" or "قبل 3 دقائق"
-     keep Latin/digits in Plex Mono and let Arabic letters fall to Plex Sans Arabic instead
-     of the system monospace. Used by every mono context in the stylesheets. */
-  --font-mono-mixed: "IBM Plex Mono", "IBM Plex Sans Arabic", ui-monospace, SFMono-Regular, Menlo, monospace;
-  /* Link ink: brand blue is only 4.1:1 on the dark card surface, so links lift it toward white (5.7:1). */
-  --link: color-mix(in srgb, var(--brand) 80%, white);
-  /* Blueprint grid strength on the page plane (base.css); lighter in the light theme. */
+  /* Typography — --font-sans resolves per html[lang] below */
+  --font-ar: "IBM Plex Sans Arabic", "Plex Arabic Fallback", "Plex Arabic Fallback Naskh", system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif;
+  --font-en: "IBM Plex Sans", "Plex Sans Fallback", "IBM Plex Sans Arabic", "Plex Arabic Fallback Naskh", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: var(--font-ar);
+  /* Plex Mono has no Arabic script: Arabic-Indic digits (numerals = arab), ٪ ٫ ٬ and stray
+     Arabic letters fall to Plex Sans Arabic before any system monospace (before: DejaVu Sans
+     Mono on screen and in PDFs). */
+  --font-mono: "IBM Plex Mono", "Plex Mono Fallback", "IBM Plex Sans Arabic", "Plex Arabic Fallback Naskh", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Mixed strings ("5س 12د", "قبل 3 دقائق", "AIR-1042 · المرحلة 2"): Latin/digits in Plex Mono,
+     Arabic letters fall to the language's sans face instead of the system monospace. */
+  --font-mono-mixed: "IBM Plex Mono", "Plex Mono Fallback", var(--font-sans);
+
+  --fs-xs: 12px;   --fs-sm: 13px;   --fs-md: 15px;   --fs-lg: 17px;
+  --fs-xl: 20px;   --fs-2xl: 24px;  --fs-3xl: 30px;  --fs-hero: 44px;
+  --fs-ui: 14px;                    /* controls, table cells, nav (helper; between sm and md) */
+  --lh-body: 1.65;                  /* Arabic body; English 1.55 (below) */
+  --lh-heading: 1.3;
+  --lh-tight: 1.2;
+  --tracking-heading: 0;            /* Arabic is never tracked; English headings tighten slightly */
+  --tracking-caps: 0;               /* small labels: Arabic 0, English .02em */
+
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-7: 32px; --space-8: 40px;
+
+  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px; --radius-xl: 20px; --radius-pill: 999px;
+
+  /* Motion — CSS transitions use transform/opacity only (colour fades use --dur-micro) */
+  --dur-micro: 160ms;
+  --dur-main: 260ms;
+  --dur-slow: 420ms;
+  --stagger: 32ms;
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --ease-in-out: cubic-bezier(.65, 0, .35, 1);
+  /* Shell motion (v3.3): route transition, sliding nav indicators, header stagger, app-bar glint.
+     js/ui/motion.js mirrors these values (timing.*). */
+  --dur-page: 300ms;                /* incoming view: opacity + rise */
+  --dur-leave: 140ms;               /* outgoing view afterimage: fade + recede (linear) */
+  --page-delay: 60ms;               /* incoming view holds while the afterimage thins out */
+  --dur-glide: 320ms;               /* rail / tab-bar active indicator */
+  --page-rise: 10px;                /* incoming view starts this far below its place */
+  --stagger-head: 40ms;             /* page header parts (code, title, lead, chips, actions) */
+  --ease-glide: cubic-bezier(.22, 1, .36, 1);
+  --ease-in: cubic-bezier(.4, 0, 1, 1);
+  --glint-cycle: 11s;               /* app-bar light line: one sweep per cycle (subtle) */
+  --glint-cycle-cinematic: 7s;      /* … and in the cinematic background */
+  --shell-fx: 1;                    /* 1 = hover/press micro-motion on; 0 under reduced motion (below) */
+  /* Stage motion (v3.6 motion pass): js/ui/motion.js stageTiming mirrors these; nothing here hides content. */
+  --dur-reveal: 520ms;              /* scroll reveal: rise 18 px + scale .985 → 1 + fade */
+  --stagger-reveal: 50ms;           /* cards revealed together (capped at the 5th) */
+  --dur-grow: 700ms;                /* bar fills, chart bars / columns, segmented sweeps */
+  --dur-count: 850ms;               /* KPI count-up */
+  --dur-overlay: 280ms;             /* modal / toast entrance (exits use --dur-micro) */
+  --spot-size: 380px;               /* pointer spotlight diameter */
+
+  /* Layout */
+  --appbar-h: 64px;
+  --rail-w: 232px;
+  --rail-w-collapsed: 72px;
+  --panel-w: 360px;
+  --content-max: 1600px;
+  --gutter: var(--space-6);         /* page padding / grid gaps: 16–24px */
+  --gap: var(--space-5);
+
+  /* Density: comfortable (default) */
+  --ctl-h: 38px;                    /* buttons, inputs, selects */
+  --ctl-h-sm: 32px;
+  --ctl-h-lg: 44px;
+  --row-h: 46px;                    /* table rows: 44–48px */
+  --card-pad: var(--space-5);
+  --card-gap: var(--space-4);
+
+  /* Legacy aliases (pre-v3 names stay valid) */
+  --radius-card: var(--radius-lg);
+  --edge-w: 1.5px;      /* nickel-orange edge (border width of cards and tiles) */
+  --comet-len: 30px;    /* length of each laser comet, head to end of tail */
+  --radius-ctl: var(--radius-md);
+  --feed-w: var(--panel-w);
+  --ease: var(--ease-out);
+  --dur-1: var(--dur-micro);
+  --dur-2: var(--dur-main);
+}
+
+:root[lang^="en"] {
+  --font-sans: var(--font-en);
+  --lh-body: 1.55;
+  --tracking-heading: -.01em;
+  --tracking-caps: .02em;
+}
+
+:root[data-density="compact"] {
+  --ctl-h: 34px;
+  --ctl-h-sm: 28px;
+  --ctl-h-lg: 40px;
+  --row-h: 40px;
+  --card-pad: var(--space-4);
+  --card-gap: var(--space-3);
+  --gap: var(--space-4);
+  --gutter: var(--space-5);
+}
+
+/* --------------------------------------------------------------------------
+   Dark theme (light is the default since v3.1; :root without data-theme still reads these)
+   -------------------------------------------------------------------------- */
+
+:root, :root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-0: #080F1B;   /* app plane */
+  --bg-1: #111D2E;   /* card / chart surface (validator surface) */
+  --bg-2: #17263B;   /* elevated: inputs, hover, nested */
+  --bg-3: #1D2F48;   /* pressed / selected */
+  --line: #26384F;          /* hairline borders & gridlines */
+  --line-2: #33496A;        /* axis baseline / stronger divider */
+  --line-strong: #62789A;   /* input & control boundaries (≥ 3:1 on every surface) */
+  --ink-1: #F4F7FB;  --ink-2: #B8C6D8;  --ink-3: #93A3BA;
+  --brand: #2F6FED;  --brand-ink: #FFFFFF;  --brand-text: #7FA6FF;
+  --accent: #19C6E6; --accent-text: #19C6E6; --accent-text-strong: #19C6E6;
+  --gold: #D4A017;   /* ornament only — never status */
+  /* Nickel-orange card edges + laser (components.css "Edges"). Ornament only — never status. */
+  --edge-metal: linear-gradient(135deg, #B9560F 0%, #FF8F2E 16%, #FFD2A0 28%, #FF9F45 38%, #C25E12 52%, #FF9433 66%, #FFE0BC 78%, #F07D22 90%, #B9560F 100%);
+  --beam-tail: rgba(255, 196, 130, .45);
+  --beam-core: #FFE7CC;
+  --beam-head: #FFFFFF;
+  --beam-glow: rgba(255, 150, 60, .6);
+  --edge-glow: 0 0 0 1px rgba(255, 143, 46, .07), 0 10px 28px -18px rgba(255, 128, 32, .55);
+  --edge-glow-hover: 0 0 0 1px rgba(255, 143, 46, .14), 0 14px 34px -16px rgba(255, 128, 32, .7);
+  --spot-core: rgba(255, 168, 92, .13);   /* pointer spotlight (warm, like the metal edge) */
+  --spot-mid: rgba(255, 150, 60, .05);
+  --focus: #19C6E6;
+  --good: #0CA30C; --warning: #FAB219; --serious: #EC835A; --critical: #D03B3B;   /* marks */
+  --good-text: #45D145; --warning-text: #FBBD3C; --serious-text: #F29C78; --critical-text: #F2837B;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+  --seq-100:#cde2fb; --seq-200:#9ec5f4; --seq-300:#6da7ec; --seq-400:#3987e5; --seq-500:#256abf; --seq-600:#184f95; --seq-700:#0d366b;
+  --div-neg: #e66767; --div-mid: #383835; --div-pos: #3987e5;
+
+  /* Elevation: limited, soft, cool-tinted. Cards use --elev-1 only. */
+  --elev-1: 0 1px 0 rgba(255,255,255,.025) inset, 0 1px 2px rgba(2,6,14,.45), 0 8px 20px -14px rgba(2,6,14,.7);
+  --elev-2: 0 1px 0 rgba(255,255,255,.04) inset, 0 4px 10px rgba(2,6,14,.35), 0 18px 40px -16px rgba(2,6,14,.75);
+  --elev-3: 0 1px 0 rgba(255,255,255,.05) inset, 0 8px 20px rgba(2,6,14,.4), 0 36px 80px -24px rgba(2,6,14,.85);
+
+  /* Surfaces & washes */
+  --glass: color-mix(in srgb, var(--bg-0) 74%, transparent);
+  --glass-rail: color-mix(in srgb, var(--bg-1) 62%, transparent);
+  --scrim: rgba(3, 7, 14, .62);
+  --brand-soft: color-mix(in srgb, var(--brand) 16%, transparent);
+  --brand-line: color-mix(in srgb, var(--brand) 50%, transparent);
+  --hover: color-mix(in srgb, var(--ink-1) 5%, transparent);
+  --selected: color-mix(in srgb, var(--brand) 14%, var(--bg-1));
+
+  /* Background layers (base.css) */
+  --amb-1: color-mix(in srgb, var(--brand) 22%, transparent);
+  --amb-2: color-mix(in srgb, var(--accent) 10%, transparent);
+  --grid-ink: var(--ink-1);
+  --grid-opacity: .06;          /* hairlines 3 %, survey crosses ≈ 4–6 % of ink */
+  --mark-opacity: .5;
+
+  /* Legacy aliases */
+  --link: var(--brand-text);
+  --accent-ink: var(--accent-text);
+  --shadow-1: var(--elev-1);
+  --glow-accent: 0 0 0 1px rgba(25,198,230,.35), 0 0 22px -8px rgba(25,198,230,.55);
   --grid-alpha: 4%;
-  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23AAB6CC' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* --------------------------------------------------------------------------
+   Light theme — designed separately: cool paper plane, white cards, deeper inks
+   -------------------------------------------------------------------------- */
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-0: #F4F7FB; --bg-1: #FFFFFF; --bg-2: #F3F6FA; --bg-3: #E8EEF6;
+  --line: #DCE5EF; --line-2: #C5D2E1; --line-strong: #7888A0;
+  --ink-1: #132238; --ink-2: #3D4F69; --ink-3: #55647C;
+  --brand: #2F6FED; --brand-ink: #FFFFFF; --brand-text: #1F5AD6;
+  --accent: #0E93AC; --accent-text: #0A7489;
+  --gold: #B8860B;
+  --edge-metal: linear-gradient(135deg, #A8480B 0%, #E8731B 16%, #FFB46A 28%, #F08A2E 38%, #B4500D 52%, #EE7E22 66%, #FFC27F 78%, #D8661A 90%, #A8480B 100%);
+  --beam-tail: rgba(255, 106, 0, .38);
+  --beam-core: #FF5E00;
+  --beam-head: #FFE2C2;
+  --beam-glow: rgba(255, 110, 20, .45);
+  --edge-glow: 0 0 0 1px rgba(232, 115, 27, .05), 0 10px 26px -18px rgba(200, 90, 20, .42);
+  --edge-glow-hover: 0 0 0 1px rgba(232, 115, 27, .12), 0 14px 32px -16px rgba(200, 90, 20, .55);
+  --spot-core: rgba(240, 125, 34, .075);
+  --spot-mid: rgba(240, 125, 34, .03);
+  --focus: #0A7489;
+  --accent-text-strong: #086A7D;   /* accent text on accent tints (5.09:1 on the tint over bg-2) */
+  --good: #0CA30C; --warning: #FAB219; --serious: #EC835A; --critical: #D03B3B;
+  --good-text: #087208; --warning-text: #8A5A00; --serious-text: #A4471F; --critical-text: #B42318;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
+  --div-mid: #f0efec;
+
+  --elev-1: 0 1px 2px rgba(19,34,56,.06), 0 6px 16px -10px rgba(19,34,56,.12);
+  --elev-2: 0 2px 6px rgba(19,34,56,.07), 0 18px 40px -18px rgba(19,34,56,.22);
+  --elev-3: 0 4px 12px rgba(19,34,56,.08), 0 36px 80px -28px rgba(19,34,56,.32);
+
+  --glass: color-mix(in srgb, var(--bg-1) 78%, transparent);
+  --glass-rail: color-mix(in srgb, var(--bg-1) 70%, transparent);
+  --scrim: rgba(19, 34, 56, .34);
+  --brand-soft: color-mix(in srgb, var(--brand) 10%, transparent);
+  --brand-line: color-mix(in srgb, var(--brand) 45%, transparent);
+  --hover: color-mix(in srgb, var(--ink-1) 4%, transparent);
+  --selected: color-mix(in srgb, var(--brand) 8%, var(--bg-1));
+
+  --amb-1: color-mix(in srgb, var(--brand) 11%, transparent);
+  --amb-2: color-mix(in srgb, var(--accent) 8%, transparent);
+  --grid-ink: #1B3A66;
+  --grid-opacity: .05;
+  --mark-opacity: .55;
+
+  --link: var(--brand-text);
+  --accent-ink: var(--accent-text);
+  --shadow-1: var(--elev-1);
+  --glow-accent: 0 0 0 1px rgba(14,147,172,.35), 0 0 22px -8px rgba(14,147,172,.4);
+  --grid-alpha: 2.5%;
+}
+
+/* --------------------------------------------------------------------------
+   Shell surface tokens (v3.3, css/base.css): app-bar glass sheen, light line,
+   scroll depth, nav indicator and the cinematic light shafts. Derived from the
+   colour tokens above (none of those change); ornament only, never status.
+   -------------------------------------------------------------------------- */
+
+:root, :root[data-theme="dark"] {
+  --appbar-sheen: linear-gradient(180deg, color-mix(in srgb, var(--bg-1) 70%, transparent) 0%, color-mix(in srgb, var(--bg-0) 82%, transparent) 100%);
+  --appbar-hairline: linear-gradient(90deg, transparent 4%, color-mix(in srgb, var(--brand) 55%, transparent) 30%, color-mix(in srgb, var(--beam-core) 70%, transparent) 50%, color-mix(in srgb, var(--brand) 55%, transparent) 70%, transparent 96%);
+  --appbar-hairline-opacity: .55;
+  --glint-tail: color-mix(in srgb, var(--brand) 70%, transparent);
+  --glint-core: var(--beam-core);
+  --glint-head: var(--beam-head);
+  --glint-bloom: color-mix(in srgb, var(--beam-glow) 70%, transparent);
+  --scroll-shade: linear-gradient(180deg, rgba(2, 6, 14, .42), rgba(2, 6, 14, 0));
+  --nav-ind-fill: linear-gradient(90deg, color-mix(in srgb, var(--brand) 26%, var(--bg-1)), color-mix(in srgb, var(--brand) 10%, var(--bg-1)) 70%);
+  --nav-ind-ring: color-mix(in srgb, var(--brand) 38%, transparent);
+  --nav-ind-bar: linear-gradient(180deg, var(--accent), var(--brand));
+  --nav-ind-glow: 0 0 12px -1px color-mix(in srgb, var(--accent) 70%, transparent);
+  /* Cinematic light shafts — strengths are bounded by contrast: --ink-3 text on the plane stays ≥ 4.5:1 even
+     where a shaft's core crosses the ambient light's centre (worst case 4.59:1, tokens.md §6). */
+  --shaft-1: color-mix(in srgb, var(--brand) 18%, transparent);
+  --shaft-2: color-mix(in srgb, var(--beam-core) 8%, transparent);
+  --shaft-3: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 :root[data-theme="light"] {
-  --link: var(--brand);
-  --grid-alpha: 2.5%;
-  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235B6880' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  --appbar-sheen: linear-gradient(180deg, color-mix(in srgb, var(--bg-1) 92%, transparent) 0%, color-mix(in srgb, var(--bg-1) 76%, transparent) 100%);
+  --appbar-hairline-opacity: .5;
+  --glint-tail: color-mix(in srgb, var(--brand) 55%, transparent);
+  --glint-bloom: color-mix(in srgb, var(--beam-glow) 60%, transparent);
+  --scroll-shade: linear-gradient(180deg, rgba(19, 34, 56, .12), rgba(19, 34, 56, 0));
+  --nav-ind-fill: linear-gradient(90deg, color-mix(in srgb, var(--brand) 13%, var(--bg-1)), color-mix(in srgb, var(--brand) 5%, var(--bg-1)) 70%);
+  --nav-ind-ring: color-mix(in srgb, var(--brand) 26%, transparent);
+  --nav-ind-glow: 0 0 10px -2px color-mix(in srgb, var(--accent) 55%, transparent);
+  /* Light theme: shafts are sunlight (white / warm white) that only brighten the plane, plus one 30 % cream
+     shaft; the 11 px code tag (--accent-text) keeps ≥ 4.5:1 under any of them (worst case 4.56:1). */
+  --shaft-1: color-mix(in srgb, var(--bg-1) 80%, transparent);
+  --shaft-2: color-mix(in srgb, color-mix(in srgb, var(--bg-1) 80%, var(--beam-head)) 80%, transparent);
+  --shaft-3: color-mix(in srgb, var(--beam-head) 30%, transparent);
+}
+
+/* --------------------------------------------------------------------------
+   Derived helper tokens
+   -------------------------------------------------------------------------- */
+
+:root {
+  --ink-on-dark: #F5F8FD;   /* text on solid brand / critical fills */
+  --ink-on-light: #132238;  /* text on warning / accent / gold / good fills */
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23B8C6D8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+}
+:root[data-theme="light"] {
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%233D4F69' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 }
 
 /* --------------------------------------------------------------------------
@@ -74,7 +403,7 @@
    -------------------------------------------------------------------------- */
 
 html {
-  font-size: 14px;
+  font-size: 15px;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   font-feature-settings: "kern", "liga", "calt";
@@ -86,27 +415,27 @@ html {
 body {
   font-family: var(--font-sans);
   font-size: var(--fs-md);
-  line-height: 1.6;
+  line-height: var(--lh-body);
   color: var(--ink-1);
   background: var(--bg-0);
 }
 
-/* Heading scale — tight leading, semibold, no default margins (layout owns spacing). */
 h1, h2, h3, h4, h5, h6 {
   margin: 0;
   font-weight: 600;
-  line-height: 1.25;
+  line-height: var(--lh-heading);
+  letter-spacing: var(--tracking-heading);
   color: var(--ink-1);
   text-wrap: balance;
   overflow-wrap: anywhere;
 }
-h1 { font-size: var(--fs-2xl); letter-spacing: 0; }   /* Arabic script: never track headings */
+h1 { font-size: var(--fs-2xl); }
 h2 { font-size: var(--fs-xl); }
 h3 { font-size: var(--fs-lg); }
 h4 { font-size: var(--fs-md); }
 h5, h6 { font-size: var(--fs-sm); color: var(--ink-2); }
 
-p { margin: 0; }
+p { margin: 0; text-wrap: pretty; }
 p + p { margin-block-start: var(--space-3); }
 
 small { font-size: var(--fs-xs); }
@@ -116,13 +445,14 @@ a {
   color: var(--link);
   text-decoration: none;
   text-underline-offset: 3px;
-  transition: color var(--dur-1) var(--ease);
+  text-decoration-thickness: 1px;
+  transition: color var(--dur-micro) var(--ease-out);
 }
 a:hover { text-decoration: underline; }
 
 code, kbd, samp, pre {
   font-family: var(--font-mono-mixed);
-  font-size: 0.93em;
+  font-size: .92em;
   font-variant-numeric: tabular-nums;
 }
 pre {
@@ -131,8 +461,75 @@ pre {
   padding: var(--space-3);
   background: var(--bg-2);
   border: 1px solid var(--line);
-  border-radius: var(--radius-ctl);
+  border-radius: var(--radius-md);
   line-height: 1.55;
+}
+
+/* --------------------------------------------------------------------------
+   Text roles (CONTRACT §2) — one hierarchy for every screen:
+   page → section → card → body → label → helper; metrics are tabular.
+   -------------------------------------------------------------------------- */
+
+.t-page {
+  font-size: var(--fs-3xl);
+  font-weight: 600;
+  line-height: var(--lh-heading);
+  letter-spacing: var(--tracking-heading);
+  color: var(--ink-1);
+  text-wrap: balance;
+}
+.t-section {
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  line-height: var(--lh-heading);
+  letter-spacing: var(--tracking-heading);
+  color: var(--ink-1);
+}
+.t-card {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  line-height: var(--lh-heading);
+  color: var(--ink-1);
+}
+.t-body {
+  font-size: var(--fs-md);
+  font-weight: 400;
+  line-height: var(--lh-body);
+  color: var(--ink-1);
+}
+.t-body.is-secondary, .t-lead { color: var(--ink-2); }
+.t-lead { font-size: var(--fs-md); line-height: var(--lh-body); max-inline-size: 72ch; }
+.t-label {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: var(--tracking-caps);
+  color: var(--ink-2);
+}
+.t-helper {
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+.t-metric {
+  font-family: var(--font-sans);
+  font-size: var(--fs-3xl);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: var(--tracking-heading);
+  font-variant-numeric: tabular-nums lining-nums;
+  color: var(--ink-1);
+  white-space: nowrap;
+}
+.t-metric.is-hero { font-size: var(--fs-hero); line-height: 1; }
+.t-metric.is-sm { font-size: var(--fs-2xl); }
+.t-metric small, .t-metric .t-unit { font-size: .45em; font-weight: 500; color: var(--ink-3); margin-inline-start: .2em; letter-spacing: 0; }
+@media (max-width: 767.98px) {
+  .t-page { font-size: var(--fs-2xl); }
+  .t-section { font-size: var(--fs-lg); }
+  .t-metric { font-size: var(--fs-2xl); }
+  .t-metric.is-hero { font-size: var(--fs-3xl); }
 }
 
 /* Codes (R-1042, PTW-5521, ISO 45001) and every numeric column use these. */
@@ -142,30 +539,25 @@ pre {
   letter-spacing: 0;
 }
 .tabular { font-variant-numeric: tabular-nums; }
-
-/* Short Latin codes embedded in Arabic text keep their own direction. */
-.mono, .code-tag, kbd {
-  unicode-bidi: isolate;
-}
+.mono, .code-tag, kbd { unicode-bidi: isolate; }
 /* Codes (CT-2026-014, AIR-1042) never break across lines: views wrap them in
-   <span class="code"> or <span class="mono nowrap">; .mono alone may still wrap. */
-.code, .code-tag, .mono.nowrap {
-  white-space: nowrap;
-  unicode-bidi: isolate;
-}
+   <span class="code nowrap" dir="ltr"> or <span class="mono nowrap">. */
+.code, .code-tag, .mono.nowrap, .nowrap { white-space: nowrap; unicode-bidi: isolate; }
+.code { font-family: var(--font-mono-mixed); font-variant-numeric: tabular-nums; letter-spacing: 0; direction: ltr; }
 
 /* --------------------------------------------------------------------------
    Focus, selection, scrollbars
+   Focus rings: 2px --focus + 2px offset, ≥ 4.6:1 on every surface in both themes.
    -------------------------------------------------------------------------- */
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 :focus:not(:focus-visible) { outline: none; }
 
 ::selection {
-  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--brand) 38%, transparent);
   color: var(--ink-1);
 }
 
@@ -173,12 +565,12 @@ pre {
   scrollbar-width: thin;
   scrollbar-color: var(--line-2) transparent;
 }
-::-webkit-scrollbar { inline-size: 8px; block-size: 8px; }
+::-webkit-scrollbar { inline-size: 10px; block-size: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: var(--line-2);
   border-radius: var(--radius-pill);
-  border: 2px solid transparent;
+  border: 3px solid transparent;
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover { background-color: var(--ink-3); }
@@ -186,12 +578,18 @@ pre {
 
 /* --------------------------------------------------------------------------
    Motion preferences
-   The OS preference applies unless the settings view forces motion on with
-   <html data-motion="full">; <html data-motion="reduce"> (app.js writes the
-   synonym "reduced") forces it off. Live dots stay visible as a static halo
-   so "live" is never colour-alone. Canvas radars read the same preference in
-   JS and switch to a slow breathing pulse instead of a sweep.
+   The OS preference applies unless settings force motion on with
+   <html data-motion="full">; <html data-motion="reduce"> (or the legacy
+   "reduced") forces it off. Live dots keep a static halo so "live" is never
+   colour-alone; the cinematic background stops (base.css).
    -------------------------------------------------------------------------- */
+
+/* Micro-motion multiplier: hover/press offsets are written as calc(var(--shell-fx) * …), so they vanish
+   (no jump, no animation) under reduced motion instead of snapping into place. */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) { --shell-fx: 0; }
+}
+:root[data-motion="reduce"], :root[data-motion="reduced"] { --shell-fx: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-motion="full"]) *,

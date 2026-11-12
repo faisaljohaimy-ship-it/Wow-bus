@@ -1,0 +1,428 @@
+{
+ "ar": {
+  "source": "voice/showcase-ar.mp3",
+  "audio": "voice/showcase-ar.norm.wav",
+  "duration": 67.97,
+  "loudness": {
+   "integrated": -15.9,
+   "truePeak": -1.9,
+   "input": -40.11,
+   "mode": "linear",
+   "lagMs": 0
+  },
+  "lines": [
+   {
+    "start": 0.053,
+    "end": 4.261
+   },
+   {
+    "start": 5.553,
+    "end": 10.103
+   },
+   {
+    "start": 11.326,
+    "end": 14.45
+   },
+   {
+    "start": 15.681,
+    "end": 19.398
+   },
+   {
+    "start": 20.73,
+    "end": 24.441
+   },
+   {
+    "start": 25.729,
+    "end": 29.653
+   },
+   {
+    "start": 30.931,
+    "end": 34.941
+   },
+   {
+    "start": 36.162,
+    "end": 40.294
+   },
+   {
+    "start": 41.522,
+    "end": 46.047
+   },
+   {
+    "start": 47.307,
+    "end": 51.152
+   },
+   {
+    "start": 52.334,
+    "end": 56.504
+   },
+   {
+    "start": 57.867,
+    "end": 61.445
+   },
+   {
+    "start": 62.704,
+    "end": 67.57
+   }
+  ],
+  "fps": 30,
+  "total": 2028,
+  "scenes": [
+   {
+    "from": 0,
+    "frames": 201,
+    "voice": {
+     "from": 59,
+     "to": 185,
+     "at": 57,
+     "trimBefore": 0,
+     "frames": 132
+    }
+   },
+   {
+    "from": 201,
+    "frames": 164,
+    "voice": {
+     "from": 212,
+     "to": 348,
+     "at": 207,
+     "trimBefore": 162,
+     "frames": 145
+    }
+   },
+   {
+    "from": 365,
+    "frames": 120,
+    "voice": {
+     "from": 375,
+     "to": 469,
+     "at": 371,
+     "trimBefore": 336,
+     "frames": 102
+    }
+   },
+   {
+    "from": 485,
+    "frames": 139,
+    "voice": {
+     "from": 496,
+     "to": 607,
+     "at": 492,
+     "trimBefore": 466,
+     "frames": 120
+    }
+   },
+   {
+    "from": 624,
+    "frames": 138,
+    "voice": {
+     "from": 634,
+     "to": 746,
+     "at": 631,
+     "trimBefore": 618,
+     "frames": 119
+    }
+   },
+   {
+    "from": 762,
+    "frames": 145,
+    "voice": {
+     "from": 773,
+     "to": 891,
+     "at": 769,
+     "trimBefore": 768,
+     "frames": 126
+    }
+   },
+   {
+    "from": 907,
+    "frames": 147,
+    "voice": {
+     "from": 918,
+     "to": 1038,
+     "at": 914,
+     "trimBefore": 924,
+     "frames": 128
+    }
+   },
+   {
+    "from": 1054,
+    "frames": 151,
+    "voice": {
+     "from": 1065,
+     "to": 1189,
+     "at": 1061,
+     "trimBefore": 1081,
+     "frames": 132
+    }
+   },
+   {
+    "from": 1205,
+    "frames": 163,
+    "voice": {
+     "from": 1216,
+     "to": 1352,
+     "at": 1212,
+     "trimBefore": 1242,
+     "frames": 144
+    }
+   },
+   {
+    "from": 1368,
+    "frames": 142,
+    "voice": {
+     "from": 1379,
+     "to": 1494,
+     "at": 1374,
+     "trimBefore": 1415,
+     "frames": 124
+    }
+   },
+   {
+    "from": 1510,
+    "frames": 152,
+    "voice": {
+     "from": 1521,
+     "to": 1646,
+     "at": 1517,
+     "trimBefore": 1566,
+     "frames": 133
+    }
+   },
+   {
+    "from": 1662,
+    "frames": 135,
+    "voice": {
+     "from": 1673,
+     "to": 1780,
+     "at": 1669,
+     "trimBefore": 1732,
+     "frames": 115
+    }
+   },
+   {
+    "from": 1797,
+    "frames": 231,
+    "voice": {
+     "from": 1807,
+     "to": 1953,
+     "at": 1803,
+     "trimBefore": 1877,
+     "frames": 154
+    }
+   }
+  ]
+ },
+ "en": {
+  "source": "voice/showcase-en.mp3",
+  "audio": "voice/showcase-en.norm.wav",
+  "duration": 67.91,
+  "loudness": {
+   "integrated": -16,
+   "truePeak": -2.2,
+   "input": -26.69,
+   "mode": "linear",
+   "lagMs": 0
+  },
+  "lines": [
+   {
+    "start": 0.086,
+    "end": 3.115
+   },
+   {
+    "start": 4.326,
+    "end": 8.423
+   },
+   {
+    "start": 9.474,
+    "end": 12.245
+   },
+   {
+    "start": 13.286,
+    "end": 16.571
+   },
+   {
+    "start": 17.64,
+    "end": 21.402
+   },
+   {
+    "start": 22.517,
+    "end": 25.993
+   },
+   {
+    "start": 27.126,
+    "end": 31.353
+   },
+   {
+    "start": 32.479,
+    "end": 36.369
+   },
+   {
+    "start": 37.492,
+    "end": 42.977
+   },
+   {
+    "start": 44.294,
+    "end": 49.842
+   },
+   {
+    "start": 51.149,
+    "end": 55.943
+   },
+   {
+    "start": 57.309,
+    "end": 61.313
+   },
+   {
+    "start": 62.759,
+    "end": 67.609
+   }
+  ],
+  "fps": 30,
+  "total": 2054,
+  "scenes": [
+   {
+    "from": 0,
+    "frames": 166,
+    "voice": {
+     "from": 59,
+     "to": 149,
+     "at": 56,
+     "trimBefore": 0,
+     "frames": 98
+    }
+   },
+   {
+    "from": 166,
+    "frames": 150,
+    "voice": {
+     "from": 176,
+     "to": 299,
+     "at": 173,
+     "trimBefore": 126,
+     "frames": 131
+    }
+   },
+   {
+    "from": 316,
+    "frames": 110,
+    "voice": {
+     "from": 326,
+     "to": 409,
+     "at": 322,
+     "trimBefore": 280,
+     "frames": 91
+    }
+   },
+   {
+    "from": 426,
+    "frames": 125,
+    "voice": {
+     "from": 436,
+     "to": 535,
+     "at": 432,
+     "trimBefore": 394,
+     "frames": 107
+    }
+   },
+   {
+    "from": 551,
+    "frames": 140,
+    "voice": {
+     "from": 562,
+     "to": 675,
+     "at": 558,
+     "trimBefore": 525,
+     "frames": 121
+    }
+   },
+   {
+    "from": 691,
+    "frames": 132,
+    "voice": {
+     "from": 702,
+     "to": 806,
+     "at": 697,
+     "trimBefore": 671,
+     "frames": 113
+    }
+   },
+   {
+    "from": 823,
+    "frames": 153,
+    "voice": {
+     "from": 833,
+     "to": 960,
+     "at": 829,
+     "trimBefore": 810,
+     "frames": 135
+    }
+   },
+   {
+    "from": 976,
+    "frames": 144,
+    "voice": {
+     "from": 987,
+     "to": 1104,
+     "at": 983,
+     "trimBefore": 970,
+     "frames": 125
+    }
+   },
+   {
+    "from": 1120,
+    "frames": 192,
+    "voice": {
+     "from": 1131,
+     "to": 1295,
+     "at": 1127,
+     "trimBefore": 1121,
+     "frames": 172
+    }
+   },
+   {
+    "from": 1312,
+    "frames": 193,
+    "voice": {
+     "from": 1322,
+     "to": 1489,
+     "at": 1318,
+     "trimBefore": 1325,
+     "frames": 174
+    }
+   },
+   {
+    "from": 1505,
+    "frames": 171,
+    "voice": {
+     "from": 1516,
+     "to": 1659,
+     "at": 1511,
+     "trimBefore": 1530,
+     "frames": 152
+    }
+   },
+   {
+    "from": 1676,
+    "frames": 147,
+    "voice": {
+     "from": 1686,
+     "to": 1807,
+     "at": 1682,
+     "trimBefore": 1715,
+     "frames": 128
+    }
+   },
+   {
+    "from": 1823,
+    "frames": 231,
+    "voice": {
+     "from": 1834,
+     "to": 1979,
+     "at": 1830,
+     "trimBefore": 1879,
+     "frames": 153
+    }
+   }
+  ]
+ }
+}

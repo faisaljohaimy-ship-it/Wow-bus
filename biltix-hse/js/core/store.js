@@ -5,7 +5,8 @@
  * Contract (ARCHITECTURE.md §4). Highlights:
  *
  *   • State shape: { ...seed, feed, settings, filters, meta:{version, savedAt, anchorDate, anchorNow} }
- *   • Persistence key 'biltix-hse:v1', debounced 2 s, every storage access guarded
+ *   • Persistence key 'biltix-hse:v1', debounced 2 s (max-wait 8 s under a steady stream of live
+ *     updates; also flushed on pagehide / tab hidden), every storage access guarded
  *     (private mode / quota / disabled storage never throws; a quota overflow is surfaced
  *     once through bus 'alert' with tone 'warning'). Only MUTABLE data is written: settings,
  *     filters, meta, the last 30 feed events and, for every user-mutable collection, a
@@ -37,7 +38,20 @@
  *     addTask, updateTask, addAlert, ackAlert, updateValidation, updatePipeline,
  *     updateConnector, pushAudit, resolveQuarantine, retryWriteback) persist, emit
  *     `store:change`, append audit entries, generate AIR-#### / MT-#### / AL-#### codes and
- *     simulate the write-back to Biltix PM (pending → synced after 1.5 s + feed event).
+ *     simulate the write-back to BILTIX PM (pending → synced after 1.5 s + feed event).
+ *
+ *   • v3 "Precision" (CONTRACT §8): settings gain `lang`, `appearance {background, density}`, `calendar`,
+ *     `motion` and `dataSource.lastSuccessAt/lastErrorAt/lastError`; weights must be 5 non-negative numbers
+ *     summing to 1 ± 0.001 and thresholds must satisfy critical ≥ alert + 5 — invalid values are REJECTED
+ *     with a bilingual reason (validateWeights / validateThresholds / setWeights / setThresholds, bus
+ *     'settings:invalid'), never silently reshaped. AI risks carry likelihood/impact (1–5) with the score
+ *     derived as L × I × 4, residualLikelihood/residualImpact (+ residualAssessment), dataQuality and
+ *     treatment { plan, taskId, evidence[] }. New audited CRUD returns { ok, … } | { ok:false, reason,
+ *     message, messageEn, errors? }: addEvidence, removeEvidence, assessResidual, closeAiRisk (residual
+ *     assessment + outcome required), reopenAiRisk, editTask, assignTask, addTaskAttachment,
+ *     removeTaskAttachment, recordDataSourceResult; addAiRisk validates (no silent defaults for
+ *     likelihood/impact/owner/due). Every feed event and audit entry the store writes is bilingual
+ *     (title/detail + titleEn/detailEn, detail + detailEn); simulated operations say so.
  *
  * Side effects on import are limited to reading localStorage once to build `state`.
  */
@@ -45,6 +59,7 @@
 import seed, { RISK_STATUS, CONTROL_TYPES, INCIDENT_TYPES, INCIDENT_STATUS, PERMIT_TYPES, PERMIT_STATUS, INSPECTION_STATUS, INSPECTION_TYPES, INTEGRATION_STATUS } from '../data/seed.js';
 import { bus } from './bus.js';
 import { sel } from './selectors.js';
+import { enumEn, dataEn, siteEnById, personEn, latinOnly } from '../data/vocab-en.js';
 
 /**
  * Part B — platform seed (ARCHITECTURE.md §B3/§B5). Loaded through an awaited dynamic
@@ -53,10 +68,13 @@ import { sel } from './selectors.js';
  * application down with it (the HSE pillar must keep booting on its own).
  */
 let platformSeed = null;
+/** v3 helper from platform-seed.js: input-data quality of a source system (one definition). */
+let deriveDataQuality = null;
 try {
   const mod = await import('../data/platform-seed.js');
   platformSeed = (mod && (mod.default || mod.platformSeed)) || null;
   if (!isPlainObject(platformSeed)) platformSeed = null;
+  if (mod && typeof mod.deriveDataQuality === 'function') deriveDataQuality = mod.deriveDataQuality;
 } catch (error) {
   console.warn('[biltix] platform-seed.js غير متاح بعد — تعمل المنصة بمجموعات فارغة.', error && error.message ? error.message : error);
 }
@@ -73,6 +91,8 @@ export const AUDIT_CAP = 500;
 /** Feed events kept in localStorage (the live engines refill the rest). */
 export const PERSIST_FEED_CAP = 30;
 export const PERSIST_DEBOUNCE_MS = 2000;
+/** Upper bound for a burst of changes (live engines mutate every few seconds): the write is never starved. */
+export const PERSIST_MAX_WAIT_MS = 8000;
 const WRITEBACK_MS = 1500;
 const DAY_MS = 86_400_000;
 /** Legacy brand defaults (pre-RTL-2); saved copies of these migrate to '' = "use theme tokens". */
@@ -82,16 +102,38 @@ const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
 const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const DATA_SOURCE_TYPES = ['simulation', 'json', 'sheets', 'supabase'];
-const MOTION_MODES = ['auto', 'reduce', 'full'];
+export const MOTION_MODES = Object.freeze(['auto', 'reduce', 'full']);
+/** v3 settings enums (CONTRACT §8). */
+export const LANGS = Object.freeze(['ar', 'en']);
+export const BACKGROUND_MODES = Object.freeze(['static', 'subtle', 'cinematic']);
+export const DENSITY_MODES = Object.freeze(['comfortable', 'compact']);
+export const CALENDAR_MODES = Object.freeze(['gregorian', 'hijri', 'both']);
+/** Weights must sum to 1 within this tolerance (CONTRACT §8). */
+export const WEIGHT_TOLERANCE = 0.001;
+/** The critical threshold must sit at least this far above the alert threshold. */
+export const THRESHOLD_GAP = 5;
+const WEIGHT_KEYS = ['contract', 'bom', 'schedule', 'site', 'cost'];
 
 export const DEFAULT_SETTINGS = deepFreeze({
-  theme: 'dark',
+  // Light is the default theme. themeChosen turns true on any theme change through setSettings(); only then
+  // does a saved 'dark' apply, so settings saved before light became the default open in light.
+  theme: 'light',
+  themeChosen: false,
   numerals: 'latn',
+  // v3: interface language, appearance, calendar and motion (the shell's pre-paint script reads these).
+  // English is the default interface language (v3.7.1). langChosen turns true on any language change through
+  // setSettings(); only then does a saved 'ar' apply, so settings saved while Arabic was the default open in English.
+  lang: 'en',
+  langChosen: false,
+  appearance: { background: 'subtle', density: 'comfortable' },
+  calendar: 'both',
+  motion: 'auto',
   // '' for primary/accent means "use the theme tokens" (css/tokens.css); a hex overrides both themes.
   brand: { primary: '', accent: '', companyName: 'بلتكس', logoUrl: '' },
   sound: false,
   feedPaused: false,
-  dataSource: { type: 'simulation', url: '', apiKey: '', table: '' },
+  // lastSuccessAt / lastErrorAt / lastError: outcome of the last REAL test or import (status.js → Live / Stale / Error).
+  dataSource: { type: 'simulation', url: '', apiKey: '', table: '', lastSuccessAt: null, lastErrorAt: null, lastError: null },
   alertWebhook: '',
   // Part B (§B5): classification weights, alert thresholds, escalation channels, roadmap payment split.
   platform: {
@@ -112,7 +154,19 @@ export const AI_RISK_STATUS = ['مكتشف', 'تنبيه', 'مهمة مُسند�
 export const TASK_STATUS = ['جديدة', 'قيد التنفيذ', 'متأخرة', 'مغلقة'];
 export const TASK_SOURCES = ['ai-accepted', 'ai-edited', 'manual'];
 export const QUARANTINE_STATUS = ['معلّق', 'مُصحح', 'مرفوض'];
-export const AUDIT_ACTIONS = ['override', 'accept', 'escalate', 'writeback', 'model-update', 'validation', 'login', 'config', 'close'];
+export const AUDIT_ACTIONS = [
+  'override', 'accept', 'escalate', 'writeback', 'model-update', 'validation', 'login', 'config', 'close',
+  // v3 audited CRUD (risk lifecycle + tasks)
+  'create', 'evidence', 'residual', 'reopen', 'assign', 'edit', 'attachment',
+];
+/**
+ * Structured (language-neutral) fields an audit entry may carry next to detail/detailEn, so a view can word it
+ * from its own dictionaries in either language: ids and Latin keys, booleans, stored enum values (from / to).
+ */
+const AUDIT_STRUCTURED = ['kind', 'ruleId', 'enabled', 'quarantineId', 'recordRef', 'decision', 'from', 'to', 'pipelineId', 'version'];
+/** v3: optional task priority (Latin ids; displayed through dictionaries). */
+export const TASK_PRIORITIES = ['high', 'medium', 'low'];
+export const EVIDENCE_KINDS = ['link', 'note', 'file'];
 export const PIPELINE_STATUS = ['running', 'idle', 'training', 'degraded'];
 export const CONNECTOR_STATUS = ['connected', 'degraded', 'disconnected', 'configurable'];
 export const ALERT_SEVERITIES = ['critical', 'routine'];
@@ -133,7 +187,7 @@ const SYSTEM_ACTOR = 'النظام';
 const PLATFORM_COLLECTIONS = [
   'projects', 'contracts', 'suppliers', 'commodities', 'boqItems', 'scheduleTasks', 'resources', 'approvals',
   'subcontractors', 'costLines', 'changeOrders', 'currencies', 'labourIndex', 'aiRisks', 'tasks', 'alerts',
-  'pipelines', 'connectors', 'auditLog',
+  'pipelines', 'connectors', 'auditLog', 'submittals',
 ];
 
 /**
@@ -145,16 +199,23 @@ const PLATFORM_COLLECTIONS = [
 const PLATFORM_DATE_FIELDS = {
   projects: { own: ['startDate', 'plannedFinish', 'forecastFinish'], nested: { nextMilestone: ['date'] } },
   contracts: { own: ['signedAt', 'endsAt'], children: { obligations: ['due'] } },
-  boqItems: { own: ['requiredBy', 'orderBy'] },
+  boqItems: { own: ['requiredBy', 'orderBy'], nested: { procurement: ['prApprovedAt', 'slotHoldUntil', 'letterAt'] } },
   scheduleTasks: { own: ['start', 'finish', 'baselineFinish'] },
-  approvals: { own: ['submittedAt'] },
+  approvals: { own: ['submittedAt', 'windowFrom', 'windowTo'] },
   changeOrders: { own: ['submittedAt'] },
-  aiRisks: { own: ['detectedAt', 'updatedAt', 'dueDate'], children: { history: ['at'], overrides: ['at'] } },
-  tasks: { own: ['dueDate', 'createdAt', 'closedAt'], nested: { writeback: ['at'] } },
+  aiRisks: {
+    own: ['detectedAt', 'updatedAt', 'dueDate', 'closedAt', 'reopenedAt'],
+    children: { history: ['at'], overrides: ['at'], evidenceChain: ['at'], monitors: ['byDate'], closureCriteria: ['plannedAt', 'plannedTo'] },
+    // v4 worked example: `scenario` holds projected (calendar-dated) steps after the demo clock — never instants
+    nested: { residualAssessment: ['at'], scenario: ['decisionDate', 'riskDueDate'] },
+    deepChildren: { 'treatment.evidence': ['addedAt'], 'scenario.audit': ['date'] },
+  },
+  tasks: { own: ['dueDate', 'createdAt', 'closedAt', 'updatedAt'], nested: { writeback: ['at'] }, children: { attachments: ['addedAt'] } },
   alerts: { own: ['sentAt', 'ackAt'] },
   pipelines: { own: ['lastRun'] },
   connectors: { own: ['lastSync'] },
   auditLog: { own: ['at'] },
+  submittals: { children: { revisions: ['submittedAt', 'dueAt', 'returnedAt'] } },
 };
 
 export const DEFAULT_FILTERS = deepFreeze({ siteId: 'all', range: 30, search: '' });
@@ -168,13 +229,21 @@ const PERSIST_PLATFORM_COLLECTIONS = ['aiRisks', 'tasks', 'alerts', 'auditLog', 
 /** platform.validation sub-collections persisted as deltas. */
 const PERSIST_VALIDATION_KEYS = ['sources', 'rules', 'quarantine'];
 /**
+ * Real-test diagnostics on integration / connector records: `lastTest` { ok, opaque, at, latencyMs, reason,
+ * message, messageEn } written by the Integrations "Test connection" action, and `lastSuccessAt` / `lastErrorAt`.
+ * They are DIAGNOSTICS ONLY: persisting them never changes a record's `status`, `simulated` or `real` flag, and the
+ * store never derives a "connected"/Live state from them (status.js is the only place that classifies). They are
+ * real instants, so they are NOT re-anchored on load (only clamped so none lies in the future).
+ */
+const DIAGNOSTIC_FIELDS = ['lastTest', 'lastSuccessAt', 'lastErrorAt'];
+/**
  * Fields whose changes are persisted for seed items of a collection (undefined = every field).
- * Jittered telemetry (latency, counters, histories) stays session-only; configuration and
- * status survive reloads.
+ * Jittered telemetry (latency, counters, histories) stays session-only; configuration, status
+ * and real-test diagnostics survive reloads.
  */
 const PERSIST_FIELDS = {
-  integrations: ['config', 'status', 'lastSync', 'lastError', 'enabled'],
-  connectors: ['config', 'status', 'lastSync', 'enabled', 'mode'],
+  integrations: ['config', 'status', 'lastSync', 'lastError', 'enabled', ...DIAGNOSTIC_FIELDS],
+  connectors: ['config', 'status', 'lastSync', 'enabled', 'mode', ...DIAGNOSTIC_FIELDS],
   pipelines: ['status', 'version', 'lastRun', 'driftScore', 'calibrationError', 'enabled'],
   sources: ['enabled'],
   rules: ['enabled'],
@@ -394,6 +463,12 @@ function shiftCollection(items, spec, shift) {
     if (spec.nested) {
       for (const [childKey, childFields] of Object.entries(spec.nested)) shiftFields(item[childKey], childFields, shift);
     }
+    if (spec.deepChildren) {
+      for (const [path, childFields] of Object.entries(spec.deepChildren)) {
+        const list = getPath(item, path);
+        if (Array.isArray(list)) list.forEach((child) => shiftFields(child, childFields, shift));
+      }
+    }
   }
 }
 
@@ -578,6 +653,55 @@ const INTEGRATION_STATUS_IDS = Array.isArray(INTEGRATION_STATUS)
   ? INTEGRATION_STATUS.map((s) => (isPlainObject(s) ? s.id : s)).filter(Boolean)
   : CONNECTOR_STATUS;
 
+/* ────────────────────────────── v3 validation (weights, thresholds, risk input) ────────────────────────────── */
+
+/** Bilingual failure object the UI can show as is (or map `reason` to its own dictionary). */
+function fail(reason, message, messageEn, extra = {}) {
+  return { ok: false, reason, message, messageEn, ...extra };
+}
+
+/**
+ * Weights rule (CONTRACT §8): exactly the five domains, each a finite number ≥ 0, summing to 1 ± 0.001.
+ * Returns { ok:true, weights, sum } or { ok:false, reason, message, messageEn, sum, field }.
+ */
+export function validateWeights(input) {
+  if (!isPlainObject(input)) return fail('weights-shape', 'يجب إدخال أوزان المجالات الخمسة.', 'Enter a weight for each of the five domains.', { sum: null });
+  const weights = {};
+  for (const key of WEIGHT_KEYS) {
+    const raw = input[key];
+    const n = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : (typeof raw === 'number' ? raw : NaN);
+    if (!Number.isFinite(n)) return fail('weights-missing', 'كل وزن يجب أن يكون رقماً.', 'Every weight must be a number.', { field: key, sum: null });
+    if (n < 0) return fail('weights-negative', 'لا يمكن أن يكون الوزن سالباً.', 'A weight cannot be negative.', { field: key, sum: null });
+    weights[key] = n;
+  }
+  const extra = Object.keys(input).filter((k) => !WEIGHT_KEYS.includes(k) && !isUnsafeKey(k));
+  if (extra.length) return fail('weights-unknown', 'توجد مفاتيح أوزان غير معروفة.', 'Unknown weight keys were supplied.', { field: extra[0], sum: null });
+  const sum = Math.round(WEIGHT_KEYS.reduce((a, k) => a + weights[k], 0) * 1e6) / 1e6;
+  if (Math.abs(sum - 1) > WEIGHT_TOLERANCE) {
+    const pct = Math.round(sum * 1000) / 10;
+    return fail('weights-sum', `مجموع الأوزان ${pct}% — يجب أن يساوي 100%.`, `The weights add up to ${pct}% — they must total 100%.`, { sum });
+  }
+  return { ok: true, weights, sum };
+}
+
+/**
+ * Thresholds rule: integers 0–100, critical ≥ alert + 5 (CONTRACT §8 / AC-07).
+ * Returns { ok:true, alertThreshold, criticalThreshold } or a bilingual failure.
+ */
+export function validateThresholds(input) {
+  const src = isPlainObject(input) ? input : {};
+  const a = Number(src.alertThreshold);
+  const c = Number(src.criticalThreshold);
+  if (!Number.isFinite(a) || !Number.isFinite(c)) return fail('thresholds-missing', 'أدخل عتبتي التنبيه والتصعيد كأرقام.', 'Enter both the alert and the critical threshold as numbers.');
+  if (a < 0 || a > 100 || c < 0 || c > 100) return fail('thresholds-range', 'العتبات بين 0 و100.', 'Thresholds must be between 0 and 100.');
+  const alertThreshold = Math.round(a);
+  const criticalThreshold = Math.round(c);
+  if (criticalThreshold < alertThreshold + THRESHOLD_GAP) {
+    return fail('thresholds-gap', `يجب أن تكون عتبة التصعيد الفوري أعلى من عتبة التنبيه بـ ${THRESHOLD_GAP} نقاط على الأقل.`, `The critical threshold must be at least ${THRESHOLD_GAP} points above the alert threshold.`, { field: 'criticalThreshold' });
+  }
+  return { ok: true, alertThreshold, criticalThreshold };
+}
+
 /** Platform category weights → numbers in 0..1 summing to exactly 1 (fallback when unusable). */
 export function normalizeWeights(input, fallback = DEFAULT_SETTINGS.platform.weights) {
   const base = isPlainObject(fallback) ? fallback : DEFAULT_SETTINGS.platform.weights;
@@ -600,11 +724,88 @@ export function normalizeWeights(input, fallback = DEFAULT_SETTINGS.platform.wei
  * platform weights normalised to sum 1, thresholds clamped (critical ≥ alert) with `current`
  * values as the fallback for unparsable numbers.
  */
+/** ISO instant that must not lie in the future (clock skew / imported files) → clamped; anything else → null. */
+function pastInstantOrNull(value, nowDate = new Date()) {
+  if (typeof value !== 'string' || !INSTANT_RE.test(value) || !Number.isFinite(Date.parse(value))) return null;
+  return clampInstant(value, nowDate);
+}
+
+/** dataSource.lastError: a short string or { code, message, messageEn } (bilingual), else null. */
+function sanitizeLastError(value) {
+  if (typeof value === 'string') return value.trim().slice(0, 500) || null;
+  if (isPlainObject(value)) {
+    const out = {
+      code: text(value.code).slice(0, 60) || null,
+      message: text(value.message).slice(0, 500),
+      messageEn: text(value.messageEn).slice(0, 500),
+    };
+    return out.message || out.messageEn || out.code ? out : null;
+  }
+  return null;
+}
+
+/** A well-formed ISO instant string (any offset), else null. Shape check only — clamping happens in finishLoad. */
+function instantOrNull(value) {
+  return typeof value === 'string' && INSTANT_RE.test(value) && Number.isFinite(Date.parse(value)) ? value : null;
+}
+
+/**
+ * Integration / connector `lastTest` (diagnostic of the last REAL connection test): a plain object with a valid
+ * `at` instant, else null. Unknown keys are dropped; strings are capped. Never carries or implies a status.
+ */
+function sanitizeLastTest(value) {
+  if (!isPlainObject(value)) return null;
+  const at = instantOrNull(value.at);
+  if (!at) return null;
+  const latency = Number(value.latencyMs);
+  const out = {
+    ok: value.ok === true,
+    opaque: value.opaque === true,
+    at,
+    latencyMs: value.latencyMs != null && Number.isFinite(latency) && latency > 0 ? latency : null,
+    reason: text(value.reason).slice(0, 60) || null,
+    message: text(value.message).slice(0, 500),
+    messageEn: text(value.messageEn).slice(0, 500),
+  };
+  const httpStatus = Number(value.status);
+  if (value.status != null && Number.isInteger(httpStatus) && httpStatus >= 0 && httpStatus < 1000) out.status = httpStatus;
+  if (typeof value.type === 'string' && /^[a-z]{2,20}$/.test(value.type)) out.type = value.type;
+  return out;
+}
+
+/** Shape-normalise the diagnostics of one integration / connector record in place (present fields only). */
+function normalizeDiagnostics(rec) {
+  if (rec.lastSuccessAt !== undefined) rec.lastSuccessAt = instantOrNull(rec.lastSuccessAt);
+  if (rec.lastErrorAt !== undefined) rec.lastErrorAt = instantOrNull(rec.lastErrorAt);
+  if (rec.lastTest !== undefined) rec.lastTest = sanitizeLastTest(rec.lastTest);
+}
+
+/** Load pass: no diagnostic instant may lie after `nowDate` (clock skew, imported file). */
+function clampDiagnostics(base, nowDate) {
+  const lists = [base && base.integrations, base && isPlainObject(base.platform) ? base.platform.connectors : null];
+  for (const list of lists) {
+    for (const rec of objectItems(list)) {
+      for (const key of ['lastSuccessAt', 'lastErrorAt']) if (typeof rec[key] === 'string') rec[key] = clampInstant(rec[key], nowDate);
+      if (isPlainObject(rec.lastTest) && typeof rec.lastTest.at === 'string') rec.lastTest.at = clampInstant(rec.lastTest.at, nowDate);
+    }
+  }
+}
+
 export function sanitizeSettings(input, current = DEFAULT_SETTINGS) {
   const cur = isPlainObject(current) ? current : DEFAULT_SETTINGS;
   const merged = deepMerge(clone(DEFAULT_SETTINGS), isPlainObject(input) ? input : {});
-  merged.theme = merged.theme === 'light' ? 'light' : 'dark';
+  merged.themeChosen = merged.themeChosen === true;
+  merged.theme = merged.theme === 'dark' && merged.themeChosen ? 'dark' : 'light';
   merged.numerals = merged.numerals === 'arab' ? 'arab' : 'latn';
+  merged.langChosen = merged.langChosen === true;
+  merged.lang = merged.lang === 'ar' && merged.langChosen ? 'ar' : 'en';
+  merged.calendar = pickEnum(merged.calendar, CALENDAR_MODES, 'both');
+  merged.motion = pickEnum(merged.motion, MOTION_MODES, 'auto');
+  const ap = isPlainObject(merged.appearance) ? merged.appearance : {};
+  merged.appearance = {
+    background: pickEnum(ap.background, BACKGROUND_MODES, DEFAULT_SETTINGS.appearance.background),
+    density: pickEnum(ap.density, DENSITY_MODES, DEFAULT_SETTINGS.appearance.density),
+  };
   const brand = deepMerge(clone(DEFAULT_SETTINGS.brand), isPlainObject(merged.brand) ? merged.brand : {});
   brand.primary = hexOrEmpty(brand.primary, LEGACY_BRAND.primary);
   brand.accent = hexOrEmpty(brand.accent, LEGACY_BRAND.accent);
@@ -615,21 +816,41 @@ export function sanitizeSettings(input, current = DEFAULT_SETTINGS) {
   merged.feedPaused = bool(merged.feedPaused, false);
   if (merged.railCollapsed !== undefined) merged.railCollapsed = bool(merged.railCollapsed);
   if (merged.reducedMotion !== undefined) merged.reducedMotion = bool(merged.reducedMotion);
-  if (merged.motion !== undefined) merged.motion = pickEnum(merged.motion, MOTION_MODES, 'auto');
   const ds = deepMerge(clone(DEFAULT_SETTINGS.dataSource), isPlainObject(merged.dataSource) ? merged.dataSource : {});
   ds.type = pickEnum(ds.type, DATA_SOURCE_TYPES, 'simulation');
   ds.url = text(ds.url);
   ds.apiKey = text(ds.apiKey);
   ds.table = text(ds.table);
+  ds.lastSuccessAt = pastInstantOrNull(ds.lastSuccessAt);
+  ds.lastErrorAt = pastInstantOrNull(ds.lastErrorAt);
+  ds.lastError = sanitizeLastError(ds.lastError);
   merged.dataSource = ds;
   merged.alertWebhook = text(merged.alertWebhook);
   const curP = isPlainObject(cur.platform) ? cur.platform : DEFAULT_SETTINGS.platform;
   const p = deepMerge(clone(DEFAULT_SETTINGS.platform), isPlainObject(merged.platform) ? merged.platform : {});
-  p.weights = normalizeWeights(p.weights, normalizeWeights(curP.weights));
+  // Weights: a valid set (sum 1 ± 0.001) is kept exactly; a legacy set that is merely rounded (± 2 %) is
+  // renormalised; anything else falls back to the current (then default) weights — never a silent reshape.
+  const w = validateWeights(p.weights);
+  if (w.ok) p.weights = { ...w.weights };
+  else {
+    const vals = isPlainObject(p.weights) ? WEIGHT_KEYS.map((k) => Number(p.weights[k])) : [];
+    const sum = vals.reduce((a, b) => a + b, 0);
+    const nearlyValid = vals.length === WEIGHT_KEYS.length && vals.every((n) => Number.isFinite(n) && n >= 0) && Math.abs(sum - 1) <= 0.02;
+    const curW = validateWeights(curP.weights);
+    p.weights = nearlyValid ? normalizeWeights(p.weights) : (curW.ok ? { ...curW.weights } : { ...DEFAULT_SETTINGS.platform.weights });
+  }
+  // Thresholds: integers 0–100 with critical ≥ alert + 5; a violating pair falls back to the current pair.
   const curAlert = clampNum(curP.alertThreshold, 0, 100, DEFAULT_SETTINGS.platform.alertThreshold);
   const curCritical = clampNum(curP.criticalThreshold, 0, 100, DEFAULT_SETTINGS.platform.criticalThreshold);
   p.alertThreshold = Math.round(clampNum(p.alertThreshold, 0, 100, curAlert));
-  p.criticalThreshold = Math.round(clampNum(p.criticalThreshold, p.alertThreshold, 100, Math.max(p.alertThreshold, curCritical)));
+  p.criticalThreshold = Math.round(clampNum(p.criticalThreshold, 0, 100, curCritical));
+  if (!validateThresholds(p).ok) {
+    const curPair = validateThresholds({ alertThreshold: curAlert, criticalThreshold: curCritical });
+    if (curPair.ok) { p.alertThreshold = curPair.alertThreshold; p.criticalThreshold = curPair.criticalThreshold; } else {
+      p.alertThreshold = Math.min(p.alertThreshold, 100 - THRESHOLD_GAP);
+      p.criticalThreshold = Math.max(p.criticalThreshold, p.alertThreshold + THRESHOLD_GAP);
+    }
+  }
   const channels = {};
   for (const k of Object.keys(DEFAULT_SETTINGS.platform.channels)) {
     channels[k] = bool(isPlainObject(p.channels) ? p.channels[k] : undefined, DEFAULT_SETTINGS.platform.channels[k]);
@@ -677,6 +898,77 @@ export function backfillAlertCodes(list) {
   return list;
 }
 
+/* ────────────────────────────── v3: likelihood × impact helpers ────────────────────────────── */
+
+/** Integer 1–5 or null (not given / not assessed). */
+function scale5(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n !== Math.round(n) || n < 1 || n > 5) return null;
+  return n;
+}
+
+/** Severity (CONTRACT §8, spec D5): likelihood × impact × 4 → 0–100. */
+export function scoreOf(likelihood, impact) {
+  const l = scale5(likelihood);
+  const i = scale5(impact);
+  return l && i ? l * i * 4 : null;
+}
+
+/**
+ * Legacy records (pre-v3 saved state) carry only a 0–100 score: the closest L×I×4 pair that keeps the same
+ * rating AND the same alert decision at the default thresholds (> 60 alert, ≥ 85 immediate escalation) —
+ * the rule the seed was authored with.
+ */
+export function liFromScore(score) {
+  const s = clampNum(score, 0, 100, 50);
+  const band = (v) => (v >= 85 ? 4 : v >= 70 ? 3 : v > 60 ? 2 : v >= 40 ? 1 : 0);
+  let best = [3, 3];
+  let bestD = Infinity;
+  for (let i = 5; i >= 1; i -= 1) {
+    for (let l = 5; l >= 1; l -= 1) {
+      const v = l * i * 4;
+      const d = Math.abs(v - s) + (band(v) === band(s) ? 0 : 1000);
+      if (d < bestD) { bestD = d; best = [l, i]; }
+    }
+  }
+  return best;
+}
+
+function normalizeEvidenceItem(e, i, riskId) {
+  if (!isPlainObject(e)) return null;
+  const title = text(e.title).slice(0, 300);
+  if (!title) return null;
+  const url = typeof e.url === 'string' && /^https?:\/\//i.test(e.url.trim()) ? e.url.trim().slice(0, 2048) : null;
+  const out = {
+    id: text(e.id) || `EV-${riskId || 'X'}-${i + 1}`,
+    kind: pickEnum(e.kind, EVIDENCE_KINDS, 'note'),
+    title,
+    url,
+    addedAt: typeof e.addedAt === 'string' ? e.addedAt : null,
+    by: text(e.by) || null,
+    local: e.local !== false,
+  };
+  for (const k of ['titleEn', 'note', 'ref', 'sourceSystem', 'fileName', 'mime']) if (typeof e[k] === 'string' && e[k].trim()) out[k] = e[k].trim().slice(0, k === 'note' ? 2000 : 300);
+  if (Number.isFinite(Number(e.size)) && Number(e.size) >= 0) out.size = Math.round(Number(e.size));
+  return out;
+}
+
+function normalizeTreatment(t, riskId) {
+  const src = isPlainObject(t) ? t : {};
+  const evidence = Array.isArray(src.evidence) ? src.evidence.map((e, i) => normalizeEvidenceItem(e, i, riskId)).filter(Boolean) : [];
+  return { ...src, plan: typeof src.plan === 'string' && src.plan.trim() ? src.plan.trim() : null, taskId: src.taskId == null ? null : text(src.taskId), evidence };
+}
+
+/** History sentence of an edit made in the HSE risk register (history entries of kind 'edit'). */
+const RISK_EDIT_NOTE = Object.freeze({ ar: 'تحديث بيانات المخاطرة من سجل المخاطر', en: 'Risk details updated from the register' });
+
+/** Entries saved before edits were structured carry the Arabic sentence (also as textEn): give them kind + English. */
+function upgradeRiskHistoryEntry(e) {
+  if (e.kind === undefined && e.text === RISK_EDIT_NOTE.ar) e.kind = 'edit';
+  if (e.kind === 'edit' && !latinOnly(e.textEn)) e.textEn = RISK_EDIT_NOTE.en;
+}
+
 /** Per-collection item normalisers (enums, clamped numbers, well-typed sub-structures). */
 const ITEM_NORMALIZERS = {
   risks(r) {
@@ -687,6 +979,7 @@ const ITEM_NORMALIZERS = {
     r.residualSeverity = clampInt(r.residualSeverity, 1, 5, r.severity);
     r.controls = normalizeControls(r.controls);
     r.history = objectList(r.history);
+    r.history.forEach(upgradeRiskHistoryEntry);
   },
   incidents(i) {
     i.type = pickEnum(i.type, INCIDENT_TYPES, 'حادث وشيك');
@@ -718,14 +1011,28 @@ const ITEM_NORMALIZERS = {
     if (g.latencyMs !== undefined) g.latencyMs = clampNum(g.latencyMs, 0, 1e7, 0);
     if (g.eventsPerHour !== undefined) g.eventsPerHour = clampNum(g.eventsPerHour, 0, 1e9, 0);
     if (g.uptimePct !== undefined) g.uptimePct = clampNum(g.uptimePct, 0, 100, 0);
+    normalizeDiagnostics(g);
   },
   aiRisks(r) {
     r.category = pickEnum(r.category, AI_CATEGORIES, 'site');
     r.type = pickEnum(r.type, AI_TYPES, CATEGORY_TYPE[r.category]);
     r.pipeline = pickEnum(r.pipeline, AI_PIPELINES, CATEGORY_PIPELINE[r.category]);
     r.status = pickEnum(r.status, AI_RISK_STATUS, 'مكتشف');
-    r.score = Math.round(clampNum(r.score, 0, 100, 50));
-    r.confidence = clampNum(r.confidence, 0, 1, 0.8);
+    // v3: likelihood/impact are authoritative; the score is always derived (legacy records get the closest pair).
+    let l = scale5(r.likelihood);
+    let im = scale5(r.impact);
+    if (!l || !im) [l, im] = liFromScore(r.score);
+    r.likelihood = l;
+    r.impact = im;
+    r.score = l * im * 4;
+    r.residualLikelihood = scale5(r.residualLikelihood);
+    r.residualImpact = scale5(r.residualImpact);
+    if (!r.residualLikelihood || !r.residualImpact) { r.residualLikelihood = null; r.residualImpact = null; r.residualAssessment = null; }
+    else if (!isPlainObject(r.residualAssessment)) r.residualAssessment = { at: null, by: null, justification: '' };
+    r.treatment = normalizeTreatment(r.treatment, r.id);
+    if (r.dataQuality != null && !isPlainObject(r.dataQuality)) r.dataQuality = null;
+    // A manually registered risk has no model confidence (null); engine output keeps 0–1.
+    r.confidence = r.confidence == null && r.origin === 'manual' ? null : clampNum(r.confidence, 0, 1, 0.8);
     r.history = objectList(r.history);
     r.overrides = objectList(r.overrides);
     r.stakeholders = stringList(r.stakeholders);
@@ -739,8 +1046,10 @@ const ITEM_NORMALIZERS = {
     t.status = pickEnum(t.status, TASK_STATUS, 'جديدة');
     t.source = pickEnum(t.source, TASK_SOURCES, 'manual');
     t.riskId = t.riskId == null ? null : text(t.riskId);
-    if (!isPlainObject(t.writeback)) t.writeback = { target: 'Biltix PM', status: 'pending', at: null };
+    if (!isPlainObject(t.writeback)) t.writeback = { target: 'BILTIX PM', status: 'pending', at: null };
     t.writeback.status = pickEnum(t.writeback.status, ['pending', 'synced', 'failed'], 'pending');
+    t.priority = t.priority == null ? null : pickEnum(t.priority, TASK_PRIORITIES, null);
+    t.attachments = Array.isArray(t.attachments) ? t.attachments.map((a, i) => normalizeEvidenceItem(a, i, t.id)).filter(Boolean) : [];
   },
   alerts(a) {
     a.severity = pickEnum(a.severity, ALERT_SEVERITIES, 'routine');
@@ -758,7 +1067,8 @@ const ITEM_NORMALIZERS = {
   },
   pipelines(p) {
     p.status = pickEnum(p.status, PIPELINE_STATUS, 'idle');
-    for (const k of ['precision', 'recall', 'calibrationError', 'driftScore']) if (p[k] !== undefined) p[k] = clampNum(p[k], 0, 1, 0);
+    // null = not measured (no test set / model service in this version): keep it null, never coerce to 0.
+    for (const k of ['precision', 'recall', 'calibrationError', 'driftScore']) if (p[k] !== undefined) p[k] = p[k] === null ? null : clampNum(p[k], 0, 1, null);
     if (p.runsToday !== undefined) p.runsToday = clampInt(p.runsToday, 0, 1e6, 0);
     if (p.acceptanceRatePct !== undefined) p.acceptanceRatePct = clampNum(p.acceptanceRatePct, 0, 100, 0);
   },
@@ -766,6 +1076,7 @@ const ITEM_NORMALIZERS = {
     c.status = pickEnum(c.status, CONNECTOR_STATUS, 'configurable');
     if (c.config != null && !isPlainObject(c.config)) c.config = {};
     if (c.latencyMs !== undefined) c.latencyMs = clampNum(c.latencyMs, 0, 1e7, 0);
+    normalizeDiagnostics(c);
   },
   sources(s) {
     for (const k of ['completenessPct', 'consistencyPct']) if (s[k] !== undefined) s[k] = clampNum(s[k], 0, 100, 0);
@@ -782,6 +1093,8 @@ const ITEM_NORMALIZERS = {
   feed(ev) {
     ev.title = text(ev.title);
     ev.detail = text(ev.detail);
+    if (ev.titleEn != null) ev.titleEn = text(ev.titleEn);
+    if (ev.detailEn != null) ev.detailEn = text(ev.detailEn);
     ev.type = text(ev.type) || 'alert';
     ev.tone = text(ev.tone) || 'accent';
   },
@@ -814,6 +1127,10 @@ export function normalizeState(base, { settingsFallback = DEFAULT_SETTINGS } = {
   for (const key of PERSIST_PLATFORM_COLLECTIONS) p[key] = normalizeCollection(p[key], key);
   if (!isPlainObject(p.validation)) p.validation = emptyPlatform().validation;
   for (const key of PERSIST_VALIDATION_KEYS) p.validation[key] = normalizeCollection(p.validation[key], key);
+  // v3: risks saved before input-data quality existed get it derived from their source system now.
+  if (typeof deriveDataQuality === 'function') {
+    for (const r of p.aiRisks) if (!isPlainObject(r.dataQuality)) r.dataQuality = deriveDataQuality(p.validation, r.evidence && r.evidence.sourceSystem, r.evidence && r.evidence.kind);
+  }
   backfillAlertCodes(p.alerts);
   if (p.auditLog.length > AUDIT_CAP) p.auditLog.length = AUDIT_CAP;
   if (base.feed.length > FEED_CAP) base.feed.length = FEED_CAP;
@@ -1009,8 +1326,11 @@ export function buildFreshState(nowDate = new Date()) {
 function finishLoad(base, nowDate) {
   normalizeState(base);
   base.meta.version = STATE_VERSION;
+  // A save made "later" than this load (clock moved back, imported file) never shows a future time.
+  if (typeof base.meta.savedAt === 'string') base.meta.savedAt = clampInstant(base.meta.savedAt, nowDate);
   base.meta.anchorDate = todayISO(nowDate);
   reanchor(base, nowDate, { instants: false }); // day delta is 0 here → pure clamp pass
+  clampDiagnostics(base, nowDate); // real-test diagnostics are never re-anchored, only kept in the past
   return base;
 }
 
@@ -1095,6 +1415,7 @@ const state = createInitialState();
 
 let persistTimer = null;
 let flushHookInstalled = false;
+let dirtySince = 0;     // epoch ms of the first unsaved non-feed change (max-wait anchor)
 let dirty = false;      // non-feed changes waiting to be written
 let feedDirty = false;  // feed-only changes (ride along with the next write / pagehide)
 let quotaReported = false;
@@ -1121,10 +1442,14 @@ function persistNow() {
   } catch (error) {
     if (isQuotaError(error) && !quotaReported) {
       quotaReported = true;
+      // A real browser condition (not part of any simulation): simulated is false.
       bus.emit('alert', {
-        severity: 'warning', tone: 'warning', source: 'storage',
+        severity: 'warning', tone: 'warning', source: 'storage', simulated: false,
         title: 'تعذر حفظ البيانات محلياً',
         detail: 'امتلأت مساحة التخزين المحلية في المتصفح؛ ستبقى التغييرات في هذه الجلسة فقط حتى يتوفر مكان.',
+        titleEn: 'Data could not be saved in this browser',
+        detailEn: "This browser's local storage is full; changes stay in this session only until space is available.",
+        ts: localISO(store.now()),
       });
     }
     return false;
@@ -1134,7 +1459,12 @@ function persistNow() {
 function installFlushHook() {
   if (flushHookInstalled || typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
   flushHookInstalled = true;
-  window.addEventListener('pagehide', () => { if (dirty || feedDirty || persistTimer) persistNow(); });
+  const flushIfPending = () => { if (dirty || feedDirty || persistTimer) persistNow(); };
+  window.addEventListener('pagehide', flushIfPending);
+  // Mobile browsers may kill a backgrounded tab without pagehide: flush when it is hidden.
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushIfPending(); });
+  }
 }
 
 /** Debounced write (≥ 2 s). Feed-only changes never start the timer on their own. */
@@ -1145,9 +1475,14 @@ function schedulePersist(path = '*') {
     feedDirty = true;
     return;
   }
+  const now = Date.now();
+  if (!dirty || !persistTimer) dirtySince = now;
   dirty = true;
   if (persistTimer) clearTimeout(persistTimer);
-  persistTimer = setTimeout(persistNow, PERSIST_DEBOUNCE_MS);
+  // Trailing debounce (>= 2 s after the last change) capped by a max-wait so a steady stream of
+  // live updates still reaches storage every PERSIST_MAX_WAIT_MS.
+  const wait = Math.max(0, Math.min(PERSIST_DEBOUNCE_MS, PERSIST_MAX_WAIT_MS - (now - dirtySince)));
+  persistTimer = setTimeout(persistNow, wait);
 }
 
 function changed(path) {
@@ -1271,6 +1606,7 @@ function normalizeActions(list, nowDate) {
       due: typeof a.due === 'string' && a.due ? a.due : todayISO(addMs(nowDate, 14 * DAY_MS)),
       done: Boolean(a.done),
       doneAt: a.done ? (typeof a.doneAt === 'string' && a.doneAt ? a.doneAt : new Date(nowDate).toISOString()) : null,
+      ...(typeof a.textEn === 'string' && a.textEn.trim() ? { textEn: a.textEn.trim() } : {}),
     } : null))
     .filter((a) => a && a.text);
 }
@@ -1313,9 +1649,51 @@ function pipelineLabel(id) {
   return (p && (p.nameAr || p.name)) || PIPELINE_LABEL[id] || 'محرك المخاطر';
 }
 
-function riskHistory(risk, by, textValue) {
+/**
+ * Append an AI-risk history entry. `fields` adds structured, language-neutral data (kind, statusFrom/statusTo,
+ * from/to, owner, due) so a view can word the entry from its dictionaries in either language.
+ * kind: 'status' = a plain status change (its whole sentence can be rebuilt from statusFrom/statusTo);
+ * 'dismiss' / 'reopen' also carry statusFrom/statusTo but their sentence says more (the reason), so a view keeps
+ * their text; 'reassess', 'assign', 'note'.
+ */
+function riskHistory(risk, by, textValue, textEn, fields = null) {
   if (!Array.isArray(risk.history)) risk.history = [];
-  risk.history.push({ at: localISO(store.now()), by: text(by) || SYSTEM_ACTOR, text: textValue });
+  const entry = { at: localISO(store.now()), by: text(by) || SYSTEM_ACTOR, text: textValue };
+  if (textEn) entry.textEn = textEn;
+  if (isPlainObject(fields)) {
+    for (const [k, v] of Object.entries(fields)) {
+      if (isUnsafeKey(k) || k in entry || v === undefined || v === null || v === '') continue;
+      entry[k] = v;
+    }
+  }
+  risk.history.push(entry);
+}
+
+/** The risk drawer's assignment note (risk.hist.assignedNote, Arabic wording) → owner + due date. */
+const ASSIGN_NOTE_RE = /^إسناد المخاطرة إلى (.+) — الاستحقاق (\d{4}-\d{2}-\d{2})$/;
+
+/**
+ * English side of an `updateAiRisk` note: the caller's `noteEn` when it has no Arabic; the drawer's assignment
+ * note rebuilt from its parts (owner via the people dictionary when loaded, else a neutral phrase — never the
+ * Arabic name); otherwise a user-typed note is copied as typed (no machine translation).
+ */
+function noteHistoryEn(note, noteEn) {
+  const given = latinOnly(noteEn);
+  const m = ASSIGN_NOTE_RE.exec(note);
+  if (m) {
+    const owner = m[1].trim();
+    return {
+      textEn: given || `Risk assigned to ${personEn(owner, 'a new owner')} — due ${m[2]}`,
+      fields: { kind: 'assign', owner, due: m[2] },
+    };
+  }
+  return { textEn: given || note, fields: { kind: 'note' } };
+}
+
+/** " (was Open)" for an AI-risk status when its English label is loaded; '' otherwise (never an empty "(was )"). */
+function wasStatusEn(prev) {
+  const en = enumEn('aiRiskStatus', prev);
+  return en ? ` (was ${en})` : '';
 }
 
 /** Thresholds (§B2): > alertThreshold → standard alert; ≥ criticalThreshold → immediate escalation. */
@@ -1331,7 +1709,7 @@ function alertLevelFor(score) {
 
 const writebackTimers = new Set();
 
-/** Simulated write-back to Biltix PM: pending → synced after 1.5 s, with feed + audit entries. */
+/** Simulated write-back to BILTIX PM: pending → synced after 1.5 s, with feed + audit entries. */
 function scheduleWriteback(taskId) {
   const enabled = getPath(state, 'settings.platform.writebackEnabled') !== false;
   if (!enabled || typeof setTimeout !== 'function') return;
@@ -1339,16 +1717,25 @@ function scheduleWriteback(taskId) {
     writebackTimers.delete(timer);
     const task = findPlatform('tasks', taskId);
     if (!task || !isPlainObject(task.writeback) || task.writeback.status !== 'pending') return;
+    // Demo build: there is no BILTIX PM endpoint, so the write-back is SIMULATED and labelled as such
+    // (CONTRACT §5 — never claim an operation that did not happen). `simulated: true` travels with it.
     task.writeback.status = 'synced';
     task.writeback.at = localISO(store.now());
-    task.writeback.target = task.writeback.target || 'Biltix PM';
+    task.writeback.target = task.writeback.target || 'BILTIX PM';
+    task.writeback.simulated = true;
     changed(`platform.tasks.${task.id}`);
-    store.pushAudit({ actor: SYSTEM_ACTOR, action: 'writeback', target: task.code, detail: `تمت الكتابة العكسية إلى ${task.writeback.target}: علم المخاطرة والدرجة ومهمة المعالجة ${task.code}` });
+    store.pushAudit({
+      actor: SYSTEM_ACTOR, action: 'writeback', target: task.code, simulated: true,
+      detail: `محاكاة الكتابة العكسية إلى ${task.writeback.target}: علم المخاطرة والدرجة ومهمة المعالجة ${task.code} (لم يُرسل شيء إلى نظام خارجي)`,
+      detailEn: `Simulated write-back to BILTIX PM: risk flag, score and mitigation task ${task.code} (nothing was sent to an external system)`,
+    });
     emitFeed({
-      type: 'writeback', tone: 'good', siteId: task.projectId,
-      title: `تمت الكتابة العكسية إلى ${task.writeback.target} — ${task.code}`,
+      type: 'writeback', tone: 'accent', siteId: task.projectId, simulated: true,
+      title: `محاكاة: كتابة عكسية إلى ${task.writeback.target} — ${task.code}`,
+      titleEn: `Simulated: write-back to BILTIX PM — ${task.code}`,
       detail: [task.title, projectName(task.projectId)].filter(Boolean).join(' · '),
-      sourceId: 'biltix-pm', refId: task.id,
+      detailEn: [task.titleEn || '', siteEnById(state.sites, task.projectId)].filter(Boolean).join(' · '),
+      sourceId: 'biltix-pm', refId: task.id, code: task.code,
     });
   }, WRITEBACK_MS);
   writebackTimers.add(timer);
@@ -1377,18 +1764,23 @@ function createTask(obj = {}, { silent = false, by = '' } = {}) {
     status: pickEnum(obj.status, TASK_STATUS, 'جديدة'),
     source: pickEnum(obj.source, TASK_SOURCES, 'manual'),
     writeback: isPlainObject(obj.writeback)
-      ? { target: 'Biltix PM', status: 'pending', at: null, ...obj.writeback }
-      : { target: 'Biltix PM', status: 'pending', at: null },
+      ? { target: 'BILTIX PM', status: 'pending', at: null, ...obj.writeback }
+      : { target: 'BILTIX PM', status: 'pending', at: null },
+    priority: obj.priority == null || obj.priority === '' ? null : pickEnum(obj.priority, TASK_PRIORITIES, null),
+    attachments: [],
     createdAt: localISO(now),
     closedAt: null,
     outcome: text(obj.outcome),
   };
+  if (typeof obj.titleEn === 'string' && obj.titleEn.trim()) task.titleEn = obj.titleEn.trim();
   tasks.unshift(task);
   if (risk) {
     risk.taskId = task.id;
     if (!text(risk.owner)) risk.owner = task.owner;
     if (!risk.dueDate) risk.dueDate = task.dueDate;
     if (['مكتشف', 'تنبيه'].includes(risk.status)) risk.status = 'مهمة مُسندة';
+    // v3: the linked task IS the treatment plan (treatment.taskId lets the UI localise it via the tasks namespace).
+    risk.treatment = normalizeTreatment({ ...(isPlainObject(risk.treatment) ? risk.treatment : {}), plan: task.title, taskId: task.id }, risk.id);
     risk.updatedAt = localISO(now);
   }
   changed(`platform.tasks.${task.id}`);
@@ -1396,12 +1788,118 @@ function createTask(obj = {}, { silent = false, by = '' } = {}) {
     emitFeed({
       type: 'task', tone: 'accent', siteId: task.projectId,
       title: `مهمة معالجة جديدة ${task.code}${risk ? ` — ${risk.code}` : ''}`,
+      titleEn: `New mitigation task ${task.code}${risk ? ` — ${risk.code}` : ''}`,
       detail: [task.title, `المسؤول: ${task.owner}`].filter(Boolean).join(' · '),
-      sourceId: 'biltix-pm', refId: task.id,
+      detailEn: [task.titleEn || '', `Owner: ${personEn(task.owner, 'assigned')}`].filter(Boolean).join(' · '),
+      sourceId: 'biltix-pm', refId: task.id, code: task.code,
     });
   }
   if (task.writeback.status === 'pending') scheduleWriteback(task.id);
   return task;
+}
+
+/* ────────────────────────────── v3: AI-risk input validation ────────────────────────────── */
+
+const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})/;
+
+function validDateOnly(value) {
+  const m = ISO_DATE_RE.exec(String(value || ''));
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return d.getUTCMonth() === +m[2] - 1 ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+
+function fieldError(field, code, message, messageEn) {
+  return { field, code, message, messageEn };
+}
+
+/** See store.validateAiRisk. Pure apart from reading the site list and the clock. */
+export function validateAiRiskInput(obj = {}, { mode = 'manual', now } = {}) {
+  const src = isPlainObject(obj) ? obj : {};
+  const errors = [];
+  const manual = mode !== 'engine';
+  if (!text(src.title)) errors.push(fieldError('title', 'required', 'العنوان مطلوب.', 'A title is required.'));
+  const projectId = text(src.projectId) || text(src.siteId);
+  const sites = objectItems(state && state.sites).map((s) => String(s.id));
+  if (!projectId) errors.push(fieldError('projectId', 'required', 'اختر المشروع.', 'Select a project.'));
+  else if (sites.length && !sites.includes(projectId)) errors.push(fieldError('projectId', 'unknown', 'المشروع غير معروف.', 'Unknown project.'));
+  if (!AI_CATEGORIES.includes(src.category)) errors.push(fieldError('category', 'required', 'اختر المجال.', 'Select a domain.'));
+  if (manual && !AI_TYPES.includes(src.type)) errors.push(fieldError('type', 'required', 'اختر نوع المخاطرة.', 'Select a risk type.'));
+  else if (!manual && src.type != null && !AI_TYPES.includes(src.type)) errors.push(fieldError('type', 'invalid', 'نوع المخاطرة غير صالح.', 'Invalid risk type.'));
+  if (src.likelihood == null || src.likelihood === '') errors.push(fieldError('likelihood', 'required', 'الاحتمالية مطلوبة (1–5).', 'Likelihood is required (1–5).'));
+  else if (!scale5(src.likelihood)) errors.push(fieldError('likelihood', 'range', 'الاحتمالية عدد صحيح من 1 إلى 5.', 'Likelihood must be a whole number from 1 to 5.'));
+  if (src.impact == null || src.impact === '') errors.push(fieldError('impact', 'required', 'الأثر مطلوب (1–5).', 'Impact is required (1–5).'));
+  else if (!scale5(src.impact)) errors.push(fieldError('impact', 'range', 'الأثر عدد صحيح من 1 إلى 5.', 'Impact must be a whole number from 1 to 5.'));
+  if (manual && !text(src.owner)) errors.push(fieldError('owner', 'required', 'حدّد المسؤول عن المخاطرة.', 'Assign an owner.'));
+  const due = src.dueDate == null || src.dueDate === '' ? null : validDateOnly(src.dueDate);
+  if (manual && (src.dueDate == null || src.dueDate === '')) errors.push(fieldError('dueDate', 'required', 'حدّد تاريخ الاستحقاق.', 'Set a due date.'));
+  else if (src.dueDate != null && src.dueDate !== '' && !due) errors.push(fieldError('dueDate', 'invalid', 'تاريخ الاستحقاق غير صالح.', 'Invalid due date.'));
+  else if (manual && due && due < todayISO(now || store.now())) errors.push(fieldError('dueDate', 'past', 'تاريخ الاستحقاق في الماضي.', 'The due date is in the past.'));
+  const link = isPlainObject(src.evidence) ? src.evidence.link : src.evidenceUrl;
+  if (link != null && link !== '' && !/^https?:\/\/[^\s]+$/i.test(String(link).trim()) && !/^biltix:\/\//i.test(String(link))) {
+    errors.push(fieldError('evidence', 'url', 'رابط الدليل يجب أن يبدأ بـ https:// أو http://.', 'The evidence link must start with https:// or http://.'));
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+/** Evidence / attachment metadata check: link (http/https), note (text), file (name + size ≤ 25 MB; content never stored). */
+const ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+function validateAttachment(input) {
+  const a = isPlainObject(input) ? input : {};
+  const errors = [];
+  const kind = EVIDENCE_KINDS.includes(a.kind) ? a.kind : null;
+  if (!kind) errors.push(fieldError('kind', 'required', 'اختر نوع الدليل (رابط، ملاحظة، ملف).', 'Choose the evidence type (link, note, file).'));
+  const title = text(a.title).slice(0, 300);
+  if (!title) errors.push(fieldError('title', 'required', 'العنوان مطلوب.', 'A title is required.'));
+  const item = { kind, title, url: null };
+  if (kind === 'link') {
+    const url = text(a.url);
+    if (!/^https?:\/\/[^\s]+$/i.test(url)) errors.push(fieldError('url', 'url', 'الرابط يجب أن يبدأ بـ https:// أو http://.', 'The link must start with https:// or http://.'));
+    else item.url = url.slice(0, 2048);
+  }
+  if (kind === 'note') {
+    const note = text(a.note || a.text).slice(0, 2000);
+    if (!note) errors.push(fieldError('note', 'required', 'اكتب نص الملاحظة.', 'Write the note.'));
+    else item.note = note;
+  }
+  if (kind === 'file') {
+    const fileName = text(a.fileName || a.name).slice(0, 255);
+    const size = Number(a.size);
+    if (!fileName) errors.push(fieldError('fileName', 'required', 'اختر ملفاً.', 'Choose a file.'));
+    if (Number.isFinite(size) && size > ATTACHMENT_MAX_BYTES) errors.push(fieldError('size', 'too-large', 'حجم الملف يتجاوز 25 ميجابايت.', 'The file is larger than 25 MB.'));
+    item.fileName = fileName;
+    if (Number.isFinite(size) && size >= 0) item.size = Math.round(size);
+    if (text(a.mime || a.type)) item.mime = text(a.mime || a.type).slice(0, 120);
+  }
+  if (text(a.titleEn)) item.titleEn = text(a.titleEn).slice(0, 300);
+  if (errors.length) return fail('validation', 'تعذّر حفظ الدليل — راجع الحقول.', 'The evidence was not saved — check the fields.', { errors });
+  return { ok: true, item };
+}
+
+/** Shared closing step (closeAiRisk and a task closure on an assessed risk). */
+function closeRiskInternal(risk, { outcome, outcomeEn = '', actor, viaTask = null } = {}) {
+  const now = localISO(store.now());
+  risk.status = 'مغلق';
+  risk.closedAt = now;
+  risk.outcome = outcome;
+  risk.outcomeEn = outcomeEn || null;
+  if (viaTask) risk.closedByTask = viaTask.id;
+  risk.updatedAt = now;
+  for (const t of platformList('tasks')) {
+    if (!t || t === viaTask || (t.riskId !== risk.id && t.id !== risk.taskId) || t.status === 'مغلقة') continue;
+    t.status = 'مغلقة';
+    t.closedAt = now;
+    t.outcome = t.outcome || outcome;
+    t.updatedAt = now;
+    changed(`platform.tasks.${t.id}`);
+  }
+  const residual = risk.residualLikelihood * risk.residualImpact * 4;
+  riskHistory(risk, actor, `إغلاق المخاطرة — النتيجة: ${outcome} (المتبقية ${residual} مقابل ${risk.score})`, `Risk closed — residual ${residual} vs inherent ${risk.score}; outcome recorded`);
+  changed(`platform.aiRisks.${risk.id}`);
+  if (!viaTask) {
+    store.pushAudit({ actor, action: 'close', target: risk.code, detail: `إغلاق المخاطرة — النتيجة: ${outcome} (المتبقية ${residual}/${risk.score})`, detailEn: `Risk closed — residual ${residual}/${risk.score}; outcome recorded (feedback for model recalibration)` });
+  }
+  emitFeed({ type: 'ai', tone: 'good', siteId: risk.projectId, title: `إغلاق المخاطرة ${risk.code} بعد تقييم المخاطر المتبقية`, titleEn: `Risk ${risk.code} closed after its residual assessment`, detail: outcome, detailEn: outcomeEn || `Residual score ${residual} (inherent ${risk.score})`, sourceId: risk.pipeline, refId: risk.id, code: risk.code });
 }
 
 /* ────────────────────────────── the store ────────────────────────────── */
@@ -1516,7 +2014,8 @@ export const store = {
 
   /* ── CRUD: risks ── */
 
-  addRisk(obj = {}) {
+  /** Add an HSE risk. `{ silent: true }` skips the per-risk feed event (bulk import emits one summary). */
+  addRisk(obj = {}, { silent = false } = {}) {
     const now = store.now();
     const likelihood = clampInt(obj.likelihood, 1, 5, 3);
     const severity = clampInt(obj.severity, 1, 5, 3);
@@ -1546,16 +2045,24 @@ export const store = {
         ? obj.history
         : [{ at: localISO(now), by: owner || 'النظام', text: 'إنشاء سجل المخاطرة' }],
     };
+    // `sourceEn` (English twin of an import source label) is kept only next to a caller-given source, and only when Latin.
+    if (risk.sourceEn !== undefined) {
+      const sourceEn = text(obj.source) ? latinOnly(risk.sourceEn) : '';
+      if (sourceEn) risk.sourceEn = sourceEn; else delete risk.sourceEn;
+    }
     if (!Array.isArray(state.risks)) state.risks = [];
     state.risks.unshift(risk);
     changed(`risks.${risk.id}`);
+    if (silent) return risk;
     const tier = sel.riskTier(sel.riskScore(risk));
     emitFeed({
       type: 'risk',
       tone: sel.tierTone(tier),
       siteId: risk.siteId,
       title: `تسجيل مخاطرة جديدة ${risk.code} — ${tier}`,
+      titleEn: `New risk registered ${risk.code}${enumEn('tier', tier) ? ` — ${enumEn('tier', tier)}` : ''}`,
       detail: risk.hazard || risk.activity,
+      detailEn: risk.hazardEn || `${siteEnById(state.sites, risk.siteId)}`,
       sourceId: 'biltix-hse',
       refId: risk.id,
     });
@@ -1565,20 +2072,36 @@ export const store = {
   updateRisk(id, patch = {}) {
     const risk = findIn('risks', id);
     if (!risk || !isPlainObject(patch)) return null;
-    const { by, note, ...rest } = patch;
+    const { by, note, noteEn, historyKind, ...rest } = patch;
     const prevStatus = risk.status;
     if (rest.status !== undefined) rest.status = pickEnum(rest.status, RISK_STATUS, risk.status);
     for (const key of ['likelihood', 'severity', 'residualLikelihood', 'residualSeverity']) {
       if (rest[key] !== undefined) rest[key] = clampInt(rest[key], 1, 5, risk[key]);
     }
     if (rest.controls !== undefined) rest.controls = normalizeControls(rest.controls);
+    // `sourceEn` (the English label of an imported risk's source) belongs to the current `source` only: a new
+    // source takes the caller's Latin-only sourceEn or none, so the English display never shows a stale label.
+    if (rest.sourceEn !== undefined) rest.sourceEn = latinOnly(rest.sourceEn) || undefined;
+    if (rest.source !== undefined && text(rest.source) !== text(risk.source) && rest.sourceEn === undefined) delete risk.sourceEn;
     const at = localISO(store.now());
     if (!Array.isArray(risk.history)) risk.history = [];
     if (rest.status && rest.status !== prevStatus) {
-      risk.history.push({ at, by: text(by) || risk.owner || 'النظام', text: `تغيير الحالة من «${prevStatus}» إلى «${rest.status}»` });
+      // Structured from/to so any view can label the change in the active language (English enums load lazily,
+      // so a pre-rendered English sentence written during an Arabic session could carry Arabic status names).
+      risk.history.push({ at, by: text(by) || risk.owner || 'النظام', kind: 'status', statusFrom: prevStatus, statusTo: rest.status, text: `تغيير الحالة من «${prevStatus}» إلى «${rest.status}»` });
     }
-    if (typeof note === 'string' && note.trim()) {
-      risk.history.push({ at, by: text(by) || risk.owner || 'النظام', text: note.trim() });
+    const noteText = typeof note === 'string' ? note.trim() : '';
+    if (historyKind === 'edit' || noteText === RISK_EDIT_NOTE.ar) {
+      // The register's edit form (historyKind 'edit'; older callers passed the Arabic sentence as `note`): a
+      // structured entry the view words in the active language, with fixed Arabic + English text for other readers.
+      risk.history.push({ at, by: text(by) || risk.owner || 'النظام', kind: 'edit', text: RISK_EDIT_NOTE.ar, textEn: RISK_EDIT_NOTE.en });
+    } else if (noteText) {
+      // Any other note is kept as written. Its English copy is the caller's `noteEn`, or the note itself, only when
+      // it has no Arabic (no machine translation, and never Arabic in textEn); without one the view shows the note.
+      const entry = { at, by: text(by) || risk.owner || 'النظام', text: noteText };
+      const en = latinOnly(noteEn) || latinOnly(noteText);
+      if (en) entry.textEn = en;
+      risk.history.push(entry);
     }
     return patchItem('risks', id, rest);
   },
@@ -1631,7 +2154,9 @@ export const store = {
       tone: nearMiss ? 'warning' : severityTone(severity),
       siteId: incident.siteId,
       title: `${type} — ${incident.code}`,
+      titleEn: `${enumEn('incidentType', type, 'Incident')} — ${incident.code}`,
       detail: [incident.title, incident.location].filter(Boolean).join(' · '),
+      detailEn: [incident.titleEn || '', siteEnById(state.sites, incident.siteId)].filter(Boolean).join(' · '),
       sourceId: 'biltix-hse',
       refId: incident.id,
     });
@@ -1686,7 +2211,9 @@ export const store = {
       tone: 'accent',
       siteId: permit.siteId,
       title: `تصريح عمل جديد ${permit.code} — ${permit.type}`,
+      titleEn: `New permit to work ${permit.code} — ${enumEn('permitType', permit.type, 'permit')}`,
       detail: [siteName(permit.siteId), permit.location].filter(Boolean).join(' · '),
+      detailEn: [siteEnById(state.sites, permit.siteId), permit.locationEn || ''].filter(Boolean).join(' · '),
       sourceId: 'biltix-hse',
       refId: permit.id,
     });
@@ -1738,6 +2265,9 @@ export const store = {
       detail: text(event.detail),
       sourceId: event.sourceId == null ? null : event.sourceId,
     };
+    // v3 (CONTRACT §8): every generated event is bilingual; English copies are kept when given.
+    if (typeof event.titleEn === 'string') ev.titleEn = event.titleEn.trim();
+    if (typeof event.detailEn === 'string') ev.detailEn = event.detailEn.trim();
     if (!Array.isArray(state.feed)) state.feed = [];
     state.feed.unshift(ev);
     if (state.feed.length > FEED_CAP) state.feed.length = FEED_CAP;
@@ -1772,9 +2302,37 @@ export const store = {
   setSettings(patch) {
     if (!isPlainObject(patch)) return state.settings;
     const prevTheme = state.settings.theme;
-    // Unparsable numbers fall back to the CURRENT value (not the default); weights renormalised,
-    // thresholds clamped (critical ≥ alert), brand '' = theme tokens.
-    const merged = sanitizeSettings(deepMerge(state.settings, patch), state.settings);
+    // v3: invalid weights (sum ≠ 1 ± 0.001, negative, missing) or thresholds (critical < alert + 5) in a patch
+    // are REJECTED, not reshaped: they are dropped from the patch, the current values stay, and
+    // bus 'settings:invalid' { field, reason, message, messageEn } tells the UI why. (setWeights /
+    // setThresholds return the same reason directly.)
+    let input = patch;
+    // Any theme change is an explicit choice: it is kept across reloads (see DEFAULT_SETTINGS.themeChosen).
+    if (Object.prototype.hasOwnProperty.call(patch, 'theme')) input = { ...input, themeChosen: true };
+    // Any language change is an explicit choice too (see DEFAULT_SETTINGS.langChosen).
+    if (Object.prototype.hasOwnProperty.call(patch, 'lang')) input = { ...input, langChosen: true };
+    if (isPlainObject(patch.platform)) {
+      const p = { ...patch.platform };
+      if (p.weights !== undefined) {
+        const w = validateWeights(p.weights);
+        if (!w.ok) { delete p.weights; bus.emit('settings:invalid', { field: 'weights', ...w }); } else p.weights = w.weights;
+      }
+      if (p.alertThreshold !== undefined || p.criticalThreshold !== undefined) {
+        const cur = state.settings.platform || {};
+        const t = validateThresholds({
+          alertThreshold: p.alertThreshold !== undefined ? p.alertThreshold : cur.alertThreshold,
+          criticalThreshold: p.criticalThreshold !== undefined ? p.criticalThreshold : cur.criticalThreshold,
+        });
+        if (!t.ok) { delete p.alertThreshold; delete p.criticalThreshold; bus.emit('settings:invalid', { field: 'thresholds', ...t }); }
+      }
+      input = { ...input, platform: p };
+    }
+    // Weights are replaced whole (never deep-merged key by key with stale values).
+    const base = isPlainObject(input.platform) && input.platform.weights
+      ? { ...state.settings, platform: { ...state.settings.platform, weights: {} } }
+      : state.settings;
+    // Unparsable numbers fall back to the CURRENT value (not the default); brand '' = theme tokens.
+    const merged = sanitizeSettings(deepMerge(base, input), state.settings);
     state.settings = merged;
     changed('settings');
     bus.emit('settings:change', { settings: state.settings });
@@ -1800,56 +2358,121 @@ export const store = {
    * Register a newly detected AI risk. Normalises every §B3 field, generates AIR-#### codes,
    * applies the alert thresholds (autoAlert) and pushes an 'ai' feed event. Returns the risk.
    */
-  addAiRisk(obj = {}, { autoAlert = true, by = AI_ENGINE_ACTOR } = {}) {
+  /**
+   * v3 input validation for a new AI risk (shared by the risk form and addAiRisk). No silent defaults:
+   * likelihood and impact (integers 1–5) are always required; owner and due date are required for a
+   * manually registered risk (`mode: 'manual'`, the default) and may be explicitly empty (unassigned)
+   * only for an engine detection (`mode: 'engine'`). Returns { ok, errors:[{ field, code, message, messageEn }] }.
+   */
+  validateAiRisk(obj = {}, { mode = 'manual' } = {}) {
+    return validateAiRiskInput(obj, { mode });
+  },
+
+  /**
+   * Register an AI risk — an engine detection (`{ engine: true }` or `obj.simulated === true`) or a
+   * manual entry (default). Validates first (see validateAiRisk): on failure NOTHING is stored and
+   * `{ ok:false, reason:'validation', errors, message, messageEn }` is returned. On success returns the
+   * stored risk: score = likelihood × impact × 4, input-data quality derived from the validation layer of
+   * its source system, empty treatment, residual not assessed; thresholds applied (autoAlert); audited
+   * ('create') for manual entries; bilingual feed event.
+   */
+  addAiRisk(obj = {}, { autoAlert = true, by = '', engine } = {}) {
+    const src = isPlainObject(obj) ? obj : {};
+    const isEngine = engine === true || (engine !== false && src.simulated === true);
+    const check = validateAiRiskInput(src, { mode: isEngine ? 'engine' : 'manual' });
+    if (!check.ok) {
+      return { ok: false, reason: 'validation', errors: check.errors, message: 'تعذّر تسجيل المخاطرة — راجع الحقول المطلوبة.', messageEn: 'The risk was not registered — check the required fields.' };
+    }
     const now = store.now();
     const list = platformList('aiRisks');
-    const category = pickEnum(obj.category, AI_CATEGORIES, 'site');
-    const pipeline = pickEnum(obj.pipeline, AI_PIPELINES, CATEGORY_PIPELINE[category]);
-    const score = Math.round(clampNum(obj.score, 0, 100, 50));
-    const rec = isPlainObject(obj.recommendation) ? obj.recommendation : {};
+    const actor = text(by) || (isEngine ? AI_ENGINE_ACTOR : 'مدير المشروع');
+    const category = src.category;
+    const pipeline = pickEnum(src.pipeline, AI_PIPELINES, CATEGORY_PIPELINE[category]);
+    const likelihood = scale5(src.likelihood);
+    const impact = scale5(src.impact);
+    const score = likelihood * impact * 4;
+    const rec = isPlainObject(src.recommendation) ? src.recommendation : {};
+    let evidence = isPlainObject(src.evidence) ? { ...src.evidence } : null;
+    if (!evidence && (text(src.evidenceUrl) || text(src.source))) {
+      // Manual form: "source" (system or document) + optional evidence link become the source evidence.
+      evidence = { kind: 'link', ref: text(src.evidenceUrl) || text(src.source), excerpt: '', sourceSystem: text(src.source) || 'إدخال يدوي', link: text(src.evidenceUrl) || null };
+    }
+    if (evidence && evidence.link != null && !/^https?:\/\//i.test(String(evidence.link)) && !/^biltix:\/\//i.test(String(evidence.link))) delete evidence.link;
+    const validation = platform().validation;
+    const dataQuality = typeof deriveDataQuality === 'function'
+      ? deriveDataQuality(validation, evidence && evidence.sourceSystem, evidence && evidence.kind)
+      : null;
     const risk = {
-      ...obj,
+      ...src,
       id: nextId(list, 'AIR'),
-      code: text(obj.code) || nextPlatformCode(list, 'AIR', 1000),
-      projectId: text(obj.projectId) || text(obj.siteId) || (state.sites && state.sites[0] ? state.sites[0].id : 'S1'),
+      code: text(src.code) || nextPlatformCode(list, 'AIR', 1000),
+      projectId: text(src.projectId) || text(src.siteId),
       category,
-      type: pickEnum(obj.type, AI_TYPES, CATEGORY_TYPE[category]),
+      type: pickEnum(src.type, AI_TYPES, CATEGORY_TYPE[category]),
+      likelihood,
+      impact,
       score,
-      title: text(obj.title) || 'مخاطرة مكتشفة بواسطة المحرك',
-      driverExplanation: text(obj.driverExplanation),
-      evidence: isPlainObject(obj.evidence) ? { ...obj.evidence } : null,
+      residualLikelihood: null,
+      residualImpact: null,
+      residualAssessment: null,
+      title: text(src.title),
+      description: text(src.description),
+      driverExplanation: text(src.driverExplanation),
+      evidence,
       recommendation: {
+        ...rec,
         action: text(rec.action), rationale: text(rec.rationale),
         effort: pickEnum(rec.effort, ['منخفض', 'متوسط', 'عالٍ'], 'متوسط'),
         impact: text(rec.impact), alternatives: Array.isArray(rec.alternatives) ? rec.alternatives.slice(0, 2) : [],
       },
       pipeline,
-      modelVersion: text(obj.modelVersion) || 'v2.3.1',
-      confidence: clampNum(obj.confidence, 0, 1, 0.8),
-      detectedAt: typeof obj.detectedAt === 'string' && obj.detectedAt ? obj.detectedAt : localISO(now),
+      origin: isEngine ? 'engine' : 'manual',
+      modelVersion: isEngine ? (text(src.modelVersion) || null) : null,
+      // Model confidence exists only for engine output; a human-registered risk has none (not 0, not a default).
+      confidence: isEngine ? clampNum(src.confidence, 0, 1, null) : null,
+      dataQuality,
+      treatment: normalizeTreatment({ plan: null, evidence: [] }, null),
+      detectedAt: typeof src.detectedAt === 'string' && src.detectedAt ? clampInstant(src.detectedAt, now) : localISO(now),
       updatedAt: localISO(now),
-      status: pickEnum(obj.status, AI_RISK_STATUS, 'مكتشف'),
-      owner: text(obj.owner),
-      dueDate: typeof obj.dueDate === 'string' && obj.dueDate ? obj.dueDate : todayISO(addMs(now, 14 * DAY_MS)),
-      taskId: obj.taskId == null ? null : text(obj.taskId),
-      escalated: Boolean(obj.escalated),
-      stakeholders: Array.isArray(obj.stakeholders) ? obj.stakeholders.map((s) => text(s)).filter(Boolean) : ['PM'],
-      responseParams: isPlainObject(obj.responseParams) ? obj.responseParams : {},
-      overrides: Array.isArray(obj.overrides) ? obj.overrides : [],
-      history: Array.isArray(obj.history) && obj.history.length
-        ? obj.history
-        : [{ at: localISO(now), by, text: `اكتشاف المخاطرة بواسطة ${pipelineLabel(pipeline)} — الدرجة ${score}` }],
+      status: pickEnum(src.status, ['مكتشف', 'تنبيه'], 'مكتشف'),
+      owner: text(src.owner) || null,
+      dueDate: typeof src.dueDate === 'string' && src.dueDate ? src.dueDate.slice(0, 10) : null,
+      taskId: null,
+      escalated: false,
+      stakeholders: Array.isArray(src.stakeholders) && src.stakeholders.length ? src.stakeholders.map((s) => text(s)).filter(Boolean) : ['PM'],
+      responseParams: isPlainObject(src.responseParams) ? src.responseParams : {},
+      overrides: [],
+      history: [{
+        at: localISO(now), by: actor,
+        text: isEngine
+          ? `اكتشاف المخاطرة بواسطة ${pipelineLabel(pipeline)} — الدرجة ${score} (الاحتمالية ${likelihood} × الأثر ${impact} × 4)`
+          : `تسجيل المخاطرة يدوياً — الدرجة ${score} (الاحتمالية ${likelihood} × الأثر ${impact} × 4)`,
+        textEn: isEngine
+          ? `Detected by ${enumEn('pipeline', pipeline)} — score ${score} (likelihood ${likelihood} × impact ${impact} × 4)`
+          : `Registered manually — score ${score} (likelihood ${likelihood} × impact ${impact} × 4)`,
+      }],
     };
     delete risk.siteId;
+    if (risk.treatment) risk.treatment.taskId = null;
     list.unshift(risk);
     changed(`platform.aiRisks.${risk.id}`);
+    if (!isEngine) {
+      store.pushAudit({ actor, action: 'create', target: risk.code, detail: `تسجيل مخاطرة يدوياً — الدرجة ${score} (${likelihood}×${impact}×4)، المسؤول ${risk.owner || '—'}، الاستحقاق ${risk.dueDate || '—'}`, detailEn: `Risk registered manually — score ${score} (${likelihood}×${impact}×4), owner ${personEn(risk.owner, 'assigned')}, due ${risk.dueDate || '—'}` });
+    }
 
     const rating = ratingOf(score);
+    const titleEn = text(risk.titleEn) || latinOnly(risk.title);
     emitFeed({
-      type: 'ai', tone: RATING_TONE[rating], siteId: risk.projectId,
-      title: `${pipelineLabel(pipeline)}: ${risk.title} — الدرجة ${score} (${RATING_LABEL[rating]})`,
+      type: 'ai', tone: RATING_TONE[rating], siteId: risk.projectId, simulated: isEngine || undefined,
+      title: isEngine
+        ? `${pipelineLabel(pipeline)} (محاكاة): ${risk.title} — الدرجة ${score} (${RATING_LABEL[rating]})`
+        : `تسجيل مخاطرة يدوياً ${risk.code}: ${risk.title} — الدرجة ${score} (${RATING_LABEL[rating]})`,
+      titleEn: isEngine
+        ? `${enumEn('pipeline', pipeline)} (simulated): ${titleEn || risk.code} — score ${score} (${enumEn('rating', rating)})`
+        : `Risk registered manually ${risk.code}${titleEn ? `: ${titleEn}` : ''} — score ${score} (${enumEn('rating', rating)})`,
       detail: risk.driverExplanation || (risk.evidence && risk.evidence.excerpt) || projectName(risk.projectId),
-      sourceId: pipeline, refId: risk.id,
+      detailEn: text(risk.driverExplanationEn) || siteEnById(state.sites, risk.projectId),
+      sourceId: pipeline, refId: risk.id, code: risk.code, score,
     });
 
     if (autoAlert) {
@@ -1862,27 +2485,73 @@ export const store = {
           severity: level === 'immediate' ? 'critical' : 'routine',
           queue: level,
           title: `${level === 'immediate' ? 'تصعيد فوري' : 'تنبيه'}: ${risk.code} — ${risk.title}`,
+          titleEn: `${level === 'immediate' ? 'Immediate escalation' : 'Alert'}: ${risk.code}${titleEn ? ` — ${titleEn}` : ''}`,
+          // Decided here, at the source: an engine-scenario detection (js/data/platform-live.js) is simulated; a risk
+          // a user registers by hand is that user's own action, so its alert is not.
+          simulated: isEngine,
         });
       }
     }
     return risk;
   },
 
-  /** Patch an AI risk; `note`/`by` become a history entry; status validated against §B3. */
+  /**
+   * Patch an AI risk; `note`/`by` become a history entry (optional `noteEn`: the caller's English wording, kept only
+   * when it has no Arabic); status validated against §B3. Every history entry written here carries `textEn`.
+   */
   updateAiRisk(id, patch = {}) {
     const risk = findPlatform('aiRisks', id);
     if (!risk || !isPlainObject(patch)) return null;
-    const { by, note, ...rest } = patch;
+    const { by, note, noteEn, ...rest } = patch;
     const prevStatus = risk.status;
     if (rest.status !== undefined) rest.status = pickEnum(rest.status, AI_RISK_STATUS, risk.status);
-    // Terminal states are final: a closed / dismissed risk never changes status again.
+    // Terminal states are final: a closed / dismissed risk never changes status again (use reopenAiRisk).
     if (AI_RISK_TERMINAL.includes(prevStatus) && rest.status !== undefined && rest.status !== prevStatus) return null;
-    if (rest.score !== undefined) rest.score = Math.round(clampNum(rest.score, 0, 100, risk.score));
+    // Closing goes through closeAiRisk (residual assessment + outcome required).
+    if (rest.status === 'مغلق' && prevStatus !== 'مغلق') return null;
+    // v3: the score is derived — likelihood/impact patches recompute it; a bare score patch is ignored.
+    delete rest.score;
+    for (const key of ['id', 'code', 'history', 'overrides', 'origin']) delete rest[key];
+    if (rest.likelihood !== undefined || rest.impact !== undefined) {
+      const l = rest.likelihood !== undefined ? scale5(rest.likelihood) : risk.likelihood;
+      const im = rest.impact !== undefined ? scale5(rest.impact) : risk.impact;
+      if (!l || !im) return null;
+      if (l !== risk.likelihood || im !== risk.impact) {
+        riskHistory(risk, by, `إعادة تقدير الشدة: من ${risk.likelihood}×${risk.impact} إلى ${l}×${im} (الدرجة ${l * im * 4})`,
+          `Severity re-estimated: from ${risk.likelihood}×${risk.impact} to ${l}×${im} (score ${l * im * 4})`,
+          { kind: 'reassess', from: `${risk.likelihood}×${risk.impact}`, to: `${l}×${im}` });
+      }
+      rest.likelihood = l;
+      rest.impact = im;
+      rest.score = l * im * 4;
+    }
+    if (rest.residualLikelihood !== undefined || rest.residualImpact !== undefined) {
+      const rl = rest.residualLikelihood !== undefined ? scale5(rest.residualLikelihood) : risk.residualLikelihood;
+      const ri = rest.residualImpact !== undefined ? scale5(rest.residualImpact) : risk.residualImpact;
+      if ((rl && !ri) || (!rl && ri)) return null;
+      rest.residualLikelihood = rl || null;
+      rest.residualImpact = ri || null;
+      if (!rl) rest.residualAssessment = null;
+    }
+    if (rest.treatment !== undefined) rest.treatment = normalizeTreatment({ ...(isPlainObject(risk.treatment) ? risk.treatment : {}), ...(isPlainObject(rest.treatment) ? rest.treatment : {}) }, risk.id);
     if (rest.confidence !== undefined) rest.confidence = clampNum(rest.confidence, 0, 1, risk.confidence);
     if (rest.category !== undefined) rest.category = pickEnum(rest.category, AI_CATEGORIES, risk.category);
     if (rest.type !== undefined) rest.type = pickEnum(rest.type, AI_TYPES, risk.type);
-    if (rest.status && rest.status !== prevStatus) riskHistory(risk, by, `تغيير الحالة من «${prevStatus}» إلى «${rest.status}»`);
-    if (typeof note === 'string' && note.trim()) riskHistory(risk, by, note.trim());
+    if (rest.status && rest.status !== prevStatus) {
+      // English status names load lazily: the sentence names them only when both are available; statusFrom/statusTo
+      // (stored enum values) let a view label the change in the active language either way.
+      const fromEn = enumEn('aiRiskStatus', prevStatus);
+      const toEn = enumEn('aiRiskStatus', rest.status);
+      riskHistory(risk, by, `تغيير الحالة من «${prevStatus}» إلى «${rest.status}»`,
+        fromEn && toEn ? `Status changed from ${fromEn} to ${toEn}` : 'Status changed',
+        { kind: 'status', statusFrom: prevStatus, statusTo: rest.status });
+    }
+    if (typeof note === 'string' && note.trim()) {
+      const n = noteHistoryEn(note.trim(), noteEn);
+      riskHistory(risk, by, note.trim(), n.textEn, n.fields);
+    }
+    // treatment is replaced whole (already merged above) so deepMerge never concatenates arrays oddly.
+    if (rest.treatment) { risk.treatment = rest.treatment; delete rest.treatment; }
     return patchPlatformItem('aiRisks', id, rest, { stamp: true });
   },
 
@@ -1920,16 +2589,18 @@ export const store = {
     risk.dueDate = task.dueDate;
     risk.taskId = task.id;
     risk.updatedAt = localISO(store.now());
-    riskHistory(risk, actor, `قبول توصية المحرك وإنشاء مهمة المعالجة ${task.code} — المسؤول: ${task.owner}`);
+    riskHistory(risk, actor, `قبول توصية المحرك وإنشاء مهمة المعالجة ${task.code} — المسؤول: ${task.owner}`, `Engine recommendation accepted; mitigation task ${task.code} created — owner: ${personEn(task.owner, 'assigned')}`);
     const pipe = findPlatform('pipelines', risk.pipeline);
     if (pipe && Number.isFinite(Number(pipe.acceptedLast30d))) pipe.acceptedLast30d = Number(pipe.acceptedLast30d) + 1;
     changed(`platform.aiRisks.${risk.id}`);
-    store.pushAudit({ actor, action: 'accept', target: risk.code, detail: `قبول التوصية «${task.title}» → ${task.code} (${task.owner}، يستحق ${task.dueDate})` });
+    store.pushAudit({ actor, action: 'accept', target: risk.code, detail: `قبول التوصية «${task.title}»؛ المهمة ${task.code} (${task.owner}، يستحق ${task.dueDate})`, detailEn: `Recommendation accepted; task ${task.code} (${personEn(task.owner, 'assigned')}, due ${task.dueDate})` });
     emitFeed({
       type: 'task', tone: 'good', siteId: risk.projectId,
-      title: `قبول توصية المحرك — ${risk.code} ← مهمة ${task.code}`,
+      title: `قبول توصية المحرك — ${risk.code}؛ المهمة ${task.code}`,
+      titleEn: `Engine recommendation accepted — ${risk.code}; task ${task.code}`,
       detail: `${task.title} · المسؤول: ${task.owner}`,
-      sourceId: 'biltix-pm', refId: task.id,
+      detailEn: `Owner: ${personEn(task.owner, 'assigned')} · due ${task.dueDate}`,
+      sourceId: 'biltix-pm', refId: task.id, code: task.code,
     });
     if (escalate) store.escalateRisk(risk.id, undefined, actor);
     return task;
@@ -1958,16 +2629,18 @@ export const store = {
     risk.dueDate = task.dueDate;
     risk.taskId = task.id;
     risk.updatedAt = localISO(store.now());
-    riskHistory(risk, actor, `تعديل توصية المحرك إلى «${toAction}» — السبب: ${why}`);
+    riskHistory(risk, actor, `تعديل توصية المحرك إلى «${toAction}» — السبب: ${why}`, `Engine recommendation overridden (task ${task.code}) — reason recorded`);
     const pipe = findPlatform('pipelines', risk.pipeline);
     if (pipe && Number.isFinite(Number(pipe.overridesLast30d))) pipe.overridesLast30d = Number(pipe.overridesLast30d) + 1;
     changed(`platform.aiRisks.${risk.id}`);
-    store.pushAudit({ actor, action: 'override', target: risk.code, detail: `تجاوز التوصية: من «${fromAction || '—'}» إلى «${toAction}» — السبب: ${why} → ${task.code}` });
+    store.pushAudit({ actor, action: 'override', target: risk.code, detail: `تجاوز التوصية: من «${fromAction || '—'}» إلى «${toAction}» — السبب: ${why}؛ المهمة ${task.code}`, detailEn: `Recommendation overridden; task ${task.code}. The reason is recorded for model recalibration` });
     emitFeed({
       type: 'task', tone: 'warning', siteId: risk.projectId,
-      title: `تعديل توصية المحرك — ${risk.code} ← مهمة ${task.code}`,
+      title: `تعديل توصية المحرك — ${risk.code}؛ المهمة ${task.code}`,
+      titleEn: `Engine recommendation overridden — ${risk.code}; task ${task.code}`,
       detail: `${toAction} · السبب: ${why}`,
-      sourceId: 'biltix-pm', refId: task.id,
+      detailEn: `Owner: ${personEn(task.owner, 'assigned')} · reason recorded`,
+      sourceId: 'biltix-pm', refId: task.id, code: task.code,
     });
     if (escalate) store.escalateRisk(risk.id, undefined, actor);
     return task;
@@ -1982,13 +2655,16 @@ export const store = {
     risk.escalated = true;
     if (['مكتشف'].includes(risk.status)) risk.status = 'تنبيه';
     risk.updatedAt = localISO(store.now());
-    riskHistory(risk, actor, `تصعيد فوري عبر: ${list.join('، ') || 'القنوات الافتراضية'}`);
+    riskHistory(risk, actor, `تصعيد فوري عبر: ${list.join('، ') || 'القنوات الافتراضية'}`, `Immediate escalation via ${list.map((c) => enumEn('channel', c)).join(', ') || 'default channels'}`);
     changed(`platform.aiRisks.${risk.id}`);
     const alert = store.addAlert({
       riskId: risk.id, projectId: risk.projectId, severity: 'critical', queue: 'immediate', channels: list,
       title: `تصعيد فوري: ${risk.code} — ${risk.title}`,
+      titleEn: `Immediate escalation: ${risk.code}${text(risk.titleEn) ? ` — ${text(risk.titleEn)}` : ''}`,
+      // A person's escalation (risk drawer, or accept/override with "escalate"): not simulated.
+      simulated: false,
     });
-    store.pushAudit({ actor, action: 'escalate', target: risk.code, detail: `تصعيد فوري (الدرجة ${risk.score}) عبر ${list.join('، ') || '—'}` });
+    store.pushAudit({ actor, action: 'escalate', target: risk.code, detail: `تصعيد فوري (الدرجة ${risk.score}) عبر ${list.join('، ') || '—'}`, detailEn: `Immediate escalation (score ${risk.score}) via ${list.map((c) => enumEn('channel', c)).join(', ') || '—'}` });
     return alert;
   },
 
@@ -2003,12 +2679,12 @@ export const store = {
     risk.updatedAt = localISO(store.now());
     if (!Array.isArray(risk.overrides)) risk.overrides = [];
     risk.overrides.push({ at: localISO(store.now()), by: actor, fromAction: (risk.recommendation && text(risk.recommendation.action)) || '', toAction: 'تجاهل المخاطرة', reason: why });
-    riskHistory(risk, actor, `تجاهل المخاطرة (كانت «${prev}») — السبب: ${why}`);
+    riskHistory(risk, actor, `تجاهل المخاطرة (كانت «${prev}») — السبب: ${why}`, `Risk dismissed${wasStatusEn(prev)} — reason recorded`, { kind: 'dismiss', statusFrom: prev, statusTo: risk.status });
     const pipe = findPlatform('pipelines', risk.pipeline);
     if (pipe && Number.isFinite(Number(pipe.overridesLast30d))) pipe.overridesLast30d = Number(pipe.overridesLast30d) + 1;
     changed(`platform.aiRisks.${risk.id}`);
-    store.pushAudit({ actor, action: 'override', target: risk.code, detail: `تجاهل المخاطرة — السبب: ${why}` });
-    emitFeed({ type: 'ai', tone: 'neutral', siteId: risk.projectId, title: `تجاهل مخاطرة ${risk.code} بقرار بشري`, detail: why, sourceId: risk.pipeline, refId: risk.id });
+    store.pushAudit({ actor, action: 'override', target: risk.code, detail: `تجاهل المخاطرة — السبب: ${why}`, detailEn: 'Risk dismissed — reason recorded' });
+    emitFeed({ type: 'ai', tone: 'neutral', siteId: risk.projectId, title: `تجاهل مخاطرة ${risk.code} بقرار بشري`, titleEn: `Risk ${risk.code} dismissed by a human decision`, detail: why, detailEn: 'Reason recorded in the risk history', sourceId: risk.pipeline, refId: risk.id, code: risk.code });
     return risk;
   },
 
@@ -2020,8 +2696,10 @@ export const store = {
   },
 
   /**
-   * Patch a task. Closing it ('مغلقة') stamps closedAt, stores the outcome, closes the linked
-   * risk (status 'مغلق' + history) and logs audit 'close' — the outcome feeds recalibration.
+   * Patch a task. Closing it ('مغلقة') requires an outcome (patch.outcome or an existing one — otherwise
+   * null is returned and nothing changes), stamps closedAt and logs audit 'close'. The linked risk is closed
+   * only when it already carries a residual assessment (CONTRACT §8); otherwise it stays «قيد المعالجة» with
+   * a history note asking for the residual assessment. Reopening a closed task reopens a risk it had closed.
    */
   updateTask(id, patch = {}) {
     const task = findPlatform('tasks', id);
@@ -2033,26 +2711,45 @@ export const store = {
     if (rest.status !== undefined) rest.status = pickEnum(rest.status, TASK_STATUS, task.status);
     if (rest.source !== undefined) rest.source = pickEnum(rest.source, TASK_SOURCES, task.source);
     if (rest.outcome !== undefined) rest.outcome = text(rest.outcome);
+    if (rest.priority !== undefined) rest.priority = rest.priority == null || rest.priority === '' ? null : pickEnum(rest.priority, TASK_PRIORITIES, task.priority || null);
+    for (const key of ['id', 'code', 'attachments', 'createdAt']) delete rest[key];
     const closing = rest.status === 'مغلقة' && prevStatus !== 'مغلقة';
     const reopening = prevStatus === 'مغلقة' && rest.status && rest.status !== 'مغلقة';
+    if (closing && !text(rest.outcome !== undefined ? rest.outcome : task.outcome)) return null;
     if (closing) rest.closedAt = now;
     if (reopening) rest.closedAt = null;
+    rest.updatedAt = now;
     const updated = patchPlatformItem('tasks', id, rest);
     const risk = updated.riskId ? findPlatform('aiRisks', updated.riskId) : null;
     if (closing) {
-      const outcome = updated.outcome || 'أُغلقت المهمة';
-      if (risk) {
-        risk.status = 'مغلق';
-        risk.updatedAt = now;
-        riskHistory(risk, actor, `إغلاق مهمة المعالجة ${updated.code} — النتيجة: ${outcome}`);
-        changed(`platform.aiRisks.${risk.id}`);
+      const outcome = updated.outcome;
+      let riskClosed = false;
+      if (risk && !AI_RISK_TERMINAL.includes(risk.status)) {
+        if (risk.residualLikelihood && risk.residualImpact) {
+          closeRiskInternal(risk, { outcome, actor, viaTask: updated });
+          riskClosed = true;
+        } else {
+          risk.status = 'قيد المعالجة';
+          risk.updatedAt = now;
+          riskHistory(risk, actor, `إغلاق مهمة المعالجة ${updated.code} — النتيجة: ${outcome}. يلزم تقييم المخاطر المتبقية قبل إغلاق المخاطرة.`, `Mitigation task ${updated.code} closed. A residual assessment is required before the risk can be closed.`);
+          changed(`platform.aiRisks.${risk.id}`);
+        }
       }
-      store.pushAudit({ actor, action: 'close', target: risk ? risk.code : updated.code, detail: `إغلاق ${updated.code}${risk ? ` وإغلاق ${risk.code}` : ''} — النتيجة: ${outcome} (تغذية راجعة لإعادة معايرة النموذج)` });
-      emitFeed({ type: 'task', tone: 'good', siteId: updated.projectId, title: `إغلاق مهمة المعالجة ${updated.code}${risk ? ` — ${risk.code}` : ''}`, detail: outcome, sourceId: 'biltix-pm', refId: updated.id });
+      store.pushAudit({
+        actor, action: 'close', target: updated.code,
+        detail: `إغلاق ${updated.code}${riskClosed ? ` وإغلاق ${risk.code}` : ''} — النتيجة: ${outcome} (تغذية راجعة لإعادة معايرة النموذج)`,
+        detailEn: `${updated.code} closed${riskClosed ? ` and ${risk.code} closed` : ''} — outcome recorded (feedback for model recalibration)`,
+      });
+      emitFeed({ type: 'task', tone: 'good', siteId: updated.projectId, title: `إغلاق مهمة المعالجة ${updated.code}${risk ? ` — ${risk.code}` : ''}`, titleEn: `Mitigation task ${updated.code} closed${risk ? ` — ${risk.code}` : ''}`, detail: outcome, detailEn: riskClosed ? 'Risk closed after its residual assessment' : (risk ? 'Risk stays in treatment until its residual assessment' : 'Outcome recorded'), sourceId: 'biltix-pm', refId: updated.id, code: updated.code });
     } else if (reopening && risk) {
-      risk.status = 'قيد المعالجة';
+      if (risk.status === 'مغلق' && risk.closedByTask === updated.id) {
+        risk.status = 'قيد المعالجة';
+        risk.closedAt = null;
+        risk.reopenedAt = now;
+        delete risk.closedByTask;
+      }
       risk.updatedAt = now;
-      riskHistory(risk, actor, `إعادة فتح مهمة المعالجة ${updated.code}`);
+      riskHistory(risk, actor, `إعادة فتح مهمة المعالجة ${updated.code}`, `Mitigation task ${updated.code} reopened`);
       changed(`platform.aiRisks.${risk.id}`);
     } else if (rest.status && rest.status !== prevStatus) {
       if (risk && rest.status === 'قيد التنفيذ' && ['مهمة مُسندة', 'تنبيه', 'مكتشف'].includes(risk.status)) {
@@ -2060,25 +2757,30 @@ export const store = {
         risk.updatedAt = now;
         changed(`platform.aiRisks.${risk.id}`);
       }
-      emitFeed({ type: 'task', tone: rest.status === 'متأخرة' ? 'serious' : 'accent', siteId: updated.projectId, title: `المهمة ${updated.code}: ${prevStatus} ← ${rest.status}`, detail: updated.title, sourceId: 'biltix-pm', refId: updated.id });
+      emitFeed({ type: 'task', tone: rest.status === 'متأخرة' ? 'serious' : 'accent', siteId: updated.projectId, title: `المهمة ${updated.code}: تغيير الحالة من ${prevStatus} إلى ${rest.status}`, titleEn: enumEn('taskStatus', prevStatus) && enumEn('taskStatus', rest.status) ? `Task ${updated.code}: status changed from ${enumEn('taskStatus', prevStatus)} to ${enumEn('taskStatus', rest.status)}` : `Task ${updated.code}: status changed`, statusFrom: prevStatus, statusTo: rest.status, detail: updated.title, detailEn: text(updated.titleEn), sourceId: 'biltix-pm', refId: updated.id, code: updated.code });
     }
     return updated;
   },
 
-  /** Re-queue a failed/pending write-back (tasks kanban "إعادة المزامنة"). */
+  /** Re-queue a failed/pending write-back (tasks kanban "إعادة المزامنة"). The retry is simulated in the demo. */
   retryWriteback(taskId) {
     const task = findPlatform('tasks', taskId);
     if (!task) return null;
-    task.writeback = { target: 'Biltix PM', ...(isPlainObject(task.writeback) ? task.writeback : {}), status: 'pending', at: null };
+    task.writeback = { target: 'BILTIX PM', ...(isPlainObject(task.writeback) ? task.writeback : {}), status: 'pending', at: null };
     changed(`platform.tasks.${task.id}`);
-    emitFeed({ type: 'writeback', tone: 'accent', siteId: task.projectId, title: `إعادة محاولة الكتابة العكسية — ${task.code}`, detail: task.title, sourceId: 'biltix-pm', refId: task.id });
+    emitFeed({ type: 'writeback', tone: 'accent', siteId: task.projectId, simulated: true, title: `محاكاة: إعادة محاولة الكتابة العكسية — ${task.code}`, titleEn: `Simulated: write-back retry — ${task.code}`, detail: task.title, detailEn: text(task.titleEn), sourceId: 'biltix-pm', refId: task.id, code: task.code });
     scheduleWriteback(task.id);
     return task;
   },
 
   /* ── alerts ── */
 
-  /** Add an alert (AL-#### code); critical ones emit bus 'alert' so the shell banner/toast show. */
+  /**
+   * Add an alert (AL-#### code); critical ones emit bus 'alert' so the shell banner/toast show. Channels are
+   * the configured routing; in the demo nothing is delivered to email/Slack/Teams/WhatsApp, and the feed says so.
+   * `simulated` is decided by the caller: only an explicit `simulated: true` (an engine-scenario risk) marks the
+   * alert, its feed event and its bus 'alert' as simulated; anything else is stored and emitted as simulated: false.
+   */
   addAlert(obj = {}) {
     const list = platformList('alerts');
     const risk = obj.riskId ? findPlatform('aiRisks', obj.riskId) : null;
@@ -2092,24 +2794,33 @@ export const store = {
       severity,
       queue: obj.queue === 'immediate' || (obj.queue === undefined && severity === 'critical') ? 'immediate' : 'standard',
       channels: normalizeChannels(obj.channels),
-      sentAt: typeof obj.sentAt === 'string' && obj.sentAt ? obj.sentAt : localISO(store.now()),
+      sentAt: typeof obj.sentAt === 'string' && obj.sentAt ? clampInstant(obj.sentAt, store.now()) : localISO(store.now()),
       acknowledged: Boolean(obj.acknowledged),
       ackBy: text(obj.ackBy) || null,
       ackAt: typeof obj.ackAt === 'string' ? obj.ackAt : null,
       title: text(obj.title) || (risk ? `تنبيه: ${risk.code} — ${risk.title}` : 'تنبيه من منصة المخاطر'),
+      simulated: obj.simulated === true,
     };
+    if (!text(alert.titleEn)) alert.titleEn = risk ? `Alert: ${risk.code}${text(risk.titleEn) ? ` — ${text(risk.titleEn)}` : ''}` : 'Risk platform alert';
     list.unshift(alert);
     changed(`platform.alerts.${alert.id}`);
     const detail = risk ? `${risk.driverExplanation || risk.title} · الدرجة ${risk.score}` : '';
+    const detailEn = risk ? `Score ${risk.score} (${enumEn('rating', ratingOf(risk.score))})` : '';
+    const chAr = alert.channels.length ? `القنوات المحددة: ${alert.channels.join('، ')} (محاكاة — لا إرسال فعلي)` : '';
+    const chEn = alert.channels.length ? `Routing: ${alert.channels.map((c) => enumEn('channel', c)).join(', ')} (simulated — nothing delivered)` : '';
     emitFeed({
       type: 'alert', tone: severity === 'critical' ? 'critical' : 'warning', siteId: alert.projectId,
-      title: alert.title, detail: `${detail}${alert.channels.length ? `${detail ? ' · ' : ''}القنوات: ${alert.channels.join('، ')}` : ''}`,
-      sourceId: risk ? risk.pipeline : null, refId: alert.id,
+      simulated: alert.simulated || undefined,
+      title: alert.title, titleEn: alert.titleEn,
+      detail: [detail, chAr].filter(Boolean).join(' · '),
+      detailEn: [detailEn, chEn].filter(Boolean).join(' · '),
+      sourceId: risk ? risk.pipeline : null, refId: alert.id, code: alert.code,
     });
     if (severity === 'critical') {
       bus.emit('alert', {
-        severity: 'critical', tone: 'critical', title: alert.title, detail: detail || alert.title,
+        severity: 'critical', tone: 'critical', title: alert.title, titleEn: alert.titleEn, detail: detail || alert.title, detailEn: detailEn || alert.titleEn,
         siteId: alert.projectId, riskId: alert.riskId, alertId: alert.id, source: 'platform', ts: alert.sentAt,
+        simulated: alert.simulated,
       });
     }
     return alert;
@@ -2123,6 +2834,253 @@ export const store = {
     alert.ackAt = localISO(store.now());
     changed(`platform.alerts.${id}`);
     return alert;
+  },
+
+  /* ══════════════════ v3 — audited risk lifecycle, tasks, scoring settings (CONTRACT §8) ══════════════════
+   * Every method returns { ok:true, … } or { ok:false, reason, message, messageEn[, errors] } (bilingual,
+   * shown as is by the UI), persists, emits store:change and appends an audit entry.
+   */
+
+  /** Replace the five domain weights (must sum to 1 ± 0.001). */
+  setWeights(weights, { by = '' } = {}) {
+    const v = validateWeights(weights);
+    if (!v.ok) return v;
+    const prev = { ...state.settings.platform.weights };
+    store.setSettings({ platform: { weights: v.weights } });
+    const fmtW = (w) => WEIGHT_KEYS.map((k) => `${k} ${Math.round(w[k] * 1000) / 10}%`).join(', ');
+    store.pushAudit({ actor: text(by) || 'مدير المشروع', action: 'config', target: 'settings.platform.weights', detail: `تعديل أوزان المجالات: من ${fmtW(prev)} إلى ${fmtW(v.weights)}`, detailEn: `Domain weights changed: from ${fmtW(prev)} to ${fmtW(v.weights)}` });
+    return { ok: true, weights: { ...state.settings.platform.weights } };
+  },
+
+  /** Replace the alert / critical thresholds (integers 0–100, critical ≥ alert + 5). */
+  setThresholds(input, { by = '' } = {}) {
+    const v = validateThresholds(input);
+    if (!v.ok) return v;
+    const p = state.settings.platform;
+    const prev = `${p.alertThreshold}/${p.criticalThreshold}`;
+    store.setSettings({ platform: { alertThreshold: v.alertThreshold, criticalThreshold: v.criticalThreshold } });
+    store.pushAudit({ actor: text(by) || 'مدير المشروع', action: 'config', target: 'settings.platform.thresholds', detail: `تعديل العتبات (تنبيه/تصعيد): من ${prev} إلى ${v.alertThreshold}/${v.criticalThreshold}`, detailEn: `Thresholds changed (alert/critical): from ${prev} to ${v.alertThreshold}/${v.criticalThreshold}` });
+    return { ok: true, alertThreshold: v.alertThreshold, criticalThreshold: v.criticalThreshold };
+  },
+
+  /**
+   * Record the outcome of a REAL data-source test/import (sources.testConnection / importRisks) so status.js
+   * can report Live / Stale / Error: ok → lastSuccessAt; failure → lastErrorAt + lastError {code,message,messageEn}.
+   */
+  recordDataSourceResult(result = {}) {
+    const r = isPlainObject(result) ? result : {};
+    const at = localISO(store.now());
+    const ds = r.ok
+      ? { lastSuccessAt: at }
+      : { lastErrorAt: at, lastError: { code: text(r.code || r.reason) || 'error', message: text(r.message), messageEn: text(r.messageEn) } };
+    store.setSettings({ dataSource: ds });
+    return { ok: true, dataSource: { ...state.settings.dataSource } };
+  },
+
+  /** Attach evidence to a risk's treatment — metadata only, stored in this browser (local: true). */
+  addEvidence(riskId, ev = {}, { by = '' } = {}) {
+    const risk = findPlatform('aiRisks', riskId);
+    if (!risk) return fail('not-found', 'المخاطرة غير موجودة.', 'Risk not found.');
+    if (AI_RISK_TERMINAL.includes(risk.status)) return fail('risk-closed', 'لا يمكن إضافة أدلة إلى مخاطرة مغلقة أو متجاوزة — أعد فتحها أولاً.', 'Evidence cannot be added to a closed or dismissed risk — reopen it first.');
+    const check = validateAttachment(ev);
+    if (!check.ok) return check;
+    const actor = text(by) || 'مدير المشروع';
+    const treatment = normalizeTreatment(risk.treatment, risk.id);
+    const item = { ...check.item, id: `EV-${risk.id}-${Date.now().toString(36)}${Math.floor(Math.random() * 1e3).toString(36)}`, addedAt: localISO(store.now()), by: actor, local: true };
+    treatment.evidence.push(item);
+    risk.treatment = treatment;
+    risk.updatedAt = localISO(store.now());
+    const kindAr = { link: 'رابط', note: 'ملاحظة', file: 'اسم ملف' }[item.kind] || item.kind;
+    const kindEn = { link: 'link', note: 'note', file: 'file name' }[item.kind] || item.kind;
+    // The English sentence names the evidence only when its title has no Arabic (the title is listed with the evidence).
+    const titleEn = latinOnly(item.titleEn) || latinOnly(item.title);
+    riskHistory(risk, actor, `إضافة دليل معالجة (${kindAr}): ${item.title} — محفوظ على هذا الجهاز فقط`, `Treatment evidence added (${kindEn})${titleEn ? `: ${titleEn}` : ''} — stored on this device only`);
+    changed(`platform.aiRisks.${risk.id}`);
+    store.pushAudit({ actor, action: 'evidence', target: risk.code, detail: `إضافة دليل (${item.kind}): ${item.title}`, detailEn: `Evidence added (${item.kind}) to ${risk.code}` });
+    return { ok: true, evidence: item, risk };
+  },
+
+  /** Remove evidence added in this browser (source-record evidence, local:false, cannot be removed here). */
+  removeEvidence(riskId, evidenceId, { by = '' } = {}) {
+    const risk = findPlatform('aiRisks', riskId);
+    if (!risk) return fail('not-found', 'المخاطرة غير موجودة.', 'Risk not found.');
+    const treatment = normalizeTreatment(risk.treatment, risk.id);
+    const idx = treatment.evidence.findIndex((e) => e.id === evidenceId);
+    if (idx === -1) return fail('evidence-not-found', 'الدليل غير موجود.', 'Evidence not found.');
+    if (treatment.evidence[idx].local === false) return fail('source-evidence', 'هذا الدليل جزء من سجل النظام المصدر ولا يُحذف من هنا.', 'This evidence belongs to the source-system record and cannot be removed here.');
+    if (AI_RISK_TERMINAL.includes(risk.status)) return fail('risk-closed', 'المخاطرة مغلقة — أعد فتحها لتعديل الأدلة.', 'The risk is closed — reopen it to change its evidence.');
+    const [removed] = treatment.evidence.splice(idx, 1);
+    const actor = text(by) || 'مدير المشروع';
+    risk.treatment = treatment;
+    risk.updatedAt = localISO(store.now());
+    riskHistory(risk, actor, `حذف دليل معالجة: ${removed.title}`, 'Treatment evidence removed');
+    changed(`platform.aiRisks.${risk.id}`);
+    store.pushAudit({ actor, action: 'evidence', target: risk.code, detail: `حذف دليل: ${removed.title}`, detailEn: `Evidence removed from ${risk.code}` });
+    return { ok: true, removed, risk };
+  },
+
+  /**
+   * Residual assessment after mitigation: likelihood & impact 1–5 and a justification are required; the
+   * residual score cannot exceed the inherent score; the risk must have a treatment (task, plan or evidence)
+   * and must not be closed/dismissed. Required before closeAiRisk.
+   */
+  assessResidual(riskId, { likelihood, impact, justification, justificationEn, by = '' } = {}) {
+    const risk = findPlatform('aiRisks', riskId);
+    if (!risk) return fail('not-found', 'المخاطرة غير موجودة.', 'Risk not found.');
+    if (AI_RISK_TERMINAL.includes(risk.status)) return fail('risk-closed', 'لا يمكن تقييم مخاطرة مغلقة أو متجاوزة — أعد فتحها أولاً.', 'A closed or dismissed risk cannot be assessed — reopen it first.');
+    const errors = [];
+    const l = scale5(likelihood);
+    const im = scale5(impact);
+    if (!l) errors.push(fieldError('likelihood', 'range', 'الاحتمالية المتبقية عدد صحيح من 1 إلى 5.', 'Residual likelihood must be a whole number from 1 to 5.'));
+    if (!im) errors.push(fieldError('impact', 'range', 'الأثر المتبقي عدد صحيح من 1 إلى 5.', 'Residual impact must be a whole number from 1 to 5.'));
+    const why = text(justification);
+    if (why.length < 5) errors.push(fieldError('justification', 'required', 'اكتب مبرر التقييم (5 أحرف على الأقل).', 'Write a justification (at least 5 characters).'));
+    if (errors.length) return fail('validation', 'تعذّر حفظ التقييم المتبقي — راجع الحقول.', 'The residual assessment was not saved — check the fields.', { errors });
+    const inherent = risk.likelihood * risk.impact * 4;
+    if (l * im * 4 > inherent) return fail('residual-above-inherent', `الدرجة المتبقية (${l * im * 4}) أعلى من الدرجة الأصلية (${inherent}) — أعد تقدير الشدة بدلاً من ذلك.`, `The residual score (${l * im * 4}) is above the inherent score (${inherent}) — re-assess the inherent severity instead.`);
+    const treatment = normalizeTreatment(risk.treatment, risk.id);
+    const hasTreatment = Boolean(risk.taskId || treatment.plan || treatment.evidence.length || platformList('tasks').some((t) => t && t.riskId === risk.id));
+    if (!hasTreatment) return fail('treatment-required', 'لا توجد معالجة لهذه المخاطرة بعد — اقبل التوصية أو أنشئ مهمة أولاً.', 'This risk has no treatment yet — accept the recommendation or create a task first.');
+    const actor = text(by) || 'مدير المشروع';
+    const prev = risk.residualLikelihood && risk.residualImpact ? `${risk.residualLikelihood}×${risk.residualImpact}` : null;
+    risk.residualLikelihood = l;
+    risk.residualImpact = im;
+    risk.residualAssessment = { at: localISO(store.now()), by: actor, justification: why, ...(text(justificationEn) ? { justificationEn: text(justificationEn) } : {}) };
+    risk.updatedAt = localISO(store.now());
+    riskHistory(risk, actor, `تقييم المخاطر المتبقية: ${l}×${im} (الدرجة ${l * im * 4} مقابل ${inherent})${prev ? ` — بدلاً من ${prev}` : ''} — ${why}`, `Residual assessment: ${l}×${im} (score ${l * im * 4} vs ${inherent})${prev ? ` — replaces ${prev}` : ''}`);
+    changed(`platform.aiRisks.${risk.id}`);
+    store.pushAudit({ actor, action: 'residual', target: risk.code, detail: `تقييم متبقٍ ${l}×${im} = ${l * im * 4} (الأصلي ${inherent}) — ${why}`, detailEn: `Residual ${l}×${im} = ${l * im * 4} (inherent ${inherent})` });
+    return { ok: true, risk };
+  },
+
+  /** Close a risk with an outcome. Requires a residual assessment; closes its open mitigation tasks too. */
+  closeAiRisk(riskId, { outcome, outcomeEn, by = '' } = {}) {
+    const risk = findPlatform('aiRisks', riskId);
+    if (!risk) return fail('not-found', 'المخاطرة غير موجودة.', 'Risk not found.');
+    if (AI_RISK_TERMINAL.includes(risk.status)) return fail('already-closed', 'المخاطرة مغلقة أو متجاوزة بالفعل.', 'The risk is already closed or dismissed.');
+    if (!risk.residualLikelihood || !risk.residualImpact) return fail('residual-required', 'يلزم تقييم المخاطر المتبقية قبل الإغلاق.', 'A residual assessment is required before closing.');
+    const why = text(outcome);
+    if (!why) return fail('outcome-required', 'اكتب نتيجة المعالجة قبل الإغلاق.', 'Write the treatment outcome before closing.');
+    closeRiskInternal(risk, { outcome: why, outcomeEn: text(outcomeEn), actor: text(by) || 'مدير المشروع' });
+    return { ok: true, risk };
+  },
+
+  /** Reopen a closed or dismissed risk (reason required). Linked closed tasks are reopened as well. */
+  reopenAiRisk(riskId, { reason, by = '' } = {}) {
+    const risk = findPlatform('aiRisks', riskId);
+    if (!risk) return fail('not-found', 'المخاطرة غير موجودة.', 'Risk not found.');
+    if (!AI_RISK_TERMINAL.includes(risk.status)) return fail('not-closed', 'المخاطرة مفتوحة بالفعل.', 'The risk is already open.');
+    const why = text(reason);
+    if (!why) return fail('reason-required', 'اكتب سبب إعادة الفتح.', 'Write the reason for reopening.');
+    const actor = text(by) || 'مدير المشروع';
+    const now = localISO(store.now());
+    const prev = risk.status;
+    const tasks = platformList('tasks').filter((t) => t && (t.riskId === risk.id || t.id === risk.taskId));
+    for (const t of tasks) {
+      if (t.status === 'مغلقة') { t.status = 'قيد التنفيذ'; t.closedAt = null; t.updatedAt = now; changed(`platform.tasks.${t.id}`); }
+    }
+    const level = alertLevelFor(risk.score);
+    risk.status = tasks.length ? 'قيد المعالجة' : (level ? 'تنبيه' : 'مكتشف');
+    risk.closedAt = null;
+    risk.reopenedAt = now;
+    delete risk.closedByTask;
+    risk.updatedAt = now;
+    riskHistory(risk, actor, `إعادة فتح المخاطرة (كانت «${prev}») — السبب: ${why}`, `Risk reopened${wasStatusEn(prev)} — reason recorded`, { kind: 'reopen', statusFrom: prev, statusTo: risk.status });
+    changed(`platform.aiRisks.${risk.id}`);
+    store.pushAudit({ actor, action: 'reopen', target: risk.code, detail: `إعادة فتح — السبب: ${why}`, detailEn: `Reopened${wasStatusEn(prev)}`, from: prev, to: risk.status });
+    emitFeed({ type: 'ai', tone: 'warning', siteId: risk.projectId, title: `إعادة فتح المخاطرة ${risk.code}`, titleEn: `Risk ${risk.code} reopened`, detail: why, detailEn: 'Reason recorded in the risk history', sourceId: risk.pipeline, refId: risk.id, code: risk.code });
+    return { ok: true, risk };
+  },
+
+  /** Edit a task's content (title, due date, priority, linked risk, description). Status → updateTask; owner → assignTask. */
+  editTask(id, patch = {}, { by = '' } = {}) {
+    const task = findPlatform('tasks', id);
+    if (!task) return fail('not-found', 'المهمة غير موجودة.', 'Task not found.');
+    if (task.status === 'مغلقة') return fail('task-closed', 'المهمة مغلقة — أعد فتحها لتعديلها.', 'The task is closed — reopen it to edit.');
+    const src = isPlainObject(patch) ? patch : {};
+    const errors = [];
+    const next = {};
+    if (src.title !== undefined) { if (!text(src.title)) errors.push(fieldError('title', 'required', 'عنوان المهمة مطلوب.', 'A task title is required.')); else next.title = text(src.title).slice(0, 300); }
+    if (src.titleEn !== undefined) next.titleEn = text(src.titleEn).slice(0, 300);
+    if (src.description !== undefined) next.description = text(src.description).slice(0, 4000);
+    if (src.dueDate !== undefined) { const d = validDateOnly(src.dueDate); if (!d) errors.push(fieldError('dueDate', 'invalid', 'تاريخ الاستحقاق غير صالح.', 'Invalid due date.')); else next.dueDate = d; }
+    if (src.priority !== undefined) {
+      if (src.priority === null || src.priority === '') next.priority = null;
+      else if (!TASK_PRIORITIES.includes(src.priority)) errors.push(fieldError('priority', 'invalid', 'الأولوية غير صالحة.', 'Invalid priority.'));
+      else next.priority = src.priority;
+    }
+    if (src.riskId !== undefined) {
+      if (src.riskId === null || src.riskId === '') next.riskId = null;
+      else if (!findPlatform('aiRisks', src.riskId)) errors.push(fieldError('riskId', 'unknown', 'المخاطرة المرتبطة غير موجودة.', 'The linked risk does not exist.'));
+      else next.riskId = src.riskId;
+    }
+    if (errors.length) return fail('validation', 'تعذّر حفظ التعديلات — راجع الحقول.', 'Changes were not saved — check the fields.', { errors });
+    const changedKeys = Object.keys(next).filter((k) => !sameJSON(next[k], task[k]));
+    if (!changedKeys.length) return { ok: true, task, changed: [] };
+    const actor = text(by) || 'مدير المشروع';
+    if (next.riskId !== undefined && next.riskId !== task.riskId) {
+      const old = task.riskId ? findPlatform('aiRisks', task.riskId) : null;
+      if (old && old.taskId === task.id) { old.taskId = null; if (old.treatment && old.treatment.taskId === task.id) old.treatment = normalizeTreatment({ ...old.treatment, taskId: null, plan: null }, old.id); changed(`platform.aiRisks.${old.id}`); }
+      const nr = next.riskId ? findPlatform('aiRisks', next.riskId) : null;
+      if (nr) { nr.taskId = task.id; nr.treatment = normalizeTreatment({ ...(nr.treatment || {}), taskId: task.id, plan: next.title || task.title }, nr.id); if (['مكتشف', 'تنبيه'].includes(nr.status)) nr.status = 'مهمة مُسندة'; changed(`platform.aiRisks.${nr.id}`); }
+      if (nr) next.projectId = nr.projectId;
+    }
+    Object.assign(task, next, { updatedAt: localISO(store.now()) });
+    const linked = task.riskId ? findPlatform('aiRisks', task.riskId) : null;
+    if (linked && next.title && linked.treatment && linked.treatment.taskId === task.id) linked.treatment = normalizeTreatment({ ...linked.treatment, plan: task.title }, linked.id);
+    changed(`platform.tasks.${task.id}`);
+    store.pushAudit({ actor, action: 'edit', target: task.code, detail: `تعديل المهمة: ${changedKeys.join('، ')}`, detailEn: `Task edited: ${changedKeys.join(', ')}` });
+    return { ok: true, task, changed: changedKeys };
+  },
+
+  /** (Re)assign a task to an owner. */
+  assignTask(id, owner, { by = '' } = {}) {
+    const task = findPlatform('tasks', id);
+    if (!task) return fail('not-found', 'المهمة غير موجودة.', 'Task not found.');
+    if (task.status === 'مغلقة') return fail('task-closed', 'المهمة مغلقة — أعد فتحها لإسنادها.', 'The task is closed — reopen it to reassign.');
+    const who = text(owner).slice(0, 120);
+    if (!who) return fail('owner-required', 'حدّد المسؤول.', 'Choose an owner.', { errors: [fieldError('owner', 'required', 'حدّد المسؤول.', 'Choose an owner.')] });
+    if (who === task.owner) return { ok: true, task, changed: false };
+    const actor = text(by) || 'مدير المشروع';
+    const prev = task.owner;
+    task.owner = who;
+    task.updatedAt = localISO(store.now());
+    const risk = task.riskId ? findPlatform('aiRisks', task.riskId) : null;
+    if (risk && (!risk.owner || risk.owner === prev)) { risk.owner = who; riskHistory(risk, actor, `إسناد المهمة ${task.code} إلى ${who}`, `Task ${task.code} assigned to ${personEn(who, 'a new owner')}`); changed(`platform.aiRisks.${risk.id}`); }
+    changed(`platform.tasks.${task.id}`);
+    store.pushAudit({ actor, action: 'assign', target: task.code, detail: `إسناد المهمة من ${prev || '—'} إلى ${who}`, detailEn: `Task reassigned from ${personEn(prev, '—')} to ${personEn(who, 'a new owner')}` });
+    emitFeed({ type: 'task', tone: 'accent', siteId: task.projectId, title: `إسناد المهمة ${task.code} إلى ${who}`, titleEn: `Task ${task.code} assigned to ${personEn(who, 'a new owner')}`, detail: task.title, detailEn: text(task.titleEn), sourceId: 'biltix-pm', refId: task.id, code: task.code });
+    return { ok: true, task, changed: true };
+  },
+
+  /** Attach evidence to a task — metadata only, stored in this browser (local: true). */
+  addTaskAttachment(id, att = {}, { by = '' } = {}) {
+    const task = findPlatform('tasks', id);
+    if (!task) return fail('not-found', 'المهمة غير موجودة.', 'Task not found.');
+    const check = validateAttachment(att);
+    if (!check.ok) return check;
+    const actor = text(by) || 'مدير المشروع';
+    const item = { ...check.item, id: `AT-${task.id}-${Date.now().toString(36)}${Math.floor(Math.random() * 1e3).toString(36)}`, addedAt: localISO(store.now()), by: actor, local: true };
+    if (!Array.isArray(task.attachments)) task.attachments = [];
+    task.attachments.push(item);
+    task.updatedAt = localISO(store.now());
+    changed(`platform.tasks.${task.id}`);
+    store.pushAudit({ actor, action: 'attachment', target: task.code, detail: `إرفاق (${item.kind}): ${item.title} — محفوظ على هذا الجهاز فقط`, detailEn: `Attachment added (${item.kind}) to ${task.code} — stored on this device only` });
+    return { ok: true, attachment: item, task };
+  },
+
+  /** Remove a task attachment added in this browser. */
+  removeTaskAttachment(id, attachmentId, { by = '' } = {}) {
+    const task = findPlatform('tasks', id);
+    if (!task) return fail('not-found', 'المهمة غير موجودة.', 'Task not found.');
+    const list = Array.isArray(task.attachments) ? task.attachments : [];
+    const idx = list.findIndex((a) => a && a.id === attachmentId);
+    if (idx === -1) return fail('attachment-not-found', 'المرفق غير موجود.', 'Attachment not found.');
+    const [removed] = list.splice(idx, 1);
+    task.updatedAt = localISO(store.now());
+    changed(`platform.tasks.${task.id}`);
+    store.pushAudit({ actor: text(by) || 'مدير المشروع', action: 'attachment', target: task.code, detail: `حذف مرفق: ${removed.title}`, detailEn: `Attachment removed from ${task.code}` });
+    return { ok: true, removed, task };
   },
 
   /* ── validation layer, pipelines, connectors, audit ── */
@@ -2154,7 +3112,15 @@ export const store = {
     safeAssign(item, patch);
     changed('platform.validation.rules');
     if (patch.enabled !== undefined) {
-      store.pushAudit({ actor: 'مدير المشروع', action: 'config', target: item.name || item.id, detail: patch.enabled ? 'تفعيل قاعدة التحقق' : 'تعطيل قاعدة التحقق' });
+      const enabled = Boolean(patch.enabled);
+      store.pushAudit({
+        actor: 'مدير المشروع', action: 'config', target: item.name || item.id,
+        // English rule name only when it is available now (dictionaries load lazily); `ruleId` lets a view resolve it later.
+        targetEn: latinOnly(item.nameEn) || dataEn('validationRules', item.id, 'name') || latinOnly(item.name) || undefined,
+        detail: enabled ? 'تفعيل قاعدة التحقق' : 'تعطيل قاعدة التحقق',
+        detailEn: enabled ? 'Validation rule enabled' : 'Validation rule disabled',
+        kind: 'rule-toggle', ruleId: text(item.id), enabled,
+      });
     }
     return item;
   },
@@ -2165,11 +3131,22 @@ export const store = {
     const item = isPlainObject(v) && Array.isArray(v.quarantine) ? v.quarantine.find((q) => q && q.id === id) : null;
     if (!item) return null;
     const next = pickEnum(status, QUARANTINE_STATUS, 'مُصحح');
+    const prev = item.status;
     item.status = next;
     item.resolvedAt = next === 'معلّق' ? null : localISO(store.now());
     item.resolvedBy = next === 'معلّق' ? null : (text(by) || 'مسؤول جودة البيانات');
     changed('platform.validation.quarantine');
-    store.pushAudit({ actor: item.resolvedBy || 'مسؤول جودة البيانات', action: 'validation', target: item.recordRef || item.id, detail: `${next === 'مُصحح' ? 'تصحيح' : next === 'مرفوض' ? 'رفض' : 'إعادة تعليق'} سجل محجور — ${item.reason || ''}`.trim() });
+    const decision = next === 'مُصحح' ? 'corrected' : (next === 'مرفوض' ? 'rejected' : 'reheld');
+    const verbEn = { corrected: 'Quarantined record corrected', rejected: 'Quarantined record rejected', reheld: 'Quarantined record put back on hold' }[decision];
+    // The English reason exists only when the record carries one or the dictionaries are loaded (English session);
+    // otherwise the sentence stays without it and `quarantineId` lets a view add the reason from its dictionary.
+    const reasonEn = latinOnly(item.reasonEn) || dataEn('quarantine', item.id, 'reason') || latinOnly(item.reason);
+    store.pushAudit({
+      actor: item.resolvedBy || 'مسؤول جودة البيانات', action: 'validation', target: item.recordRef || item.id,
+      detail: `${next === 'مُصحح' ? 'تصحيح' : next === 'مرفوض' ? 'رفض' : 'إعادة تعليق'} سجل محجور — ${item.reason || ''}`.trim(),
+      detailEn: reasonEn ? `${verbEn} — ${reasonEn}` : verbEn,
+      kind: 'quarantine', quarantineId: text(item.id), recordRef: text(item.recordRef), decision, from: text(prev), to: next,
+    });
     return item;
   },
 
@@ -2181,7 +3158,15 @@ export const store = {
     const prevStatus = pipe.status;
     const updated = patchPlatformItem('pipelines', id, rest);
     if (rest.status && rest.status !== prevStatus) {
-      store.pushAudit({ actor: text(patch.by) || 'مهندس النماذج', action: 'model-update', target: pipe.nameAr || pipe.name || id, detail: `تغيير حالة المحرك: ${prevStatus} ← ${rest.status}${rest.version ? ` (الإصدار ${rest.version})` : ''}` });
+      // Pipeline statuses are Latin ids: enumEn falls back to the id itself when the dictionaries are not loaded.
+      const version = latinOnly(text(rest.version));
+      store.pushAudit({
+        actor: text(patch.by) || 'مهندس النماذج', action: 'model-update', target: pipe.nameAr || pipe.name || id,
+        targetEn: latinOnly(pipe.name) || dataEn('pipelines', id, 'name') || undefined,
+        detail: `تغيير حالة المحرك: من ${prevStatus} إلى ${rest.status}${rest.version ? ` (الإصدار ${rest.version})` : ''}`,
+        detailEn: `Engine state changed: from ${enumEn('pipelineStatus', prevStatus, text(prevStatus))} to ${enumEn('pipelineStatus', rest.status, text(rest.status))}${version ? ` (version ${version})` : ''}`,
+        kind: 'pipeline-status', pipelineId: text(id), from: text(prevStatus), to: text(rest.status), version: version || undefined,
+      });
     }
     return updated;
   },
@@ -2194,7 +3179,13 @@ export const store = {
     return patchPlatformItem('connectors', id, rest);
   },
 
-  /** Prepend an audit entry {id, at, actor, action, target, detail}; capped at 500. */
+  /**
+   * Prepend an audit entry {id, at, actor, action, target, detail}; capped at 500.
+   * Bilingual: `detailEn` (callers build it from Latin-only data; user-typed text may be copied as typed) and
+   * `targetEn` (kept only when it has no Arabic). Structured fields (AUDIT_STRUCTURED: kind, ruleId, enabled, quarantineId,
+   * recordRef, decision, from, to, pipelineId, version) let a view word the entry from its dictionaries in either
+   * language — English enum labels load lazily, so a sentence pre-rendered during an Arabic session can be thinner.
+   */
   pushAudit(entry = {}) {
     if (!isPlainObject(entry)) return null;
     const list = platformList('auditLog');
@@ -2206,6 +3197,15 @@ export const store = {
       target: text(entry.target),
       detail: text(entry.detail),
     };
+    if (typeof entry.detailEn === 'string' && entry.detailEn.trim()) item.detailEn = entry.detailEn.trim();
+    const targetEn = latinOnly(entry.targetEn);
+    if (targetEn) item.targetEn = targetEn;
+    for (const key of AUDIT_STRUCTURED) {
+      const v = entry[key];
+      if (typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v))) item[key] = v;
+      else if (typeof v === 'string' && v.trim()) item[key] = v.trim().slice(0, 200);
+    }
+    if (entry.simulated === true) item.simulated = true;
     list.unshift(item);
     if (list.length > AUDIT_CAP) list.length = AUDIT_CAP;
     changed('platform.auditLog');

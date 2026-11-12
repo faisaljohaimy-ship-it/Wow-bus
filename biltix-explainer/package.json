@@ -1,0 +1,50 @@
+{
+  "name": "biltix-explainer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BILTIX Risk AI \u2014 41 s product explainer (Arabic RTL + English) rendered with Remotion. Isolated from the biltix-hse static app.",
+  "type": "module",
+  "scripts": {
+    "extract": "node scripts/extract-data.mjs",
+    "captions": "node scripts/write-captions.mjs",
+    "studio": "remotion studio src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "check:framing": "node scripts/check-framing.mjs",
+    "check:frames": "python3 scripts/check-frames.py",
+    "render:ar": "remotion render src/index.ts ExplainerAR out/biltix-explainer-ar-1080p.mp4",
+    "render:en": "remotion render src/index.ts ExplainerEN out/biltix-explainer-en-1080p.mp4",
+    "render": "npm run render:ar && npm run render:en",
+    "export:web": "node scripts/export-web.mjs",
+    "voice": "node scripts/voice-mux.mjs",
+    "test": "node --test \"tests/*.test.mjs\"",
+    "stills": "node scripts/contact-sheet.mjs",
+    "build": "npm run extract && npm run captions && npm run render && npm run export:web",
+    "showcase:capture": "node scripts/showcase-capture.mjs --check-widths",
+    "showcase:voice": "node scripts/showcase-voice.mjs",
+    "showcase:stills": "node scripts/showcase-stills.mjs",
+    "showcase:render:ar": "remotion render src/index.ts ShowcaseAR out/biltix-mvp-ar-1080p.mp4 --concurrency=3 --image-format=jpeg --jpeg-quality=92 --audio-codec=aac --audio-bitrate=192k",
+    "showcase:render:en": "remotion render src/index.ts ShowcaseEN out/biltix-mvp-en-1080p.mp4 --concurrency=3 --image-format=jpeg --jpeg-quality=92 --audio-codec=aac --audio-bitrate=192k",
+    "showcase:mix": "node scripts/showcase-mix.mjs",
+    "film:voice": "node scripts/film-voice.mjs",
+    "film:media": "node scripts/film-media.mjs",
+    "film:stills": "node scripts/film-stills.mjs",
+    "film:render:ar": "node scripts/film-media.mjs && remotion render src/index.ts FilmAR out/film-ar-1080p.mp4 --concurrency=3 --image-format=jpeg --jpeg-quality=92 --audio-codec=aac --audio-bitrate=192k",
+    "film:render:en": "node scripts/film-media.mjs && remotion render src/index.ts FilmEN out/film-en-1080p.mp4 --concurrency=3 --image-format=jpeg --jpeg-quality=92 --audio-codec=aac --audio-bitrate=192k",
+    "film:mix": "node scripts/film-mix.mjs"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/ibm-plex-sans": "5.3.0",
+    "@fontsource/ibm-plex-sans-arabic": "5.3.0",
+    "@remotion/bundler": "4.0.542",
+    "@remotion/cli": "4.0.542",
+    "@remotion/renderer": "4.0.542",
+    "react": "19.2.9",
+    "react-dom": "19.2.9",
+    "remotion": "4.0.542"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,36 +1,42 @@
 /* ==========================================================================
-   Biltix HSE — base (css/base.css)
-   Reset, app shell grid (app bar / nav rail / filters / main / live feed),
-   shell widgets (brand, clock, pills, command palette, alert banner, tab bar),
+   BILTIX Risk AI — base & shell (css/base.css) — v3 "Precision"
+   Reset, layered background (static / subtle / cinematic), app shell grid
+   (app bar 64 · rail 232/72 · main ≤ 1600 · activity panel 360 overlay or
+   pinned ≥ 1680), shell widgets (brand, clock, search, pills, language
+   switch, data chip + popover, alert banner, tab bar, command palette),
    view scaffolding, layout helpers, utilities and responsive rules.
-   RTL-first: logical properties only. inline-start = right in Arabic.
+   RTL-first: logical properties only (inline-start = right in Arabic).
+   Glass (backdrop-filter) only on the app bar and rail, with solid fallbacks.
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
-   Layout helpers (not design tokens — shell geometry derived at runtime)
+   Shell geometry helpers (runtime-derived, not design tokens)
    -------------------------------------------------------------------------- */
 
 :root {
   --dir: 1;                              /* +1 LTR, -1 RTL; multiplies translateX for inline-end slides */
-  /* --ink-on-dark / --ink-on-light live in tokens.css (helper tokens). */
   --tabbar-h: 60px;
-  --rail-current: var(--rail-w);         /* swapped to --rail-w-collapsed by body.rail-collapsed (app.js) */
+  --rail-current: var(--rail-w);         /* → --rail-w-collapsed via body.rail-collapsed / tablet widths */
+  --panel-current: 0px;                  /* → --panel-w when the activity panel is pinned (≥ 1680px) */
   --z-backdrop: 0; --z-main: 1; --z-rail: 10; --z-filters: 20; --z-appbar: 30; --z-banner: 35;
   --z-tabbar: 40; --z-feed: 45; --z-overlay: 60; --z-toast: 70; --z-menu: 80; --z-cmdk: 90; --z-tooltip: 100; --z-skip: 110;
-  /* Mashrabiya lattice: 48px tile, eight-point star (two squares, one rotated 45°) + connectors to the tile edges.
-     Used as a mask so the colour always comes from the current ink token. */
+  /* Mashrabiya lattice tile (mask): used sparingly as hero ornament. */
   --lattice: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 48 48' fill='none' stroke='%23fff' stroke-width='1'%3E%3Crect x='13' y='13' width='22' height='22'/%3E%3Crect x='13' y='13' width='22' height='22' transform='rotate(45 24 24)'/%3E%3Cpath d='M24 0v8.5M24 39.5V48M0 24h8.5M39.5 24H48M0 0l13 13M48 0L35 13M0 48l13-13M48 48L35 35'/%3E%3C/svg%3E");
+  /* Engineering grid tile (mask): 120px cells, hairlines at 55% + survey crosses at the nodes. */
+  --survey-grid: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120' fill='none' stroke='%23fff' stroke-width='1'%3E%3Cpath d='M0 .5H120M.5 0V120' stroke-opacity='.5'/%3E%3Cpath d='M0 .5h7M113 .5h7M.5 0v7M.5 113v7' stroke-width='1.5'/%3E%3Cpath d='M60 59.5v1M59.5 60h1' stroke-opacity='.6'/%3E%3C/svg%3E");
+  /* Physical x of the two ambient lights (radial-gradient positions are physical). */
+  --amb-x1: 88%;
+  --amb-x2: 38%;
 }
 :root[dir="rtl"] { --dir: -1; }
+:root[dir="ltr"] { --amb-x1: 12%; --amb-x2: 62%; }
 
 /* --------------------------------------------------------------------------
    Reset
    -------------------------------------------------------------------------- */
 
 *, *::before, *::after { box-sizing: border-box; }
-
 html, body { margin: 0; padding: 0; }
-
 html { block-size: 100%; }
 
 img, svg, canvas, video { display: block; max-inline-size: 100%; }
@@ -62,19 +68,21 @@ abbr[title] { text-decoration: none; }
 [hidden] { display: none !important; }
 
 /* --------------------------------------------------------------------------
-   Page plane: blueprint grid + vignette
+   Layered background (CONTRACT §3 / §3.1)
+   Layer 1  base: solid --bg-0 on body (cards are opaque on top of it).
+   Layer 2  .bg-ambient: two broad, very soft lights (near the app bar / hero).
+   Layer 3  .bg-grid: sparse engineering grid with survey crosses (2–4 %).
+   Layer 4  .bg-mark: one small BILTIX emblem + mono coordinates, inline-end bottom.
+   Modes on <html data-bg>: static (no animation, quietest) · subtle (default,
+   no animation, slightly richer light) · cinematic (lights drift on transform
+   only, ≥ 60 s loops; paused under reduced motion, html[data-motion="reduce"],
+   html.is-hidden / html[data-visibility="hidden"] and .bg-layers.is-paused).
+   Nothing here ever sits above content: the host is fixed at z-index 0.
    -------------------------------------------------------------------------- */
 
 body.app {
   position: relative;
   background-color: var(--bg-0);
-  background-image:
-    radial-gradient(ellipse at 50% -10%, color-mix(in srgb, var(--brand) 10%, transparent), transparent 55%),
-    radial-gradient(ellipse at 50% 60%, transparent 50%, color-mix(in srgb, var(--ink-1) 7%, transparent) 100%),
-    linear-gradient(color-mix(in srgb, var(--ink-1) var(--grid-alpha, 4%), transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--ink-1) var(--grid-alpha, 4%), transparent) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 24px 24px, 24px 24px;
-  background-attachment: fixed;
 }
 
 .backdrop {
@@ -83,27 +91,197 @@ body.app {
   z-index: var(--z-backdrop);
   pointer-events: none;
   overflow: hidden;
+  contain: strict;
 }
 .backdrop svg { inline-size: 100%; block-size: 100%; }
+/* The pre-v3 isometric SVG backdrop (art.js) is retired visually; .bg-layers replaces it. */
+.backdrop .backdrop-art { display: none; }
+
+.bg-layers, .bg-ambient, .bg-grid { position: absolute; inset: 0; pointer-events: none; }
+.bg-layers { overflow: hidden; }
+
+/* Layer 2 — ambient lights. Each light is its own pseudo-element so cinematic
+   mode can drift them independently on transform. */
+.bg-ambient::before,
+.bg-ambient::after {
+  content: "";
+  position: absolute;
+  inset: -25% -20%;
+  background-repeat: no-repeat;
+  transform: translate3d(0, 0, 0);
+}
+.bg-ambient::before {
+  background-image: radial-gradient(42% 38% at var(--amb-x1) 4%, var(--amb-1), transparent 72%);
+}
+.bg-ambient::after {
+  background-image: radial-gradient(36% 30% at var(--amb-x2) 22%, var(--amb-2), transparent 70%);
+}
+
+/* Layer 3 — engineering grid, faded toward the lower half so it never competes with data. */
+.bg-grid {
+  background: var(--grid-ink);
+  opacity: var(--grid-opacity);
+  -webkit-mask-image: var(--survey-grid), radial-gradient(130% 95% at 50% 0%, #000 35%, transparent 88%);
+  mask-image: var(--survey-grid), radial-gradient(130% 95% at 50% 0%, #000 35%, transparent 88%);
+  -webkit-mask-size: 120px 120px, 100% 100%;
+  mask-size: 120px 120px, 100% 100%;
+  -webkit-mask-repeat: repeat, no-repeat;
+  mask-repeat: repeat, no-repeat;
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+}
+
+/* Layer 4 — identity mark (emblem SVG + mono caption), inline-end bottom of the content area. */
+.bg-mark {
+  position: absolute;
+  inset-block-end: var(--space-6);
+  inset-inline-end: calc(var(--panel-current) + var(--space-7));
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--gold);
+  opacity: var(--mark-opacity);
+  pointer-events: none;
+}
+.bg-mark svg { inline-size: 28px; block-size: 28px; flex: none; }
+.bg-mark > :not(svg), .bg-mark-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.3;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  direction: ltr;
+  unicode-bidi: isolate;
+  white-space: nowrap;
+}
+
+/* Modes */
+:root[data-bg="static"] { --amb-1: color-mix(in srgb, var(--brand) 12%, transparent); --amb-2: color-mix(in srgb, var(--accent) 5%, transparent); }
+:root[data-bg="static"][data-theme="light"] { --amb-1: color-mix(in srgb, var(--brand) 5%, transparent); --amb-2: color-mix(in srgb, var(--accent) 4%, transparent); }
+:root[data-bg="static"] .bg-grid { opacity: calc(var(--grid-opacity) * .7); }
+:root[data-bg="cinematic"] { --amb-1: color-mix(in srgb, var(--brand) 26%, transparent); --amb-2: color-mix(in srgb, var(--accent) 13%, transparent); }
+:root[data-bg="cinematic"][data-theme="light"] { --amb-1: color-mix(in srgb, var(--brand) 13%, transparent); --amb-2: color-mix(in srgb, var(--accent) 10%, transparent); }
+:root[data-bg="cinematic"] .bg-ambient::before { will-change: transform; animation: bg-drift-a 84s var(--ease-in-out) infinite alternate; }
+:root[data-bg="cinematic"] .bg-ambient::after  { will-change: transform; animation: bg-drift-b 112s var(--ease-in-out) infinite alternate; }
+@keyframes bg-drift-a {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(calc(var(--dir) * -4%), 3%, 0) scale(1.06); }
+  100% { transform: translate3d(calc(var(--dir) * -7%), -1%, 0) scale(1.02); }
+}
+@keyframes bg-drift-b {
+  0%   { transform: translate3d(0, 0, 0) scale(1.02); }
+  50%  { transform: translate3d(calc(var(--dir) * 6%), 4%, 0) scale(1); }
+  100% { transform: translate3d(calc(var(--dir) * 2%), 8%, 0) scale(1.07); }
+}
+/* Cinematic only — light shafts (.bg-beams, appended to the layers by app.js mountBackdrop()): three long,
+   soft, slanted shafts of site light (brand, nickel-orange, accent) fall from the top and sweep slowly
+   across the upper plane at different speeds, while the survey grid drifts a few pixels against them
+   (parallax). Each shaft and the grid are their own composited layer moved by transform/opacity only;
+   the shafts fade out by 85 % of the height, and cards stay opaque over them. Subtle and Static: no shafts,
+   no drift. */
+.bg-beams {
+  position: absolute;
+  inset: 0;
+  display: none;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, .55) 45%, transparent 85%);
+  mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, .55) 45%, transparent 85%);
+}
+.bg-beam {
+  position: absolute;
+  inset-block-start: -30%;
+  block-size: 150%;
+  inline-size: 16vw;
+  min-inline-size: 140px;
+  background: linear-gradient(90deg, transparent, var(--shaft) 50%, transparent);
+  transform: skewX(-22deg);
+  will-change: transform, opacity;
+}
+:root[dir="rtl"] .bg-beam { transform: skewX(22deg); }
+.bg-beam:nth-child(1) { --shaft: var(--shaft-1); inset-inline-start: 8%;  animation: bg-shaft 46s var(--ease-in-out) -6s infinite alternate; }
+.bg-beam:nth-child(2) { --shaft: var(--shaft-2); inset-inline-start: 38%; inline-size: 10vw; animation: bg-shaft 63s var(--ease-in-out) -31s infinite alternate-reverse; }
+.bg-beam:nth-child(3) { --shaft: var(--shaft-3); inset-inline-start: 64%; inline-size: 22vw; animation: bg-shaft 78s var(--ease-in-out) -50s infinite alternate; }
+:root[dir="rtl"] .bg-beam { animation-name: bg-shaft-rtl; }
+@keyframes bg-shaft {
+  0%   { transform: translate3d(0, 0, 0) skewX(-22deg); opacity: .55; }
+  50%  { transform: translate3d(9vw, 0, 0) skewX(-22deg); opacity: 1; }
+  100% { transform: translate3d(17vw, 0, 0) skewX(-22deg); opacity: .7; }
+}
+@keyframes bg-shaft-rtl {
+  0%   { transform: translate3d(0, 0, 0) skewX(22deg); opacity: .55; }
+  50%  { transform: translate3d(-9vw, 0, 0) skewX(22deg); opacity: 1; }
+  100% { transform: translate3d(-17vw, 0, 0) skewX(22deg); opacity: .7; }
+}
+:root[data-bg="cinematic"] .bg-beams { display: block; }
+:root[data-bg="cinematic"] .bg-grid { will-change: transform; animation: bg-grid-drift 96s var(--ease-in-out) infinite alternate; }
+@keyframes bg-grid-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(0, -48px, 0); }
+}
+
+/* Paused: tab hidden (shell flag), explicit pause, reduced motion (OS or setting) */
+:root.is-hidden .bg-ambient::before, :root.is-hidden .bg-ambient::after,
+:root[data-visibility="hidden"] .bg-ambient::before, :root[data-visibility="hidden"] .bg-ambient::after,
+.bg-layers.is-paused .bg-ambient::before, .bg-layers.is-paused .bg-ambient::after,
+.bg-layers.is-paused .bg-beam, .bg-layers.is-paused .bg-grid { animation-play-state: paused; }
+:root[data-motion="reduce"] .bg-ambient::before, :root[data-motion="reduce"] .bg-ambient::after,
+:root[data-motion="reduced"] .bg-ambient::before, :root[data-motion="reduced"] .bg-ambient::after,
+:root[data-motion="reduce"] .bg-beam, :root[data-motion="reduced"] .bg-beam,
+:root[data-motion="reduce"] .bg-grid, :root[data-motion="reduced"] .bg-grid { animation: none !important; will-change: auto; }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .bg-ambient::before,
+  :root:not([data-motion="full"]) .bg-ambient::after,
+  :root:not([data-motion="full"]) .bg-beam,
+  :root:not([data-motion="full"]) .bg-grid { animation: none !important; will-change: auto; }
+}
+
+/* Fallback until art.backdrop() renders .bg-layers: the same layers on the host itself. */
+.backdrop:not(:has(.bg-layers))::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(42% 38% at var(--amb-x1) 4%, var(--amb-1), transparent 72%),
+    radial-gradient(36% 30% at var(--amb-x2) 22%, var(--amb-2), transparent 70%);
+}
+.backdrop:not(:has(.bg-layers))::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--grid-ink);
+  opacity: var(--grid-opacity);
+  -webkit-mask-image: var(--survey-grid), radial-gradient(130% 95% at 50% 0%, #000 35%, transparent 88%);
+  mask-image: var(--survey-grid), radial-gradient(130% 95% at 50% 0%, #000 35%, transparent 88%);
+  -webkit-mask-size: 120px 120px, 100% 100%;
+  mask-size: 120px 120px, 100% 100%;
+  -webkit-mask-repeat: repeat, no-repeat;
+  mask-repeat: repeat, no-repeat;
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+}
 
 /* --------------------------------------------------------------------------
    App grid
-   ≥960px: the body is locked to the viewport; the main area, rail and feed are
-   independent scroll regions, so the app bar and filter row never move.
-   <960px: the document scrolls, the app bar is fixed, a bottom tab bar replaces
-   the rail and the feed becomes a drawer.
+   ≥ 960px: the body is locked to the viewport; main, rail and the pinned
+   panel are independent scroll regions, so the app bar and filters never move.
+   < 960px: the document scrolls, the app bar is fixed, a bottom tab bar
+   replaces the rail. The activity panel overlays below 1680px (closed by
+   default) and may be pinned as a third column at ≥ 1680px.
    -------------------------------------------------------------------------- */
 
-/* The alert banner owns an auto row that collapses to 0 while [hidden], so a
-   critical alert pushes the filters/main down instead of covering them. */
 body.app {
   display: grid;
   grid-template-areas:
-    "appbar appbar appbar"
-    "banner banner banner"
-    "rail   filters feed"
-    "rail   main    feed";
-  grid-template-columns: var(--rail-current) minmax(0, 1fr) var(--feed-w);
+    "appbar appbar  appbar"
+    "banner banner  banner"
+    "rail   filters panel"
+    "rail   main    panel";
+  grid-template-columns: var(--rail-current) minmax(0, 1fr) var(--panel-current);
   grid-template-rows: var(--appbar-h) auto auto minmax(0, 1fr);
   block-size: 100vh;
   block-size: 100dvh;
@@ -111,13 +289,15 @@ body.app {
   isolation: isolate;
 }
 
-/* app.js writes body.rail-collapsed; the .is-* spellings are kept for views. */
 body.rail-collapsed,
 body.is-rail-collapsed,
 html.is-rail-collapsed body { --rail-current: var(--rail-w-collapsed); }
 body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
 
-/* Overlay hosts must not become grid cells. */
+@media (min-width: 1680px) {
+  body.panel-pinned { --panel-current: var(--panel-w); }
+}
+
 #modals { display: contents; }
 
 /* --------------------------------------------------------------------------
@@ -132,16 +312,16 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
   padding: var(--space-2) var(--space-4);
   background: var(--brand);
   color: var(--brand-ink);
-  border-radius: var(--radius-ctl);
+  border-radius: var(--radius-md);
   font-weight: 600;
-  box-shadow: var(--shadow-1);
+  box-shadow: var(--elev-2);
   transform: translateY(calc(-100% - 16px));
-  transition: transform var(--dur-1) var(--ease);
+  transition: transform var(--dur-micro) var(--ease-out);
 }
 .skip-link:focus { transform: none; outline-offset: 0; text-decoration: none; }
 
 /* --------------------------------------------------------------------------
-   App bar
+   App bar (glass)
    -------------------------------------------------------------------------- */
 
 .appbar {
@@ -154,34 +334,17 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
   align-items: center;
   gap: var(--space-4);
   block-size: var(--appbar-h);
-  padding-inline: var(--space-4);
-  background: color-mix(in srgb, var(--bg-0) 78%, transparent);
-  -webkit-backdrop-filter: blur(14px) saturate(1.2);
-  backdrop-filter: blur(14px) saturate(1.2);
+  padding-inline: var(--space-4) var(--space-5);
+  /* Glass with a vertical sheen (lit from above) and a 1 px inner highlight on the top edge. Text sits on
+     ≥ 76 % of the card surface, so contrast is that of the solid surface (tokens.md §1). */
+  background: var(--appbar-sheen), var(--glass);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ink-on-dark) 7%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
   border-block-end: 1px solid var(--line);
   overflow: visible;
 }
-/* Faint mashrabiya band across the bar. */
-.appbar::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: var(--ink-1);
-  opacity: .085;
-  -webkit-mask-image: var(--lattice), linear-gradient(90deg, transparent, black 18%, black 82%, transparent);
-  mask-image: var(--lattice), linear-gradient(90deg, transparent, black 18%, black 82%, transparent);
-  -webkit-mask-size: 48px 48px, 100% 100%;
-  mask-size: 48px 48px, 100% 100%;
-  -webkit-mask-repeat: repeat, no-repeat;
-  mask-repeat: repeat, no-repeat;
-  -webkit-mask-position: center, center;
-  mask-position: center, center;
-  -webkit-mask-composite: source-in;
-  mask-composite: intersect;
-}
-:root[data-theme="light"] .appbar::before { opacity: .07; }
-/* Gold ornament hairline on the bar's lower edge. */
+/* Static hairline on the lower edge: brand → nickel-orange → brand, fading at both ends. */
 .appbar::after {
   content: "";
   position: absolute;
@@ -189,8 +352,81 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
   inset-block-end: -1px;
   block-size: 1px;
   pointer-events: none;
-  background: linear-gradient(90deg, transparent 10%, var(--gold) 50%, transparent 90%);
-  opacity: .28;
+  background: var(--appbar-hairline);
+  opacity: var(--appbar-hairline-opacity);
+}
+/* Scroll depth (phones: the document scrolls under the fixed bar). body.is-scrolled comes from app.js
+   (passive scroll listener, one class toggle per threshold crossing); only opacity transitions. */
+.appbar::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 100%;
+  block-size: 16px;
+  pointer-events: none;
+  background: var(--scroll-shade);
+  opacity: 0;
+  transition: opacity var(--dur-main) var(--ease-out);
+}
+@media (max-width: 959.98px) {
+  body.is-scrolled .appbar::before { opacity: 1; }
+}
+
+/* App bar light line: one glint (a short brand → nickel-orange → white-hot streak with a soft bloom)
+   sweeps along the lower edge in the reading direction, then rests off-stage until the next cycle.
+   The streak is one 40 %-wide element moved with transform only (compositor; no per-frame paint).
+   Subtle: one sweep per --glint-cycle (11 s). Cinematic: one per --glint-cycle-cinematic (7 s).
+   Static, reduced motion (OS or setting), forced colours and print: no glint, hairline only. */
+.appbar-light {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: -1px;
+  block-size: 6px;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+.appbar-glint {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-start: 0;
+  inline-size: 40%;
+  block-size: 6px;
+  opacity: 0;
+  background:
+    linear-gradient(90deg, transparent 0%, var(--glint-tail) 46%, var(--glint-core) 80%, var(--glint-head) 92%, transparent 100%) bottom / 100% 2px no-repeat,
+    linear-gradient(90deg, transparent 20%, var(--glint-bloom) 78%, transparent 100%) bottom / 100% 6px no-repeat;
+  -webkit-mask-image: linear-gradient(to top, #000 30%, transparent);
+  mask-image: linear-gradient(to top, #000 30%, transparent);
+  transform: translate3d(-100%, 0, 0);
+  will-change: transform;
+  animation: appbar-glint var(--glint-cycle) cubic-bezier(.45, 0, .2, 1) 1.4s infinite;
+}
+:root[dir="rtl"] .appbar-glint {
+  background:
+    linear-gradient(270deg, transparent 0%, var(--glint-tail) 46%, var(--glint-core) 80%, var(--glint-head) 92%, transparent 100%) bottom / 100% 2px no-repeat,
+    linear-gradient(270deg, transparent 20%, var(--glint-bloom) 78%, transparent 100%) bottom / 100% 6px no-repeat;
+  transform: translate3d(100%, 0, 0);
+  animation-name: appbar-glint-rtl;
+}
+:root[data-bg="cinematic"] .appbar-glint { animation-duration: var(--glint-cycle-cinematic); }
+@keyframes appbar-glint {
+  0%        { transform: translate3d(-100%, 0, 0); opacity: 0; }
+  4%        { opacity: 1; }
+  34%       { opacity: 1; }
+  40%, 100% { transform: translate3d(250%, 0, 0); opacity: 0; }
+}
+@keyframes appbar-glint-rtl {
+  0%        { transform: translate3d(100%, 0, 0); opacity: 0; }
+  4%        { opacity: 1; }
+  34%       { opacity: 1; }
+  40%, 100% { transform: translate3d(-250%, 0, 0); opacity: 0; }
+}
+:root[data-bg="static"] .appbar-glint,
+:root[data-motion="reduce"] .appbar-glint,
+:root[data-motion="reduced"] .appbar-glint { animation: none !important; display: none; }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .appbar-glint { animation: none !important; display: none; }
 }
 
 .appbar-start, .appbar-center, .appbar-end {
@@ -200,10 +436,38 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
   gap: var(--space-3);
   min-inline-size: 0;
 }
-.appbar-center { justify-content: center; gap: var(--space-4); }
+.appbar-center { justify-content: center; gap: var(--space-4); container: appbar-center / inline-size; }
+/* The centre track gives way first when the end group grows (long English labels, more chips):
+   dates go, then the clock, then the search collapses to its icon — never over the brand. */
+@container appbar-center (max-width: 340px) { .appbar-center .clock-dates { display: none; } }
+@container appbar-center (max-width: 270px) { .appbar-center .clock { display: none; } }
+@container appbar-center (max-width: 200px) {
+  .appbar-center .cmdk-btn { flex: none; inline-size: 40px; min-inline-size: 40px; padding-inline: 0; justify-content: center; }
+  .appbar-center .cmdk-btn-label, .appbar-center .cmdk-btn kbd.cmdk-kbd { display: none; }
+}
 .appbar-end { justify-content: flex-end; gap: var(--space-2); }
+.appbar-end > .btn-icon, .appbar-end > .pill, .appbar-end > .user-chip, .appbar-start > .btn-icon,
+.appbar-end > .lang-switch, .appbar-end > .data-chip, .appbar-end > .activity-toggle { flex: none; }
+.appbar .btn-icon { color: var(--ink-2); }
+.appbar .btn-icon:hover { color: var(--ink-1); }
+/* Micro-motion (transform only; offsets scale with --shell-fx, 0 under reduced motion): icons lift a
+   pixel on hover / keyboard focus and dip on press. */
+.appbar .btn-icon > .icon,
+.cmdk-btn > .icon,
+.user-avatar,
+.brand-mark { transition: transform var(--dur-micro) var(--ease-out); }
+.appbar .btn-icon:hover > .icon,
+.appbar .btn-icon:focus-visible > .icon { transform: translateY(calc(var(--shell-fx) * -1px)) scale(calc(1 + var(--shell-fx) * .08)); }
+.appbar .btn-icon:active > .icon { transform: scale(calc(1 - var(--shell-fx) * .08)); }
+.cmdk-btn:hover > .icon, .cmdk-btn:focus-visible > .icon { transform: rotate(calc(var(--dir) * var(--shell-fx) * -10deg)) scale(calc(1 + var(--shell-fx) * .08)); }
+.user-chip:hover .user-avatar, .user-chip:focus-visible .user-avatar { transform: scale(calc(1 + var(--shell-fx) * .06)); }
+.brand:hover .brand-mark, .brand:focus-visible .brand-mark { transform: rotate(calc(var(--dir) * var(--shell-fx) * -8deg)) scale(calc(1 + var(--shell-fx) * .06)); }
+.appbar .pill, .appbar .data-chip {
+  transition: border-color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out);
+}
+.appbar .pill:hover, .appbar .data-chip:hover { transform: translateY(calc(var(--shell-fx) * -1px)); }
 
-/* Rail toggle (hamburger → three bars) */
+/* Rail toggle (three bars) */
 .rail-toggle-bars {
   display: inline-flex;
   flex-direction: column;
@@ -217,14 +481,15 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
   block-size: 2px;
   border-radius: 1px;
   background: currentColor;
-  transition: transform var(--dur-1) var(--ease), inline-size var(--dur-1) var(--ease);
+  transform-origin: calc(50% - var(--dir) * 50%) 50%;
+  transition: transform var(--dur-micro) var(--ease-out);
 }
-.rail-toggle-bars i:nth-child(2) { inline-size: 70%; }
-.rail-toggle:hover .rail-toggle-bars i:nth-child(2) { inline-size: 100%; }
+.rail-toggle-bars i:nth-child(2) { transform: scaleX(.7); }
+.rail-toggle:hover .rail-toggle-bars i:nth-child(2) { transform: scaleX(1); }
 .rail-collapsed .rail-toggle-bars i:nth-child(2),
-.is-rail-collapsed .rail-toggle-bars i:nth-child(2) { inline-size: 45%; }
+.is-rail-collapsed .rail-toggle-bars i:nth-child(2) { transform: scaleX(.45); }
 
-/* Brand */
+/* Brand lockup */
 .brand {
   display: inline-flex;
   align-items: center;
@@ -232,30 +497,29 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
   color: var(--ink-1);
   text-decoration: none;
   min-inline-size: 0;
-  border-radius: var(--radius-ctl);
+  border-radius: var(--radius-md);
 }
 .brand:hover { text-decoration: none; }
 .brand-mark {
   position: relative;
   flex: none;
-  inline-size: 36px;
-  block-size: 36px;
+  inline-size: 34px;
+  block-size: 34px;
   display: grid;
   place-items: center;
   color: var(--gold);
 }
 .brand-mark svg { inline-size: 100%; block-size: 100%; }
-/* CSS fallback emblem until art.js injects the logo mark: gold eight-point star. */
 .brand-mark:empty {
   background: linear-gradient(135deg, color-mix(in srgb, var(--gold) 85%, white), var(--gold) 55%, color-mix(in srgb, var(--gold) 70%, var(--bg-0)));
   clip-path: polygon(50% 0%, 61% 24%, 85% 15%, 76% 39%, 100% 50%, 76% 61%, 85% 85%, 61% 76%, 50% 100%, 39% 76%, 15% 85%, 24% 61%, 0% 50%, 24% 39%, 15% 15%, 39% 24%);
 }
-.brand-text { display: flex; flex-direction: column; min-inline-size: 0; line-height: 1.2; }
+.brand-text { display: flex; flex-direction: column; min-inline-size: 0; line-height: var(--lh-tight); gap: 1px; }
 .brand-name { font-weight: 700; font-size: var(--fs-lg); letter-spacing: 0; white-space: nowrap; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
-.brand-tag { font-size: 11px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brand-tag { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-inline-size: 300px; }
+@media (max-width: 1679.98px) { .brand-tag { display: none; } }
 
-/* Clock: a compact block — time on the first line, Gregorian and Hijri dates
-   stacked under it (10.5px), so the dates are never clipped by the centre track. */
+/* Clock: time over stacked Gregorian / Hijri dates */
 .clock {
   display: flex;
   flex: 0 0 auto;
@@ -264,77 +528,238 @@ body:has(.rail.is-collapsed) { --rail-current: var(--rail-w-collapsed); }
   gap: 1px;
   min-inline-size: 0;
   white-space: nowrap;
-  line-height: 1.2;
+  line-height: var(--lh-tight);
 }
 .clock-time {
+  font-family: var(--font-mono);
   font-size: 15px;
   font-weight: 500;
   line-height: 1.15;
   color: var(--ink-1);
   letter-spacing: .04em;
+  font-variant-numeric: tabular-nums;
 }
-.clock-dates { display: flex; flex-direction: column; gap: 0; font-size: 10.5px; line-height: 1.25; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.clock-dates { display: flex; flex-direction: column; gap: 0; min-inline-size: 132px; font-size: 10.5px; line-height: 1.3; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+/* Reserve the date lines before the shell's first tick so the app bar does not shift (CLS). Only the lines
+   settings.calendar will show keep a placeholder: html[data-calendar] comes from the pre-paint script in
+   index.html and js/app.js applySettings() keeps it in step with the setting. */
+.clock-date:empty::before, .clock-hijri:empty::before { content: "\00a0"; }
+html[data-calendar="gregorian"] .clock-hijri, html[data-calendar="hijri"] .clock-date { display: none; }
 .clock-sep { display: none; }
 
-/* Command palette trigger: looks like a quiet search field */
+/* Command palette trigger: a quiet search field */
 .cmdk-btn {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  flex: 1 1 220px;
+  flex: 1 1 240px;
   min-inline-size: 160px;
-  max-inline-size: 320px;
+  max-inline-size: 360px;
   block-size: 36px;
-  padding-inline: var(--space-3);
-  background: color-mix(in srgb, var(--bg-2) 80%, transparent);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-ctl);
+  padding-inline: var(--space-3) var(--space-2);
+  background: color-mix(in srgb, var(--bg-2) 72%, transparent);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-md);
   color: var(--ink-3);
   font-size: var(--fs-sm);
-  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+  transition: border-color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
 }
-.cmdk-btn:hover { border-color: var(--line-2); color: var(--ink-2); background: var(--bg-2); }
-.cmdk-btn-label { flex: 1; text-align: start; }
-kbd.cmdk-kbd, .cmdk-foot kbd {
+.cmdk-btn:hover { border-color: var(--line-strong); color: var(--ink-2); background: var(--bg-2); }
+.cmdk-btn-label { flex: 1; text-align: start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+kbd.cmdk-kbd, .cmdk-foot kbd, kbd.kbd {
   display: inline-grid;
   place-items: center;
   min-inline-size: 20px;
   block-size: 20px;
   padding-inline: 5px;
+  font-family: var(--font-mono);
   font-size: 10px;
-  color: var(--ink-3);
+  color: var(--ink-2);
   background: var(--bg-1);
   border: 1px solid var(--line-2);
   border-block-end-width: 2px;
   border-radius: 5px;
   line-height: 1;
+  direction: ltr;
 }
 
-/* Pills (integrations status) */
+/* Pills (score, integrations) */
 .pill {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   block-size: 32px;
   padding-inline: var(--space-3);
-  background: color-mix(in srgb, var(--bg-2) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-2) 72%, transparent);
   border: 1px solid var(--line);
   border-radius: var(--radius-pill);
   color: var(--ink-2);
   font-size: var(--fs-xs);
   white-space: nowrap;
-  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+  transition: border-color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
 }
 .pill:hover { border-color: var(--line-2); background: var(--bg-2); color: var(--ink-1); }
 .pill-value { color: var(--ink-1); font-weight: 500; }
-/* app.js sets data-tone="good|warning|serious" from the connector mix */
 .pill[data-tone="warning"] { border-color: color-mix(in srgb, var(--warning) 45%, var(--line)); background: color-mix(in srgb, var(--warning) 9%, var(--bg-2)); }
 .pill[data-tone="serious"] { border-color: color-mix(in srgb, var(--serious) 50%, var(--line)); background: color-mix(in srgb, var(--serious) 10%, var(--bg-2)); }
-.pill[data-tone="serious"] .pill-value { color: color-mix(in srgb, var(--serious) 80%, var(--ink-1)); }
+.pill[data-tone="serious"] .pill-value { color: var(--serious-text); }
+
+/* Score pill: when the consolidated score changes, app.js counts the figure to its new value
+   (motion.number) and adds .is-bump for one ring pulse in the rating tone. Never on first paint. */
+.score-pill { position: relative; }
+.score-pill::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 1.5px solid color-mix(in srgb, var(--tone, var(--brand)) 65%, transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+.score-pill.is-bump::after { animation: pill-bump 900ms var(--ease-out) 1; }
+@keyframes pill-bump {
+  0%   { opacity: .9; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.12, 1.45); }
+}
+
+/* Language switch "ع | EN" (A-SHELL): a two-option segmented control.
+   .lang-switch > button|[role=radio]|.lang-opt with aria-pressed / aria-checked / .is-active */
+.lang-switch {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 2px;
+  block-size: 32px;
+  background: color-mix(in srgb, var(--bg-2) 72%, transparent);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-pill);
+  direction: ltr;               /* fixed order "ع | EN" in both languages */
+}
+.lang-switch > button, .lang-switch [role="radio"], .lang-switch .lang-opt, .lang-switch > a {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 34px;
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ink-3);
+  text-decoration: none;
+  transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+}
+.lang-switch [lang="ar"], .lang-switch .lang-opt-ar { font-family: var(--font-ar); font-size: 14px; }
+.lang-switch [lang="en"], .lang-switch .lang-opt-en { font-family: var(--font-sans); letter-spacing: .04em; }   /* Plex Arabic's Latin subset = Plex Sans glyphs: no extra download */
+.lang-switch > button:hover, .lang-switch [role="radio"]:hover, .lang-switch .lang-opt:hover { color: var(--ink-1); }
+.lang-switch [aria-pressed="true"], .lang-switch [aria-checked="true"], .lang-switch .is-active, .lang-switch [aria-current="true"] {
+  color: var(--ink-1);
+  background: var(--bg-1);
+  box-shadow: 0 0 0 1px var(--line-2), 0 1px 2px rgba(0,0,0,.18);
+}
+:root[data-theme="light"] .lang-switch [aria-pressed="true"],
+:root[data-theme="light"] .lang-switch [aria-checked="true"],
+:root[data-theme="light"] .lang-switch .is-active { background: var(--bg-1); box-shadow: 0 0 0 1px var(--line-2), 0 1px 2px rgba(19,34,56,.1); }
+.lang-switch :focus-visible { outline-offset: 0; }
+.lang-switch.is-block { display: flex; inline-size: max-content; }
+.lang-switch.is-lg { block-size: 40px; }
+.lang-switch.is-lg > button, .lang-switch.is-lg [role="radio"] { min-inline-size: 56px; font-size: var(--fs-sm); }
+
+/* Data status chip + popover (A-SHELL: "Demo · local data" / Live / Stale / Error / Offline).
+   .data-chip[data-status] > .data-chip-dot|.live-dot + .data-chip-label (+ .data-chip-sub)
+   From 960 px up .data-popover is absolutely positioned under its positioned wrapper (.data-chip-wrap /
+   .appbar-end); below 960 px it is fixed under the app bar and stops above the bottom tab bar (media query below). */
+.data-chip-wrap, .appbar .data-status { position: relative; display: inline-flex; flex: none; }
+.data-chip {
+  --tone: var(--brand-text);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  block-size: 32px;
+  padding-inline: 10px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px dashed color-mix(in srgb, var(--tone) 55%, var(--line-2));
+  background: color-mix(in srgb, var(--tone) 9%, var(--bg-1));
+  color: var(--ink-1);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: border-color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
+}
+.data-chip:hover { background: color-mix(in srgb, var(--tone) 14%, var(--bg-1)); }
+.data-chip[aria-expanded="true"] { border-style: solid; background: color-mix(in srgb, var(--tone) 16%, var(--bg-1)); }
+.data-chip > svg, .data-chip .icon, .data-chip-icon svg { inline-size: 14px; block-size: 14px; color: var(--tone); flex: none; }
+.data-chip-icon { display: inline-grid; place-items: center; flex: none; color: var(--tone); }
+.data-chip-icon:empty { inline-size: 7px; block-size: 7px; border-radius: 50%; background: var(--tone); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 22%, transparent); }
+.data-chip-offline { display: inline-flex; align-items: center; gap: 4px; padding-inline-start: 8px; margin-inline-start: 2px; border-inline-start: 1px solid var(--line-2); color: var(--ink-2); font-weight: 500; }
+.data-chip-offline svg { inline-size: 13px; block-size: 13px; }
+.data-chip-dot { flex: none; inline-size: 7px; block-size: 7px; border-radius: 50%; background: var(--tone); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 22%, transparent); }
+.data-chip-label { font-weight: 600; }
+.data-chip-sub { color: var(--ink-2); font-weight: 400; }
+.data-chip-sub::before { content: "·"; margin-inline-end: 6px; color: var(--ink-3); }
+.data-chip[data-status="demo"]          { --tone: var(--brand-text); }
+.data-chip[data-status="live"]          { --tone: var(--accent-text-strong); border-style: solid; }
+.data-chip[data-status="stale"]         { --tone: var(--warning-text); border-style: solid; }
+.data-chip[data-status="error"]         { --tone: var(--critical-text); border-style: solid; }
+.data-chip[data-status="offline"]       { --tone: var(--ink-3); border-style: solid; }
+.data-chip[data-status="not_connected"] { --tone: var(--ink-3); }
+
+.data-popover {
+  position: absolute;
+  inset-block-start: calc(100% + 10px);
+  inset-inline-end: 0;
+  z-index: var(--z-menu);
+  inline-size: min(360px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-3);
+  color: var(--ink-1);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  text-align: start;
+  white-space: normal;
+  transform-origin: calc(50% + var(--dir) * 50%) 0;
+  animation: pop-in var(--dur-micro) var(--ease-out) both;
+}
+.data-popover h2, .data-popover h3, .data-popover-title { font-size: var(--fs-md); font-weight: 600; display: flex; align-items: center; gap: var(--space-2); }
+.data-popover p, .data-popover-text { color: var(--ink-2); }
+.data-popover dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; padding-block: var(--space-2); border-block: 1px solid var(--line); font-size: var(--fs-xs); }
+.data-popover dt { color: var(--ink-3); }
+.data-popover dd { color: var(--ink-1); font-variant-numeric: tabular-nums; min-inline-size: 0; overflow-wrap: anywhere; }
+.data-popover ul { padding-inline-start: 1.1em; display: flex; flex-direction: column; gap: 4px; color: var(--ink-2); }
+.data-popover-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; }
+/* Below 960 px the chip sits too close to the viewport's start edge for a 360 px panel hung from its end edge
+   (at 390 px it ran off-screen in both directions). There the panel hangs from the app bar's end edge with a
+   12 px gutter (the app bar is fixed and full-width here, so this is the viewport edge), stays under the chip,
+   and scrolls inside itself when the viewport is short (phone landscape). The fixed tab bar (--z-tabbar 40)
+   paints over anything inside the app bar's stacking context (--z-appbar 30), so the panel's height also leaves
+   out the tab bar and the bottom safe area: scrolled to its end, every action stays visible and tappable above
+   the tab bar. Desktop placement is unchanged. */
+@media (max-width: 959.98px) {
+  .data-popover {
+    position: fixed;
+    inset-block-start: calc(var(--appbar-h) - 2px);
+    inset-inline-start: auto;
+    inset-inline-end: var(--space-3);
+    max-block-size: calc(100vh - var(--appbar-h) - var(--tabbar-h) - env(safe-area-inset-bottom, 0px) - var(--space-3));
+    max-block-size: calc(100dvh - var(--appbar-h) - var(--tabbar-h) - env(safe-area-inset-bottom, 0px) - var(--space-3));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(.98); }
+  to   { opacity: 1; transform: none; }
+}
 
 /* Notification bell */
 .bell-btn { position: relative; }
-.bell-btn.has-unread .icon { animation: bell-ring 1.2s var(--ease) 1; transform-origin: 50% 15%; }
+.bell-btn.has-unread .icon { animation: bell-ring 1.2s var(--ease-out) 1; transform-origin: 50% 15%; }
 @keyframes bell-ring {
   0%, 100% { transform: rotate(0); }
   15% { transform: rotate(14deg); }
@@ -343,15 +768,16 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   60% { transform: rotate(-5deg); }
   75% { transform: rotate(2deg); }
 }
-.bell-count {
+.bell-count, .activity-count, .activity-toggle-count {
   position: absolute;
-  inset-block-start: 2px;
-  inset-inline-end: 2px;
-  min-inline-size: 16px;
-  block-size: 16px;
+  inset-block-start: 1px;
+  inset-inline-end: 1px;
+  min-inline-size: 17px;
+  block-size: 17px;
   padding-inline: 4px;
   display: grid;
   place-items: center;
+  font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
   line-height: 1;
@@ -360,6 +786,11 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   border-radius: var(--radius-pill);
   box-shadow: 0 0 0 2px var(--bg-0);
 }
+.activity-count, .activity-toggle-count { background: var(--brand); }
+
+/* Activity panel toggle (app bar / filters) */
+.activity-toggle { position: relative; }
+.activity-toggle[aria-expanded="true"], .activity-toggle[aria-pressed="true"] { color: var(--brand-text); background: var(--brand-soft); }
 
 /* Theme toggle: show the icon of the active theme */
 :root[data-theme="dark"] .theme-icon-light { display: none; }
@@ -375,9 +806,9 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   padding-inline: var(--space-1) var(--space-3);
   border-radius: var(--radius-pill);
   color: var(--ink-1);
-  transition: background var(--dur-1) var(--ease);
+  transition: background-color var(--dur-micro) var(--ease-out);
 }
-.user-chip:hover { background: var(--bg-2); }
+.user-chip:hover { background: var(--hover); }
 .user-avatar {
   flex: none;
   inline-size: 30px;
@@ -388,50 +819,50 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   font-weight: 700;
   font-size: var(--fs-sm);
   color: var(--brand-ink);
-  background: linear-gradient(145deg, var(--brand), var(--accent));
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.25);
+  background: linear-gradient(145deg, var(--brand), color-mix(in srgb, var(--brand) 55%, var(--accent)));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 0 0 2px color-mix(in srgb, var(--brand) 20%, transparent);
 }
-.user-text { display: flex; flex-direction: column; line-height: 1.2; text-align: start; min-inline-size: 0; }
+.user-avatar::before { content: attr(data-initial); } /* drawn, not DOM text: the chip's name is name + role */
+.user-text { display: flex; flex-direction: column; line-height: var(--lh-tight); text-align: start; min-inline-size: 0; gap: 1px; }
 .user-name { font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; }
-.user-role { font-size: 11px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-inline-size: 200px; }
+.user-role { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-inline-size: 180px; }
 
 /* --------------------------------------------------------------------------
    Alert banner (critical tone band under the app bar)
    -------------------------------------------------------------------------- */
 
-/* app.js: hidden=false → rAF adds .is-open; on dismiss removes .is-open, then
-   hidden after 240ms. The reveal is therefore a transition, not an animation.
-   Tone comes from .tone-* (critical by default). */
 .alert-banner {
   --tone: var(--critical);
+  --tone-ink: var(--critical-text);
   grid-area: banner;
   position: relative;
   z-index: var(--z-banner);
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-5);
-  min-block-size: 46px;
+  padding: var(--space-2) var(--space-6);
+  min-block-size: 48px;
   font-size: var(--fs-sm);
   color: var(--ink-1);
-  background: color-mix(in srgb, var(--tone) 20%, var(--bg-1));
-  border-block-end: 1px solid color-mix(in srgb, var(--tone) 45%, transparent);
-  box-shadow: var(--shadow-1), inset 0 1px 0 color-mix(in srgb, var(--tone) 35%, transparent);
+  background: color-mix(in srgb, var(--tone) 14%, var(--bg-1));
+  border-block-end: 1px solid color-mix(in srgb, var(--tone) 42%, transparent);
+  box-shadow: var(--elev-1);
   transform: translateY(-8px);
   opacity: 0;
-  transition: transform var(--dur-2) var(--ease), opacity var(--dur-2) var(--ease);
+  transition: transform var(--dur-main) var(--ease-out), opacity var(--dur-main) var(--ease-out);
 }
 .alert-banner.is-open { transform: none; opacity: 1; }
-/* Tone stripe along the inline-start edge */
 .alert-banner::before {
   content: "";
   position: absolute;
   inset-block: 0;
   inset-inline-start: 0;
-  inline-size: 4px;
+  inline-size: 3px;
   background: var(--tone);
-  box-shadow: 0 0 12px color-mix(in srgb, var(--tone) 70%, transparent);
 }
+.alert-banner.tone-warning { --tone-ink: var(--warning-text); }
+.alert-banner.tone-serious { --tone-ink: var(--serious-text); }
+.alert-banner.tone-good { --tone-ink: var(--good-text); }
 .alert-banner-icon, .alert-banner > svg {
   position: relative;
   flex: none;
@@ -439,14 +870,12 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   place-items: center;
   inline-size: 30px;
   block-size: 30px;
-  border-radius: 8px;
-  color: var(--tone-ink, color-mix(in srgb, var(--tone) 80%, var(--ink-1)));
+  border-radius: var(--radius-sm);
+  color: var(--tone-ink);
   background: color-mix(in srgb, var(--tone) 16%, transparent);
   border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent);
 }
 .alert-banner-icon svg { inline-size: 18px; block-size: 18px; }
-/* Critical banner: a ring expands from the icon (transform/opacity only, compositor-friendly).
-   Base state is a static soft halo so reduced-motion users still see the emphasis. */
 .alert-banner.tone-critical .alert-banner-icon::after {
   content: "";
   position: absolute;
@@ -456,7 +885,7 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   opacity: .35;
   transform: scale(1.25);
   pointer-events: none;
-  animation: banner-pulse 1.8s var(--ease) infinite;
+  animation: banner-pulse 1.8s var(--ease-out) 3;
 }
 @keyframes banner-pulse {
   0%   { transform: scale(1); opacity: .7; }
@@ -471,17 +900,19 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   align-items: baseline;
   flex-wrap: wrap;
   gap: 2px 10px;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 .alert-banner-title { color: var(--ink-1); }
 .alert-banner-detail, .alert-banner-site, .alert-banner .banner-site { color: var(--ink-2); overflow-wrap: anywhere; }
 .alert-banner-actions { flex: none; display: inline-flex; align-items: center; gap: var(--space-1); margin-inline-start: auto; }
 .alert-banner .btn { flex: none; }
-.alert-banner .btn-outline { border-color: color-mix(in srgb, var(--tone) 45%, var(--line-2)); }
+.alert-banner .btn-outline, .alert-banner .btn-secondary { border-color: color-mix(in srgb, var(--tone) 45%, var(--line-2)); }
 .alert-banner .alert-banner-close, .alert-banner .banner-close { margin-inline-start: auto; }
 
 /* --------------------------------------------------------------------------
-   Navigation rail (inline-start column)
+   Navigation rail (inline-start column, glass) — 232px expanded / 72px collapsed.
+   Labels are never truncated: they wrap to two lines when long. Collapsed
+   rail shows icons with a tooltip (.rail-tip / the global #tooltip, set by the shell).
    -------------------------------------------------------------------------- */
 
 .rail {
@@ -493,9 +924,13 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   min-block-size: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
   padding: var(--space-3) 10px;
-  background: color-mix(in srgb, var(--bg-1) 72%, var(--bg-0));
+  background: var(--glass-rail);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  backdrop-filter: blur(18px) saturate(1.2);
   border-inline-end: 1px solid var(--line);
+  scrollbar-gutter: stable;
 }
 
 .rail-list {
@@ -511,24 +946,25 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
 .rail-list > li > a {
   position: relative;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-columns: 20px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   inline-size: 100%;
-  min-block-size: 40px;
-  padding: 8px 12px;
-  border-radius: 10px;
+  min-block-size: 38px;
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
   color: var(--ink-2);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-ui);
   font-weight: 500;
+  line-height: 1.3;
   text-decoration: none;
   text-align: start;
-  white-space: nowrap;
-  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+  transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
 }
 .rail-item:hover,
 .rail-list > li > button:hover,
-.rail-list > li > a:hover { background: var(--bg-2); color: var(--ink-1); text-decoration: none; }
+.rail-list > li > a:hover { background: var(--hover); color: var(--ink-1); text-decoration: none; }
+.rail-item:focus-visible { outline-offset: -2px; }
 
 .rail-item.is-active,
 .rail-item[aria-current="page"],
@@ -536,10 +972,14 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
 .rail-list > li > button.is-active,
 .rail-list > li > a.is-active,
 .rail-list > li > a[aria-current="page"] {
-  color: var(--brand);
-  background: color-mix(in srgb, var(--brand) 12%, transparent);
+  color: var(--ink-1);
+  font-weight: 600;
+  background: var(--brand-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 22%, transparent);
 }
-/* 6px isometric diamond indicator at inline-start */
+.rail-item.is-active .rail-icon,
+.rail-item[aria-current="page"] .rail-icon { color: var(--brand-text); }
+/* Isometric diamond indicator at inline-start (BILTIX identity detail) */
 .rail-item.is-active::before,
 .rail-item[aria-current="page"]::before,
 .rail-item[aria-pressed="true"]::before,
@@ -548,42 +988,78 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
 .rail-list > li > a[aria-current="page"]::before {
   content: "";
   position: absolute;
-  inset-inline-start: 2px;
-  inset-block-start: 50%;
+  inset-inline-start: -6px;
+  inset-block-start: calc(50% - 3px);
   inline-size: 6px;
   block-size: 6px;
   border-radius: 1px;
   background: var(--accent);
-  transform: translateY(-50%) rotate(45deg);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 70%, transparent);
+  transform: rotate(45deg);
 }
 
+/* Sliding active indicator (app.js syncRailIndicator): one plate behind the items that glides to the
+   active item with a FLIP transform (motion.glide, --dur-glide); its block-size is set once per move.
+   While it is mounted (.rail.has-indicator) the item itself drops its own active fill and diamond; the
+   active item keeps its weight and ink, so "current page" never depends on the plate or on colour alone
+   (aria-current="page" + bold label). Forced colours fall back to the per-item styles. */
+.rail-indicator {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 10px;
+  z-index: 0;
+  block-size: 38px;
+  border-radius: var(--radius-md);
+  background: var(--nav-ind-fill);
+  box-shadow: inset 0 0 0 1px var(--nav-ind-ring), var(--elev-1);
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+.rail-indicator::before {
+  content: "";
+  position: absolute;
+  inset-block: 9px;
+  inset-inline-start: -10px;
+  inline-size: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--nav-ind-bar);
+  box-shadow: var(--nav-ind-glow);
+}
+:root[dir="rtl"] .rail-indicator::before { border-radius: 3px 0 0 3px; }
+.rail-indicator[hidden] { display: none; }
+.rail-list { position: relative; z-index: 1; }
+@media (forced-colors: none) {
+  .rail.has-indicator .rail-item.is-active,
+  .rail.has-indicator .rail-item[aria-current="page"] { background: transparent; box-shadow: none; }
+  .rail.has-indicator .rail-item.is-active:hover { background: color-mix(in srgb, var(--ink-1) 3%, transparent); }
+  .rail.has-indicator .rail-item.is-active::before,
+  .rail.has-indicator .rail-item[aria-current="page"]::before { display: none; }
+}
+@media (forced-colors: active) { .rail-indicator { display: none; } }
+
 .rail-icon {
-  inline-size: 22px;
-  block-size: 22px;
+  inline-size: 20px;
+  block-size: 20px;
   display: grid;
   place-items: center;
   color: inherit;
+  transition: transform var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
 }
-.rail-icon svg, .rail-item > svg { inline-size: 20px; block-size: 20px; }
-/* Labels may take two lines (clamped) instead of ellipsizing long view titles */
+/* Icons step toward the reading direction on hover / keyboard focus and settle a little larger on the
+   active item; offsets scale with --shell-fx (0 under reduced motion). */
+.rail-item:hover .rail-icon,
+.rail-item:focus-visible .rail-icon { transform: translateX(calc(var(--dir) * var(--shell-fx) * 2px)) scale(calc(1 + var(--shell-fx) * .08)); }
+.rail-item.is-active .rail-icon { transform: scale(calc(1 + var(--shell-fx) * .06)); }
+.rail-item:active .rail-icon { transform: scale(calc(1 - var(--shell-fx) * .08)); }
+.rail-icon svg, .rail-item > svg { inline-size: 19px; block-size: 19px; }
+/* Full labels: wrap (two lines for the longest titles), never clipped or ellipsized. */
 .rail-label {
   white-space: normal;
-  line-height: 1.25;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
   overflow-wrap: break-word;
+  min-inline-size: 0;
+  text-wrap: balance;
 }
-.rail-code {
-  font-family: var(--font-mono-mixed);
-  font-size: 10px;
-  letter-spacing: .06em;
-  color: var(--ink-3);
-}
-.rail-item.is-active .rail-code,
-.rail-item[aria-current="page"] .rail-code { color: color-mix(in srgb, var(--brand) 70%, var(--ink-3)); opacity: 1; }
+/* Module codes stay in view headers; the rail gives the full width to the label. */
+.rail-code { display: none; }
 
 .rail-foot {
   margin-block-start: auto;
@@ -597,12 +1073,12 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   border-block-start: 1px solid var(--line);
 }
 .rail-site { color: var(--ink-3); }
-.rail-site:hover { color: var(--brand); }
+.rail-site:hover { color: var(--link); }
 
-/* Collapsed rail: icons only (labels move to title tooltips, set by app.js) */
+/* Collapsed rail: icons only */
 .rail-collapsed .rail,
 .is-rail-collapsed .rail,
-.rail.is-collapsed { padding-inline: 8px; }
+.rail.is-collapsed { padding-inline: 10px; scrollbar-gutter: auto; }
 .rail-collapsed .rail-item,
 .rail-collapsed .rail-list > li > button,
 .rail-collapsed .rail-list > li > a,
@@ -613,54 +1089,80 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   grid-template-columns: 1fr;
   justify-items: center;
   padding-inline: 0;
+  min-block-size: 40px;
 }
 .rail-collapsed .rail-label,
-.rail-collapsed .rail-code,
 .rail-collapsed .rail-site,
 .is-rail-collapsed .rail-label,
-.is-rail-collapsed .rail-code,
 .is-rail-collapsed .rail-site,
 .rail.is-collapsed .rail-label,
-.rail.is-collapsed .rail-code,
 .rail.is-collapsed .rail-site { display: none; }
 .rail-collapsed .rail-foot,
 .is-rail-collapsed .rail-foot,
-.rail.is-collapsed .rail-foot { justify-content: center; }
-/* Collapsed: the diamond indicator sits at the icon's inline-start edge */
-.rail-collapsed .rail-item.is-active::before,
-.is-rail-collapsed .rail-item.is-active::before,
-.rail.is-collapsed .rail-item.is-active::before { inset-inline-start: 6px; }
+.rail.is-collapsed .rail-foot { justify-content: center; padding-inline: 0; }
+
+/* Collapsed-rail tooltip (positioned by the shell; same look as the chart tooltip) */
+.rail-tip {
+  position: fixed;
+  z-index: var(--z-tooltip);
+  max-inline-size: 240px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--elev-2);
+  color: var(--ink-1);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 1.35;
+  pointer-events: none;
+}
 
 /* --------------------------------------------------------------------------
-   Filters row (sticky under the app bar)
+   Filters row (quiet toolbar on the page plane, under the app bar)
    -------------------------------------------------------------------------- */
 
 .filters {
   grid-area: filters;
-  position: sticky;
-  inset-block-start: 0;
+  position: relative;
   z-index: var(--z-filters);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
-  padding: 10px var(--space-5);
-  background: color-mix(in srgb, var(--bg-1) 80%, transparent);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  gap: var(--space-2) var(--space-4);
+  padding: 10px var(--gutter);
   border-block-end: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-0) 55%, transparent);
+}
+/* Scroll depth (≥ 960 px: <main> scrolls under the filters row). Same switch as the phone app bar. */
+.filters::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 100%;
+  block-size: 16px;
+  pointer-events: none;
+  background: var(--scroll-shade);
+  opacity: 0;
+  transition: opacity var(--dur-main) var(--ease-out);
+}
+@media (min-width: 960px) {
+  body.is-scrolled .filters::after { opacity: 1; }
 }
 .filters-group { display: flex; align-items: center; gap: var(--space-2); min-inline-size: 0; }
-.filters-label { font-size: var(--fs-xs); font-weight: 500; color: var(--ink-3); white-space: nowrap; }
+.filters-label { font-size: var(--fs-xs); font-weight: 500; color: var(--ink-3); white-space: nowrap; letter-spacing: var(--tracking-caps); }
 .filters .field-control { block-size: 34px; }
-.filters-site { min-inline-size: 180px; max-inline-size: 240px; }   /* long site names ellipsize natively */
-.filters-search { flex: 1 1 140px; max-inline-size: 380px; }
+/* The period control is built by the shell after first paint: reserve its box and match the 34px row. */
+.filters .seg-btn { min-block-size: 26px; }
+.filters-range:empty { display: inline-block; inline-size: 200px; block-size: 34px; }
+.filters-site { min-inline-size: 180px; max-inline-size: 260px; }
+.filters-search { flex: 1 1 160px; max-inline-size: 400px; }
 .filters-search .field-control { inline-size: 100%; }
 .filters-feed { margin-inline-start: auto; }
-.filters .feed-open { display: none; }
+.filters .feed-open { display: inline-flex; }
 
 /* --------------------------------------------------------------------------
-   Main content region
+   Main content region (content ≤ 1600px, centred; gaps 16–24px)
    -------------------------------------------------------------------------- */
 
 .main {
@@ -672,76 +1174,118 @@ kbd.cmdk-kbd, .cmdk-foot kbd {
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
-  padding: var(--space-5);
+  padding: var(--gutter) var(--gutter) var(--space-8);
   scroll-padding-block-start: var(--space-4);
-  container: main / inline-size;   /* @container main (…) sizes the KPI row by the pane, not the viewport */
+  container: main / inline-size;
 }
 .main:focus { outline: none; }
 .main > * {
   inline-size: 100%;
-  max-inline-size: 1680px;
+  max-inline-size: var(--content-max);
   margin-inline: auto;
 }
 
-/* View scaffold */
+/* View scaffold (route transitions come from motion.page(); no CSS replay here) */
 .view {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  animation: view-in var(--dur-2) var(--ease) both;
+  gap: var(--gap);
 }
-@keyframes view-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: none; }
-}
+.view-section { display: flex; flex-direction: column; gap: var(--space-4); min-inline-size: 0; }
+.view-section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
 
 .view-head {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: var(--space-3) var(--space-4);
-  padding-block-end: var(--space-2);
+  gap: var(--space-3) var(--space-5);
+  padding-block-end: var(--space-1);
 }
 .view-head > div:first-child, .view-head-text { min-inline-size: 0; display: flex; flex-direction: column; gap: var(--space-2); }
-.view-head h1 { font-size: var(--fs-2xl); border-radius: 4px; }
-/* The router focuses the heading programmatically on every navigation; keep the
-   ring present for keyboard users but quieter than a control's ring. */
-.view-head h1:focus-visible { outline-offset: 6px; outline-color: color-mix(in srgb, var(--accent) 55%, transparent); }
-/* app.js tracks the last input modality on <html data-input="keyboard|pointer">: the
-   programmatic heading focus only shows a ring when the user navigated by keyboard. */
+.view-head h1 {
+  font-size: var(--fs-3xl);
+  font-weight: 600;
+  line-height: var(--lh-heading);
+  letter-spacing: var(--tracking-heading);
+  border-radius: 4px;
+}
+.view-head h1:focus-visible { outline-offset: 6px; outline-color: color-mix(in srgb, var(--focus) 55%, transparent); }
 html[data-input="pointer"] .view-head h1:focus-visible { outline: none; }
-.view-head p, .view-lead { color: var(--ink-2); max-inline-size: 76ch; font-size: var(--fs-md); }
+.view-head p, .view-lead { color: var(--ink-2); max-inline-size: 76ch; font-size: var(--fs-md); line-height: var(--lh-body); }
 .view-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 
+/* Module code tag (CPT-00): small mono caption above the page title */
 .code-tag {
   display: inline-flex;
   align-items: center;
   align-self: flex-start;
   gap: 6px;
-  padding: 2px 8px;
-  font-family: var(--font-mono-mixed);
+  padding: 1px 0;
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: .08em;
+  letter-spacing: .1em;
   text-transform: uppercase;
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent-text);
   line-height: 1.5;
+  direction: ltr;
 }
 .code-tag::before {
   content: "";
   inline-size: 5px;
   block-size: 5px;
-  background: currentColor;
+  background: var(--gold);
   transform: rotate(45deg);
   border-radius: 1px;
+  opacity: .9;
+}
+/* Page-header code tag: a short survey rule runs from the code toward the inline-end
+   ("CPT-00 ───" in English, "─── CPT-00" in Arabic: the tag itself is an LTR run). motion.page() adds
+   .is-entering to the header for one route change, which draws the rule in once (scaleX from the code). */
+.view-head .code-tag::after,
+.ck-head .code-tag::after {
+  content: "";
+  flex: none;
+  inline-size: 28px;
+  block-size: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent-text) 70%, transparent), transparent);
+  transform-origin: 0 50%;
+}
+:root[dir="rtl"] .view-head .code-tag::after,
+:root[dir="rtl"] .ck-head .code-tag::after {
+  order: -1;
+  background: linear-gradient(270deg, color-mix(in srgb, var(--accent-text) 70%, transparent), transparent);
+  transform-origin: 100% 50%;
+}
+.is-entering .code-tag::after { animation: code-rule var(--dur-slow) var(--ease-out) 120ms both; }
+@keyframes code-rule {
+  from { transform: scaleX(0); opacity: 0; }
+  to   { transform: none; opacity: 1; }
 }
 
+/* Route transition afterimage (app.js + motion.leave): on a user navigation the outgoing view is lifted,
+   unchanged, into this fixed layer at the exact place it was read, then fades and recedes (140 ms) while
+   the incoming view rises in front of it 60 ms later (motion.page). Behind <main> (z-index 0 vs 1), clipped to the
+   content area, inert and hidden from assistive tech; removed as soon as the fade ends. The stage repeats
+   <main>'s inline size and container name so the old layout does not reflow while it fades. */
+.route-ghost {
+  position: fixed;
+  z-index: var(--z-backdrop);
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+  transform-origin: 50% 0;
+}
+.route-ghost-stage { position: absolute; container: main / inline-size; }
+.route-ghost-stage > * { inline-size: 100%; max-inline-size: var(--content-max); margin-inline: auto; }
+/* The afterimage is a fading still: running decorations inside it (edge comets, gauge sheens, video) are hidden
+   so they bring no compositor layers into the transition frame. */
+.route-ghost video { visibility: hidden; }
+.route-ghost .edge-run, .route-ghost .rg-sheen { display: none; }
+
 /* Router error view */
-.view-error { align-items: center; text-align: center; padding-block: var(--space-6); }
+.view-error { align-items: center; text-align: center; padding-block: var(--space-7); }
 .view-error .view-head { flex-direction: column; align-items: center; }
 .view-error__detail {
   max-inline-size: min(60ch, 100%);
@@ -751,8 +1295,8 @@ html[data-input="pointer"] .view-head h1:focus-visible { outline: none; }
   color: var(--ink-2);
   background: var(--bg-2);
   border: 1px solid var(--line);
-  border-radius: var(--radius-ctl);
-  white-space: pre-wrap;      /* router emits a <pre>; wrap instead of clipping */
+  border-radius: var(--radius-md);
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
   text-align: start;
 }
@@ -765,7 +1309,7 @@ html[data-input="pointer"] .view-head h1:focus-visible { outline: none; }
 .grid-12 {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: var(--space-4);
+  gap: var(--gap);
   align-items: stretch;
 }
 .col-span-3  { grid-column: span 3; }
@@ -778,14 +1322,18 @@ html[data-input="pointer"] .view-head h1:focus-visible { outline: none; }
 .col-span-12 { grid-column: span 12; }
 .grid-12 > * { min-inline-size: 0; }
 
+/* Content-driven grids: columns adapt before cards get narrow */
+.grid-auto { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--min, 320px)), 1fr)); gap: var(--gap); }
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gap); }
+.grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap); }
+@container main (max-width: 1100px) { .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container main (max-width: 760px)  { .grid-2, .grid-3 { grid-template-columns: minmax(0, 1fr); } }
+
 .kpi-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: var(--space-4);
 }
-/* Explicit columns by tile count so no row is left with an orphan (auto-fit is the
-   fallback where :has() is unsupported). 5 and 7 tiles use a 6/12-track grid so the
-   second row stays fully justified (3+2 / 4+3). Phones keep the 2-column rule below. */
 @media (min-width: 960px) {
   .kpi-row:has(> :nth-child(2):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi-row:has(> :nth-child(3):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -799,7 +1347,6 @@ html[data-input="pointer"] .view-head h1:focus-visible { outline: none; }
   .kpi-row:has(> :nth-child(7):last-child):not([style*="grid-template"]) > :nth-child(n + 5) { grid-column: span 4; }
   .kpi-row:has(> :nth-child(8):last-child) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .kpi-row:has(> :nth-child(9):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  /* Wide panes (≥1200px inner): five and six tiles on one row */
   @container main (min-width: 1248px) {
     .kpi-row:has(> :nth-child(5):last-child) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
     .kpi-row:has(> :nth-child(5):last-child):not([style*="grid-template"]) > *,
@@ -810,7 +1357,7 @@ html[data-input="pointer"] .view-head h1:focus-visible { outline: none; }
 
 .cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
   gap: var(--space-4);
 }
 
@@ -823,56 +1370,123 @@ html[data-input="pointer"] .view-head h1:focus-visible { outline: none; }
 .toolbar-spacer { flex: 1; }
 
 /* --------------------------------------------------------------------------
-   Live feed aside (inline-end column; drawer below 1280px)
+   Activity panel (was the live feed) — CONTRACT §3 / D7
+   Overlay below 1680px (closed by default; body.panel-open opens it), pinnable
+   as a third grid column at ≥ 1680px (body.panel-pinned). Legacy hooks
+   (.feed, body.feed-open, .feed.is-open, #feedOpen[aria-expanded]) map to the
+   same behaviour. Never a live region; new items do not move the reader
+   (the shell shows .activity-new-chip instead).
    -------------------------------------------------------------------------- */
 
-.feed {
-  grid-area: feed;
-  position: relative;
-  z-index: var(--z-rail);
+.feed, .activity-panel {
+  position: fixed;
+  inset-block: var(--appbar-h) 0;
+  inset-inline-end: 0;
+  z-index: var(--z-feed);
   display: flex;
   flex-direction: column;
+  inline-size: min(var(--panel-w), 100vw);
   min-block-size: 0;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
-  background: color-mix(in srgb, var(--bg-1) 72%, var(--bg-0));
-  border-inline-start: 1px solid var(--line);
+  background: var(--bg-1);
+  border-inline-start: 1px solid var(--line-2);
+  box-shadow: none;
+  transform: translateX(calc(var(--dir) * 100%));
+  visibility: hidden;
+  transition: transform var(--dur-main) var(--ease-out), visibility 0s linear var(--dur-main), box-shadow var(--dur-main) var(--ease-out);
 }
-.feed-head {
+body.panel-open .feed, body.panel-open .activity-panel,
+body.feed-open .feed, body.is-feed-open .feed,
+.feed.is-open, .activity-panel.is-open,
+body:has(#feedOpen[aria-expanded="true"]) .feed {
+  transform: none;
+  visibility: visible;
+  box-shadow: var(--elev-3);
+  transition: transform var(--dur-main) var(--ease-out), visibility 0s, box-shadow var(--dur-main) var(--ease-out);
+}
+@media (min-width: 1680px) {
+  body.panel-pinned .feed, body.panel-pinned .activity-panel {
+    grid-area: panel;
+    position: relative;
+    inset: auto;
+    z-index: var(--z-rail);
+    inline-size: auto;
+    transform: none;
+    visibility: visible;
+    box-shadow: none;
+    border-inline-start: 1px solid var(--line);
+    background: color-mix(in srgb, var(--bg-1) 88%, var(--bg-0));
+    transition: none;
+  }
+  body.panel-pinned .feed-close, body.panel-pinned .activity-close { display: none; }
+}
+@media (max-width: 1679.98px) {
+  .activity-pin { display: none; }
+}
+
+.feed-head, .activity-head {
   position: sticky;
   inset-block-start: 0;
   z-index: 2;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 14px 10px;
-  background: color-mix(in srgb, var(--bg-1) 92%, transparent);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+  min-block-size: 52px;
+  padding: 10px 12px 10px 16px;
+  padding-inline: 16px 10px;
+  background: var(--bg-1);
   border-block-end: 1px solid var(--line);
 }
-.feed-title { flex: 1; font-size: var(--fs-sm); font-weight: 600; }
-.feed-count {
+.feed-title, .activity-title { flex: 1; min-inline-size: 0; font-size: var(--fs-md); font-weight: 600; }
+.feed-count, .activity-head-count {
   min-inline-size: 24px;
-  padding: 1px 7px;
+  padding: 1px 8px;
   text-align: center;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--ink-2);
   background: var(--bg-2);
   border: 1px solid var(--line);
   border-radius: var(--radius-pill);
 }
-.feed-head .feed-close { display: none; }
-.feed-list {
+.activity-pin[aria-pressed="true"] { color: var(--brand-text); background: var(--brand-soft); }
+.activity-mode { display: inline-flex; align-items: center; flex: none; }
+.activity-mode:empty { display: none; }
+.activity-actions { display: inline-flex; align-items: center; gap: 2px; margin-inline-start: auto; flex: none; }
+.activity-pause[aria-pressed="true"] { color: var(--warning-text); }
+.feed-list, .activity-list {
   flex: 1;
   list-style: none;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: var(--space-2);
+  padding: var(--space-3);
 }
-.feed-foot {
+/* "N new" chip: sticks under the panel head while the reader is scrolled down */
+.activity-new-chip {
+  position: sticky;
+  inset-block-start: 60px;
+  z-index: 3;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-block: 4px;
+  block-size: 30px;
+  padding-inline: 12px;
+  border-radius: var(--radius-pill);
+  background: var(--brand);
+  color: var(--brand-ink);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  box-shadow: var(--elev-2);
+  animation: pop-in var(--dur-micro) var(--ease-out) both;
+}
+.activity-new-chip:hover { filter: brightness(1.08); }
+.activity-new-chip > svg { inline-size: 14px; block-size: 14px; }
+.feed-foot, .activity-foot {
   position: sticky;
   inset-block-end: 0;
   z-index: 2;
@@ -880,23 +1494,24 @@ html[data-input="pointer"] .view-head h1:focus-visible { outline: none; }
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding: 10px 14px;
-  background: color-mix(in srgb, var(--bg-1) 92%, transparent);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+  padding: 10px 16px;
+  background: var(--bg-1);
   border-block-start: 1px solid var(--line);
 }
-.feed-status { font-size: 11px; color: var(--ink-2); }
-.feed-status::before {
+.feed-status, .activity-status { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-2); min-inline-size: 0; }
+.feed-status::before, .activity-status::before {
   content: "";
-  display: inline-block;
-  inline-size: 6px;
-  block-size: 6px;
-  margin-inline-end: 6px;
+  flex: none;
+  inline-size: 7px;
+  block-size: 7px;
   border-radius: 50%;
-  background: var(--good);
-  vertical-align: middle;
+  background: var(--status-dot, var(--brand-text));
 }
+.feed-status[data-status="live"], .activity-status[data-status="live"] { --status-dot: var(--accent); }
+.feed-status[data-status="stale"], .activity-status[data-status="stale"] { --status-dot: var(--warning); }
+.feed-status[data-status="error"], .activity-status[data-status="error"] { --status-dot: var(--critical); }
+.feed-status[data-status="offline"], .activity-status[data-status="offline"],
+.feed-status[data-status="not_connected"], .activity-status[data-status="not_connected"] { --status-dot: var(--ink-3); }
 body.feed-paused .feed-status::before,
 body.is-feed-paused .feed-status::before,
 .feed.is-paused .feed-status::before { background: var(--ink-3); }
@@ -906,7 +1521,7 @@ body.is-feed-paused .feed-status::before,
 .feed-toggle.is-paused .feed-toggle-label { color: var(--ink-2); }
 
 /* --------------------------------------------------------------------------
-   Bottom tab bar (<960px)
+   Bottom tab bar (< 960px) — solid surface (glass is reserved for app bar / rail)
    -------------------------------------------------------------------------- */
 
 .tabbar {
@@ -920,12 +1535,10 @@ body.is-feed-paused .feed-status::before,
   block-size: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
   padding-block-end: env(safe-area-inset-bottom, 0px);
   padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
-  background: color-mix(in srgb, var(--bg-1) 88%, transparent);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-  border-block-start: 1px solid var(--line);
+  background: var(--bg-1);
+  border-block-start: 1px solid var(--line-2);
+  box-shadow: 0 -8px 24px -16px rgba(2, 6, 14, .5);
 }
-/* app.js builds .tab-item > .tab-icon + .tab-label (and .tab-more for "المزيد") */
 .tab-item,
 .tabbar-item,
 .tabbar > button,
@@ -942,7 +1555,7 @@ body.is-feed-paused .feed-status::before,
   font-size: 11px;
   font-weight: 500;
   text-decoration: none;
-  transition: color var(--dur-1) var(--ease);
+  transition: color var(--dur-micro) var(--ease-out);
 }
 .tab-item:hover, .tabbar-item:hover, .tabbar > button:hover, .tabbar > a:hover { color: var(--ink-1); text-decoration: none; }
 .tab-item.is-active,
@@ -951,7 +1564,7 @@ body.is-feed-paused .feed-status::before,
 .tabbar-item[aria-current="page"],
 .tabbar > button.is-active,
 .tabbar > a.is-active,
-.tabbar > a[aria-current="page"] { color: var(--brand); }
+.tabbar > a[aria-current="page"] { color: var(--brand-text); font-weight: 600; }
 .tab-item.is-active::before,
 .tab-item[aria-current]::before,
 .tabbar-item.is-active::before,
@@ -961,23 +1574,49 @@ body.is-feed-paused .feed-status::before,
 .tabbar > a[aria-current="page"]::before {
   content: "";
   position: absolute;
-  inset-block-start: 3px;
-  inset-inline-start: calc(50% - 3px);
-  inline-size: 6px;
-  block-size: 6px;
-  border-radius: 1px;
-  background: var(--accent);
-  transform: rotate(45deg);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 70%, transparent);
+  inset-block-start: 0;
+  inset-inline: 28%;
+  block-size: 2px;
+  border-radius: 0 0 2px 2px;
+  background: var(--brand);
 }
+/* Sliding top bar (app.js syncTabIndicator): one 3 px light bar glides between tabs on transform; the
+   per-tab bar stays as the forced-colours / no-JS fallback. The active tab's icon rises 2 px; a press dips it. */
+.tabbar-indicator {
+  position: absolute;
+  inset-block-start: -1px;
+  inset-inline-start: 0;
+  inline-size: 25%;
+  block-size: 3px;
+  pointer-events: none;
+  display: flex;
+  justify-content: center;
+}
+.tabbar-indicator::before {
+  content: "";
+  inline-size: 44%;
+  block-size: 100%;
+  border-radius: 0 0 3px 3px;
+  background: linear-gradient(90deg, var(--accent), var(--brand));
+  box-shadow: 0 2px 10px -1px color-mix(in srgb, var(--brand) 60%, transparent);
+}
+.tabbar-indicator[hidden] { display: none; }
+@media (forced-colors: none) {
+  .tabbar.has-indicator .tab-item.is-active::before,
+  .tabbar.has-indicator .tab-item[aria-current]::before { display: none; }
+}
+@media (forced-colors: active) { .tabbar-indicator { display: none; } }
+.tab-icon { transition: transform var(--dur-micro) var(--ease-out); }
+.tab-item.is-active .tab-icon, .tab-item[aria-current] .tab-icon { transform: translateY(calc(var(--shell-fx) * -2px)); }
+.tab-item:active .tab-icon { transform: scale(calc(1 - var(--shell-fx) * .1)); }
 .tab-icon, .tabbar-icon { display: grid; place-items: center; inline-size: 24px; block-size: 24px; }
 .tab-icon svg, .tabbar-icon svg, .tabbar-item > svg, .tab-item > svg { inline-size: 22px; block-size: 22px; }
 .tab-label, .tabbar-label { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.2; }
-.tab-item:focus-visible, .tabbar-item:focus-visible, .tabbar > button:focus-visible, .tabbar > a:focus-visible { outline-offset: -2px; border-radius: 8px; }
+.tab-item:focus-visible, .tabbar-item:focus-visible, .tabbar > button:focus-visible, .tabbar > a:focus-visible { outline-offset: -3px; border-radius: var(--radius-sm); }
 .tab-more[aria-expanded="true"] { color: var(--ink-1); }
 
 /* --------------------------------------------------------------------------
-   Command palette
+   Command palette (solid panel over a solid scrim)
    -------------------------------------------------------------------------- */
 
 .cmdk {
@@ -989,15 +1628,12 @@ body.is-feed-paused .feed-status::before,
   align-content: start;
   padding: 12vh var(--space-4) var(--space-4);
 }
-/* app.js: hidden=false → rAF adds .cmdk.is-open; close removes it, then hidden after 180ms */
 .cmdk-backdrop {
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--bg-0) 60%, transparent);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  background: var(--scrim);
   opacity: 0;
-  transition: opacity var(--dur-1) var(--ease);
+  transition: opacity var(--dur-micro) var(--ease-out);
 }
 .cmdk.is-open .cmdk-backdrop { opacity: 1; }
 .cmdk-panel {
@@ -1006,26 +1642,16 @@ body.is-feed-paused .feed-status::before,
   max-block-size: min(70vh, 640px);
   display: flex;
   flex-direction: column;
-  background: color-mix(in srgb, var(--bg-1) 96%, transparent);
+  background: var(--bg-1);
   border: 1px solid var(--line-2);
-  border-radius: var(--radius-card);
-  box-shadow: 0 30px 80px -30px rgba(0,0,0,.7), var(--shadow-1);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-3);
   overflow: hidden;
   opacity: 0;
   transform: translateY(-8px) scale(.985);
-  transition: opacity var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
+  transition: opacity var(--dur-main) var(--ease-out), transform var(--dur-main) var(--ease-out);
 }
 .cmdk.is-open .cmdk-panel { opacity: 1; transform: none; }
-.cmdk-panel::before {
-  content: "";
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline: 10%;
-  block-size: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  opacity: .6;
-  pointer-events: none;
-}
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 .cmdk-search {
@@ -1035,24 +1661,23 @@ body.is-feed-paused .feed-status::before,
   padding: var(--space-3) var(--space-4);
   border-block-end: 1px solid var(--line);
   color: var(--ink-3);
+  transition: border-color var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
 }
 .cmdk-input {
   flex: 1;
   min-inline-size: 0;
-  block-size: 36px;
+  block-size: 38px;
   background: transparent;
   border: 0;
   font-size: var(--fs-lg);
   color: var(--ink-1);
 }
 .cmdk-input::placeholder { color: var(--ink-3); }
-/* The input's own ring is replaced by a ring on the whole search row */
 .cmdk-input:focus-visible { outline: none; }
-.cmdk-search { transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
 .cmdk-search:focus-within {
-  color: var(--accent);
-  border-block-end-color: var(--accent);
-  box-shadow: inset 0 -1px 0 var(--accent);
+  color: var(--focus);
+  border-block-end-color: var(--focus);
+  box-shadow: inset 0 -1px 0 var(--focus);
 }
 
 .cmdk-list {
@@ -1069,9 +1694,8 @@ body.is-feed-paused .feed-status::before,
   padding: 10px 12px 4px;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0;
-  color: var(--ink-2);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--ink-3);
 }
 .cmdk-item, .cmdk-list > li[role="option"] {
   position: relative;
@@ -1080,16 +1704,16 @@ body.is-feed-paused .feed-status::before,
   align-items: center;
   gap: 10px;
   padding: 9px 12px;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   color: var(--ink-2);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-ui);
   cursor: pointer;
-  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+  transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
 }
-.cmdk-item:hover, .cmdk-list > li[role="option"]:hover { background: var(--bg-2); color: var(--ink-1); }
+.cmdk-item:hover, .cmdk-list > li[role="option"]:hover { background: var(--hover); color: var(--ink-1); }
 .cmdk-item.is-active, .cmdk-item[aria-selected="true"],
 .cmdk-list > li[role="option"].is-active, .cmdk-list > li[role="option"][aria-selected="true"] {
-  background: color-mix(in srgb, var(--brand) 14%, var(--bg-2));
+  background: var(--selected);
   color: var(--ink-1);
 }
 .cmdk-item.is-active::before, .cmdk-item[aria-selected="true"]::before,
@@ -1102,37 +1726,31 @@ body.is-feed-paused .feed-status::before,
   border-radius: 2px;
   background: var(--brand);
 }
-/* app.js item anatomy: .cmdk-icon | .cmdk-text (.cmdk-label + optional .badge) | .cmdk-meta */
 .cmdk-icon, .cmdk-item-icon, .cmdk-item > svg { inline-size: 24px; block-size: 24px; display: grid; place-items: center; color: var(--ink-3); }
 .cmdk-icon svg, .cmdk-item-icon svg { inline-size: 18px; block-size: 18px; }
 .cmdk-item.is-active .cmdk-icon, .cmdk-item[aria-selected="true"] .cmdk-icon,
-.cmdk-item.is-active .cmdk-item-icon, .cmdk-item[aria-selected="true"] .cmdk-item-icon { color: var(--brand); }
+.cmdk-item.is-active .cmdk-item-icon, .cmdk-item[aria-selected="true"] .cmdk-item-icon { color: var(--brand-text); }
 .cmdk-text { min-inline-size: 0; display: flex; align-items: center; gap: 8px; line-height: 1.35; }
 .cmdk-text .badge { flex: none; }
 .cmdk-label, .cmdk-item-title { color: inherit; font-weight: 500; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmdk-item-text { min-inline-size: 0; display: flex; flex-direction: column; line-height: 1.35; }
-.cmdk-item-sub { font-size: 11px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmdk-item-sub { font-size: 11px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmdk-meta, .cmdk-item-kbd, .cmdk-item-code {
   font-family: var(--font-mono-mixed);
   font-size: 10px;
   letter-spacing: .06em;
-  color: var(--ink-3);
+  color: var(--ink-2);
   padding: 1px 6px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: var(--bg-1);
+  background: var(--bg-2);
   white-space: nowrap;
   max-inline-size: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.cmdk-item.is-active .cmdk-meta { border-color: color-mix(in srgb, var(--brand) 40%, var(--line)); color: var(--ink-2); }
-.cmdk-empty {
-  padding: 0;
-  text-align: center;
-  color: var(--ink-3);
-  font-size: var(--fs-sm);
-}
+.cmdk-item.is-active .cmdk-meta { border-color: var(--brand-line); }
+.cmdk-empty { padding: 0; text-align: center; color: var(--ink-3); font-size: var(--fs-sm); }
 .cmdk-empty .empty { padding: 24px 16px; }
 .cmdk-foot {
   display: flex;
@@ -1141,7 +1759,7 @@ body.is-feed-paused .feed-status::before,
   border-block-start: 1px solid var(--line);
   font-size: 11px;
   color: var(--ink-3);
-  background: color-mix(in srgb, var(--bg-2) 60%, transparent);
+  background: var(--bg-2);
 }
 .cmdk-foot span { display: inline-flex; align-items: center; gap: 4px; }
 
@@ -1156,7 +1774,7 @@ body.is-feed-paused .feed-status::before,
   display: grid;
   place-content: center;
   gap: var(--space-3);
-  padding: var(--space-6);
+  padding: var(--space-7);
   text-align: center;
   background: var(--bg-0);
   color: var(--ink-1);
@@ -1176,11 +1794,15 @@ body.is-feed-paused .feed-status::before,
 .gap-2 { gap: var(--space-2); }
 .gap-3 { gap: var(--space-3); }
 .gap-4 { gap: var(--space-4); }
+.gap-5 { gap: var(--space-5); }
+.gap-6 { gap: var(--space-6); }
 .grow { flex: 1 1 auto; min-inline-size: 0; }
 .muted { color: var(--ink-3); }
+.ink-1 { color: var(--ink-1); }
 .ink-2 { color: var(--ink-2); }
 .text-sm { font-size: var(--fs-sm); }
 .text-xs { font-size: var(--fs-xs); }
+.text-md { font-size: var(--fs-md); }
 .text-lg { font-size: var(--fs-lg); }
 .text-center { text-align: center; }
 .text-end { text-align: end; }
@@ -1199,9 +1821,6 @@ body.is-feed-paused .feed-status::before,
   border: 0;
 }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 0; }
-/* .num isolates a number from the surrounding bidi run but keeps the document
-   direction, so "٨٧٪" reads like Intl output. Codes and ranges (08:00–16:00,
-   CT-2026-014) that must read left-to-right use .ltr or dir="ltr" instead. */
 .num {
   font-variant-numeric: tabular-nums;
   unicode-bidi: isolate;
@@ -1212,69 +1831,48 @@ body.is-feed-paused .feed-status::before,
 .report-only { display: none; }
 .divider { block-size: 1px; background: var(--line); border: 0; margin: 0; }
 .vr { inline-size: 1px; align-self: stretch; background: var(--line); }
+.tone-text-good { color: var(--good-text); }
+.tone-text-warning { color: var(--warning-text); }
+.tone-text-serious { color: var(--serious-text); }
+.tone-text-critical { color: var(--critical-text); }
 
 /* --------------------------------------------------------------------------
    Responsive
-   ≥1280: full three columns · 960–1279: rail collapsed, feed drawer · <960: single column + tab bar
+   ≥ 1280 rail expanded (unless collapsed) · 960–1279 rail 72 (expands as an
+   overlay with body.rail-open / .is-rail-expanded) · < 960 single column + tab bar
    -------------------------------------------------------------------------- */
 
-/* Feed as a drawer (shared by both narrower tiers) */
 @media (max-width: 1279.98px) {
-  body.app {
-    grid-template-areas:
-      "appbar appbar"
-      "banner banner"
-      "rail   filters"
-      "rail   main";
-    grid-template-columns: var(--rail-current) minmax(0, 1fr);
-  }
   body.app { --rail-current: var(--rail-w-collapsed); }
-  body.app.is-rail-expanded { --rail-current: var(--rail-w); }
-  .rail { padding-inline: 8px; }
-  .rail-item, .rail-list > li > button, .rail-list > li > a { grid-template-columns: 1fr; justify-items: center; padding-inline: 0; }
-  .rail-label, .rail-code, .rail-site { display: none; }
-  .rail-foot { justify-content: center; }
-  body.app.is-rail-expanded .rail-item,
-  body.app.is-rail-expanded .rail-list > li > button,
-  body.app.is-rail-expanded .rail-list > li > a { grid-template-columns: 22px minmax(0, 1fr) auto; justify-items: stretch; padding-inline: 12px; }
-  body.app.is-rail-expanded .rail-label,
-  body.app.is-rail-expanded .rail-code,
-  body.app.is-rail-expanded .rail-site { display: block; }
-  body.app.is-rail-expanded .rail-foot { justify-content: space-between; }
-
-  .feed {
-    position: fixed;
-    grid-area: auto;
+  .rail { padding-inline: 10px; scrollbar-gutter: auto; }
+  .rail-item, .rail-list > li > button, .rail-list > li > a { grid-template-columns: 1fr; justify-items: center; padding-inline: 0; min-block-size: 40px; }
+  .rail-label, .rail-site { display: none; }
+  .rail-foot { justify-content: center; padding-inline: 0; }
+  /* Tablet expansion: the rail grows over the content (no reflow) */
+  body.app.is-rail-expanded .rail, body.app.rail-open .rail, .rail.is-open {
+    position: absolute;
     inset-block: var(--appbar-h) 0;
-    inset-inline-end: 0;
+    inset-inline-start: 0;
+    inline-size: var(--rail-w);
     z-index: var(--z-feed);
-    inline-size: min(var(--feed-w), 100%);
-    transform: translateX(calc(var(--dir) * 100%));
-    box-shadow: none;
-    transition: transform var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
-    visibility: hidden;
+    background: var(--bg-1);
+    box-shadow: var(--elev-3);
   }
-  .feed.is-open,
-  body.feed-open .feed,
-  body.is-feed-open .feed {
-    transform: none;
-    visibility: visible;
-    box-shadow: 0 24px 64px -24px rgba(0,0,0,.7), var(--shadow-1);
-  }
-  body:has(#feedOpen[aria-expanded="true"]) .feed { transform: none; visibility: visible; box-shadow: 0 24px 64px -24px rgba(0,0,0,.7), var(--shadow-1); }
-  .feed { border-inline-start: 1px solid var(--line-2); background: color-mix(in srgb, var(--bg-1) 94%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
-  .feed-head .feed-close, .filters .feed-open { display: inline-flex; }
-  .filters-feed { gap: var(--space-2); }
+  body.app.is-rail-expanded .rail-item, body.app.rail-open .rail-item, .rail.is-open .rail-item,
+  body.app.is-rail-expanded .rail-list > li > button,
+  body.app.is-rail-expanded .rail-list > li > a { grid-template-columns: 20px minmax(0, 1fr); justify-items: stretch; padding-inline: 10px; }
+  body.app.is-rail-expanded .rail-label, body.app.rail-open .rail-label, .rail.is-open .rail-label,
+  body.app.is-rail-expanded .rail-site, body.app.rail-open .rail-site, .rail.is-open .rail-site { display: block; }
+  body.app.is-rail-expanded .rail-foot, body.app.rail-open .rail-foot, .rail.is-open .rail-foot { justify-content: space-between; padding-inline: 10px; }
 
   .grid-12 .col-span-3, .grid-12 .col-span-4, .grid-12 .col-span-5 { grid-column: span 6; }
   .grid-12 .col-span-7, .grid-12 .col-span-8, .grid-12 .col-span-9 { grid-column: span 12; }
-  /* App bar budget on tablets: tagline, dates and pill labels go; the search keeps ≥160px */
-  .brand-tag, .clock-dates, .user-role { display: none; }
-  .score-pill .pill-label, .score-pill .score-pill-delta, .integrations-pill .pill-label { display: none; }
+  .brand-tag, .clock-dates, .user-role, .user-text { display: none; }
+  .user-chip { padding-inline: var(--space-1); }
+  .score-pill .pill-label, .score-pill .score-pill-delta, .integrations-pill .pill-label, .data-chip-sub { display: none; }
   .cmdk-btn { max-inline-size: 280px; }
 }
 
-/* Single column with bottom tab bar */
 @media (max-width: 959.98px) {
   body.app {
     display: grid;
@@ -1289,6 +1887,7 @@ body.is-feed-paused .feed-status::before,
     min-block-size: 100vh;
     min-block-size: 100dvh;
     overflow: visible;
+    --gutter: var(--space-4);
   }
   .appbar {
     position: fixed;
@@ -1298,26 +1897,23 @@ body.is-feed-paused .feed-status::before,
     gap: var(--space-2);
     padding-inline: var(--space-3);
   }
-  /* .btn sets display:inline-flex in components.css; out-specify it here */
   .rail, .appbar .rail-toggle.btn, .appbar .rail-toggle { display: none; }
-  .brand-tag, .clock-dates, .cmdk-btn-label, .cmdk-btn kbd.cmdk-kbd, .pill-label, .user-text { display: none; }
+  body.app.rail-open .rail { display: flex; position: fixed; inset-block: var(--appbar-h) 0; inline-size: min(var(--rail-w), 86vw); }
+  .brand-tag, .clock-dates, .cmdk-btn-label, .cmdk-btn kbd.cmdk-kbd, .pill-label, .user-text, .data-chip-label, .data-chip-sub { display: none; }
+  .data-chip { padding-inline: 9px; }
   .appbar-start, .appbar-end { gap: var(--space-1); }
   .brand { gap: var(--space-2); }
-  .brand-mark { inline-size: 32px; block-size: 32px; }
+  .brand-mark { inline-size: 30px; block-size: 30px; }
   .brand-name { font-size: var(--fs-md); }
   .cmdk-btn { flex: none; inline-size: 40px; min-inline-size: 40px; max-inline-size: none; block-size: 40px; padding-inline: 0; justify-content: center; }
   .appbar-center { gap: var(--space-2); min-inline-size: 40px; }
   .clock { flex-direction: row; align-items: center; }
   .clock-time { font-size: var(--fs-sm); letter-spacing: 0; }
-  .pill { block-size: 30px; padding-inline: 9px; }
+  .pill { block-size: 32px; padding-inline: 9px; }
   .user-chip { padding-inline: 2px; block-size: 36px; }
   .user-avatar { inline-size: 28px; block-size: 28px; }
 
-  .filters {
-    position: static;
-    padding: 10px var(--space-4);
-    gap: var(--space-2) var(--space-3);
-  }
+  .filters { padding: 10px var(--gutter); gap: var(--space-2) var(--space-3); }
   .filters-search { flex-basis: 100%; max-inline-size: none; order: 10; }
   .filters-site { min-inline-size: 0; flex: 1; }
   .filters-feed { margin-inline-start: auto; }
@@ -1325,51 +1921,82 @@ body.is-feed-paused .feed-status::before,
   .main {
     overflow: visible;
     min-block-size: calc(100vh - var(--appbar-h));
-    padding: var(--space-4) var(--space-4) calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + var(--space-5));
+    padding: var(--gutter) var(--gutter) calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + var(--space-6));
   }
   .tabbar { display: grid; }
-  .feed {
-    inset-block-start: var(--appbar-h);
-    inline-size: min(100%, 420px);
-  }
-  .feed-list { padding-block-end: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
+  .feed, .activity-panel { inline-size: min(100%, 420px); }
+  .feed-list, .activity-list { padding-block-end: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
+  .bg-mark { display: none; }
 
   .grid-12 > [class*="col-span-"] { grid-column: span 12; }
   .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
   .view-head { align-items: flex-start; flex-direction: column; }
-  .view-head h1 { font-size: 24px; }
+  .view-head h1 { font-size: var(--fs-2xl); }
   .alert-banner { padding-inline: var(--space-4); }
   .cmdk { padding-block-start: var(--space-4); }
 }
 
 @media (max-width: 479.98px) {
-  /* KPI tiles stay two-up on phones (V15); the 2-column rule above still applies */
-  .main { padding-inline: var(--space-3); }
-  .clock { display: none; }
+  /* Phone filters: project + period share one row (labels stay for assistive tech), search below */
+  .filters { gap: var(--space-2); }
+  .filters-label { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .filters-group:has(.filters-site) { flex: 1 1 140px; }
+  .filters-site { inline-size: 100%; }
+}
+@media (max-width: 479.98px) {
+  /* Phone app bar budget: mark · search · data chip · activity · bell · ع|EN · avatar.
+     The score lives on the cockpit, theme + language are also in the "More" sheet. */
+  .clock, .brand-text, .score-pill, .integrations-pill, .appbar .theme-btn { display: none; }
   .appbar { padding-inline: var(--space-2); }
   .appbar-center { justify-content: flex-end; }
-  /* The connector pill is the first thing to go so the search button keeps its 40px */
-  .integrations-pill { display: none; }
+  .lang-switch > button, .lang-switch [role="radio"], .lang-switch .lang-opt { min-inline-size: 30px; padding-inline: 6px; }
+}
+@media (max-width: 359.98px) {
+  .appbar .bell-btn { display: none; }
 }
 
-/* Short viewports: let the main pane breathe */
 @media (max-height: 560px) and (min-width: 960px) {
   .filters { padding-block: 6px; }
 }
 
-/* Touch devices: every shell control is at least 40px tall (RTL-14) */
+/* Touch devices: every shell control is at least 40px */
 @media (pointer: coarse) {
-  .pill { block-size: 40px; }
-  .appbar .btn-icon { inline-size: 40px; block-size: 40px; }
-  .user-chip { block-size: 40px; }
+  .pill, .data-chip, .lang-switch { block-size: 40px; }
+  .lang-switch > button, .lang-switch [role="radio"], .lang-switch .lang-opt { min-inline-size: 40px; }
+  .appbar .btn-icon, .filters .btn-icon, .activity-toggle { inline-size: 40px; block-size: 40px; }
+  .brand { min-block-size: 40px; }
+  .user-chip { block-size: 40px; min-inline-size: 40px; justify-content: center; }
   .filters .field-control { block-size: 40px; }
-  .cmdk-item, .cmdk-list > li[role="option"] { min-block-size: 40px; }
+  .rail-item { min-block-size: 44px; }
+  .cmdk-item, .cmdk-list > li[role="option"] { min-block-size: 44px; }
+  .activity-new-chip { block-size: 40px; }
   .feed-count { min-block-size: 24px; }
 }
 
-/* Forced-colours (Windows high contrast): keep structure visible */
+/* --------------------------------------------------------------------------
+   Glass fallbacks: solid surfaces when backdrop-filter is unsupported or the
+   user asks for less transparency.
+   -------------------------------------------------------------------------- */
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .appbar { background: var(--bg-0); }
+  .rail { background: color-mix(in srgb, var(--bg-1) 70%, var(--bg-0)); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .appbar { background: var(--bg-0); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .rail { background: color-mix(in srgb, var(--bg-1) 70%, var(--bg-0)); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .bg-ambient, .bg-grid { opacity: .5; }
+}
+
+/* Forced colours (Windows high contrast): structure stays visible, decoration goes */
 @media (forced-colors: active) {
-  .appbar, .rail, .feed, .filters, .tabbar { border-color: CanvasText; }
-  .rail-item.is-active::before, .tabbar-item.is-active::before { background: Highlight; }
+  .appbar, .rail, .feed, .activity-panel, .filters, .tabbar { border-color: CanvasText; }
+  .rail-item.is-active::before, .tabbar-item.is-active::before, .tab-item.is-active::before { background: Highlight; }
   .skip-link:focus { outline: 2px solid Highlight; }
+  .backdrop, .appbar-light, .route-ghost { display: none; }
+}
+
+/* Print stays static and complete: no shell decoration, no transition afterimage. */
+@media print {
+  .route-ghost, .appbar-light, .rail-indicator, .tabbar-indicator, .bg-beams { display: none !important; }
 }

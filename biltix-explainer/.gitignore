@@ -1,0 +1,22 @@
+# MVP film bookends: AI-generated b-roll (Higgsfield; about 25 MB, kept out of git) and review stills
+public/broll/
+out/bookend-stills/
+out/bookends/
+node_modules/
+out/*.tmp
+out/stills/
+out/contact/
+.remotion/
+.cache/
+*.log
+.DS_Store
+# MVP showcase: app captures (~80 MB; re-create with scripts/showcase-capture.mjs), derived narration, stills
+public/showcase/*
+!public/showcase/manifest.json
+public/voice/*.norm.wav
+out/showcase-stills/
+# Film v2: AI media (b-roll, panorama, score, narration, UI recordings; ~120 MB, never committed) and review stills
+public/v2/
+out/film-stills/
+# Film v2: screencast frames of scripts/film-ui-capture.mjs (deleted after encoding unless --keep-frames)
+out/ui-frames/

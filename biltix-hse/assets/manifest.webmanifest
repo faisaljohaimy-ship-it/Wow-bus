@@ -1,15 +1,16 @@
 {
-  "name": "بلتكس Risk AI — منصة إدارة المخاطر بالذكاء الاصطناعي",
-  "short_name": "Biltix Risk AI",
-  "description": "قمرة قيادة موحدة لمخاطر المشاريع في خمسة مجالات — العقود، المواد والتوريد، الجدول الزمني، الموقع والسلامة، والتكلفة — بتصنيف فوري (أحمر/أصفر/أخضر)، تفسير واضح لكل مخاطرة، تنبيهات وتصعيد، ومهام معالجة تُكتب عكسياً إلى منصة بلتكس. يضم ركن السلامة والصحة المهنية الكامل: رادارات حية، الحوادث، تصاريح العمل، التفتيش، التدريب والامتثال ISO 45001.",
-  "lang": "ar",
-  "dir": "rtl",
+  "id": "/",
+  "name": "BILTIX Risk AI",
+  "short_name": "BILTIX Risk AI",
+  "description": "BILTIX Risk AI — AI risk management for construction: contract, materials, schedule, site safety and cost risk in one cockpit. بلتكس Risk AI — منصة إدارة المخاطر بالذكاء الاصطناعي.",
+  "lang": "en",
+  "dir": "auto",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "theme_color": "#070D18",
-  "background_color": "#070D18",
+  "theme_color": "#F4F7FB",
+  "background_color": "#F4F7FB",
   "categories": ["business", "productivity", "utilities"],
   "icons": [
     { "src": "/assets/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }

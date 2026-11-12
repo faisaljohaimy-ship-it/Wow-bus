@@ -1,86 +1,130 @@
 <!DOCTYPE html>
-<!-- بلتكس Risk AI — منصة إدارة المخاطر بالذكاء الاصطناعي (Biltix Risk AI). Static app shell: plain ES modules, no build step. -->
-<html lang="ar" dir="rtl" data-theme="dark" data-input="pointer">
+<!-- BILTIX Risk AI / بلتكس Risk AI — AI risk management platform. Static app shell: plain ES modules, no build step. -->
+<html lang="en" dir="ltr" data-theme="light" data-input="pointer" data-bg="subtle" data-density="comfortable">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>بلتكس Risk AI — منصة إدارة المخاطر بالذكاء الاصطناعي</title>
-  <meta name="description" content="منصة بلتكس لإدارة المخاطر بالذكاء الاصطناعي: قمرة قيادة موحدة لخمسة مجالات — العقود، المواد والتوريد، الجدول الزمني، الموقع والسلامة، والتكلفة — مع تصنيف فوري (أحمر/أصفر/أخضر)، تفسير واضح لكل مخاطرة، تنبيهات وتصعيد، ومهام معالجة مُتتبعة تُكتب عكسياً إلى منصة بلتكس لإدارة المشاريع. يضم ركن السلامة والصحة المهنية الكامل (رادارات حية، الحوادث، تصاريح العمل، التفتيش، التدريب، ISO 45001).">
-  <meta name="application-name" content="بلتكس Risk AI">
+  <title>BILTIX Risk AI</title>
+  <meta name="description" content="BILTIX Risk AI — AI risk management for Saudi construction: one cockpit for contract, materials, schedule, site safety and cost risk. بلتكس Risk AI — منصة إدارة المخاطر بالذكاء الاصطناعي لمشاريع البناء.">
+  <meta name="application-name" content="BILTIX Risk AI">
+  <!-- Build stamp (tools/stamp-build.mjs, run before each publish): an open page compares it with the
+       published index.html when it becomes visible again and offers a reload when they differ. -->
+  <meta name="biltix-build" content="3.8.4+202611121005">
   <meta name="color-scheme" content="dark light">
-  <meta name="theme-color" content="#070D18" media="(prefers-color-scheme: dark)">
-  <meta name="theme-color" content="#F2F5FA" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#070D18">
+  <meta name="theme-color" content="#080F1B" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#F4F7FB" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#F4F7FB">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="format-detection" content="telephone=no">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="manifest" href="assets/manifest.webmanifest">
   <script>
-    /* Pre-paint theme: read persisted settings so the first frame uses the right theme (no flash). */
+    /*
+     * Pre-paint: apply the saved settings (and ?lang=ar|en) to <html> before the first frame so there is
+     * no theme / direction / font flash, and preload the active language's regular font weight.
+     * Mirrors js/app.js applySettings() + js/core/i18n.js; keep both in sync (docs/i18n.md §7).
+     */
     (function () {
+      var root = document.documentElement;
+      var s = {};
       try {
         var raw = localStorage.getItem('biltix-hse:v1');
-        var theme = 'dark';
-        if (raw) {
-          var saved = JSON.parse(raw);
-          var t = saved && saved.settings && saved.settings.theme;
-          if (t === 'light' || t === 'dark') theme = t;
-          var n = saved && saved.settings && saved.settings.numerals;
-          if (n === 'arab' || n === 'latn') document.documentElement.setAttribute('data-numerals', n);
+        var saved = raw ? JSON.parse(raw) : null;
+        if (saved && saved.settings && typeof saved.settings === 'object') s = saved.settings;
+      } catch (e) { /* storage unavailable: defaults */ }
+      // English is the default. A saved 'ar' applies only when the user chose it (settings.langChosen, set by any
+      // language change); older saved settings without that flag open in English. Mirrors sanitizeSettings() in store.js.
+      var lang = s.lang === 'ar' && s.langChosen === true ? 'ar' : 'en';
+      try {
+        var q = new URLSearchParams(location.search).get('lang');
+        if (!q) {
+          var h = location.hash, i = h.indexOf('?');
+          if (i !== -1) q = new URLSearchParams(h.slice(i + 1)).get('lang');
         }
-        document.documentElement.setAttribute('data-theme', theme);
-        var meta = document.querySelector('meta[name="theme-color"]:not([media])');
-        if (meta) meta.setAttribute('content', theme === 'light' ? '#F2F5FA' : '#070D18');
-      } catch (e) { /* storage unavailable: keep the default dark theme */ }
+        if (q === 'en' || q === 'ar') lang = q;
+      } catch (e) { /* old browser: keep the saved language */ }
+      root.setAttribute('lang', lang);
+      root.setAttribute('dir', lang === 'en' ? 'ltr' : 'rtl');
+      // Light is the default theme. Dark applies only when the user chose it (settings.themeChosen, set by any
+      // theme change); older saved settings without that flag open in light. Mirrors sanitizeSettings() in store.js.
+      var theme = s.theme === 'dark' && s.themeChosen === true ? 'dark' : 'light';
+      root.setAttribute('data-theme', theme);
+      root.setAttribute('data-numerals', s.numerals === 'arab' ? 'arab' : 'latn');
+      // settings.calendar → html[data-calendar]: css/base.css hides the clock date line that boot will not fill.
+      root.setAttribute('data-calendar', s.calendar === 'gregorian' || s.calendar === 'hijri' ? s.calendar : 'both');
+      var ap = s.appearance && typeof s.appearance === 'object' ? s.appearance : {};
+      var bg = ap.background === 'static' || ap.background === 'cinematic' ? ap.background : 'subtle';
+      root.setAttribute('data-bg', bg);
+      root.setAttribute('data-density', ap.density === 'compact' ? 'compact' : 'comfortable');
+      var motion = s.motion === 'reduce' || s.motion === 'full' ? s.motion : (s.reducedMotion === true ? 'reduce' : '');
+      if (motion) root.setAttribute('data-motion', motion);
+      if (lang === 'en') document.title = 'BILTIX Risk AI';
+      else document.title = 'بلتكس Risk AI';
+      var meta = document.querySelector('meta[name="theme-color"]:not([media])');
+      if (meta) meta.setAttribute('content', theme === 'light' ? '#F4F7FB' : '#080F1B');
+      // Regular weight of the UI face: the pre-view's lead (the largest text of the first screen) waits for it, so
+      // it is fetched first. Arabic needs both subsets of IBM Plex Sans Arabic: the space and Latin letters /
+      // digits come from its latin subset (a fallback space would change the line widths, see index.html <main>).
+      var fonts = lang === 'en' ? ['plex-sans-latin-400'] : ['plex-arabic-arabic-400', 'plex-arabic-latin-400'];
+      for (var fi = 0; fi < fonts.length; fi++) {
+        var font = document.createElement('link');
+        font.rel = 'preload';
+        font.as = 'font';
+        font.type = 'font/woff2';
+        font.crossOrigin = 'anonymous';
+        font.href = 'assets/fonts/' + fonts[fi] + '.woff2';
+        document.head.appendChild(font);
+      }
+      // Home route (#/cockpit): start the explainer hero's poster now (it is the likely LCP image), with the same
+      // srcset / sizes as its <img> (js/ui/explainer-hero.js POSTER_SIZES, js/data/explainer-media.js posters).
+      // Skipped when the reader minimised the hero.
+      try {
+        var hh = location.hash;
+        var home = !hh || hh === '#' || hh === '#/' || /^#\/cockpit(\?|$)/.test(hh);
+        if (home && localStorage.getItem('biltix-hse:explainer:collapsed') !== '1') {
+          var pre = document.createElement('link');
+          var base = 'assets/video/explainer-' + lang + '-poster';
+          pre.rel = 'preload';
+          pre.as = 'image';
+          pre.type = 'image/webp';
+          pre.setAttribute('fetchpriority', 'high');
+          pre.setAttribute('imagesrcset', base + '-640.webp 640w, ' + base + '.webp 1280w');
+          pre.setAttribute('imagesizes', '(min-width: 1024px) 560px, calc(100vw - 54px)');
+          pre.href = base + '.webp';
+          document.head.appendChild(pre);
+        }
+      } catch (e) { /* storage unavailable: the <img> loads the poster itself */ }
     })();
   </script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="css/tokens.css">
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/charts.css">
   <link rel="stylesheet" href="css/platform.css">
+  <link rel="stylesheet" href="css/field.css">
   <link rel="stylesheet" href="css/print.css" media="print">
-  <!-- Module preloads: the core graph, the shared UI libraries, both seeds and the home view (other views load on first navigation). -->
-  <link rel="modulepreload" href="js/app.js">
-  <link rel="modulepreload" href="js/core/bus.js">
-  <link rel="modulepreload" href="js/core/fmt.js">
-  <link rel="modulepreload" href="js/core/store.js">
-  <link rel="modulepreload" href="js/core/selectors.js">
-  <link rel="modulepreload" href="js/core/router.js">
-  <link rel="modulepreload" href="js/core/platform-selectors.js">
-  <link rel="modulepreload" href="js/views/index.js">
-  <link rel="modulepreload" href="js/ui/components.js">
-  <link rel="modulepreload" href="js/ui/charts.js">
-  <link rel="modulepreload" href="js/ui/radar.js">
-  <link rel="modulepreload" href="js/ui/art.js">
-  <link rel="modulepreload" href="js/data/seed.js">
-  <link rel="modulepreload" href="js/data/platform-seed.js">
-  <link rel="modulepreload" href="js/views/cockpit.js">
 </head>
 <body class="app" data-view="cockpit">
-  <a class="skip-link" href="#main">تخطي إلى المحتوى</a>
+  <a class="skip-link" href="#main" data-i18n="core.shell.skip">Skip to content</a>
 
   <div class="backdrop" id="backdrop" aria-hidden="true"></div>
 
-  <header class="appbar" id="appbar" role="banner">
+  <header class="appbar" id="appbar">
     <div class="appbar-start">
-      <button type="button" class="rail-toggle btn btn-ghost btn-icon" id="railToggle" aria-label="طيّ شريط التنقل" aria-expanded="true" aria-controls="rail">
+      <button type="button" class="rail-toggle btn btn-ghost btn-icon" id="railToggle" aria-label="Collapse navigation" aria-expanded="true" aria-controls="rail">
         <span class="rail-toggle-bars" aria-hidden="true"><i></i><i></i><i></i></span>
       </button>
-      <a class="brand" href="#/cockpit" aria-label="بلتكس Risk AI — قمرة قيادة المخاطر (الرئيسية)">
+      <a class="brand" href="#/cockpit" id="brandLink" aria-label="BILTIX Risk AI — risk cockpit (home)">
         <span class="brand-mark" aria-hidden="true"></span>
         <span class="brand-text">
-          <span class="brand-name">بلتكس Risk AI</span>
-          <span class="brand-tag">قمرة قيادة المخاطر — خمسة مجالات، تصنيف فوري، معالجة مُتتبعة</span>
+          <span class="brand-name" id="brandName">BILTIX Risk AI</span>
+          <span class="brand-tag" id="brandTag" data-i18n="core.app.tagline">Risk cockpit — five domains, instant rating, tracked mitigation</span>
         </span>
       </a>
     </div>
 
     <div class="appbar-center">
-      <div class="clock" id="clock" role="group" aria-label="الوقت والتاريخ — توقيت الرياض">
+      <div class="clock" id="clock" role="group" aria-label="Time and date — Riyadh time" data-i18n-aria="core.shell.clockAria">
         <time class="clock-time mono" id="clockTime" aria-live="off">--:--:--</time>
         <span class="clock-dates">
           <span class="clock-date" id="clockDate"></span>
@@ -88,99 +132,286 @@
           <span class="clock-hijri" id="clockHijri"></span>
         </span>
       </div>
-      <button type="button" class="cmdk-btn" id="cmdkBtn" aria-haspopup="dialog" aria-controls="cmdk" aria-expanded="false">
+      <button type="button" class="cmdk-btn" id="cmdkBtn" aria-haspopup="dialog" aria-controls="cmdk" aria-expanded="false" aria-keyshortcuts="Control+K">
         <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
-        <span class="cmdk-btn-label">بحث…</span>
+        <span class="cmdk-btn-label" data-i18n="core.shell.search">Search…</span>
         <kbd class="cmdk-kbd mono" aria-hidden="true">Ctrl+K</kbd>
       </button>
     </div>
 
     <div class="appbar-end">
-      <button type="button" class="pill score-pill" id="scorePill" aria-label="الدرجة الموحدة للمخاطر — فتح قمرة القيادة" title="الدرجة الموحدة — فتح قمرة القيادة" hidden>
+      <button type="button" class="pill score-pill" id="scorePill" hidden>
         <span class="rating-dot" id="scoreDot" aria-hidden="true"></span>
         <span class="pill-value mono" id="scoreValue">—</span>
         <span class="score-pill-delta mono" id="scoreDelta" hidden></span>
-        <span class="pill-label" id="scoreLabel">الدرجة الموحدة</span>
+        <span class="pill-label" id="scoreLabel">Consolidated score</span>
       </button>
-      <button type="button" class="pill integrations-pill" id="integrationsPill" aria-label="حالة التكاملات والموصلات" title="التكاملات والموصلات المتصلة">
-        <span class="live-dot tone-accent" aria-hidden="true"></span>
-        <span class="pill-value mono" id="integrationsCount">—</span>
-        <span class="pill-label">متصل</span>
+      <!-- Data status (CONTRACT §5): Demo · local data / Live / Stale / Error / Offline, with an explanatory popover. -->
+      <div class="data-status data-chip-wrap" id="dataStatus">
+        <button type="button" class="data-chip" id="dataChip" data-status="demo" aria-haspopup="dialog" aria-expanded="false" aria-controls="dataPopover">
+          <span class="data-chip-icon" id="dataChipIcon" aria-hidden="true"></span>
+          <span class="data-chip-label" id="dataChipLabel">Demo · local data</span>
+          <span class="data-chip-offline" id="dataChipOffline" hidden></span>
+        </button>
+        <div class="data-popover" id="dataPopover" role="dialog" aria-modal="false" aria-labelledby="dataPopoverTitle" hidden></div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-icon activity-toggle" id="activityToggle" aria-controls="activityPanel" aria-expanded="false" aria-label="Activity">
+        <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 12h4l3-8 4 16 3-8h4"></path></svg>
+        <span class="activity-count mono" id="activityCount" hidden>0</span>
       </button>
-      <button type="button" class="btn btn-ghost btn-icon bell-btn" id="bellBtn" aria-label="التنبيهات" aria-haspopup="dialog">
+      <button type="button" class="btn btn-ghost btn-icon bell-btn" id="bellBtn" aria-label="Alerts" aria-haspopup="dialog">
         <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"></path><path d="M10 20a2 2 0 0 0 4 0"></path></svg>
         <span class="bell-count mono" id="bellCount" hidden>0</span>
       </button>
-      <button type="button" class="btn btn-ghost btn-icon theme-btn" id="themeBtn" aria-label="تبديل السمة" aria-pressed="false" title="تبديل السمة (داكن / فاتح)">
+      <!-- Language switch "ع | EN" (each option names its language in that language). -->
+      <div class="lang-switch" id="langSwitch" role="group" aria-label="Interface language">
+        <button type="button" class="lang-opt" data-lang="ar" lang="ar" aria-label="ع — العربية" aria-pressed="false">ع</button>
+        <button type="button" class="lang-opt" data-lang="en" lang="en" aria-label="EN — English" aria-pressed="true">EN</button>
+      </div>
+      <button type="button" class="btn btn-ghost btn-icon theme-btn" id="themeBtn" aria-label="Switch to the dark theme" aria-pressed="false">
         <svg class="icon theme-icon-dark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"></path></svg>
         <svg class="icon theme-icon-light" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
       </button>
-      <button type="button" class="user-chip" id="userChip" aria-label="حساب المستخدم: م. فيصل الحربي — مدير المخاطر والسلامة">
-        <span class="user-avatar" aria-hidden="true">ف</span>
+      <button type="button" class="user-chip" id="userChip">
+        <span class="user-avatar" id="userAvatar" data-initial="F" aria-hidden="true"></span>
         <span class="user-text">
-          <span class="user-name">م. فيصل الحربي</span>
-          <span class="user-role">مدير المخاطر والسلامة</span>
+          <span class="user-name" id="userName">Eng. Faisal Al-Harbi</span>
+          <span class="user-role" id="userRole">Demo profile</span>
         </span>
       </button>
     </div>
+    <!-- Light line along the bar's lower edge: a static nickel/brand hairline plus one glint that sweeps in the
+         reading direction (css/base.css "App bar light line"; transform-only, off under reduced motion and Static). -->
+    <span class="appbar-light" aria-hidden="true"><i class="appbar-glint"></i></span>
   </header>
 
-  <div class="alert-banner" id="alertBanner" role="alert" hidden></div>
+  <!-- Visual banner only: the alert is spoken once through #liveAnnouncer, so no role="alert" here. -->
+  <div class="alert-banner" id="alertBanner" role="region" aria-label="Critical alert" hidden></div>
 
-  <nav class="rail" id="rail" aria-label="التنقل الرئيسي">
+  <nav class="rail" id="rail" aria-label="Main navigation">
     <ul class="rail-list" id="railList" role="list"></ul>
     <div class="rail-foot">
       <a class="rail-site mono" href="https://biltix.sa" target="_blank" rel="noopener noreferrer">biltix.sa</a>
-      <span class="rail-version mono" id="railVersion">v2.0.0</span>
+      <span class="rail-version mono" id="railVersion">v3.8.4</span>
     </div>
   </nav>
 
-  <div class="filters" id="filters" role="region" aria-label="عوامل التصفية العامة">
+  <div class="filters" id="filters" role="region" aria-label="Global filters">
     <div class="filters-group">
-      <label class="filters-label" for="siteSelect">المشروع</label>
-      <select class="field-control filters-site" id="siteSelect" name="siteId" aria-label="اختيار المشروع">
-        <option value="all">جميع المشاريع</option>
+      <label class="filters-label" for="siteSelect" id="siteLabel">Project</label>
+      <select class="field-control filters-site" id="siteSelect" name="siteId">
+        <option value="all">All projects</option>
       </select>
     </div>
     <div class="filters-group">
-      <span class="filters-label" id="rangeLabel">الفترة</span>
+      <span class="filters-label" id="rangeLabel">Period</span>
       <div class="filters-range" id="rangeSeg" aria-labelledby="rangeLabel"></div>
     </div>
     <div class="filters-group filters-search">
-      <label class="sr-only" for="searchInput">بحث في المخاطر الذكية والعقود والمهام والحوادث والتصاريح</label>
-      <input class="field-control" id="searchInput" name="search" type="search" placeholder="ابحث بالرمز أو العنوان…" title="ابحث بالرمز أو العنوان — مثال: AIR-1042 أو CT-2026-014 أو MT-0231 أو R-1001" autocomplete="off" spellcheck="false" enterkeyhint="search">
-    </div>
-    <div class="filters-group filters-feed">
-      <button type="button" class="btn btn-outline btn-sm feed-toggle" id="feedToggle" aria-pressed="false" aria-controls="feed">
-        <span class="live-dot tone-accent" aria-hidden="true"></span>
-        <span class="feed-toggle-label">إيقاف البث</span>
-      </button>
-      <button type="button" class="btn btn-ghost btn-icon feed-open" id="feedOpen" aria-label="فتح البث الحي" aria-controls="feed" aria-expanded="false">
-        <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h10M4 18h7"></path><circle cx="18" cy="17" r="3"></circle></svg>
-      </button>
+      <label class="sr-only" for="searchInput" id="searchLabel">Search AI risks, contracts, tasks, incidents and permits</label>
+      <input class="field-control" id="searchInput" name="search" type="search" placeholder="Search by code or title…" autocomplete="off" spellcheck="false" enterkeyhint="search">
     </div>
   </div>
 
-  <main id="main" class="main" tabindex="-1"></main>
+  <script>
+    /*
+     * Pre-paint, part 2. The static labels above are the English (default) values of js/i18n/core.js. An Arabic session
+     * (html[lang="ar"], set by the head script) gets the visible ones in Arabic before the first frame, so neither language
+     * flashes the other; js/app.js then localises the whole shell from the dictionaries. Keep in step with core.ar.
+     */
+    (function () {
+      if (document.documentElement.getAttribute('lang') !== 'ar') return;
+      var text = {
+        brandName: 'بلتكس Risk AI', brandTag: 'قمرة قيادة المخاطر — خمسة مجالات، تصنيف فوري، معالجة مُتتبعة',
+        scoreLabel: 'الدرجة الموحدة', dataChipLabel: 'تجريبي · بيانات محلية',
+        userAvatar: 'ف', userName: 'م. فيصل الحربي', userRole: 'ملف تجريبي',
+        siteLabel: 'المشروع', rangeLabel: 'الفترة', searchLabel: 'بحث في المخاطر الذكية والعقود والمهام والحوادث والتصاريح',
+      };
+      try {
+        for (var id in text) {
+          var el = document.getElementById(id);
+          if (!el) continue;
+          // The avatar initial is drawn by CSS from data-initial (css/base.css), so it is not part of the chip's text.
+          if (id === 'userAvatar') el.setAttribute('data-initial', text[id]); else el.textContent = text[id];
+        }
+        var q = function (sel) { return document.querySelector(sel); };
+        if (q('.skip-link')) q('.skip-link').textContent = 'تخطي إلى المحتوى';
+        if (q('#cmdkBtn .cmdk-btn-label')) q('#cmdkBtn .cmdk-btn-label').textContent = 'بحث…';
+        if (q('#siteSelect option[value="all"]')) q('#siteSelect option[value="all"]').textContent = 'جميع المشاريع';
+        if (q('#searchInput')) q('#searchInput').setAttribute('placeholder', 'ابحث بالرمز أو العنوان…');
+      } catch (e) { /* js/app.js localises the shell anyway */ }
+    })();
+  </script>
 
-  <aside class="feed" id="feed" aria-label="البث الحي">
-    <header class="feed-head">
-      <span class="live-dot tone-accent" id="feedLive" aria-hidden="true"></span>
-      <h2 class="feed-title">البث الحي</h2>
-      <span class="feed-count mono" id="feedCount"><span class="sr-only">عدد الأحداث: </span><span id="feedCountValue">0</span></span>
-      <button type="button" class="btn btn-ghost btn-icon feed-close" id="feedClose" aria-label="إغلاق البث الحي">
-        <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"></path></svg>
-      </button>
+  <main id="main" class="main" tabindex="-1"></main>
+  <script>
+    /*
+     * Pre-view and app loader (tools/stamp-shell.mjs).
+     * 1. Before any JavaScript module loads, draw the page header the route's view renders first (code tag, h1,
+     *    lead; on the cockpit the explainer poster) with the same classes, so the largest element of the first
+     *    screen paints with the HTML and CSS (mobile LCP). The view replaces it in the same frame it mounts.
+     *    Strings are stamped from the dictionaries by tools/stamp-shell.mjs (tests/shell-pre.test.mjs checks them).
+     *    The header waits for the lead's webfont (the regular weight, preloaded above; capped at 1.5 s), so the lead
+     *    is painted once at its final size and the view's identical lead is not a larger, later LCP candidate. Only
+     *    that face: the other weights load with the shell text and do not hold the first screen back.
+     * 2. Start the app only once that element has been painted (its largest-contentful-paint entry; on the cockpit
+     *    the poster; capped at 2.5 s; one frame where the API is missing), with module preloads for the boot graph
+     *    and the first route's view, so scripts never compete with the first paint. DOM built with createElement /
+     *    textContent only. The English data dictionaries (js/i18n/data/) are not in the preload list: English
+     *    sessions (the default) load them at boot in parallel with the optional modules (a modulepreload measured
+     *    no gain), Arabic sessions only on a switch to English.
+     */
+    (function () {
+      var PRE = /*@pre-begin*/{"v":1,"ids":["cockpit","airisks","tasks","alerts","contracts","bom","schedule","cost","overview","radar","spatial","risks","incidents","permits","inspections","training","compliance","engine","dataquality","integrations","fieldkit","reports","roadmap","golive","settings"],"routes":{"airisks":{"c":"AIR-01","h":"t-page","l":"t-lead","ar":["سجل المخاطر الذكي","كل مخاطرة رصدها محرك الذكاء الاصطناعي أو سُجّلت يدوياً، مع شدتها (الاحتمالية × الأثر) وثقة النموذج وجودة بيانات الإدخال كمفاهيم منفصلة. افتح أي صف لمراجعة الدليل واتخاذ القرار ومتابعة المعالجة حتى الإغلاق."],"en":["AI risk register","Every risk the AI engine detected or that was registered manually, with its severity (likelihood × impact), model confidence and input-data quality shown as separate measures. Open any row to review the evidence, decide, and follow the treatment through to closure."]},"tasks":{"c":"AIR-02","h":"t-page","l":"t-lead","ar":["مهام المعالجة","كل مهمة تنشأ من قبول توصية المحرك أو تعديلها، أو تُضاف يدوياً، وتُسند إلى مسؤول وتُكتب عكسياً إلى BILTIX PM (محاكاة في النسخة التجريبية). إغلاق المهمة يتطلب تسجيل النتيجة."],"en":["Mitigation tasks","Every task comes from accepting or editing an engine recommendation, or is added by hand; it is assigned to an owner and written back to BILTIX PM (simulated in the demo). Closing a task requires its outcome."]},"alerts":{"c":"AIR-03","h":"t-page","l":"t-lead","ar":["التنبيهات والتصعيد","المخاطر التي تتجاوز عتبة التنبيه تدخل القائمة القياسية، والتي تبلغ عتبة التصعيد تُصعَّد فوراً. في النسخة التجريبية تُسجَّل التنبيهات ومسار قنواتها فقط — لا يُرسل بريد أو رسائل فعلية."],"en":["Alerts & escalation","Risks above the alert threshold enter the standard queue; risks at the escalation threshold are escalated at once. In the demo only the alerts and their channel routing are recorded — no email or messages are actually sent."]},"contracts":{"c":"DOM-01","ar":["مخاطر العقود","تحليل بنود العقود بمحرك المعالجة اللغوية للعقود: البنود الغامضة وشروط الدفع وغرامات التأخير وبنود التأمين والتعويض، مع تقويم الالتزامات وتركّز المقاولين من الباطن."],"en":["Contract risk","Contract clauses analysed by the contract NLP engine — ambiguous wording, payment terms, delay damages, insurance and indemnity — together with the obligations calendar and subcontractor concentration."]},"bom":{"c":"DOM-02","ar":["مخاطر المواد والتوريد (BoM)","توقعات أسعار السلع والتعرض لها، تركّز الموردين والمصادر الوحيدة، فروقات الكميات بين جدول الكميات ونموذج BIM، والبنود طويلة التوريد."],"en":["Materials & supply risk (BoM)","Commodity price forecasts and exposure, supplier concentration and single sources, quantity differences between the bill of quantities and the BIM model, and long-lead items."]},"schedule":{"c":"DOM-03","ar":["مخاطر الجدول الزمني","نموذج الجدول الزمني: احتمالات تأخير الأنشطة الحرجة، محاكاة مونت كارلو لتاريخ الإنجاز، استغلال الموارد، أثر الطقس، الموافقات التنظيمية وأداء مقاولي الباطن."],"en":["Schedule risk","The schedule model: delay probabilities of critical activities, a Monte Carlo simulation of the finish date, resource utilisation, weather impact, regulatory approvals and subcontractor performance."]},"cost":{"c":"DOM-04","ar":["مخاطر التكلفة","القيمة المكتسبة، اتجاه التكلفة، التعرض للعملات والسلع، أوامر التغيير وانحراف بنود التكلفة — تغذّيها خط «توقع التكلفة» في محرك الذكاء الاصطناعي."],"en":["Cost risk","Earned value, cost trend, currency and commodity exposure, change orders and cost-line variance — fed by the AI engine’s cost forecasting pipeline."]},"overview":{"c":"SEC-01","ar":["نظرة عامة على السلامة","صورة لحظية لأداء السلامة والصحة المهنية عبر المواقع: المخاطر المتأخرة والحرجة، الحوادث، مؤشر السلامة، رادار المخاطر، والإجراءات التي تحتاج تدخلاً اليوم."],"en":["Safety overview","A live picture of health and safety performance across sites: overdue and critical risks, incidents, the safety index, the risk radar and the actions that need attention today."]},"radar":{"c":"SEC-02","ar":["رادار المخاطر","أربعة رادارات: مسح المخاطر المفتوحة حسب فئة الخطر، قراءات الحساسات، حركة العمال والمعدات على مخطط الموقع، ودرجات الامتثال لمعيار ISO 45001. القراءات والحركة محاكاة داخل المتصفح في هذه النسخة."],"en":["Risk radar","Four radars: open risks swept by hazard category, sensor readings, workers and equipment moving on the site plan, and ISO 45001 compliance scores. Readings and movement are simulated in the browser in this version."]},"spatial":{"c":"SEC-12","ar":["الربط المكاني للموقع","مخطط هندسي لكل موقع يربط المناطق بالمخاطر والحساسات والكاميرات والتصاريح والحوادث وعمليات التفتيش. اختر منطقة لعرض ما يرتبط بها، أو كاميرا لعرض بثّ محاكى. لا توجد أي كاميرا متصلة في هذه النسخة."],"en":["Site spatial view","An engineering-style plan of each site that links zones to risks, sensors, cameras, permits, incidents and inspections. Select a zone to see what is linked to it, or a camera to view a simulated feed. No camera is connected in this version."]},"risks":{"c":"SEC-03","ar":["سجل مخاطر السلامة","تقييم مخاطر السلامة والصحة المهنية لكل موقع: الاحتمالية × الشدة، هرمية الضوابط، الدرجة المتبقية بعد المعالجة، والمالك المسؤول وموعد الاستحقاق. يُحفظ كل تعديل في هذا المتصفح فوراً."],"en":["Safety risk register","Occupational health and safety risk assessments for every site: likelihood × severity, the hierarchy of controls, the residual score after treatment, and the accountable owner and due date. Every change is saved in this browser straight away."]},"incidents":{"c":"SEC-04","ar":["الحوادث والحوادث الوشيكة","تسجيل الحوادث والحوادث الوشيكة ومتابعة التحقيق فيها حتى إغلاق الإجراءات التصحيحية، مع مؤشرات الفترة المحددة وتحليل الأسباب الجذرية."],"en":["Incidents & near misses","Record incidents and near misses and follow each investigation through to closed corrective actions, with the period’s indicators and a root-cause analysis."]},"permits":{"c":"SEC-05","h":"t-page","ar":["تصاريح العمل","تصاريح العمل الخطرة من المسودة حتى الإغلاق: الاعتماد والتعليق، والعدّ التنازلي لانتهاء الصلاحية، وقراءات فحص الغازات للأماكن المغلقة والأعمال الساخنة."],"en":["Permits to work","High-risk permits from draft to close-out: approval and suspension, a countdown to expiry, and gas-test readings for confined spaces and hot work."]},"inspections":{"c":"SEC-06","h":"t-page","ar":["التفتيش والتدقيق","جولات السلامة والتفتيشات الفنية والتدقيقات الداخلية: ما هو مستحق أو متأخر، ونسب الإنجاز حسب الموقع، والملاحظات المفتوحة، وتسجيل النتائج فور اكتمال الجولة."],"en":["Inspections & audits","Safety walks, technical inspections and internal audits: what is due or overdue, completion by project, open findings, and recording results as soon as a walk is done."]},"dataquality":{"c":"PLT-02","ar":["جودة البيانات وطبقة التحقق","الطبقة الثانية من المعمارية: فحص المخطط وإزالة التكرار والاكتمال والاتساق لكل سجل وارد من موصلات التكامل قبل إيداعه في بحيرة بيانات المخاطر."],"en":["Data quality & validation","The second layer of the architecture: schema checks, deduplication, completeness and consistency for every record arriving from the integration connectors, before it is stored in the risk data lake."]},"integrations":{"c":"SEC-09","ar":["التكاملات والأنظمة","أنظمة الموقع والسلامة والموصلات المؤسسية التي ستغذي المنصة، مع حالة صريحة لكل منها. في هذا الإصدار لا توجد مزامنة حقيقية؛ الأرقام المعروضة سيناريو توضيحي."],"en":["Integrations & systems","The site and safety systems and enterprise connectors that would feed the platform, each with an honest status. This version has no real synchronisation; the figures shown are an illustrative scenario."]},"fieldkit":{"c":"FLD-01","h":"t-page","l":"t-lead","ar":["عُدّة الميدان","العمل دون اتصال، وملصقات QR للمناطق والمعدات والمواد والتصاريح، ومسح الرموز — نموذج تجريبي لما يحتاجه فريق الموقع."],"en":["Field kit","Offline work, QR labels for zones, equipment, materials and permits, and scanning — a demo of what the site team needs."]},"roadmap":{"c":"PLT-03","ar":["خارطة الطريق والمقترح التفصيلي","منصة إدارة المخاطر بالذكاء الاصطناعي — الإصدار الثاني: المعمارية بخمس طبقات، نطاق العمل، الافتراضات، المعالم من M0 إلى M4، وجدول الدفعات الذي يُستكمل مع العميل."],"en":["Roadmap & detailed proposal","AI risk management platform — version 2: the five-layer architecture, scope of work, assumptions, milestones M0 to M4, and the payment schedule to be completed with the client."]},"golive":{"c":"PLT-04","ar":["الجاهزية للتشغيل","ما يلزم لنقل المنصة من العرض التجريبي إلى تشغيل فعلي في مشروع تجريبي واحد: ما هو مبني اليوم كعرض، وما هو جاهز للربط، وما ينتظر مدخلات العميل، وما هو مخطط فقط."],"en":["Go-live readiness","What it takes to move the platform from this demo to a live pilot on one project: what is built today as a demo, what is ready to connect, what waits for client input and what is only planned."]},"settings":{"c":"SEC-11","ar":["الإعدادات","اللغة والمظهر وقواعد احتساب المخاطر ومصدر البيانات. تُحفظ الإعدادات في هذا المتصفح فقط وتُطبَّق فوراً."],"en":["Settings","Language, appearance, risk scoring rules and the data source. Settings are stored in this browser only and apply immediately."]}}}/*@pre-end*/;
+      var BOOT = ['js/app.js', 'js/core/bus.js', 'js/core/i18n.js', 'js/i18n/core.js', 'js/core/status.js', 'js/core/fmt.js',
+        'js/core/store.js', 'js/core/selectors.js', 'js/data/vocab-en.js', 'js/core/router.js', 'js/views/index.js',
+        'js/ui/components.js', 'js/ui/i18n-bridge.js', 'js/i18n/ui.js', 'js/i18n/charts.js', 'js/i18n/radar.js', 'js/ui/motion.js',
+        'js/vendor/motion.js', 'js/ui/art.js', 'js/i18n/enums.js', 'js/core/platform-selectors.js', 'js/ui/charts.js',
+        'js/ui/radar.js', 'js/data/seed.js', 'js/data/platform-seed.js'];
+      // The first route's own static graph beyond BOOT (tests/integration.test.mjs keeps both lists equal to the imports).
+      var VIEW_MODS = { cockpit: ['js/views/cockpit.js', 'js/i18n/cockpit.js', 'js/ui/explainer-hero.js', 'js/data/explainer-media.js',
+        'js/data/golive.js', 'js/i18n/golive-strip.js'] };
+      var main = document.getElementById('main');
+      var lang = document.documentElement.getAttribute('lang') === 'ar' ? 'ar' : 'en'; // English is the default
+      var m = /^#\/([a-z]+)/.exec(location.hash || '');
+      var id = m ? m[1] : 'cockpit';
+      if (PRE.ids.indexOf(id) === -1) id = '';
+      function el(tag, cls, text) {
+        var e = document.createElement(tag);
+        if (cls) e.className = cls;
+        if (text) e.textContent = text;
+        return e;
+      }
+      var poster = null;
+      var texts = [];
+      var view = null;
+      try {
+        view = el('section', 'view view-pre view-' + (id || 'none'));
+        view.setAttribute('aria-busy', 'true');
+        if (id === 'cockpit') {
+          var collapsed = false;
+          try { collapsed = localStorage.getItem('biltix-hse:explainer:collapsed') === '1'; } catch (e) { /* storage blocked */ }
+          if (!collapsed) {
+            // Same box and image as js/ui/explainer-hero.js (srcset / sizes = POSTER_SIZES): the preload is reused.
+            var base = 'assets/video/explainer-' + lang + '-poster';
+            var card = el('section', 'card is-framed is-hero ckh');
+            var media = el('div', 'ckh-media');
+            var stage = el('div', 'ckh-stage');
+            poster = el('img', 'ckh-poster');
+            poster.alt = '';
+            poster.width = 1280;
+            poster.height = 720;
+            poster.decoding = 'async';
+            poster.setAttribute('fetchpriority', 'high');
+            poster.setAttribute('sizes', '(min-width: 1024px) 560px, calc(100vw - 54px)');
+            poster.setAttribute('srcset', base + '-640.webp 640w, ' + base + '.webp 1280w');
+            poster.src = base + '.webp';
+            stage.appendChild(poster);
+            media.appendChild(stage);
+            card.appendChild(media);
+            view.appendChild(card);
+          }
+        } else if (id && PRE.routes[id]) {
+          var r = PRE.routes[id];
+          var head = el('div', 'view-head');
+          var text = el('div', 'view-head-text');
+          text.appendChild(el('span', 'code-tag', r.c));
+          texts.push(text.appendChild(el('h1', r.h || '', r[lang][0])));
+          texts.push(text.appendChild(el('p', 'view-lead' + (r.l ? ' ' + r.l : ''), r[lang][1])));
+          head.appendChild(text);
+          view.appendChild(head);
+        }
+        if (main && view.firstChild) main.appendChild(view); else { view = null; texts = []; }
+      } catch (e) { view = null; texts = []; /* the app renders the page anyway */ }
+
+      var started = false;
+      function start() {
+        if (started) return;
+        started = true;
+        var list = BOOT.concat(VIEW_MODS[id] || (id ? ['js/views/' + id + '.js'] : []));
+        for (var i = 0; i < list.length; i++) {
+          var l = document.createElement('link');
+          l.rel = 'modulepreload';
+          l.href = list[i];
+          document.head.appendChild(l);
+        }
+        var s = document.createElement('script');
+        s.type = 'module';
+        s.src = 'js/app.js';
+        document.body.appendChild(s);
+      }
+      // The element whose paint lets the app start: the poster, else the lead (the largest text), else any first paint.
+      var target = poster || (texts.length ? texts[texts.length - 1] : null);
+      var cap = setTimeout(start, 2500);
+      var watching = false;
+      try {
+        if (typeof PerformanceObserver === 'function' && PerformanceObserver.supportedEntryTypes && PerformanceObserver.supportedEntryTypes.indexOf('largest-contentful-paint') !== -1) {
+          var po = new PerformanceObserver(function (list) {
+            var es = list.getEntries();
+            for (var j = 0; j < es.length; j++) {
+              if (!target || es[j].element === target) { po.disconnect(); clearTimeout(cap); setTimeout(start, 0); return; }
+            }
+          });
+          po.observe({ type: 'largest-contentful-paint', buffered: true });
+          watching = true;
+        }
+      } catch (e) { watching = false; }
+      function afterFirstFrame() {
+        if (watching) return;
+        if (typeof requestAnimationFrame !== 'function') { setTimeout(start, 0); return; }
+        requestAnimationFrame(function () { setTimeout(start, 0); });
+      }
+      if (poster && !poster.complete) {
+        poster.addEventListener('load', afterFirstFrame);
+        poster.addEventListener('error', function () { clearTimeout(cap); start(); });
+      } else if (view && texts.length && document.fonts && typeof document.fonts.load === 'function' && typeof Promise === 'function') {
+        var shown = false;
+        var show = function () {
+          if (shown) return;
+          shown = true;
+          view.style.visibility = '';
+          afterFirstFrame();
+        };
+        try {
+          view.style.visibility = 'hidden';
+          var leadEl = texts[texts.length - 1];
+          var cs = getComputedStyle(leadEl);
+          document.fonts.load(cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily, leadEl.textContent).then(show, show);
+          setTimeout(show, 1500);
+        } catch (e) { show(); }
+      } else afterFirstFrame();
+    })();
+  </script>
+
+  <!-- Activity panel (closed by default below 1680 px; pinnable from 1680 px). A log, not a live region:
+       critical alerts are announced once through #liveAnnouncer. -->
+  <aside class="activity-panel" id="activityPanel" aria-labelledby="activityTitle" data-state="closed" inert>
+    <header class="activity-head feed-head">
+      <h2 class="activity-title feed-title" id="activityTitle">Activity</h2>
+      <span class="activity-mode" id="activityMode"></span>
+      <span class="feed-count mono" id="feedCount"><span class="sr-only" id="feedCountLabel"></span><span id="feedCountValue" aria-hidden="true">0</span></span>
+      <div class="activity-actions">
+        <button type="button" class="btn btn-ghost btn-sm activity-pause" id="activityPause" aria-pressed="false">
+          <span class="live-dot tone-accent" aria-hidden="true"></span>
+          <span class="activity-pause-label" id="activityPauseLabel">Pause</span>
+        </button>
+        <button type="button" class="btn btn-ghost btn-icon activity-pin" id="activityPin" aria-pressed="false" hidden>
+          <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 4h6l-1 6 3 3H7l3-3-1-6z"></path><path d="M12 13v7"></path></svg>
+        </button>
+        <button type="button" class="btn btn-ghost btn-icon activity-close" id="activityClose">
+          <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+        </button>
+      </div>
     </header>
-    <!-- The feed is a log, not a live region: ~20 events/min must never be announced. Critical alerts go through #liveAnnouncer. -->
-    <ul class="feed-list" id="feedList" role="log" aria-live="off" aria-label="سجل أحداث البث الحي"></ul>
-    <footer class="feed-foot">
-      <span class="feed-status" id="feedStatus">متصل بالأنظمة الحية</span>
-      <button type="button" class="btn btn-ghost btn-sm" id="feedAll">عرض الكل</button>
+    <button type="button" class="activity-new-chip" id="activityNewChip" hidden></button>
+    <ul class="feed-list activity-list" id="feedList" role="log" aria-live="off"></ul>
+    <footer class="activity-foot feed-foot">
+      <span class="feed-status activity-status" id="feedStatus"></span>
+      <button type="button" class="btn btn-ghost btn-sm" id="feedAll">View all</button>
     </footer>
   </aside>
 
-  <nav class="tabbar" id="tabbar" aria-label="التنقل السريع"></nav>
+  <nav class="tabbar" id="tabbar" aria-label="Quick navigation"></nav>
 
   <!-- Single assertive live region: app.js announces each critical / serious alert here exactly once. -->
   <div class="sr-only" id="liveAnnouncer" aria-live="assertive" aria-atomic="true"></div>
@@ -191,29 +422,29 @@
 
   <div class="cmdk" id="cmdk" hidden>
     <div class="cmdk-backdrop" data-cmdk-close></div>
-    <div class="cmdk-panel" role="dialog" aria-modal="true" aria-label="لوحة الأوامر">
+    <div class="cmdk-panel" role="dialog" aria-modal="true" aria-label="Command palette" id="cmdkPanel">
       <div class="cmdk-search">
         <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
-        <label class="sr-only" for="cmdkInput">ابحث عن صفحة أو إجراء أو رمز</label>
-        <input class="cmdk-input" id="cmdkInput" type="text" placeholder="انتقل إلى قسم، نفّذ إجراءً، أو ابحث برمز مثل AIR-1042 أو CT-2026-014…" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="cmdkList" aria-autocomplete="list" aria-activedescendant="">
+        <label class="sr-only" for="cmdkInput" id="cmdkInputLabel">Search for a section, an action or a code</label>
+        <input class="cmdk-input" id="cmdkInput" type="text" placeholder="" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="cmdkList" aria-autocomplete="list" aria-activedescendant="">
         <kbd class="cmdk-kbd mono" aria-hidden="true">Esc</kbd>
       </div>
-      <ul class="cmdk-list" id="cmdkList" role="listbox" aria-label="النتائج"></ul>
+      <ul class="cmdk-list" id="cmdkList" role="listbox" aria-label="Results"></ul>
       <footer class="cmdk-foot" aria-hidden="true">
-        <span><kbd class="mono">↑</kbd><kbd class="mono">↓</kbd> تنقّل</span>
-        <span><kbd class="mono">Enter</kbd> تنفيذ</span>
-        <span><kbd class="mono">Esc</kbd> إغلاق</span>
+        <span><kbd class="mono">↑</kbd><kbd class="mono">↓</kbd> <span id="cmdkFootNav">Navigate</span></span>
+        <span><kbd class="mono">Enter</kbd> <span id="cmdkFootRun">Run</span></span>
+        <span><kbd class="mono">Esc</kbd> <span id="cmdkFootClose">Close</span></span>
       </footer>
     </div>
   </div>
 
   <noscript>
-    <div class="noscript" dir="rtl">
-      <h1>بلتكس Risk AI</h1>
-      <p>تتطلب منصة إدارة المخاطر تفعيل JavaScript في المتصفح لعرض قمرة القيادة والرادارات الحية والمؤشرات. يرجى تفعيل JavaScript ثم إعادة تحميل الصفحة.</p>
+    <div class="noscript">
+      <h1>BILTIX Risk AI · <span lang="ar" dir="rtl">بلتكس Risk AI</span></h1>
+      <p lang="en" dir="ltr">The risk management platform needs JavaScript. Please enable it and reload the page.</p>
+      <p lang="ar" dir="rtl">تتطلب منصة إدارة المخاطر تفعيل JavaScript في المتصفح. يرجى تفعيله ثم إعادة تحميل الصفحة.</p>
     </div>
   </noscript>
 
-  <script type="module" src="js/app.js"></script>
 </body>
 </html>

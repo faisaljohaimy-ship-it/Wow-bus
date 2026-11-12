@@ -5,12 +5,25 @@
  * setAttribute. innerHTML is never used. All glyphs are built with
  * createElementNS so no string markup carries data.
  *
- * Exports follow docs/ARCHITECTURE.md §4 (components.js) exactly.
+ * Exports follow docs/ARCHITECTURE.md §4 (components.js) plus the v3 additions of
+ * docs/specs/v3-precision/CONTRACT.md §7: drawer tabs, statusBadge, filterBar, loadingState /
+ * errorState / offlineState / skeleton, dataTable update(rows, { preserve }) + getState / setState.
+ *
+ * Language: every built-in string comes from t('ui.*') (dictionary js/i18n/ui.js). Direction is read
+ * at build time (html[dir]): keyboard arrows follow the reading direction and directional glyphs
+ * (chevrons, "move" arrows, pager) mirror in LTR. A language switch re-mounts the view, so nothing
+ * here caches a translated string at module level.
  */
 import { art } from './art.js';
 import { sel } from '../core/selectors.js';
 import { fmt } from '../core/fmt.js';
 import { bus } from '../core/bus.js';
+import { status as statusApi, STATUSES } from '../core/status.js';
+import { t, tn, isRtl, locale } from './i18n-bridge.js';
+import { motion } from './motion.js';
+
+/* Re-exported so `import * as components` consumers (app.js) reach the motion helpers as components.motion. */
+export { motion };
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
@@ -19,9 +32,18 @@ const TONES = ['neutral', 'good', 'warning', 'serious', 'critical', 'brand', 'ac
 let uidCounter = 0;
 const uid = (prefix = 'bx') => `${prefix}-${(++uidCounter).toString(36)}`;
 
+/** Reduced motion: the settings override on <html data-motion> ('reduce' | 'full') wins over the OS query. */
 export const reducedMotion = () => {
-  try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
+  try {
+    const forced = document.documentElement.getAttribute('data-motion');
+    if (forced === 'reduce' || forced === 'reduced') return true;
+    if (forced === 'full') return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch { return false; }
 };
+
+/** Arrow keys that move forward / backward in the reading direction. */
+const inlineKeys = () => (isRtl() ? { next: 'ArrowLeft', prev: 'ArrowRight' } : { next: 'ArrowRight', prev: 'ArrowLeft' });
 
 /* ------------------------------------------------------------------ */
 /* h() — hyperscript                                                    */
@@ -88,6 +110,98 @@ export function h(tag, attrs = {}, ...children) {
 export function clear(el) { while (el && el.firstChild) el.removeChild(el.firstChild); return el; }
 
 /* ------------------------------------------------------------------ */
+/* Label in name (WCAG 2.5.3)                                          */
+/* ------------------------------------------------------------------ */
+
+/** Words of a string the way a label-in-name check compares them: lower case, letters and digits only. */
+function nameWords(s) {
+  return String(s ?? '').replace(/\([^()]*\)/g, ' ').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+const collapseWs = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
+
+/** True when the words of `visible` appear, in order and next to each other, in `name`. */
+export function nameContains(name, visible) {
+  const hay = nameWords(name);
+  const needle = nameWords(visible);
+  if (!needle.length) return true;
+  for (let i = 0; i + needle.length <= hay.length; i += 1) {
+    if (needle.every((w, j) => hay[i + j] === w)) return true;
+  }
+  return false;
+}
+
+/**
+ * Accessible name that contains the visible label (WCAG 2.5.3 Label in Name): `label` as is when it already
+ * contains `visible`; otherwise the visible text first, then what the label adds. Leading sentences of the
+ * label that only repeat visible words ("Open incidents: 9.") are dropped so the name does not say them twice.
+ */
+export function labelInName(visible, label) {
+  const v = collapseWs(visible);
+  const l = collapseWs(label);
+  if (!v) return l;
+  if (!l) return v;
+  if (l.startsWith(`${v} `) || l === v || nameContains(l, v)) return l;
+  const rest = nameExtra(v, l);
+  return rest ? `${v} — ${rest}` : v;
+}
+
+/** What `label` says beyond the visible text: its leading sentences that only repeat visible words dropped. */
+export function nameExtra(visible, label) {
+  const l = collapseWs(label);
+  const seen = new Set(nameWords(visible));
+  const parts = l.split(/(?<=[.:؛،—–])\s+/);
+  while (parts.length > 1 && nameWords(parts[0]).every((w) => seen.has(w))) parts.shift();
+  const rest = parts.join(' ').trim();
+  return rest && !nameWords(rest).every((w) => seen.has(w)) ? rest : '';
+}
+
+/**
+ * Text a sighted reader sees inside `el`: every text node outside [hidden] and .sr-only subtrees (aria-hidden
+ * text still counts: it is on screen). Whitespace collapsed.
+ */
+export function visibleText(el) {
+  let out = '';
+  const walk = (node) => {
+    for (let c = node.firstChild; c; c = c.nextSibling) {
+      if (c.nodeType === 3) out += c.nodeValue;
+      else if (c.nodeType === 1) {
+        if (c.hidden || (c.classList && c.classList.contains('sr-only'))) continue;
+        out += ' ';
+        walk(c);
+        out += ' ';
+      }
+    }
+  };
+  if (el) walk(el);
+  return collapseWs(out);
+}
+
+/**
+ * Name a control so its accessible name contains its visible text (WCAG 2.5.3) whatever the responsive CSS
+ * hides: with visible text the name comes from the content and what `label` adds is appended as visually
+ * hidden text; an icon-only control (no visible text) gets `label` as aria-label. Safe to call again on
+ * every update. Returns el.
+ */
+export function setLabelInName(el, label) {
+  if (!el || typeof el.setAttribute !== 'function') return el;
+  let extraEl = null;
+  for (let c = el.firstChild; c; c = c.nextSibling) if (c.nodeType === 1 && c.hasAttribute('data-name-extra')) extraEl = c;
+  const visible = visibleText(el);
+  if (!visible) {
+    if (extraEl) extraEl.remove();
+    if (collapseWs(label)) el.setAttribute('aria-label', collapseWs(label)); else el.removeAttribute('aria-label');
+    return el;
+  }
+  el.removeAttribute('aria-label');
+  const rest = nameExtra(visible, label);
+  if (!rest) { if (extraEl) extraEl.remove(); return el; }
+  if (!extraEl) { extraEl = h('span', { class: 'sr-only', 'data-name-extra': '' }); el.appendChild(extraEl); }
+  if (extraEl !== el.lastChild) el.appendChild(extraEl);
+  if (extraEl.textContent !== ` ${rest}`) extraEl.textContent = ` ${rest}`;
+  return el;
+}
+
+/* ------------------------------------------------------------------ */
 /* Icons & glyphs                                                      */
 /* ------------------------------------------------------------------ */
 
@@ -134,7 +248,7 @@ const GLYPHS = {
   sort: (s) => { const g = svgEl(s); g.append(path('M8 9l4-4 4 4M8 15l4 4 4-4')); return g; },
   sortAsc: (s) => { const g = svgEl(s); g.append(path('M8 10l4-4 4 4'), path('M12 6v13')); return g; },
   sortDesc: (s) => { const g = svgEl(s); g.append(path('M8 14l4 4 4-4'), path('M12 5v13')); return g; },
-  move: (s) => { const g = svgEl(s); g.append(path('M5 12h14M12 5l7 7-7 7')); return g; },
+  move: (s) => { const g = svgEl(s); g.append(path('M19 12H5M12 5l-7 7 7 7')); return g; },   // forward in RTL (mirrored in LTR)
   grip: (s) => { const g = svgEl(s); g.append(circle(9, 6, 1.3, { fill: 'currentColor', stroke: 'none' }), circle(15, 6, 1.3, { fill: 'currentColor', stroke: 'none' }), circle(9, 12, 1.3, { fill: 'currentColor', stroke: 'none' }), circle(15, 12, 1.3, { fill: 'currentColor', stroke: 'none' }), circle(9, 18, 1.3, { fill: 'currentColor', stroke: 'none' }), circle(15, 18, 1.3, { fill: 'currentColor', stroke: 'none' })); return g; },
   empty: (s) => { const g = svgEl(s); g.append(path('M4 7h16v12H4z'), path('M4 11h16'), path('M9 7V4h6v3')); return g; },
   chart: (s) => { const g = svgEl(s); g.append(path('M4 19h16'), path('M7 16V10M12 16V6M17 16v-3')); return g; },
@@ -142,9 +256,20 @@ const GLYPHS = {
   clock: (s) => { const g = svgEl(s); g.append(circle(12, 12, 9), path('M12 7v5l3 2')); return g; },
 };
 
+/** Glyphs that point along the reading direction: drawn for RTL, mirrored in LTR. */
+const DIRECTIONAL_GLYPHS = new Set(['chevronStart', 'chevronEnd', 'move']);
+
 export function glyph(name, size = 16) {
   const make = GLYPHS[name] || GLYPHS.neutral;
-  return make(size);
+  const svg = make(size);
+  if (DIRECTIONAL_GLYPHS.has(name) && !isRtl()) {
+    const g = document.createElementNS(SVG_NS, 'g');
+    g.setAttribute('transform', 'matrix(-1 0 0 1 24 0)');
+    while (svg.firstChild) g.appendChild(svg.firstChild);
+    svg.appendChild(g);
+    svg.setAttribute('data-mirrored', 'true');
+  }
+  return svg;
 }
 
 /** Delegates to art.icon(name); falls back to a local glyph so the UI never breaks. */
@@ -176,9 +301,9 @@ const toneOf = (tone) => (TONES.includes(tone) ? tone : 'neutral');
 /* ------------------------------------------------------------------ */
 
 export function badge(text, tone = 'neutral', { icon = null } = {}) {
-  const t = toneOf(tone);
-  const el = h('span', { class: ['badge', `tone-${t}`], 'data-tone': t });
-  const ic = icon ? iconNode(icon, 14) : glyph(t, 14);
+  const tn0 = toneOf(tone);
+  const el = h('span', { class: ['badge', `tone-${tn0}`], 'data-tone': tn0 });
+  const ic = icon ? iconNode(icon, 14) : glyph(tn0, 14);
   if (ic) { ic.classList.add('badge-icon'); el.appendChild(ic); }
   el.appendChild(h('span', { class: 'badge-text' }, String(text ?? '')));
   return el;
@@ -192,6 +317,55 @@ export function tierBadge(tier) {
 
 export function liveDot(tone = 'accent') {
   return h('span', { class: ['live-dot', `tone-${toneOf(tone)}`], 'aria-hidden': 'true' });
+}
+
+/* Fallback presentation when js/core/status.js is unavailable (same mapping as status.meta). */
+const STATUS_FALLBACK = {
+  demo: { tone: 'accent', icon: 'flask' },
+  live: { tone: 'good', icon: 'check-circle' },
+  offline: { tone: 'warning', icon: 'alert-circle' },
+  stale: { tone: 'warning', icon: 'clock' },
+  error: { tone: 'critical', icon: 'alert-octagon' },
+  not_connected: { tone: 'neutral', icon: 'plug' },
+};
+const STATUS_KEYS = Array.isArray(STATUSES) && STATUSES.length ? STATUSES : Object.keys(STATUS_FALLBACK);
+
+/**
+ * Honest system-status badge (CONTRACT §5): icon + label, tone from status.meta(statusKey).
+ * Unknown keys render as 'not_connected' (never as a success). The one-line description becomes the
+ * tooltip and the accessible description.
+ * @param {'demo'|'live'|'offline'|'stale'|'error'|'not_connected'} statusKey
+ * @param {{label?:string, title?:string|false, size?:'sm'|'md'|'lg'}} [opts]
+ */
+export function statusBadge(statusKey, { label = null, title = null, size = 'md' } = {}) {
+  const key = STATUS_KEYS.includes(statusKey) ? statusKey : 'not_connected';
+  let meta = null;
+  try { meta = statusApi && typeof statusApi.meta === 'function' ? statusApi.meta(key) : null; } catch { meta = null; }
+  const fb = STATUS_FALLBACK[key] || STATUS_FALLBACK.not_connected;
+  const tone = toneOf((meta && meta.tone) || fb.tone);
+  const iconName = (meta && meta.icon) || fb.icon;
+  let text = label;
+  if (text === null || text === undefined || text === '') {
+    try { text = statusApi && typeof statusApi.label === 'function' ? statusApi.label(key) : ''; } catch { text = ''; }
+    if (!text || text === `status.${key}`) text = t(`ui.status.${key}`);
+  }
+  let desc = title;
+  if (desc === null || desc === undefined) {
+    try { desc = statusApi && typeof statusApi.desc === 'function' ? statusApi.desc(key) : ''; } catch { desc = ''; }
+    if (desc === `status.${key}Desc`) desc = '';
+  }
+  // .status-badge owns its look per data-status (css/components.css); no generic .badge / tone classes,
+  // so a status can never inherit a success colour by accident.
+  const el = h('span', {
+    class: ['status-badge', `is-${key}`, size === 'sm' ? 'is-sm' : (size === 'lg' ? 'is-lg' : null)],
+    'data-status': key, 'data-tone': tone, title: desc || undefined,
+  });
+  const ic = svgIcon(iconName, 12);
+  ic.classList.add('status-badge-icon');
+  el.appendChild(ic);
+  el.appendChild(h('span', { class: 'status-badge-label badge-text' }, String(text)));
+  if (desc) el.appendChild(h('span', { class: 'sr-only' }, ` — ${desc}`));
+  return el;
 }
 
 export function button(label, { variant = 'primary', icon = null, size = 'md', onClick = null, attrs = {} } = {}) {
@@ -260,9 +434,10 @@ export function segmented({ options = [], value = null, onChange = null, ariaLab
     if (!list.length) return;
     let idx = list.findIndex((b) => b === document.activeElement);
     if (idx < 0) idx = 0;
-    // RTL: ArrowLeft moves forward in reading order.
-    if (e.key === 'ArrowLeft') idx = (idx + 1) % list.length;
-    else if (e.key === 'ArrowRight') idx = (idx - 1 + list.length) % list.length;
+    // Forward follows the reading direction (ArrowLeft in RTL, ArrowRight in LTR).
+    const dirKeys = inlineKeys();
+    if (e.key === dirKeys.next) idx = (idx + 1) % list.length;
+    else if (e.key === dirKeys.prev) idx = (idx - 1 + list.length) % list.length;
     else if (e.key === 'Home') idx = 0;
     else idx = list.length - 1;
     e.preventDefault();
@@ -318,8 +493,9 @@ export function tabs({ items = [], active = null } = {}) {
     if (!keys.includes(e.key)) return;
     const arr = Array.from(map.keys());
     let idx = arr.indexOf(currentId);
-    if (e.key === 'ArrowLeft') idx = (idx + 1) % arr.length;
-    else if (e.key === 'ArrowRight') idx = (idx - 1 + arr.length) % arr.length;
+    const dirKeys = inlineKeys();
+    if (e.key === dirKeys.next) idx = (idx + 1) % arr.length;
+    else if (e.key === dirKeys.prev) idx = (idx - 1 + arr.length) % arr.length;
     else if (e.key === 'Home') idx = 0;
     else idx = arr.length - 1;
     e.preventDefault();
@@ -340,9 +516,11 @@ function resolveBody(body, ...args) {
   return body;
 }
 
-export function card({ code = '', title = '', subtitle = '', actions = [], body = null, footer = null, framed = true, hero = false, tableView = null, id = null, className = '' } = {}) {
+export function card({ code = '', title = '', subtitle = '', actions = [], body = null, footer = null, framed = true, hero = false, plain = false, tableView = null, id = null, className = '' } = {}) {
   const classes = ['card'];
-  if (framed) classes.push('is-framed');
+  // plain → a card nested inside another card: `card is-plain` drops the frame and brackets.
+  if (plain) classes.push('is-plain');
+  else if (framed) classes.push('is-framed');
   if (hero) classes.push('is-hero');
   if (className) classes.push(className);
   const titleId = uid('card-title');
@@ -352,7 +530,7 @@ export function card({ code = '', title = '', subtitle = '', actions = [], body 
   if (hasHead) {
     const head = h('header', { class: 'card-head' });
     const titles = h('div', { class: 'card-titles' });
-    if (code) titles.appendChild(h('span', { class: 'card-code', 'aria-hidden': 'true' }, String(code)));
+    if (code) titles.appendChild(h('span', { class: 'card-code', 'aria-hidden': 'true', dir: 'ltr', translate: 'no' }, String(code)));
     const titleWrap = h('div', { class: 'card-title-wrap' });
     if (title) titleWrap.appendChild(h('h2', { class: 'card-title', id: titleId }, String(title)));
     if (subtitle) titleWrap.appendChild(h('p', { class: 'card-sub' }, String(subtitle)));
@@ -373,9 +551,9 @@ export function card({ code = '', title = '', subtitle = '', actions = [], body 
     const tableHost = h('div', { class: 'card-view card-view-table table-wrap', hidden: true });
     let tableBuilt = false;
     const toggle = segmented({
-      options: [{ value: 'chart', label: 'رسم', icon: glyph('chart', 14) }, { value: 'table', label: 'جدول', icon: glyph('table', 14) }],
+      options: [{ value: 'chart', label: t('ui.view.chart'), icon: glyph('chart', 14) }, { value: 'table', label: t('ui.view.table'), icon: glyph('table', 14) }],
       value: 'chart',
-      ariaLabel: 'طريقة العرض',
+      ariaLabel: t('ui.view.mode'),
       onChange: (v) => {
         const showTable = v === 'table';
         if (showTable && !tableBuilt) {
@@ -383,7 +561,7 @@ export function card({ code = '', title = '', subtitle = '', actions = [], body 
           let tbl = null;
           try { tbl = tableView(); } catch { tbl = null; }
           if (tbl instanceof Node) { tbl.classList && tbl.classList.add('table', 'is-dense'); tableHost.appendChild(tbl); }
-          else tableHost.appendChild(emptyState({ title: 'لا تتوفر بيانات جدولية' }));
+          else tableHost.appendChild(emptyState({ title: t('ui.view.noTable') }));
         }
         chartHost.hidden = showTable;
         tableHost.hidden = !showTable;
@@ -483,6 +661,9 @@ export function statTile({ label, value, unit = '', delta = null, deltaGoodWhen 
       text = String(delta).trim();
     }
     const known = Number.isFinite(n);
+    // A recognised number is shown without Intl's bidi marks (an ALM/RLM would flip the sign to the
+    // wrong side) inside an LTR isolate, so "+0.35" / "−٢٫٥" always read sign-first.
+    if (known) text = text.replace(BIDI_MARKS_RE, '').trim() || text;
     const isZero = known && n === 0;
     const isUp = known && n > 0;
     const isDown = known && n < 0;
@@ -495,10 +676,10 @@ export function statTile({ label, value, unit = '', delta = null, deltaGoodWhen 
     const arrow = svgEl(12); arrow.classList.add('tile-delta-arrow');
     arrow.append(isZero || !known ? path('M5 12h14') : (isUp ? path('M12 19V5M5 12l7-7 7 7') : path('M12 5v14M5 12l7 7 7-7')));
     d.appendChild(arrow);
-    d.appendChild(h('span', { class: 'sr-only' }, 'التغير مقارنة بالفترة السابقة: '));
-    d.appendChild(h('bdi', { class: 'tile-delta-text' }, text));
-    if (isZero) d.appendChild(h('span', { class: 'sr-only' }, ' (دون تغيير)'));
-    else if (good !== null) d.appendChild(h('span', { class: 'sr-only' }, good ? ' (تحسّن)' : ' (تراجع)'));
+    d.appendChild(h('span', { class: 'sr-only' }, t('ui.delta.sr')));
+    d.appendChild(h('bdi', { class: 'tile-delta-text', dir: known ? 'ltr' : undefined }, text));
+    if (isZero) d.appendChild(h('span', { class: 'sr-only' }, t('ui.delta.flat')));
+    else if (good !== null) d.appendChild(h('span', { class: 'sr-only' }, good ? t('ui.delta.better') : t('ui.delta.worse')));
     bottom.appendChild(d);
   }
   const sp = iconNode(spark);
@@ -512,8 +693,16 @@ export function statTile({ label, value, unit = '', delta = null, deltaGoodWhen 
 /* Data table                                                          */
 /* ------------------------------------------------------------------ */
 
-const collator = new Intl.Collator('ar', { numeric: true, sensitivity: 'base' });
-function compareValues(a, b) {
+const collators = new Map();
+function collatorFor(loc) {
+  let c = collators.get(loc);
+  if (!c) {
+    try { c = new Intl.Collator(loc, { numeric: true, sensitivity: 'base' }); } catch { c = new Intl.Collator(undefined, { numeric: true }); }
+    collators.set(loc, c);
+  }
+  return c;
+}
+function compareValues(a, b, collator = collatorFor(locale())) {
   const an = a === null || a === undefined || a === '';
   const bn = b === null || b === undefined || b === '';
   if (an && bn) return 0; if (an) return 1; if (bn) return -1;
@@ -529,6 +718,20 @@ const priorityOf = (col) => (col && PRIORITIES.includes(col.priority) ? col.prio
 const INTERACTIVE = 'button,a[href],input,select,textarea,[tabindex],[role="button"],[contenteditable]';
 
 /**
+ * The interactive element (button, link, field, [tabindex] …) that `target` sits in, looked up only as far as
+ * `boundary` (exclusive). Ancestors outside the boundary never count: a whole-row click must not be swallowed
+ * by <main tabindex="-1"> or another focusable container round the table.
+ */
+export function interactiveWithin(target, boundary) {
+  let el = target && target.nodeType === 1 ? target : (target && target.parentElement) || null;
+  while (el && el !== boundary) {
+    if (typeof el.matches === 'function' && el.matches(INTERACTIVE)) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
+/**
  * Sortable, paged data table.
  *   columns[].priority  'high' (default) | 'medium' | 'low'  → data-priority on th/td so CSS can
  *                       hide low-priority columns in narrow containers (V2/V8).
@@ -538,11 +741,19 @@ const INTERACTIVE = 'button,a[href],input,select,textarea,[tabindex],[role="butt
  *                       as max-block-size on the wrapper.
  *   rowLabel(row)       optional accessible name for the row-open button (default: first cell text).
  * Rows are plain <tr>; when onRowClick is given the first cell content becomes a
- * <button class="row-open"> named "فتح: <first cell text>" (RTL-8), the pointer click on the row stays.
+ * <button class="row-open"> named "Open: <first cell text>" (RTL-8), the pointer click on the row stays.
  * Wrapper classes: is-paged (pageSize > 0), has-pager (more than one page), is-overflowing
  * (scrollWidth > clientWidth), is-scroll-start / is-scroll-end (horizontal scroll position).
+ *
+ * update(rows, opts) keeps the sort and the page (clamped) by default. opts:
+ *   preserve: true   also keeps the wrapper scroll (both axes), the page's scroll position and the
+ *                    keyboard focus (same row key + column) — use it for live / background updates;
+ *   resetPage: true  back to page 1 (filter changes);
+ *   flash: true      motion.flash() rows whose key is new or whose content changed (live updates).
+ * getState() → { sortKey, sortDir, page, pageSize, scrollTop, scrollLeft }; setState(partial) restores it
+ * (e.g. after a drawer closed or the view re-mounted).
  */
-export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick = null, pageSize = 12, emptyText = 'لا توجد بيانات', dense = false, caption = '', initialSort = null, stickyFirst = true, autoPageSize = false, maxHeight = null, rowLabel = null } = {}) {
+export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick = null, pageSize = 12, emptyText = null, dense = false, caption = '', initialSort = null, stickyFirst = true, autoPageSize = false, maxHeight = null, rowLabel = null } = {}) {
   const wrap = h('div', { class: 'table-wrap' });
   const clickable = typeof onRowClick === 'function';
   const table = h('table', { class: ['table', dense ? 'is-dense' : null, stickyFirst !== false ? 'has-sticky-first' : null, clickable ? 'has-row-open' : null] });
@@ -550,11 +761,14 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
   const thead = h('thead'); const tbody = h('tbody');
   table.append(thead, tbody);
   wrap.appendChild(table);
-  const emptyEl = emptyState({ icon: glyph('empty', 28), title: emptyText });
+  const emptyEl = emptyState({ icon: glyph('empty', 28), title: emptyText || t('ui.table.empty') });
   emptyEl.hidden = true;
   wrap.appendChild(emptyEl);
-  const pager = h('nav', { class: 'pager', 'aria-label': 'ترقيم الصفحات', hidden: true });
+  // Each pager is its own landmark: name it after the table so two paged tables on one page stay distinguishable.
+  const pagerName = caption ? `${t('ui.table.pagination')} — ${String(caption).replace(/\s+/g, ' ').trim()}` : t('ui.table.pagination');
+  const pager = h('nav', { class: 'pager', 'aria-label': pagerName, hidden: true });
   wrap.appendChild(pager);
+  const collator = collatorFor(locale());
 
   const maxH = typeof maxHeight === 'number' && Number.isFinite(maxHeight) && maxHeight > 0 ? maxHeight : null;
   const autoFit = !!autoPageSize && maxH !== null;
@@ -588,7 +802,7 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     if (!sortKey) return data;
     const col = columns.find((c) => c.key === sortKey);
     const getter = col && typeof col.sortValue === 'function' ? col.sortValue : (r) => r[sortKey];
-    const arr = data.slice().sort((a, b) => compareValues(getter(a), getter(b)));
+    const arr = data.slice().sort((a, b) => compareValues(getter(a), getter(b), collator));
     return sortDir === 'desc' ? arr.reverse() : arr;
   }
 
@@ -621,11 +835,15 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     let name = '';
     if (typeof rowLabel === 'function') { try { name = String(rowLabel(row) ?? ''); } catch { name = ''; } }
     const text = (name || td.textContent || '').replace(/\s+/g, ' ').trim() || key || '';
-    const label = `فتح: ${text}`;
+    const label = t('ui.table.open', { name: text });
     const open = (e) => { e.stopPropagation(); onRowClick(row, e); };
     if (!td.querySelector(INTERACTIVE)) {
-      const btn = h('button', { type: 'button', class: 'row-open', 'aria-label': label, onClick: open });
+      // Name from content (label in name, whatever the responsive CSS hides), led by the verb: "Open: …".
+      const btn = h('button', { type: 'button', class: 'row-open', onClick: open });
       while (td.firstChild) btn.appendChild(td.firstChild);
+      const verb = t('ui.table.open', { name: '' }).replace(/[\s:：]+$/u, '');
+      if (verb && visibleText(btn)) btn.insertBefore(h('span', { class: 'sr-only' }, `${verb}: `), btn.firstChild);
+      else btn.setAttribute('aria-label', label);
       td.appendChild(btn);
     } else {
       // The cell already holds interactive content: add a dedicated opener beside it instead of nesting.
@@ -653,7 +871,7 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
       });
       if (clickable) {
         // Pointer convenience only: buttons/links inside the row (incl. .row-open) handle themselves.
-        tr.addEventListener('click', (e) => { if (e.target.closest(INTERACTIVE)) return; onRowClick(row, e); });
+        tr.addEventListener('click', (e) => { if (interactiveWithin(e.target, tr)) return; onRowClick(row, e); });
       }
       frag.appendChild(tr);
     });
@@ -661,6 +879,8 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     table.hidden = total === 0;
     emptyEl.hidden = total !== 0;
     wrap.classList.toggle('is-paged', size > 0);
+    // Long lists without a pager keep a height cap (CSS .is-scroll); paged tables never do.
+    wrap.classList.toggle('is-scroll', size === 0 && maxH === null && total > 14);
     wrap.classList.toggle('is-empty', total === 0);
     renderPager(total, pages);
     scheduleMeasure();
@@ -673,21 +893,102 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     pager.hidden = false;
     const from = page * size + 1;
     const to = Math.min(total, (page + 1) * size);
-    const prev = button('', { variant: 'ghost', size: 'sm', icon: glyph('chevronStart', 16), onClick: () => { page = Math.max(0, page - 1); renderBody(); }, attrs: { 'aria-label': 'الصفحة السابقة', disabled: page === 0 } });
-    const next = button('', { variant: 'ghost', size: 'sm', icon: glyph('chevronEnd', 16), onClick: () => { page = Math.min(pages - 1, page + 1); renderBody(); }, attrs: { 'aria-label': 'الصفحة التالية', disabled: page >= pages - 1 } });
-    const info = h('span', { class: 'pager-info', 'aria-live': 'polite' }, `${fmt.num(from)}–${fmt.num(to)} من ${fmt.num(total)}`);
-    const pageLabel = h('span', { class: 'pager-page' }, `صفحة ${fmt.num(page + 1)} من ${fmt.num(pages)}`);
+    const prev = button('', { variant: 'ghost', size: 'sm', icon: glyph('chevronStart', 16), onClick: () => { page = Math.max(0, page - 1); renderBody(); }, attrs: { 'aria-label': t('ui.table.prev'), disabled: page === 0, class: 'pager-prev' } });
+    const next = button('', { variant: 'ghost', size: 'sm', icon: glyph('chevronEnd', 16), onClick: () => { page = Math.min(pages - 1, page + 1); renderBody(); }, attrs: { 'aria-label': t('ui.table.next'), disabled: page >= pages - 1, class: 'pager-next' } });
+    const info = h('span', { class: 'pager-info', 'aria-live': 'polite' }, t('ui.table.range', { from: fmt.num(from), to: fmt.num(to), total: fmt.num(total) }));
+    const pageLabel = h('span', { class: 'pager-page' }, t('ui.table.page', { page: fmt.num(page + 1), pages: fmt.num(pages) }));
     pager.append(prev, info, pageLabel, next);
+  }
+
+  /* ---- state / preserve helpers ---- */
+  const keyOf = (row) => (row && row[rowKey] !== undefined && row[rowKey] !== null ? String(row[rowKey]) : '');
+  const signature = (row) => { try { return JSON.stringify(row); } catch { return String(Math.random()); } };
+  /** Nearest scrolling ancestor (the page scroller on phones, main on desktop). */
+  function scrollParent() {
+    let n = wrap.parentElement;
+    while (n && n !== document.body && n !== document.documentElement) {
+      const cs = getComputedStyle(n);
+      if (/(auto|scroll|overlay)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight) return n;
+      n = n.parentElement;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+  function captureFocus() {
+    const active = document.activeElement;
+    if (!active || !tbody.contains(active)) return null;
+    const tr = active.closest('tr');
+    const td = active.closest('td');
+    return tr ? { key: tr.getAttribute('data-key'), col: td ? Array.from(tr.children).indexOf(td) : 0 } : null;
+  }
+  function restoreFocus(f) {
+    if (!f || f.key === null) return;
+    const esc = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(f.key) : f.key.replace(/["\\]/g, '\\$&');
+    const tr = tbody.querySelector(`tr[data-key="${esc}"]`);
+    if (!tr) return;
+    const td = tr.children[f.col] || tr.children[0];
+    const target = (td && td.querySelector(INTERACTIVE)) || tr.querySelector(INTERACTIVE);
+    if (target) { try { target.focus({ preventScroll: true }); } catch { target.focus(); } }
+  }
+  function getState() {
+    return { sortKey, sortDir, page, pageSize: size, scrollTop: wrap.scrollTop, scrollLeft: wrap.scrollLeft };
+  }
+  function setState(s = {}) {
+    if (!s || typeof s !== 'object') return;
+    if ('sortKey' in s) sortKey = s.sortKey || null;
+    if (s.sortDir === 'asc' || s.sortDir === 'desc') sortDir = s.sortDir;
+    if (Number.isFinite(Number(s.pageSize)) && s.pageSize !== null && !autoFit) size = Math.max(0, Number(s.pageSize) | 0);
+    if (Number.isFinite(Number(s.page))) page = Math.max(0, Number(s.page) | 0);
+    paintHead();
+    renderBody();
+    if (Number.isFinite(s.scrollTop)) wrap.scrollTop = s.scrollTop;
+    if (Number.isFinite(s.scrollLeft)) wrap.scrollLeft = s.scrollLeft;
+    updateScrollEdges();
+  }
+  /** `flip` (user filter changes, never live updates): rows that stay glide to their new places, new rows fade in. */
+  function update(nextRows, { preserve = false, resetPage = false, flash = false, flip = false } = {}) {
+    const before = flash ? new Map(data.map((r) => [keyOf(r), signature(r)])) : null;
+    let saved = null;
+    // Nothing to keep before the table's first measured frame (wasConnected): skipping it there spares a forced
+    // style read up the ancestors while a view is still being built (boot profile).
+    if (preserve && wasConnected) {
+      const sp = scrollParent();
+      saved = { top: wrap.scrollTop, left: wrap.scrollLeft, sp, spTop: sp ? sp.scrollTop : 0, focus: captureFocus() };
+    }
+    data = Array.isArray(nextRows) ? nextRows.slice() : [];
+    if (resetPage) page = 0;
+    // Old boxes: the ones measured after the last render (measure(), rAF), so this costs no extra layout.
+    if (flip && !preserve && rowBoxes.size) motion.flip(() => tbody.rows, renderBody, { key: rowKeyOf, fadeNew: true, within: table, first: rowBoxes });
+    else renderBody();
+    if (saved) {
+      wrap.scrollTop = saved.top;
+      wrap.scrollLeft = saved.left;
+      if (saved.sp && saved.sp.scrollTop !== saved.spTop) saved.sp.scrollTop = saved.spTop;
+      restoreFocus(saved.focus);
+      updateScrollEdges();
+    }
+    if (before) {
+      tbody.querySelectorAll('tr[data-key]').forEach((tr) => {
+        const k = tr.getAttribute('data-key');
+        const row = data.find((r) => keyOf(r) === k);
+        if (row && before.get(k) !== signature(row)) motion.flash(tr);
+      });
+    }
   }
 
   function toggleSort(key) {
     if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
     else { sortKey = key; sortDir = 'asc'; }
     page = 0;
-    paintHead(); renderBody();
+    // Rows glide to their new places (FLIP, transform only); rows new to this page fade in. The old boxes are read
+    // before the header is repainted, so the read costs no layout of its own.
+    const first = motion.flipFirst(() => tbody.rows, { key: rowKeyOf, within: table });
+    paintHead();
+    motion.flip(() => tbody.rows, renderBody, { key: rowKeyOf, fadeNew: true, within: table, first });
   }
 
   /* ---- overflow affordance + auto page size (measured) ---- */
+  const rowKeyOf = (tr) => tr.getAttribute('data-key');
+  let rowBoxes = new Map();
   let ro = null;
   let wasConnected = false;
   let measureRaf = 0;
@@ -719,6 +1020,8 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
     wasConnected = true;
     updateOverflow();
     fitRows();
+    // Row boxes for a later filter FLIP (layout is already fresh here: updateOverflow read it).
+    rowBoxes = motion.enabled() && !table.hidden ? motion.flipFirst(() => tbody.rows, { key: rowKeyOf, within: table }) : new Map();
   }
   function scheduleMeasure() {
     if (measureRaf || typeof requestAnimationFrame !== 'function') return;
@@ -744,7 +1047,9 @@ export function dataTable({ columns = [], rows = [], rowKey = 'id', onRowClick =
   return {
     el: wrap,
     table,
-    update(nextRows) { data = Array.isArray(nextRows) ? nextRows.slice() : []; renderBody(); },
+    update,
+    getState,
+    setState,
     setSort(key, dir = 'asc') { sortKey = key; sortDir = dir === 'desc' ? 'desc' : 'asc'; page = 0; paintHead(); renderBody(); },
     setPage(p) { page = Math.max(0, p | 0); renderBody(); },
     setPageSize(n) { size = Math.max(0, Number(n) | 0); page = 0; renderBody(); },
@@ -834,6 +1139,307 @@ export function emptyState({ icon = null, title = '', text = '', action = null }
   return el;
 }
 
+/* ------------------------------------------------------------------ */
+/* Data states: loading, error, offline, skeleton (spec AC-12)          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Placeholder lines for content that is still loading (decorative: aria-hidden). CSS (.skeleton,
+ * .skeleton-line) draws the shimmer and drops it under reduced motion.
+ * @param {number} lines
+ * @param {{widths?: string[], className?: string}} [opts]
+ */
+export function skeleton(lines = 3, { widths = null, className = '' } = {}) {
+  const n = Math.max(1, Math.min(24, Number(lines) | 0 || 3));
+  const el = h('div', { class: ['skeleton', className || null], 'aria-hidden': 'true' });
+  for (let i = 0; i < n; i += 1) {
+    const w = Array.isArray(widths) && widths[i] ? widths[i] : null;   // default widths come from CSS (nth-child)
+    el.appendChild(h('span', { class: 'skeleton-line', style: w ? { inlineSize: w } : undefined }));
+  }
+  return el;
+}
+
+/* .state[.state-loading|.state-error|.state-offline] > .state-icon + .state-title + .state-text + .state-actions */
+function stateShell(kind, { role, icon, title, text, live = null }) {
+  const el = h('div', { class: ['state', `state-${kind}`], role, 'aria-live': live || undefined });
+  if (icon) el.appendChild(h('div', { class: 'state-icon', 'aria-hidden': 'true' }, icon));
+  if (title) el.appendChild(h('p', { class: 'state-title' }, String(title)));
+  if (text) el.appendChild(h('p', { class: 'state-text' }, String(text)));
+  return el;
+}
+
+/**
+ * Loading state. With `onCancel` a cancel button is offered (long imports / network calls); the
+ * callback runs once and the state then reads "Cancelled" until the caller replaces it.
+ * @param {{title?:string, text?:string, lines?:number, onCancel?:Function, inline?:boolean}} [opts]
+ */
+export function loadingState({ title = null, text = null, lines = 0, onCancel = null, inline = false } = {}) {
+  const spinner = h('span', { class: 'spinner' });
+  const el = stateShell('loading', { role: 'status', icon: spinner, title: title || t('ui.state.loading'), text: text === null ? (inline ? '' : t('ui.state.loadingText')) : text, live: 'polite' });
+  el.setAttribute('aria-busy', 'true');
+  if (inline) el.classList.add('is-inline');
+  if (lines > 0) el.appendChild(skeleton(lines));
+  if (typeof onCancel === 'function') {
+    const btn = button(t('ui.cancel'), {
+      variant: 'ghost', size: 'sm', icon: glyph('close', 15),
+      onClick: () => {
+        btn.disabled = true;
+        el.removeAttribute('aria-busy');
+        el.classList.add('is-cancelled');
+        const titleEl = el.querySelector('.state-title');
+        if (titleEl) titleEl.textContent = t('ui.state.cancelled');
+        try { onCancel(); } catch { /* the caller owns the cancellation */ }
+      },
+      attrs: { class: 'state-action' },
+    });
+    el.appendChild(h('div', { class: 'state-actions' }, btn));
+  }
+  return el;
+}
+
+/**
+ * Error state with an optional retry. `retry` may return a promise: the button shows a busy state
+ * until it settles (the caller then replaces the state). Messages never claim success.
+ * @param {{title?:string, text?:string, retry?:Function, retryLabel?:string, detail?:string}} [opts]
+ */
+export function errorState({ title = null, text = null, retry = null, retryLabel = null, detail = null } = {}) {
+  const el = stateShell('error', { role: 'alert', icon: glyph('critical', 28), title: title || t('ui.state.errorTitle'), text: text || t('ui.state.errorText') });
+  if (detail) {
+    el.appendChild(h('p', { class: 'state-detail mono', dir: 'auto' }, String(detail)));
+  }
+  if (typeof retry === 'function') {
+    const label = retryLabel || t('ui.state.retry');
+    const btn = button(label, {
+      variant: 'outline', size: 'sm', icon: 'refresh',
+      onClick: () => {
+        let result;
+        try { result = retry(); } catch { result = null; }
+        if (result && typeof result.then === 'function') {
+          btn.disabled = true;
+          btn.setAttribute('aria-busy', 'true');
+          const lab = btn.querySelector('.btn-label');
+          if (lab) lab.textContent = t('ui.state.retrying');
+          const restore = () => { btn.disabled = false; btn.removeAttribute('aria-busy'); if (lab) lab.textContent = label; };
+          result.then(restore, restore);
+        }
+      },
+      attrs: { class: 'state-action' },
+    });
+    el.appendChild(h('div', { class: 'state-actions' }, btn));
+  }
+  return el;
+}
+
+/**
+ * Offline state for content that needs the network. Retries automatically once the browser reports
+ * it is back online (when `retry` is given), and offers a manual retry.
+ * @param {{title?:string, text?:string, retry?:Function}} [opts]
+ */
+export function offlineState({ title = null, text = null, retry = null } = {}) {
+  const el = stateShell('offline', { role: 'status', icon: svgIcon('cloud-off', 28), title: title || t('ui.state.offlineTitle'), text: text || t('ui.state.offlineText'), live: 'polite' });
+  if (typeof retry === 'function') {
+    el.appendChild(h('div', { class: 'state-actions' }, button(t('ui.state.retry'), { variant: 'outline', size: 'sm', icon: 'refresh', onClick: () => { try { retry(); } catch { /* caller handles */ } }, attrs: { class: 'state-action' } })));
+    const onOnline = () => {
+      window.removeEventListener('online', onOnline);
+      if (el.isConnected) { try { retry(); } catch { /* caller handles */ } }
+    };
+    window.addEventListener('online', onOnline);
+  }
+  return el;
+}
+
+/* ------------------------------------------------------------------ */
+/* Filter bar (CONTRACT §7)                                            */
+/* ------------------------------------------------------------------ */
+
+const sameValue = (a, b) => {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    const x = Array.isArray(a) ? a.map(String).sort() : [];
+    const y = Array.isArray(b) ? b.map(String).sort() : [];
+    return x.length === y.length && x.every((v, i) => v === y[i]);
+  }
+  return String(a ?? '') === String(b ?? '');
+};
+
+/**
+ * One organised row of filters above the content it filters.
+ *   filters: [{ id, type: 'chips'|'select'|'segmented'|'search', label, options: [{ value, label, count?, icon?, tone? }],
+ *              defaultValue?, placeholder?, allOption? (select: prepend "All", default true), allValue? ('all'),
+ *              allChip? (chips: leading "All" chip, default true), hideLabel? }]
+ *   chips are multi-select (value = array, [] = all); select / segmented hold one value; search holds text.
+ *   value: initial values { [id]: value }; onChange(values, { id, reset }); onReset().
+ * Returns { el, set(values, { emit }), get(), reset(), activeCount() }. Shows the active-filter count
+ * (polite live region) and a reset button that is enabled only while something is filtered.
+ */
+export function filterBar({ filters = [], value = {}, onChange = null, onReset = null, label = null, className = '' } = {}) {
+  const defs = (Array.isArray(filters) ? filters : []).filter((f) => f && f.id !== undefined && f.id !== null);
+  // Flat structure (css/components.css): .filter-bar > .filter-bar-group* + .filter-bar-search
+  //   + .filter-bar-spacer + .filter-bar-count + .filter-bar-reset
+  const el = h('div', { class: ['filter-bar', className || null], role: 'group', 'aria-label': label || t('ui.filter.label') });
+  const spacer = h('span', { class: 'filter-bar-spacer', 'aria-hidden': 'true' });
+  const countEl = h('span', { class: 'filter-bar-count', 'aria-live': 'polite' });
+  const resetBtn = button(t('ui.filter.reset'), { variant: 'ghost', size: 'sm', icon: 'refresh', onClick: () => reset(), attrs: { class: 'filter-bar-reset', 'aria-label': t('ui.filter.resetAria') } });
+
+  const state = {};
+  const slots = new Map();
+  const optionsOf = (f) => (Array.isArray(f.options) ? f.options : []).map((o) => (o && typeof o === 'object' ? o : { value: o, label: String(o) }));
+  const defaultOf = (f) => {
+    if (f.defaultValue !== undefined) return Array.isArray(f.defaultValue) ? f.defaultValue.slice() : f.defaultValue;
+    if (f.type === 'chips') return [];
+    if (f.type === 'search') return '';
+    if (f.type === 'select') return f.allOption === false ? (optionsOf(f)[0] ? optionsOf(f)[0].value : '') : (f.allValue ?? 'all');
+    const first = optionsOf(f)[0];
+    return first ? first.value : '';
+  };
+
+  function emit(id, extra = {}) {
+    paintMeta();
+    if (typeof onChange === 'function') { try { onChange(get(), { id, ...extra }); } catch { /* views own their errors */ } }
+  }
+
+  defs.forEach((f) => {
+    const id = String(f.id);
+    const type = ['chips', 'select', 'segmented', 'search'].includes(f.type) ? f.type : 'select';
+    const fieldId = uid(`flt-${id.replace(/[^\w-]/g, '')}`);
+    const labelId = `${fieldId}-label`;
+    const wrap = h('div', { class: type === 'search' ? ['filter-bar-search'] : ['filter-bar-group', 'filter-group', `is-${type}`], 'data-filter': id, 'data-type': type });
+    const labelText = String(f.label ?? '');
+    const showLabel = labelText && !f.hideLabel && type !== 'search';
+    if (showLabel) wrap.appendChild(h(type === 'select' ? 'label' : 'span', { class: ['filter-bar-label', 'filter-label'], id: labelId, for: type === 'select' ? fieldId : undefined }, labelText));
+    state[id] = value && value[id] !== undefined ? (Array.isArray(value[id]) ? value[id].slice() : value[id]) : defaultOf(f);
+    let slot;
+
+    if (type === 'chips') {
+      const group = h('div', { class: 'chip-group', role: 'group', 'aria-labelledby': showLabel ? labelId : undefined, 'aria-label': showLabel ? undefined : labelText || undefined });
+      const chips = new Map();
+      const paint = () => {
+        const sel0 = Array.isArray(state[id]) ? state[id].map(String) : [];
+        for (const [v, b] of chips) {
+          const on = v === '__all__' ? sel0.length === 0 : sel0.includes(v);
+          b.setAttribute('aria-pressed', on ? 'true' : 'false');
+          b.classList.toggle('is-active', on);
+        }
+      };
+      const addChip = (v, text, extra = {}) => {
+        const b = h('button', { type: 'button', class: ['chip', extra.tone ? `tone-${toneOf(extra.tone)}` : null], 'aria-pressed': 'false', 'data-value': v });
+        const ic = iconNode(extra.icon, 14); if (ic) b.appendChild(ic);
+        b.appendChild(h('span', { class: 'chip-label' }, String(text)));
+        if (extra.count !== undefined && extra.count !== null) b.appendChild(h('span', { class: 'chip-count' }, typeof extra.count === 'number' ? fmt.num(extra.count) : String(extra.count)));
+        b.addEventListener('click', () => {
+          if (v === '__all__') state[id] = [];
+          else {
+            const cur = new Set((Array.isArray(state[id]) ? state[id] : []).map(String));
+            if (cur.has(v)) cur.delete(v); else cur.add(v);
+            const original = optionsOf(f).map((o) => o.value);
+            state[id] = original.filter((ov) => cur.has(String(ov)));
+          }
+          paint();
+          emit(id);
+        });
+        chips.set(v, b);
+        group.appendChild(b);
+      };
+      if (f.allChip !== false) addChip('__all__', t('ui.filter.all'));
+      optionsOf(f).forEach((o) => addChip(String(o.value), o.label ?? o.value, o));
+      wrap.appendChild(group);
+      slot = { paint };
+    } else if (type === 'select') {
+      const control = h('select', { id: fieldId, class: ['field-control', 'filter-select'], 'aria-label': showLabel ? undefined : labelText || undefined });
+      const opts = optionsOf(f);
+      if (f.allOption !== false) control.appendChild(h('option', { value: String(f.allValue ?? 'all') }, t('ui.filter.all')));
+      opts.forEach((o) => control.appendChild(h('option', { value: String(o.value) }, String(o.label ?? o.value))));
+      const paint = () => { control.value = String(state[id] ?? ''); };
+      control.addEventListener('change', () => {
+        const match = opts.find((o) => String(o.value) === control.value);
+        state[id] = match ? match.value : control.value;
+        emit(id);
+      });
+      wrap.appendChild(control);
+      slot = { paint };
+    } else if (type === 'segmented') {
+      const seg = segmented({
+        options: optionsOf(f).map((o) => ({ value: o.value, label: o.label ?? o.value, icon: o.icon })),
+        value: state[id], ariaLabel: labelText,
+        onChange: (v) => { state[id] = v; emit(id); },
+      });
+      seg.el.classList.add('seg-sm');
+      if (showLabel) { seg.el.removeAttribute('aria-label'); seg.el.setAttribute('aria-labelledby', labelId); }
+      wrap.appendChild(seg.el);
+      slot = { paint: () => seg.set(state[id]) };
+    } else {
+      const input = h('input', { id: fieldId, type: 'search', class: ['field-control', 'filter-search-input'], 'aria-label': labelText || t('ui.filter.search'), placeholder: f.placeholder || labelText || t('ui.filter.search'), autocomplete: 'off', spellcheck: 'false', enterkeyhint: 'search' });
+      let timer = 0;
+      const commit = () => { clearTimeout(timer); timer = 0; if (state[id] !== input.value) { state[id] = input.value; emit(id); } };
+      input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(commit, 180); });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        else if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); input.value = ''; commit(); }
+      });
+      input.addEventListener('search', commit);
+      wrap.appendChild(input);
+      slot = { paint: () => { if (input.value !== String(state[id] ?? '')) input.value = String(state[id] ?? ''); } };
+    }
+    slot.def = f;
+    slot.wrap = wrap;
+    slots.set(id, slot);
+    el.appendChild(wrap);
+  });
+  el.append(spacer, countEl, resetBtn);
+
+  function activeCount() {
+    let n = 0;
+    for (const [id, slot] of slots) {
+      const v = state[id];
+      const d = defaultOf(slot.def);
+      if (slot.def.type === 'chips' ? (Array.isArray(v) && v.length > 0 && !sameValue(v, d)) : !sameValue(typeof v === 'string' ? v.trim() : v, d)) n += 1;
+    }
+    return n;
+  }
+  function paintMeta() {
+    const n = activeCount();
+    countEl.textContent = n ? tn('ui.filter.active', n) : '';
+    countEl.dataset.count = String(n);
+    countEl.hidden = n === 0;
+    resetBtn.disabled = n === 0;
+    el.classList.toggle('has-active', n > 0);
+    el.dataset.active = String(n);
+    for (const [id, slot] of slots) {
+      const d = defaultOf(slot.def);
+      const v = state[id];
+      slot.wrap.classList.toggle('is-active', slot.def.type === 'chips' ? Array.isArray(v) && v.length > 0 : !sameValue(v, d));
+    }
+  }
+  function get() {
+    const out = {};
+    for (const id of slots.keys()) out[id] = Array.isArray(state[id]) ? state[id].slice() : state[id];
+    return out;
+  }
+  function set(values = {}, { emit: fire = false } = {}) {
+    if (!values || typeof values !== 'object') return api;
+    for (const [id, slot] of slots) {
+      if (values[id] === undefined) continue;
+      state[id] = Array.isArray(values[id]) ? values[id].slice() : values[id];
+      slot.paint();
+    }
+    paintMeta();
+    if (fire && typeof onChange === 'function') { try { onChange(get(), { id: null }); } catch { /* noop */ } }
+    return api;
+  }
+  function reset() {
+    for (const [id, slot] of slots) { state[id] = defaultOf(slot.def); slot.paint(); }
+    if (typeof onReset === 'function') { try { onReset(); } catch { /* noop */ } }
+    emit(null, { reset: true });
+    const first = el.querySelector('.filter-bar-group button, .filter-bar-group select, .filter-bar-search input');
+    if (first && document.activeElement === resetBtn) { try { first.focus({ preventScroll: true }); } catch { first.focus(); } }
+    return api;
+  }
+
+  for (const slot of slots.values()) slot.paint();
+  paintMeta();
+  const api = { el, set, get, reset, activeCount };
+  return api;
+}
+
 export function progress({ value = 0, max = 100, tone = null, label = '' } = {}) {
   const v = Math.max(0, Math.min(max, Number(value) || 0));
   const pct = max > 0 ? (v / max) * 100 : 0;
@@ -876,30 +1482,119 @@ function overlayHost() {
   return document.getElementById('modals') || document.body;
 }
 
-function focusables(root) {
-  return Array.from(root.querySelectorAll(FOCUSABLE)).filter((n) => (!n.hasAttribute('hidden') && n.getClientRects().length > 0) || n === document.activeElement);
+/** The tab stops inside `root`, in order — the list a modal / drawer cycles through (also used by the tour panel). */
+export function focusables(root) {
+  // Roving-tabindex children (tabindex="-1": inactive tabs, chart marks) are not tab stops.
+  return Array.from(root.querySelectorAll(FOCUSABLE)).filter((n) => ((!n.hasAttribute('hidden') && n.getClientRects().length > 0 && n.tabIndex >= 0) || n === document.activeElement));
 }
 
-/** Shared overlay behaviour: focus trap, Esc closes, backdrop click closes, focus restore, inert shell. */
-function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', onClose = null, labelledBy = null }) {
+/** Last active tab per drawer kind (CONTRACT §7: "remembers the last tab per kind"). In-memory only. */
+const lastDrawerTab = new Map();
+
+/**
+ * Shared overlay behaviour: focus trap, Esc closes, backdrop click closes, focus restore (without
+ * scrolling the page), inert shell. Drawers slide with motion.drawer() when motion is enabled and may
+ * carry ARIA tabs (`tabs`), rendered lazily, with per-tab scroll memory while the drawer is open.
+ */
+function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', onClose = null, tabs = null, activeTab = null, tabsKind = null, returnFocus = null, className = '' }) {
   const isModal = kind === 'modal';
   const backdrop = h('div', { class: isModal ? 'modal-backdrop' : 'drawer-backdrop', role: 'presentation', 'data-size': size });
   const titleId = uid(`${kind}-title`);
-  const dialog = h('dialog', { class: [kind, `is-${size}`], 'aria-labelledby': title ? titleId : undefined, 'aria-modal': 'true' });
+  const dialog = h('dialog', { class: [kind, `is-${size}`, className || null], 'aria-labelledby': title ? titleId : undefined, 'aria-modal': 'true' });
   backdrop.appendChild(dialog);
 
   const head = h('header', { class: `${kind}-head` });
   const headText = h('div', { class: `${kind}-titles` });
-  if (title) headText.appendChild(h('h2', { class: `${kind}-title`, id: titleId }, String(title)));
-  if (subtitle) headText.appendChild(h('p', { class: `${kind}-sub` }, String(subtitle)));
+  const titleEl = title ? h('h2', { class: `${kind}-title`, id: titleId }, String(title)) : null;
+  const subEl = subtitle ? h('p', { class: `${kind}-sub` }, String(subtitle)) : null;
+  if (titleEl) headText.appendChild(titleEl);
+  if (subEl) headText.appendChild(subEl);
   head.appendChild(headText);
-  const closeBtn = button('', { variant: 'ghost', size: 'sm', icon: glyph('close', 18), onClick: () => api.close('close'), attrs: { 'aria-label': 'إغلاق', class: `${kind}-close` } });
+  const closeBtn = button('', { variant: 'ghost', size: 'sm', icon: glyph('close', 18), onClick: () => api.close('close'), attrs: { 'aria-label': t('ui.close'), class: `${kind}-close` } });
   head.appendChild(closeBtn);
   dialog.appendChild(head);
 
   const bodyEl = h('div', { class: `${kind}-body` });
+
+  /* ---- tabs (drawer only) ---- */
+  const tabItems = !isModal && Array.isArray(tabs) ? tabs.filter((tb) => tb && tb.id !== undefined && tb.id !== null) : [];
+  const tabMap = new Map();
+  let currentTab = null;
+  const tabScroll = new Map();
+  let tabList = null;
+  if (tabItems.length) {
+    dialog.classList.add('has-tabs');
+    tabList = h('div', { class: 'drawer-tabs', role: 'tablist', 'aria-label': title ? String(title) : t('ui.drawer.tabs') });
+    tabItems.forEach((item) => {
+      const id = String(item.id);
+      const tabId = uid('dtab');
+      const panelId = uid('dpanel');
+      const tab = h('button', {
+        type: 'button', class: 'drawer-tab', role: 'tab', id: tabId, 'aria-controls': panelId,
+        'aria-selected': 'false', tabindex: '-1', 'data-tab': id, onClick: () => setTab(id, { focus: false }),
+      });
+      const ic = iconNode(item.icon, 15); if (ic) tab.appendChild(ic);
+      tab.appendChild(h('span', { class: 'drawer-tab-label' }, String(item.label ?? id)));
+      if (item.count !== undefined && item.count !== null && item.count !== '') {
+        tab.appendChild(h('span', { class: 'drawer-tab-count' }, typeof item.count === 'number' ? fmt.num(item.count) : String(item.count)));
+      }
+      const panel = h('div', { class: 'drawer-panel', role: 'tabpanel', id: panelId, 'aria-labelledby': tabId, hidden: true, tabindex: '0', 'data-tab': id });
+      tabMap.set(id, { tab, panel, item, rendered: false });
+      tabList.appendChild(tab);
+    });
+    tabList.addEventListener('keydown', (e) => {
+      const keys = inlineKeys();
+      if (![keys.next, keys.prev, 'Home', 'End'].includes(e.key)) return;
+      const ids = Array.from(tabMap.keys());
+      let idx = ids.indexOf(currentTab);
+      if (e.key === keys.next) idx = (idx + 1) % ids.length;
+      else if (e.key === keys.prev) idx = (idx - 1 + ids.length) % ids.length;
+      else if (e.key === 'Home') idx = 0;
+      else idx = ids.length - 1;
+      e.preventDefault();
+      setTab(ids[idx], { focus: true });
+    });
+    dialog.appendChild(tabList);
+  }
+
   appendChild(bodyEl, resolveBody(body, bodyEl));
+  tabMap.forEach(({ panel }) => bodyEl.appendChild(panel));
   dialog.appendChild(bodyEl);
+
+  function renderPanel(id, force = false) {
+    const slot = tabMap.get(id);
+    if (!slot || (slot.rendered && !force)) return;
+    slot.rendered = true;
+    clear(slot.panel);
+    let content = null;
+    try { content = typeof slot.item.render === 'function' ? slot.item.render(slot.panel, api) : slot.item.body ?? null; } catch (err) {
+      content = errorState({ text: err && err.message ? String(err.message) : undefined });
+    }
+    appendChild(slot.panel, content);
+  }
+
+  function setTab(id, { focus = false } = {}) {
+    const key = id === null || id === undefined ? null : String(id);
+    if (!tabMap.has(key)) return api;
+    if (currentTab !== null && currentTab !== key) tabScroll.set(currentTab, bodyEl.scrollTop);
+    const changed = currentTab !== key;
+    currentTab = key;
+    for (const [tid, slot] of tabMap) {
+      const on = tid === key;
+      slot.tab.setAttribute('aria-selected', on ? 'true' : 'false');
+      slot.tab.tabIndex = on ? 0 : -1;
+      slot.tab.classList.toggle('is-active', on);
+      slot.panel.hidden = !on;
+    }
+    renderPanel(key);
+    if (changed) bodyEl.scrollTop = tabScroll.get(key) || 0;
+    // Switching tabs (not the initial one): the new panel fades up quickly.
+    if (changed && isOpen) motion.enter(tabMap.get(key).panel, { y: 6, duration: 0.2, force: true });
+    if (tabsKind) lastDrawerTab.set(String(tabsKind), key);
+    if (focus) tabMap.get(key).tab.focus();
+    if (changed && typeof api.onTabChange === 'function') { try { api.onTabChange(key); } catch { /* never break the drawer */ } }
+    return api;
+  }
 
   let foot = null;
   if (actions && actions.length) {
@@ -930,6 +1625,7 @@ function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', 
 
   let previouslyFocused = null;
   let isOpen = false;
+  let closing = false;
   const inerted = [];
 
   function onKeydown(e) {
@@ -951,12 +1647,17 @@ function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', 
     foot,
     isOpen: () => isOpen,
     open() {
-      if (isOpen) return api;
+      if (isOpen || closing) return api;
       isOpen = true;
       previouslyFocused = document.activeElement;
       overlayHost().appendChild(backdrop);
+      // Dock the toast stack inside this dialog before the page goes inert (see dockToasts()).
+      openDialogs.push(dialog);
+      dialogApis.set(dialog, api);
+      bindStrayEscape();
+      dockToasts();
       Array.from(document.body.children).forEach((child) => {
-        if (child === backdrop || child.contains(backdrop) || child.tagName === 'SCRIPT') return;
+        if (child === backdrop || child.contains(backdrop) || child.tagName === 'SCRIPT' || child.id === 'toasts') return;
         if (!child.inert) { child.inert = true; inerted.push(child); }
       });
       document.body.classList.add(`has-${kind}`);
@@ -965,47 +1666,111 @@ function overlay({ kind, title, subtitle = '', body, actions = [], size = 'md', 
       backdrop.addEventListener('keydown', onKeydown);
       backdrop.addEventListener('click', onBackdropClick);
       dialog.addEventListener('cancel', onCancel);
+      // Drawers: Motion drives the panel (CSS transition suspended for the run); modals keep their CSS transition.
+      if (!isModal) motion.drawer(dialog, true);
+      // Content follows the panel in: the first five blocks rise 8 px, 25 ms apart; all done within 280 ms.
+      const blocks = Array.from((currentTab !== null && tabMap.get(currentTab) ? tabMap.get(currentTab).panel : bodyEl).children).filter((n) => !n.hidden && !n.classList.contains('toast-stack')).slice(0, 5);
+      if (blocks.length) motion.enter(blocks, { y: 8, stagger: 0.025, delay: 0.03, duration: 0.15, force: true });
       requestAnimationFrame(() => {
         backdrop.classList.add('is-open');
-        const list = focusables(dialog).filter((n) => !n.classList.contains(`${kind}-close`));
-        (list[0] || closeBtn).focus();
+        // Tabbed drawers land on the selected tab (announces "Overview, tab 1 of 4"); others on the first control.
+        const selectedTab = currentTab !== null && tabMap.get(currentTab) ? tabMap.get(currentTab).tab : null;
+        const list = focusables(dialog).filter((n) => !n.classList.contains(`${kind}-close`) && !n.classList.contains('drawer-panel') && !n.closest('.toast-stack'));
+        const target = selectedTab || list[0] || closeBtn;
+        try { target.focus({ preventScroll: true }); } catch { target.focus(); }
       });
       return api;
     },
     close(reason = 'close') {
-      if (!isOpen) return api;
+      if (!isOpen || closing) return api;
       isOpen = false;
+      closing = true;
       backdrop.removeEventListener('keydown', onKeydown);
       backdrop.removeEventListener('click', onBackdropClick);
       dialog.removeEventListener('cancel', onCancel);
       inerted.splice(0).forEach((n) => { n.inert = false; });
+      const at = openDialogs.indexOf(dialog);
+      if (at >= 0) openDialogs.splice(at, 1);
+      dockToasts();
       document.body.classList.remove(`has-${kind}`);
+      const animated = !isModal && motion.enabled();
+      const slide = animated ? motion.drawer(dialog, false) : null;
       backdrop.classList.remove('is-open');
       backdrop.classList.add('is-closing');
       const finish = () => {
+        closing = false;
         try { dialog.close(); } catch { dialog.removeAttribute('open'); }
         backdrop.remove();
-        if (previouslyFocused && typeof previouslyFocused.focus === 'function' && document.contains(previouslyFocused)) previouslyFocused.focus();
+        backdrop.classList.remove('is-closing');
+        const back = returnFocus && returnFocus.isConnected ? returnFocus : previouslyFocused;
+        if (back && typeof back.focus === 'function' && document.contains(back)) {
+          try { back.focus({ preventScroll: true }); } catch { back.focus(); }
+        }
         if (typeof onClose === 'function') onClose(reason);
       };
-      if (reducedMotion()) finish(); else setTimeout(finish, 200);
+      if (slide) slide.then(finish);
+      else if (reducedMotion()) finish();
+      else setTimeout(finish, 200);
       return api;
     },
-    setTitle(text) { const t = dialog.querySelector(`.${kind}-title`); if (t) t.textContent = String(text); },
+    setTitle(text) { if (titleEl) titleEl.textContent = String(text); },
+    setSubtitle(text) { if (subEl) subEl.textContent = String(text); },
+    setTab,
+    /** Re-render one tab panel (or the active one) after its data changed; keeps the panel's scroll. */
+    refreshTab(id = currentTab) {
+      const key = id === null || id === undefined ? null : String(id);
+      if (!tabMap.has(key)) return api;
+      const keep = key === currentTab ? bodyEl.scrollTop : null;
+      if (key === currentTab) { renderPanel(key, true); if (keep !== null) bodyEl.scrollTop = keep; } else tabMap.get(key).rendered = false;
+      return api;
+    },
+    /** Update a tab's count chip (e.g. evidence items). */
+    setTabCount(id, count) {
+      const slot = tabMap.get(String(id));
+      if (!slot) return api;
+      let chip = slot.tab.querySelector('.drawer-tab-count');
+      if (count === null || count === undefined || count === '') { if (chip) chip.remove(); return api; }
+      if (!chip) { chip = h('span', { class: 'drawer-tab-count' }); slot.tab.appendChild(chip); }
+      chip.textContent = typeof count === 'number' ? fmt.num(count) : String(count);
+      return api;
+    },
+    panel(id) { const slot = tabMap.get(String(id)); return slot ? slot.panel : null; },
+    get activeTab() { return currentTab; },
+    onTabChange: null,
   };
+
+  // Initial tab: explicit activeTab → remembered for this kind → first (after `api` exists: render(panel, api)).
+  if (tabMap.size) {
+    const remembered = tabsKind ? lastDrawerTab.get(String(tabsKind)) : null;
+    const first = tabMap.keys().next().value;
+    const initial = [activeTab, remembered, first].map((v) => (v === null || v === undefined ? null : String(v))).find((v) => v !== null && tabMap.has(v));
+    setTab(initial);
+  }
   return api;
 }
 
-export function modal({ title = '', subtitle = '', body = null, actions = [], size = 'md', onClose = null } = {}) {
-  return overlay({ kind: 'modal', title, subtitle, body, actions, size: size === 'lg' ? 'lg' : (size === 'sm' ? 'sm' : 'md'), onClose });
+export function modal({ title = '', subtitle = '', body = null, actions = [], size = 'md', onClose = null, returnFocus = null } = {}) {
+  return overlay({ kind: 'modal', title, subtitle, body, actions, size: size === 'lg' ? 'lg' : (size === 'sm' ? 'sm' : 'md'), onClose, returnFocus });
 }
 
-export function drawer({ title = '', subtitle = '', body = null, actions = [], size = 'md', onClose = null } = {}) {
-  return overlay({ kind: 'drawer', title, subtitle, body, actions, size: size === 'lg' ? 'lg' : 'md', onClose });
+/**
+ * Side drawer (inline-end edge). CONTRACT §7:
+ *   drawer({ title, subtitle, tabs: [{ id, label, render(panel, api), icon?, count? }], activeTab, actions,
+ *            size: 'md'|'lg'|'xl', onClose(reason), returnFocus, kind, body, onTabChange })
+ *   → { open, close, el, body, setTab(id), refreshTab(id), setTabCount(id, n), panel(id), activeTab, setTitle, setSubtitle }
+ * `kind` (e.g. 'airisk') remembers the last tab across drawers of that kind; an explicit activeTab wins.
+ * `body` (optional) renders above the tab panels. Focus returns to `returnFocus` (default: the element
+ * focused before opening) without scrolling, so closing keeps the reader's place.
+ */
+export function drawer({ title = '', subtitle = '', body = null, tabs = null, activeTab = null, actions = [], size = 'md', onClose = null, returnFocus = null, kind = null, onTabChange = null, className = '' } = {}) {
+  const api = overlay({ kind: 'drawer', title, subtitle, body, tabs, activeTab, tabsKind: kind, actions, size: ['lg', 'xl'].includes(size) ? size : 'md', onClose, returnFocus, className });
+  if (typeof onTabChange === 'function') api.onTabChange = onTabChange;
+  return api;
 }
 
 /** Lightweight anchored menu (used by kanban "نقل إلى" and available for views). */
-export function menu(anchor, items = [], { ariaLabel = 'قائمة' } = {}) {
+export function menu(anchor, items = [], { ariaLabel = null } = {}) {
+  if (!ariaLabel) ariaLabel = t('ui.menu.label');
   const existing = document.querySelector('.menu.is-open');
   if (existing && existing.__close) existing.__close();
   const el = h('div', { class: 'menu is-open', role: 'menu', 'aria-label': ariaLabel });
@@ -1072,44 +1837,187 @@ export function menu(anchor, items = [], { ariaLabel = 'قائمة' } = {}) {
 /* Toasts                                                              */
 /* ------------------------------------------------------------------ */
 
+/** Open modals / drawers, oldest first (overlay() pushes on open and removes on close). */
+const openDialogs = [];
+/** Open dialog element → its overlay api (for the Escape fallback). */
+const dialogApis = new WeakMap();
+let strayEscapeBound = false;
+
+/**
+ * Escape fallback. An overlay listens for Escape on its backdrop, so a key pressed after focus has fallen to
+ * <body> (the focused node was removed) never reaches it. Such a key closes the topmost open dialog.
+ */
+function bindStrayEscape() {
+  if (strayEscapeBound) return;
+  strayEscapeBound = true;
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    if (e.target !== document.body && e.target !== document.documentElement) return;
+    const top = openDialogs[openDialogs.length - 1];
+    const api = top ? dialogApis.get(top) : null;
+    if (!api || !api.isOpen()) return;
+    e.preventDefault();
+    api.close('escape');
+  });
+}
+
+/** A toast counts as shown (already rendered at its place) after this long in the document (ms). */
+const TOAST_SHOWN_MS = 50;
+
+/**
+ * Moving #toasts re-inserts its toasts, and a re-inserted role=alert / role=status node may be announced again.
+ * So before a move, every toast that has probably been rendered at its old place loses its live role: one that
+ * has been in the document for TOAST_SHOWN_MS (about three frames), or that toast() saw survive a drawn frame
+ * (second animation frame). Settled toasts stay visible and their buttons keep working; app.js already does the
+ * same for alerts it announces itself. A toast moved within 50 ms of being raised and before any frame was
+ * drawn (in practice: in the same short task) keeps its role and is announced at its new place. Example: "Register risk" shows its "saved" toast in
+ * <body> for 80-240 ms before the risk drawer opens; the toast then moves into the drawer without its role, so
+ * it is not announced a second time.
+ */
+function settleToastRoles(stack) {
+  const now = Date.now();
+  for (const n of stack.children) {
+    const shown = n.__toastShown === true || (n.__toastAt && now - n.__toastAt >= TOAST_SHOWN_MS);
+    if (shown && n.hasAttribute('role')) n.removeAttribute('role');
+  }
+}
+
+/**
+ * While a modal or drawer is open the page behind it is inert, which would also take the toasts out of the
+ * accessibility tree, and a floating stack would sit over the dialog's own controls (on a phone the drawer is
+ * full width, so there is no free edge). The stack is therefore docked inside the topmost open dialog, in flow
+ * between its body and its footer (css: dialog > .toast-stack.is-docked), and returns to its place in <body>
+ * when the last dialog closes. The container moves with its toasts; see settleToastRoles() for their roles.
+ */
+function dockToasts() {
+  const stack = document.getElementById('toasts');
+  if (!stack) return;
+  const top = openDialogs[openDialogs.length - 1] || null;
+  if (top && top.isConnected) {
+    const foot = Array.from(top.children).find((n) => n.classList && (n.classList.contains('drawer-foot') || n.classList.contains('modal-foot'))) || null;
+    if (stack.parentElement !== top || stack.nextElementSibling !== foot) { settleToastRoles(stack); top.insertBefore(stack, foot); }
+    stack.classList.add('is-docked');
+    stack.inert = false;
+    return;
+  }
+  stack.classList.remove('is-docked');
+  if (stack.parentElement === document.body) return;
+  settleToastRoles(stack);
+  const modals = document.getElementById('modals');
+  if (modals && modals.parentElement === document.body) document.body.insertBefore(stack, modals);
+  else document.body.appendChild(stack);
+}
+
+/** Where focus was before it entered the toast stack (focus goes back there when a focused toast leaves). */
+let toastFocusOrigin = null;
+
+function canTakeFocus(n) {
+  return !!n && n.isConnected && typeof n.focus === 'function' && !n.disabled && !n.closest('[inert]') && n.getClientRects().length > 0;
+}
+
+/**
+ * A toast that holds focus is about to leave. Focus moves to the next toast (its action or close button), else
+ * back to where it came from (when that is inside the topmost dialog, or anywhere if no dialog is open), else to
+ * the topmost dialog itself. It never drops to <body>, so Tab and Escape keep working inside the dialog.
+ */
+function handOffToastFocus(el) {
+  const sibs = el.parentElement ? Array.from(el.parentElement.children) : [];
+  const alive = (n) => n !== el && n.classList.contains('toast') && !n.classList.contains('is-leaving');
+  const at = sibs.indexOf(el);
+  const next = sibs.slice(at + 1).find(alive) || sibs.slice(0, Math.max(0, at)).reverse().find(alive) || null;
+  const top = openDialogs[openDialogs.length - 1] || null;
+  const origin = toastFocusOrigin && !toastFocusOrigin.closest('.toast-stack') && (!top || top.contains(toastFocusOrigin)) ? toastFocusOrigin : null;
+  const candidates = [[next && next.querySelector('.toast-action, .toast-close'), false], [origin, true], [top, true]];
+  for (const [n, keepScroll] of candidates) {
+    if (!canTakeFocus(n)) continue;
+    try { n.focus({ preventScroll: keepScroll }); } catch { n.focus(); }
+    if (document.activeElement === n) return;
+  }
+}
+
 function toastStack() {
   let stack = document.getElementById('toasts');
   if (!stack) { stack = h('div', { id: 'toasts' }); document.body.appendChild(stack); }
   stack.classList.add('toast-stack');
+  if (openDialogs.length && (!stack.classList.contains('is-docked') || stack.parentElement !== openDialogs[openDialogs.length - 1])) dockToasts();
   // Each toast carries its own role=status / role=alert; the container itself is not a
   // live region, so a toast is announced exactly once (RTL-18).
+  if (stack.hasAttribute('aria-live')) stack.removeAttribute('aria-live');
+  if (stack.getAttribute('role') === 'status' || stack.getAttribute('role') === 'alert' || stack.getAttribute('role') === 'log') stack.removeAttribute('role');
   return stack;
 }
 
 export function toast(message, { tone = 'neutral', timeout = 4500, action = null, title = '' } = {}) {
-  const t = toneOf(tone);
+  const tone0 = toneOf(tone);
   const stack = toastStack();
-  const el = h('div', { class: ['toast', `tone-${t}`], role: t === 'critical' || t === 'serious' ? 'alert' : 'status', 'data-tone': t });
-  const ic = glyph(t, 18); ic.classList.add('toast-icon');
+  const el = h('div', { class: ['toast', `tone-${tone0}`], role: tone0 === 'critical' || tone0 === 'serious' ? 'alert' : 'status', 'data-tone': tone0 });
+  const ic = glyph(tone0, 18); ic.classList.add('toast-icon');
   el.appendChild(ic);
   const text = h('div', { class: 'toast-text' });
   if (title) text.appendChild(h('strong', { class: 'toast-title' }, String(title)));
   text.appendChild(h('span', { class: 'toast-msg' }, String(message ?? '')));
   el.appendChild(text);
   let timer = null;
+  let gone = false;
   const dismiss = () => {
+    if (gone) return;
+    gone = true;
     if (timer) { clearTimeout(timer); timer = null; }
+    if (el.contains(document.activeElement)) handOffToastFocus(el);
     el.classList.add('is-leaving');
+    el.inert = true; // a leaving toast takes no focus and drops out of the accessibility tree at once
     const done = () => el.remove();
-    if (reducedMotion()) done(); else setTimeout(done, 220);
+    if (reducedMotion()) done(); else setTimeout(done, 180);
   };
   if (action && action.label) {
     el.appendChild(button(action.label, { variant: 'ghost', size: 'sm', onClick: () => { if (typeof action.onClick === 'function') action.onClick(); dismiss(); }, attrs: { class: 'toast-action' } }));
   }
-  el.appendChild(button('', { variant: 'ghost', size: 'sm', icon: glyph('close', 16), onClick: dismiss, attrs: { 'aria-label': 'إغلاق التنبيه', class: 'toast-close' } }));
-  const arm = () => { if (timeout > 0) timer = setTimeout(dismiss, timeout); };
-  el.addEventListener('pointerenter', () => { if (timer) { clearTimeout(timer); timer = null; } });
+  el.appendChild(button('', { variant: 'ghost', size: 'sm', icon: glyph('close', 16), onClick: dismiss, attrs: { 'aria-label': t('ui.closeToast'), class: 'toast-close' } }));
+  // Auto-dismiss hairline (decorative): drains over the timeout, restarts with it, rests full while paused.
+  const bar = timeout > 0 ? h('span', { class: 'toast-timer', 'aria-hidden': 'true' }) : null;
+  if (bar) el.appendChild(bar);
+  let barAnim = null;
+  const stopBar = () => { if (barAnim) { try { barAnim.cancel(); } catch { /* gone */ } barAnim = null; } };
+  const arm = () => {
+    if (gone || !(timeout > 0)) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(dismiss, timeout);
+    stopBar();
+    if (bar && motion.enabled()) { try { barAnim = bar.animate([{ transform: 'scaleX(1)' }, { transform: 'scaleX(0)' }], { duration: timeout, easing: 'linear', fill: 'forwards' }); } catch { barAnim = null; } }
+  };
+  el.addEventListener('pointerenter', () => { if (timer) { clearTimeout(timer); timer = null; } stopBar(); });
   el.addEventListener('pointerleave', arm);
-  el.addEventListener('focusin', () => { if (timer) { clearTimeout(timer); timer = null; } });
+  el.addEventListener('focusin', (e) => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    stopBar();
+    const from = e.relatedTarget;
+    if (!(from instanceof Element && from.closest('.toast-stack'))) toastFocusOrigin = from instanceof Element ? from : null;
+  });
   el.addEventListener('focusout', arm);
+  el.__toastAt = Date.now();
+  // Keyboard focus inside the docked stack: remember where the focused toast sits in the stack's visible
+  // area, so it can be put back there after the new toast is inserted above it.
+  const docked = stack.classList.contains('is-docked');
+  const focusedToast = docked && stack.contains(document.activeElement) ? document.activeElement.closest('.toast') : null;
+  const focusedAt = focusedToast ? focusedToast.getBoundingClientRect().top - stack.getBoundingClientRect().top : 0;
   stack.insertBefore(el, stack.firstChild);
-  while (stack.children.length > 5) stack.lastChild.remove();
-  requestAnimationFrame(() => el.classList.add('is-in'));
+  while (stack.children.length > 5) {
+    const old = stack.lastChild;
+    if (old.contains(document.activeElement)) handOffToastFocus(old);
+    old.remove();
+  }
+  // Docked, the stack scrolls on its own. Without focus inside it, bring the newest toast (first) into view.
+  // With focus inside, scroll by however far the insertion pushed the focused toast, so it stays put.
+  if (docked && focusedToast && focusedToast.isConnected) {
+    const now = focusedToast.getBoundingClientRect().top - stack.getBoundingClientRect().top;
+    stack.scrollTop += now - focusedAt;
+  } else if (docked) stack.scrollTop = 0;
+  // The first animation frame runs before the frame that draws the toast; the second runs after it was drawn,
+  // so from then on the toast counts as shown (see settleToastRoles()).
+  requestAnimationFrame(() => {
+    el.classList.add('is-in');
+    requestAnimationFrame(() => { el.__toastShown = true; });
+  });
   arm();
   return { el, dismiss };
 }
@@ -1118,7 +2026,6 @@ export function toast(message, { tone = 'neutral', timeout = 4500, action = null
 /* Kanban                                                              */
 /* ------------------------------------------------------------------ */
 
-const KANBAN_HINT = 'استخدم السهم الأيسر/الأيمن للنقل بين الأعمدة';
 const cssEscape = (v) => (typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(String(v)) : String(v).replace(/["\\]/g, '\\$&'));
 
 /** Accessible name for a card: explicit code/title fields, else code + title read from the rendered content. */
@@ -1133,15 +2040,15 @@ function kanbanCardName(item, card) {
     const titleEl = card.querySelector('.kanban-card-title, h3, h4, strong');
     const codeEl = card.querySelector('.mono');
     const c = codeEl ? pick(codeEl.textContent) : '';
-    const t = titleEl ? pick(titleEl.textContent) : '';
+    const ttl = titleEl ? pick(titleEl.textContent) : '';
     if (c) parts.push(c);
-    if (t) parts.push(t);
+    if (ttl) parts.push(ttl);
   }
   if (!parts.length) {
     const text = pick(Array.from(card.childNodes).filter((n) => !(n.classList && n.classList.contains('kanban-card-bar'))).map((n) => n.textContent || '').join(' '));
     if (text) parts.push(text.length > 90 ? `${text.slice(0, 88).trimEnd()}…` : text);
   }
-  return parts.join(' — ') || `بطاقة ${pick(item.id)}`;
+  return parts.join(' — ') || t('ui.kanban.card', { id: pick(item.id) });
 }
 
 /**
@@ -1152,10 +2059,14 @@ function kanbanCardName(item, card) {
  * After a keyboard move the moved card is re-focused once the board re-renders. The scroller toggles
  * is-overflowing / is-scroll-start / is-scroll-end (V21).
  */
-export function kanban({ columns = [], items = [], onMove = null, headingLevel = null, ariaLabel = 'لوحة المراحل' } = {}) {
+export function kanban({ columns = [], items = [], onMove = null, headingLevel = null, ariaLabel = null } = {}) {
+  if (!ariaLabel) ariaLabel = t('ui.kanban.label');
   const hintId = uid('kanban-hint');
   const el = h('div', { class: 'kanban', role: 'group', 'aria-label': ariaLabel, 'aria-describedby': hintId, dataset: { columns: columns.length } });
-  const hint = h('p', { class: 'sr-only', id: hintId }, KANBAN_HINT);
+  const hint = h('p', { class: 'sr-only', id: hintId }, isRtl() ? t('ui.kanban.hintRtl') : t('ui.kanban.hintLtr'));
+  // The board is the scroll container: it must also contain the absolutely positioned sr-only texts
+  // (hint, count labels), or their static position can widen the page in RTL.
+  el.style.position = 'relative';
   const cols = new Map();
   let current = Array.isArray(items) ? items.slice() : [];
   let dragId = null;
@@ -1164,9 +2075,11 @@ export function kanban({ columns = [], items = [], onMove = null, headingLevel =
   const explicitLevel = [2, 3, 4, 5, 6].includes(Number(headingLevel)) ? Number(headingLevel) : null;
   let level = explicitLevel || 2;
 
+  let moveFirst = null;   // boxes read when the user moved a card (FLIP "first"), consumed by update()
   const move = (id, toColumnId, { viaKeyboard = false } = {}) => {
     const item = current.find((i) => String(i.id) === String(id));
     if (!item || String(item.columnId) === String(toColumnId)) return;
+    moveFirst = { at: Date.now(), boxes: motion.flipFirst(() => el.querySelectorAll('.kanban-card'), { key: (c) => c.getAttribute('data-id'), within: el }) };
     if (viaKeyboard) {
       pendingFocusId = String(id);
       clearTimeout(pendingFocusTimer);
@@ -1183,7 +2096,7 @@ export function kanban({ columns = [], items = [], onMove = null, headingLevel =
     const title = h(`h${level}`, { class: 'kanban-col-title', id: titleId }, String(col.label));
     head.appendChild(title);
     const countNum = h('span', { class: 'kanban-count-num' }, '0');
-    const count = h('span', { class: 'kanban-count' }, h('span', { class: 'sr-only' }, 'عدد البطاقات: '), countNum);
+    const count = h('span', { class: 'kanban-count' }, h('span', { class: 'sr-only' }, t('ui.kanban.count')), countNum);
     head.appendChild(count);
     const cards = h('div', { class: 'kanban-cards', 'data-column': String(col.id) });
     colEl.append(head, cards);
@@ -1216,13 +2129,13 @@ export function kanban({ columns = [], items = [], onMove = null, headingLevel =
   }
 
   function cardFor(item) {
-    const card = h('article', { class: 'kanban-card', draggable: true, 'data-id': String(item.id), tabindex: '0', 'aria-roledescription': 'بطاقة قابلة للنقل', 'aria-describedby': hintId });
+    const card = h('article', { class: 'kanban-card', draggable: true, 'data-id': String(item.id), tabindex: '0', 'aria-roledescription': t('ui.kanban.cardRole'), 'aria-describedby': hintId });
     const bar = h('div', { class: 'kanban-card-bar' });
     const grip = glyph('grip', 14); grip.classList.add('kanban-grip');
     bar.appendChild(grip);
     const others = columns.filter((c) => String(c.id) !== String(item.columnId));
-    const moveBtn = button('', { variant: 'ghost', size: 'sm', icon: glyph('move', 15), attrs: { 'aria-label': 'نقل إلى', 'aria-haspopup': 'menu', 'aria-expanded': 'false', class: 'kanban-move' },
-      onClick: (e) => { e.stopPropagation(); menu(moveBtn, others.map((c) => ({ label: `نقل إلى: ${c.label}`, tone: c.tone || null, onClick: () => move(item.id, c.id, { viaKeyboard: true }) })), { ariaLabel: 'نقل إلى' }); } });
+    const moveBtn = button('', { variant: 'ghost', size: 'sm', icon: glyph('move', 15), attrs: { 'aria-label': t('ui.kanban.moveTo'), 'aria-haspopup': 'menu', 'aria-expanded': 'false', class: 'kanban-move' },
+      onClick: (e) => { e.stopPropagation(); menu(moveBtn, others.map((c) => ({ label: t('ui.kanban.moveToCol', { column: c.label }), tone: c.tone || null, onClick: () => move(item.id, c.id, { viaKeyboard: true }) })), { ariaLabel: t('ui.kanban.moveTo') }); } });
     bar.appendChild(moveBtn);
     card.appendChild(bar);
     let content = null;
@@ -1235,13 +2148,20 @@ export function kanban({ columns = [], items = [], onMove = null, headingLevel =
       try { e.dataTransfer.setData('text/plain', String(item.id)); } catch { /* some engines refuse */ }
       card.classList.add('is-dragging'); el.classList.add('is-dragging');
     });
-    card.addEventListener('dragend', () => { dragId = null; card.classList.remove('is-dragging'); el.classList.remove('is-dragging'); el.querySelectorAll('.is-over').forEach((n) => n.classList.remove('is-over')); });
+    card.addEventListener('dragend', () => { dragId = null; card.classList.remove('is-dragging', 'is-lifted'); el.classList.remove('is-dragging'); el.querySelectorAll('.is-over').forEach((n) => n.classList.remove('is-over')); });
+    // Pick-up: the card lifts while pressed (css .kanban-card.is-lifted; transform + shadow, none under reduced motion).
+    card.addEventListener('pointerdown', (e) => { if (e.button === 0 && !e.target.closest('button, a, input, select, textarea')) card.classList.add('is-lifted'); });
+    const drop = () => card.classList.remove('is-lifted');
+    card.addEventListener('pointerup', drop);
+    card.addEventListener('pointercancel', drop);
+    card.addEventListener('lostpointercapture', drop);
     card.addEventListener('keydown', (e) => {
       if (e.target !== card) return;
       const idx = columns.findIndex((c) => String(c.id) === String(item.columnId));
-      // RTL: ArrowLeft advances to the next column, ArrowRight goes back.
-      if (e.key === 'ArrowLeft' && idx < columns.length - 1) { e.preventDefault(); move(item.id, columns[idx + 1].id, { viaKeyboard: true }); }
-      else if (e.key === 'ArrowRight' && idx > 0) { e.preventDefault(); move(item.id, columns[idx - 1].id, { viaKeyboard: true }); }
+      // The next column lies in the reading direction (ArrowLeft in RTL, ArrowRight in LTR).
+      const dirKeys = inlineKeys();
+      if (e.key === dirKeys.next && idx < columns.length - 1) { e.preventDefault(); move(item.id, columns[idx + 1].id, { viaKeyboard: true }); }
+      else if (e.key === dirKeys.prev && idx > 0) { e.preventDefault(); move(item.id, columns[idx - 1].id, { viaKeyboard: true }); }
       else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); moveBtn.click(); }
     });
     return card;
@@ -1260,7 +2180,7 @@ export function kanban({ columns = [], items = [], onMove = null, headingLevel =
       const n = counts.get(slot) || 0;
       slot.countNum.textContent = fmt.num(n);
       slot.colEl.classList.toggle('is-empty', n === 0);
-      if (n === 0) slot.cards.appendChild(h('p', { class: 'kanban-empty' }, 'لا توجد بطاقات'));
+      if (n === 0) slot.cards.appendChild(h('p', { class: 'kanban-empty' }, t('ui.kanban.empty')));
     }
     if (pendingFocusId !== null) {
       const target = el.querySelector(`.kanban-card[data-id="${cssEscape(pendingFocusId)}"]`);
@@ -1306,10 +2226,28 @@ export function kanban({ columns = [], items = [], onMove = null, headingLevel =
   render();
   return {
     el,
-    update(next) { current = Array.isArray(next) ? next.slice() : []; render(); },
+    update(next) {
+      const prev = current;
+      current = Array.isArray(next) ? next.slice() : [];
+      // A card the user moved glides to its new place (FLIP from the boxes read at the move); live moves just repaint.
+      const first = moveFirst && Date.now() - moveFirst.at < 2000 ? moveFirst.boxes : null;
+      moveFirst = null;
+      if (first && first.size && placesChanged(prev, current)) motion.flip(() => el.querySelectorAll('.kanban-card'), render, { key: (c) => c.getAttribute('data-id'), lift: true, within: el, first });
+      else render();
+    },
     focusCard(id) { const c = el.querySelector(`.kanban-card[data-id="${cssEscape(String(id))}"]`); if (c) c.focus(); return !!c; },
     destroy: teardown,
   };
+}
+
+/** Whether any item changed column or position between two kanban item lists. */
+function placesChanged(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return true;
+  const where = (list) => { const m = new Map(); const n = new Map(); for (const it of list) { const c = String(it.columnId); const i = n.get(c) || 0; n.set(c, i + 1); m.set(String(it.id), `${c}:${i}`); } return m; };
+  const pa = where(a);
+  const pb = where(b);
+  for (const [k, v] of pb) if (pa.get(k) !== v) return true;
+  return false;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1347,7 +2285,8 @@ function removeTicker(fn) {
   syncTicker();
 }
 
-export function countdown(targetIso, { onExpire = null, warnMinutes = 60, expiredText = 'منتهٍ' } = {}) {
+export function countdown(targetIso, { onExpire = null, warnMinutes = 60, expiredText = null } = {}) {
+  if (!expiredText) expiredText = t('ui.countdown.expired');
   const target = new Date(targetIso).getTime();
   const el = h('span', { class: 'countdown', role: 'timer', 'data-target': String(targetIso) });
   const ic = glyph('clock', 13); ic.classList.add('countdown-icon');
@@ -1356,17 +2295,19 @@ export function countdown(targetIso, { onExpire = null, warnMinutes = 60, expire
   let fired = false;
   let registered = false;
   let wasConnected = false;
+  let detachedTicks = 0;
   const stop = () => { if (registered) { registered = false; removeTicker(tick); } };
   const tick = () => {
-    // Auto-unregister once the element has been removed from the document (view navigated away without stop()).
-    if (el.isConnected) wasConnected = true;
-    else if (wasConnected) { stop(); return; }
+    // Auto-unregister once the element has been removed from the document (view navigated away without
+    // stop()), or when it was never attached at all (built and discarded) after a short grace period.
+    if (el.isConnected) { wasConnected = true; detachedTicks = 0; }
+    else if (wasConnected || ++detachedTicks > 30) { stop(); return; }
     const remaining = target - Date.now();
     if (!Number.isFinite(target)) { text.textContent = '—'; stop(); return; }
     if (remaining <= 0) {
       el.classList.add('is-expired'); el.classList.remove('is-warning');
       text.textContent = expiredText;
-      el.setAttribute('aria-label', `الوقت المتبقي: ${expiredText}`);
+      el.setAttribute('aria-label', t('ui.countdown.remaining', { time: expiredText }));
       stop();
       if (!fired) { fired = true; if (typeof onExpire === 'function') onExpire(); }
       return;
@@ -1374,7 +2315,7 @@ export function countdown(targetIso, { onExpire = null, warnMinutes = 60, expire
     el.classList.toggle('is-warning', remaining < warnMinutes * 60 * 1000);
     const d = fmt.duration(remaining);
     text.textContent = d;
-    el.setAttribute('aria-label', `الوقت المتبقي: ${d}`);
+    el.setAttribute('aria-label', t('ui.countdown.remaining', { time: d }));
   };
   tick();
   if (!el.classList.contains('is-expired') && Number.isFinite(target)) { registered = true; addTicker(tick); }
@@ -1388,6 +2329,7 @@ export function countdown(targetIso, { onExpire = null, warnMinutes = 60, expire
 export const components = {
   h, clear, glyph, svgIcon, card, statTile, badge, tierBadge, button, segmented, tabs, dataTable,
   modal, drawer, menu, toast, kanban, formField, readForm, emptyState, progress, countdown, liveDot, kv, reducedMotion,
-  parseDelta,
+  parseDelta, statusBadge, filterBar, loadingState, errorState, offlineState, skeleton, motion,
+  labelInName, nameExtra, setLabelInName, visibleText, focusables,
 };
 export default components;

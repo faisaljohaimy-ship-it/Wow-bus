@@ -1,48 +1,39 @@
 /**
- * Biltix Risk AI — formatting helpers (js/core/fmt.js)
+ * BILTIX Risk AI — formatting helpers (js/core/fmt.js)
  *
- * Numerals-aware number / date / duration formatting for the Arabic UI.
- * Contract (ARCHITECTURE.md §4):
+ * Language-aware (i18n.locale(): 'ar-SA' | 'en-GB') and numerals-aware ('latn' | 'arab', chosen
+ * independently of the language) number / date / currency / duration formatting.
+ * Contract: ARCHITECTURE.md §4 (every export and signature kept) + v3 CONTRACT §4:
  *
- *   fmt.setNumerals('latn'|'arab')
- *   fmt.num(n, {maximumFractionDigits=0}={})
- *   fmt.compact(n)
+ *   fmt.setNumerals('latn'|'arab') · fmt.getNumerals()
+ *   fmt.locale()                     // full Intl locale in use, e.g. 'en-GB-u-nu-latn-ca-gregory'
+ *   fmt.num(n, {maximumFractionDigits=0, minimumFractionDigits=0}={})
+ *   fmt.compact(n)                   // "1.2K" / "4.5m" (en) · "1.2 ألف" / "4.5 مليون" (ar)
+ *   fmt.currency(n, {compact=false, digits=0}={})   // SAR: "SAR 12,500,000" · "‏12,500,000 ر.س.‏"
  *   fmt.pct(n, digits=0)             // n already in 0..100
  *   fmt.signed(n, digits=0)          // "+3" / "−2" (U+2212 minus)
- *   fmt.signedPct(n, digits=0)       // "+3%" / "−2%" (sign + percent, numerals-aware)
- *   fmt.parseSigned(str)             // "‎+3.5%" / "−٢٪" → 3.5 / -2 (strips bidi marks; NaN when invalid)
+ *   fmt.signedPct(n, digits=0)
+ *   fmt.parseSigned(str)
  *   fmt.digits(text)                 // ASCII digits inside free text → active numeral system
- *   fmt.date(iso, {style='medium'}={})
- *   fmt.dateTime(iso)
- *   fmt.time(iso)
- *   fmt.hijri(dateObj=new Date())
- *   fmt.relative(iso)
- *   fmt.duration(ms, {style='short'|'long'}={})   // "٥ س ١٢ د" / "يومان و٥ ساعات"
+ *   fmt.date(iso, {style='medium'}={})   // 'short' | 'medium' | 'long' | 'full' | 'numeric'
+ *   fmt.dateTime(iso) · fmt.time(iso, {seconds=false}={})
+ *   fmt.hijri(dateObj=new Date())    // "30 جمادى الأولى 1448 هـ" · "30 Jumada I 1448 AH"
+ *   fmt.relative(iso, now=Date.now())    // "قبل 3 دقائق" · "3 minutes ago"
+ *   fmt.duration(ms, {style='short'|'long'}={})   // "٥ س ١٢ د" · "5h 12m" · "5 hours 12 minutes"
  *   fmt.dayName(iso)
+ *   fmt.toDate(value)
  *
- * Locale strategy
- *   'latn' → 'ar-SA-u-nu-latn-ca-gregory'   (Arabic UI, Western digits, Gregorian)
- *   'arab' → 'ar-SA-u-ca-gregory'           (Arabic-Indic digits, Gregorian)
- *   hijri  → 'ar-SA-u-ca-islamic-umalqura' + the current numerals setting
+ * Every Intl call is guarded: if the host lacks a calendar/locale, a deterministic fallback string
+ * is produced instead of throwing. Date-only ISO strings ("2026-11-09") are parsed as LOCAL dates
+ * so they never shift a day in western time zones.
  *
- * Every Intl call is guarded: if the host lacks a calendar/locale, a plain
- * deterministic fallback string is produced instead of throwing. Date-only ISO
- * strings ("2026-11-09") are parsed as LOCAL dates so they never shift a day in
- * western time zones. Side-effect free on import.
+ * Time zone policy (one rule for every screen): instants are shown in Asia/Riyadh (fmt.timeZone,
+ * the sites' zone and the app-bar clock's). Calendar days — date-only strings, or a Date at local
+ * midnight passed to date()/dayName() — are shown as that day, with no zone conversion. Side-effect free on import except registering
+ * fmt.num as i18n's {count} formatter (keeps tn() numerals-aware without an import cycle).
  */
 
-const NUMERALS = Object.freeze({
-  latn: 'ar-SA-u-nu-latn-ca-gregory',
-  arab: 'ar-SA-u-ca-gregory',
-});
-const HIJRI_LOCALE = Object.freeze({
-  latn: 'ar-SA-u-ca-islamic-umalqura-nu-latn',
-  arab: 'ar-SA-u-ca-islamic-umalqura-nu-arab',
-});
-const RELATIVE_LOCALE = Object.freeze({
-  latn: 'ar-SA-u-nu-latn',
-  arab: 'ar-SA-u-nu-arab',
-});
+import { i18n } from './i18n.js';
 
 const ARABIC_INDIC_DIGITS = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
 /** Bidi control marks Intl may emit around signed numbers (LRM, RLM, ALM, embeddings, isolates). */
@@ -51,19 +42,39 @@ const BIDI_MARKS_RE = /[‎‏؜‪-‮⁦-⁩]/g;
 const NON_ASCII_DIGIT_RE = /[٠-٩۰-۹]/g;
 
 /** Arabic count words: [singular, dual, plural (3–10), singular-accusative (11+)]. */
-const DURATION_WORDS = Object.freeze({
+const DURATION_WORDS_AR = Object.freeze({
   day: ['يوم', 'يومان', 'أيام', 'يوماً'],
   hour: ['ساعة', 'ساعتان', 'ساعات', 'ساعة'],
   minute: ['دقيقة', 'دقيقتان', 'دقائق', 'دقيقة'],
   second: ['ثانية', 'ثانيتان', 'ثوانٍ', 'ثانية'],
 });
-/** Compact unit letters for the countdown style ("٥ س ١٢ د"). */
-const DURATION_LETTERS = Object.freeze({ day: 'ي', hour: 'س', minute: 'د', second: 'ث' });
-const MONTHS_AR = [
-  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
-  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
-];
-const WEEKDAYS_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+const DURATION_WORDS_EN = Object.freeze({
+  day: ['day', 'days'], hour: ['hour', 'hours'], minute: ['minute', 'minutes'], second: ['second', 'seconds'],
+});
+/** Compact unit letters for the countdown style ("٥ س ١٢ د" / "5h 12m"). */
+const DURATION_LETTERS = Object.freeze({
+  ar: { day: 'ي', hour: 'س', minute: 'د', second: 'ث' },
+  en: { day: 'd', hour: 'h', minute: 'm', second: 's' },
+});
+const EXPIRED = Object.freeze({ ar: 'منتهٍ', en: 'Expired' });
+const MONTHS = Object.freeze({
+  ar: ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'],
+  en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+});
+const WEEKDAYS = Object.freeze({
+  ar: ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'],
+  en: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+});
+const UNIT_WORDS = Object.freeze({
+  ar: { second: 'ثانية', minute: 'دقيقة', hour: 'ساعة', day: 'يوم' },
+  en: { second: 'second', minute: 'minute', hour: 'hour', day: 'day' },
+});
+const COMPACT_FALLBACK = Object.freeze({
+  ar: { b: 'مليار', m: 'مليون', k: 'ألف' },
+  en: { b: 'bn', m: 'm', k: 'k' },
+});
+const HIJRI_ERA = Object.freeze({ ar: 'هـ', en: 'AH' });
+const CURRENCY_FALLBACK = Object.freeze({ ar: 'ر.س', en: 'SAR' });
 
 const MINUS = '−';
 const EM_DASH = '—';
@@ -73,6 +84,34 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 let numerals = 'latn';
+
+/** The product's reference time zone (fixed UTC+3, no DST). */
+export const TIME_ZONE = 'Asia/Riyadh';
+const TZ_OFFSET_MS = 3 * 3_600_000;
+/** Wall-clock fields of an instant in Riyadh time, for the no-Intl fallbacks. */
+function riyadhFields(d) {
+  const z = new Date(d.getTime() + TZ_OFFSET_MS);
+  return { y: z.getUTCFullYear(), m: z.getUTCMonth(), day: z.getUTCDate(), wd: z.getUTCDay(), h: z.getUTCHours(), min: z.getUTCMinutes(), s: z.getUTCSeconds() };
+}
+/** A calendar day rather than an instant: a date-only string, or a Date/number at local midnight. */
+function isCalendarDay(value, d) {
+  if (typeof value === 'string') return /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+  return d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0 && d.getMilliseconds() === 0;
+}
+/** A local Date carrying the Riyadh calendar day/time of an instant (only for the no-Intl fallbacks). */
+function riyadhAsLocal(d) {
+  const z = riyadhFields(d);
+  return new Date(z.y, z.m, z.day, z.h, z.min, z.s);
+}
+/**
+ * What to hand Intl for a date: instants are read in Riyadh time; a calendar day is re-expressed as UTC
+ * midnight of its own Y/M/D and formatted in UTC, so the host zone can never move it.
+ * @returns {{ date: Date, options: object }}
+ */
+function zoned(options, value, d, forceInstant = false) {
+  if (forceInstant || !isCalendarDay(value, d)) return { date: d, options: { ...options, timeZone: TIME_ZONE } };
+  return { date: new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())), options: { ...options, timeZone: 'UTC' } };
+}
 
 /** Memoised Intl formatter instances keyed by constructor + locale + options. */
 const cache = new Map();
@@ -91,8 +130,24 @@ function cached(kind, locale, options) {
   return instance;
 }
 
+/** Active UI language ('ar' | 'en'); defensive when i18n is unavailable. */
+function lang() {
+  try { return i18n.lang() === 'ar' ? 'ar' : 'en'; } catch { return 'en'; }
+}
+
+function baseLocale() {
+  try { return i18n.locale(); } catch { return 'ar-SA'; }
+}
+
+/** Gregorian locale with the numbering system made explicit (independent of the language). */
 function locale() {
-  return NUMERALS[numerals] || NUMERALS.latn;
+  return `${baseLocale()}-u-nu-${numerals}-ca-gregory`;
+}
+function hijriLocale() {
+  return `${baseLocale()}-u-ca-islamic-umalqura-nu-${numerals}`;
+}
+function plainLocale() {
+  return `${baseLocale()}-u-nu-${numerals}`;
 }
 
 /** Convert ASCII digits in a string to the active numeral system (fallback paths only). */
@@ -112,8 +167,7 @@ function isFiniteNumber(n) {
 
 /**
  * Parse anything date-like into a Date.
- * - Date instances are returned as-is (a copy).
- * - Numbers are treated as epoch milliseconds.
+ * - Date instances are returned as a copy; numbers are epoch milliseconds.
  * - "YYYY-MM-DD" is parsed as a LOCAL calendar date (no UTC shift).
  * - Any other string goes through the Date constructor (full ISO with offset).
  * Returns null for invalid input.
@@ -170,13 +224,15 @@ const DATE_STYLES = Object.freeze({
 
 function fallbackDate(style) {
   return (d) => {
+    const L = lang();
     const dd = d.getDate();
-    const mm = MONTHS_AR[d.getMonth()];
+    const mm = MONTHS[L][d.getMonth()];
     const yy = d.getFullYear();
+    const comma = L === 'ar' ? '،' : ',';
     switch (style) {
-      case 'short': return `${dd} ${mm}`;
+      case 'short': return `${dd} ${L === 'en' ? mm.slice(0, 3) : mm}`;
       case 'long':
-      case 'full': return `${WEEKDAYS_AR[d.getDay()]}، ${dd} ${mm} ${yy}`;
+      case 'full': return `${WEEKDAYS[L][d.getDay()]}${comma} ${dd} ${mm} ${yy}`;
       case 'numeric': return `${pad2(dd)}/${pad2(d.getMonth() + 1)}/${yy}`;
       default: return `${dd} ${mm} ${yy}`;
     }
@@ -195,32 +251,36 @@ function relativeUnit(deltaMs) {
   return { unit: 'day', value: Math.round(deltaMs / DAY) };
 }
 
-const UNIT_AR = Object.freeze({
-  second: 'ثانية',
-  minute: 'دقيقة',
-  hour: 'ساعة',
-  day: 'يوم',
-});
-
 function fallbackRelative(value, unit) {
-  if (value === 0) return 'الآن';
+  const L = lang();
+  if (value === 0) return L === 'en' ? 'now' : 'الآن';
   const n = Math.abs(value);
-  const word = UNIT_AR[unit];
+  const word = UNIT_WORDS[L][unit];
+  if (L === 'en') {
+    const w = n === 1 ? word : `${word}s`;
+    return value < 0 ? `${localizeDigits(n)} ${w} ago` : `in ${localizeDigits(n)} ${w}`;
+  }
   return value < 0 ? `قبل ${localizeDigits(n)} ${word}` : `خلال ${localizeDigits(n)} ${word}`;
 }
 
 /** "يومان" / "٥ ساعات" / "١٢ دقيقة" — Arabic agreement for counted units. */
-function countWord(n, unit, formatInt) {
-  const words = DURATION_WORDS[unit];
+function countWordAr(n, unit, formatInt) {
+  const words = DURATION_WORDS_AR[unit];
   if (n === 1) return words[0];
   if (n === 2) return words[1];
   if (n >= 3 && n <= 10) return `${formatInt(n)} ${words[2]}`;
   return `${formatInt(n)} ${words[3]}`;
 }
 
+/** "1 day" / "5 hours" */
+function countWordEn(n, unit, formatInt) {
+  const [one, many] = DURATION_WORDS_EN[unit];
+  return `${formatInt(n)} ${n === 1 ? one : many}`;
+}
+
 export const fmt = {
   /**
-   * Switch the numeral system used by every formatter.
+   * Switch the numeral system used by every formatter (independent of the UI language).
    * @param {'latn'|'arab'} system
    */
   setNumerals(system) {
@@ -230,6 +290,11 @@ export const fmt = {
   /** @returns {'latn'|'arab'} the active numeral system */
   getNumerals() {
     return numerals;
+  },
+
+  /** Full Intl locale in use for Gregorian dates and numbers, e.g. 'ar-SA-u-nu-latn-ca-gregory'. */
+  locale() {
+    return locale();
   },
 
   /**
@@ -244,7 +309,7 @@ export const fmt = {
   },
 
   /**
-   * Compact notation (Arabic: "1.2 ألف", "4.5 مليون").
+   * Compact notation ("1.2 ألف" / "4.5 مليون" · "1.2K" / "4.5m").
    * @param {number} n
    */
   compact(n) {
@@ -255,9 +320,29 @@ export const fmt = {
     } catch {
       const abs = Math.abs(n);
       const sign = n < 0 ? MINUS : '';
-      if (abs >= 1e9) return `${sign}${fallbackNumber(abs / 1e9, 1)} مليار`;
-      if (abs >= 1e6) return `${sign}${fallbackNumber(abs / 1e6, 1)} مليون`;
-      return `${sign}${fallbackNumber(abs / 1e3, 1)} ألف`;
+      const words = COMPACT_FALLBACK[lang()];
+      const sep = lang() === 'ar' ? ' ' : '';
+      if (abs >= 1e9) return `${sign}${fallbackNumber(abs / 1e9, 1)}${sep}${words.b}`;
+      if (abs >= 1e6) return `${sign}${fallbackNumber(abs / 1e6, 1)}${sep}${words.m}`;
+      return `${sign}${fallbackNumber(abs / 1e3, 1)}${sep}${words.k}`;
+    }
+  },
+
+  /**
+   * Saudi riyal amount → "SAR 12,500,000" / "SAR 12.5m" (en) · "‏12,500,000 ر.س.‏" / "‏12.5 مليون ر.س.‏" (ar).
+   * @param {number} n
+   * @param {{compact?: boolean, digits?: number}} [opts]
+   */
+  currency(n, { compact = false, digits = 0 } = {}) {
+    if (!isFiniteNumber(n)) return EM_DASH;
+    const options = compact && Math.abs(n) >= 1000
+      ? { style: 'currency', currency: 'SAR', notation: 'compact', maximumFractionDigits: 1 }
+      : { style: 'currency', currency: 'SAR', minimumFractionDigits: Math.min(digits, 2), maximumFractionDigits: Math.max(0, digits) };
+    try {
+      return cached('number', locale(), options).format(n).replace(/-/g, MINUS);
+    } catch {
+      const body = compact ? fmt.compact(n) : formatNumber(n, { maximumFractionDigits: digits });
+      return lang() === 'en' ? `${CURRENCY_FALLBACK.en} ${body}` : `${body} ${CURRENCY_FALLBACK.ar}`;
     }
   },
 
@@ -320,10 +405,10 @@ export const fmt = {
         const code = d.charCodeAt(0);
         return String(code >= 0x06f0 ? code - 0x06f0 : code - 0x0660);
       })
-      .replace(/[٬,\s  ']/g, '')   // Arabic & Latin thousands separators, spaces
-      .replace(/٫/g, '.')                     // Arabic decimal separator
-      .replace(/[−‒–]/g, '-')       // typographic minus / dashes
-      .replace(/[%٪‰]/g, '')             // %, ٪, ‰
+      .replace(/[٬,\s  ']/g, '') // Arabic & Latin thousands separators, spaces
+      .replace(/٫/g, '.')                   // Arabic decimal separator
+      .replace(/[−‒–]/g, '-')     // typographic minus / dashes
+      .replace(/[%٪‰]/g, '')           // %, ٪, ‰
       .trim();
     if (!/^[+-]?(\d+\.?\d*|\.\d+)$/.test(cleaned)) return NaN;
     return Number(cleaned);
@@ -339,27 +424,28 @@ export const fmt = {
   },
 
   /**
-   * Gregorian date with Arabic month names.
-   * styles: 'short' → "9 نوفمبر" · 'medium' → "9 نوفمبر 2026" ·
-   *         'long'/'full' → "الاثنين، 9 نوفمبر 2026" · 'numeric' → "09/11/2026"
+   * Gregorian date in the UI language.
+   * styles: 'short' → "9 نوفمبر" / "9 Nov" · 'medium' → "9 نوفمبر 2026" / "9 November 2026" ·
+   *         'long'/'full' → "الاثنين، 9 نوفمبر 2026" / "Monday 9 November 2026" · 'numeric' → "09/11/2026"
    * @param {string|Date|number} iso
    * @param {{style?: 'short'|'medium'|'long'|'full'|'numeric'}} [opts]
    */
-  date(iso, { style = 'medium' } = {}) {
+  date(iso, { style = 'medium', instant = false } = {}) {
     const d = toDate(iso);
     if (!d) return EM_DASH;
-    const options = DATE_STYLES[style] || DATE_STYLES.medium;
-    return formatDateParts(d, options, fallbackDate(style));
+    const z = zoned(DATE_STYLES[style] || DATE_STYLES.medium, iso, d, instant);
+    const day = z.options.timeZone === TIME_ZONE ? riyadhAsLocal(d) : d; // local fields for the no-Intl fallback
+    return formatDateParts(z.date, z.options, () => fallbackDate(style)(day));
   },
 
   /**
-   * Date + 24h time → "9 نوفمبر 2026، 14:20".
+   * Date + 24h time → "9 نوفمبر 2026، 14:20" / "9 November 2026, 14:20".
    * @param {string|Date|number} iso
    */
   dateTime(iso) {
     const d = toDate(iso);
     if (!d) return EM_DASH;
-    return `${fmt.date(d)}، ${fmt.time(d)}`;
+    return `${fmt.date(d, { instant: true })}${lang() === 'ar' ? '،' : ','} ${fmt.time(d)}`;
   },
 
   /**
@@ -380,32 +466,31 @@ export const fmt = {
     const d = toDate(iso);
     if (!d) return EM_DASH;
     const options = seconds
-      ? { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }
-      : { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
-    return formatDateParts(d, options, (x) => (
-      seconds
-        ? `${pad2(x.getHours())}:${pad2(x.getMinutes())}:${pad2(x.getSeconds())}`
-        : `${pad2(x.getHours())}:${pad2(x.getMinutes())}`
-    ));
+      ? { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZone: TIME_ZONE }
+      : { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: TIME_ZONE };
+    return formatDateParts(d, options, (x) => {
+      const z = riyadhFields(x);
+      return seconds ? `${pad2(z.h)}:${pad2(z.min)}:${pad2(z.s)}` : `${pad2(z.h)}:${pad2(z.min)}`;
+    });
   },
 
   /**
-   * Umm al-Qura Hijri date → "18 جمادى الأولى 1448هـ".
+   * Umm al-Qura Hijri date in the UI language → "30 جمادى الأولى 1448 هـ" / "30 Jumada I 1448 AH".
    * @param {Date|string|number} [dateObj=new Date()]
    */
   hijri(dateObj = new Date()) {
     const d = toDate(dateObj);
     if (!d) return EM_DASH;
-    const hijriLocale = HIJRI_LOCALE[numerals] || HIJRI_LOCALE.latn;
     try {
-      const parts = cached('date', hijriLocale, { day: 'numeric', month: 'long', year: 'numeric' })
-        .formatToParts(d);
+      const z = zoned({ day: 'numeric', month: 'long', year: 'numeric' }, dateObj, d);
+      const formatter = cached('date', hijriLocale(), z.options);
+      const parts = formatter.formatToParts(z.date);
       const pick = (type) => (parts.find((p) => p.type === type) || {}).value || '';
       const day = pick('day');
       const month = pick('month');
       const year = pick('year');
-      if (day && month && year) return `${day} ${month} ${year}هـ`;
-      return cached('date', hijriLocale, { day: 'numeric', month: 'long', year: 'numeric' }).format(d);
+      if (day && month && year) return `${day} ${month} ${year} ${HIJRI_ERA[lang()]}`;
+      return formatter.format(z.date);
     } catch {
       // Host without the Umm al-Qura calendar: fall back to the Gregorian date.
       return fmt.date(d);
@@ -413,7 +498,7 @@ export const fmt = {
   },
 
   /**
-   * Human relative time → "قبل 3 دقائق" / "خلال 45 دقيقة" / "الآن" / "أمس".
+   * Human relative time → "قبل 3 دقائق" / "3 minutes ago" · "الآن" / "now" · "أمس" / "yesterday".
    * @param {string|Date|number} iso
    * @param {Date|number} [now=Date.now()] reference instant (injectable for tests)
    */
@@ -422,28 +507,27 @@ export const fmt = {
     if (!d) return EM_DASH;
     const ref = toDate(now) || new Date();
     const { unit, value } = relativeUnit(d.getTime() - ref.getTime());
-    // Anything within ±10 seconds reads as "now" rather than "قبل 4 ثوانٍ".
+    // Anything within ±10 seconds reads as "now".
     const v = unit === 'second' && Math.abs(value) < 10 ? 0 : value;
     try {
-      return cached('relative', RELATIVE_LOCALE[numerals] || RELATIVE_LOCALE.latn, { numeric: 'auto' })
-        .format(v, unit);
+      return cached('relative', plainLocale(), { numeric: 'auto' }).format(v, unit);
     } catch {
       return fallbackRelative(v, unit);
     }
   },
 
   /**
-   * Duration in two sizes (digits never glued to letters):
-   *   style 'short' (countdown chips):  ≥ 1 day → "٢ ي ٥ س" · ≥ 1 hour → "٥ س ١٢ د" ·
-   *                                    ≥ 1 min → "٤٥ د" · < 1 min → "٣٠ ث"
-   *   style 'long'  (where there is room): "يومان و٥ ساعات" · "٥ ساعات و١٢ دقيقة" · "٤٥ دقيقة" · "٣٠ ثانية"
-   *   negative → "منتهٍ"
+   * Duration in two sizes (digits never glued to letters in Arabic):
+   *   'short' (countdown chips): ar "٢ ي ٥ س" · "٥ س ١٢ د" · "٤٥ د" · "٣٠ ث" — en "2d 5h" · "5h 12m" · "45m" · "30s"
+   *   'long':  ar "يومان و٥ ساعات" · "٥ ساعات و١٢ دقيقة" — en "2 days 5 hours" · "5 hours 12 minutes"
+   *   negative → "منتهٍ" / "Expired"
    * @param {number} ms
    * @param {{style?: 'short'|'long'}} [opts]
    */
   duration(ms, { style = 'short' } = {}) {
     if (!isFiniteNumber(ms)) return EM_DASH;
-    if (ms < 0) return 'منتهٍ';
+    const L = lang();
+    if (ms < 0) return EXPIRED[L];
     const total = Math.floor(ms / SECOND);
     const days = Math.floor(total / 86400);
     const hours = Math.floor((total % 86400) / 3600);
@@ -455,24 +539,33 @@ export const fmt = {
         : minutes > 0 ? [['minute', minutes]]
           : [['second', seconds]];
     if (style === 'long') {
-      const words = parts.filter(([, v], i) => i === 0 || v > 0).map(([unit, v]) => countWord(v, unit, n));
-      return words.join(' و');
+      const kept = parts.filter(([, v], i) => i === 0 || v > 0);
+      if (L === 'en') return kept.map(([unit, v]) => countWordEn(v, unit, n)).join(' ');
+      return kept.map(([unit, v]) => countWordAr(v, unit, n)).join(' و');
     }
-    return parts.map(([unit, v]) => `${n(v)} ${DURATION_LETTERS[unit]}`).join(' ');
+    if (L === 'en') return parts.map(([unit, v]) => `${n(v)}${DURATION_LETTERS.en[unit]}`).join(' ');
+    return parts.map(([unit, v]) => `${n(v)} ${DURATION_LETTERS.ar[unit]}`).join(' ');
   },
 
   /**
-   * Arabic weekday name → "الاثنين".
+   * Weekday name in the UI language → "الاثنين" / "Monday".
    * @param {string|Date|number} iso
    */
   dayName(iso) {
     const d = toDate(iso);
     if (!d) return EM_DASH;
-    return formatDateParts(d, { weekday: 'long' }, (x) => WEEKDAYS_AR[x.getDay()]);
+    const z = zoned({ weekday: 'long' }, iso, d);
+    return formatDateParts(z.date, z.options, () => WEEKDAYS[lang()][z.options.timeZone === TIME_ZONE ? riyadhFields(d).wd : d.getDay()]);
   },
 
   /** Parse helper re-exported on the object for convenience (see `toDate`). */
   toDate,
+
+  /** The reference time zone every instant is shown in ('Asia/Riyadh'). */
+  timeZone: TIME_ZONE,
 };
+
+// tn() preformats {count} with fmt.num (numerals-aware) — registered here to avoid an import cycle.
+try { i18n.setCountFormatter((n) => fmt.num(n, { maximumFractionDigits: Number.isInteger(n) ? 0 : 1 })); } catch { /* i18n unavailable */ }
 
 export default fmt;

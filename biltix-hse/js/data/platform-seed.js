@@ -5,7 +5,7 @@
  * المشاريع هي مواقع ركيزة السلامة نفسها (S1..S6). كل النصوص عربية ما عدا
  * الأكواد والمعايير وأسماء الأنظمة (Primavera P6, Autodesk APS, Oracle ERP,
  * CPI/SPI/EAC, P50/P80/P90). التواريخ ISO والمرجع الزمني ("اليوم") هو
- * الأحد 2026-11-09 بتوقيت الرياض (+03:00)؛ يعيد store.js إسقاطها على تاريخ
+ * الاثنين 2026-11-09 بتوقيت الرياض (+03:00)؛ يعيد store.js إسقاطها على تاريخ
  * اليوم الفعلي عند التحميل.
  *
  * الملف خالٍ من الآثار الجانبية عند الاستيراد ولا يستخدم أي عشوائية: كل
@@ -96,6 +96,14 @@ export const SPEC_COMPLIANCE = ['مطابق', 'غير مطابق', 'قيد ال�
 export const APPROVAL_STATUS = ['قيد المعالجة', 'معتمد', 'متأخر', 'مطلوب استكمال'];
 export const CHANGE_ORDER_STATUS = ['مقترح', 'قيد الاعتماد', 'معتمد', 'مرفوض'];
 export const QUARANTINE_STATUS = ['معلّق', 'مُصحح', 'مرفوض'];
+/** v4 — رموز مراجعة طلبات اعتماد المواد (submittals) وحالاتها. */
+export const SUBMITTAL_CODES = [
+  { id: 'A', name: 'معتمد',                 nameEn: 'Approved',            tone: 'good' },
+  { id: 'B', name: 'معتمد مع ملاحظات',      nameEn: 'Approved as noted',   tone: 'good' },
+  { id: 'C', name: 'يُعدَّل ويُعاد تقديمه', nameEn: 'Revise and resubmit', tone: 'warning' },
+  { id: 'D', name: 'مرفوض',                 nameEn: 'Rejected',            tone: 'critical' },
+];
+export const SUBMITTAL_STATUS = ['قيد المراجعة', 'أُعيد', 'مغلق'];
 export const STAKEHOLDER_ROLES = [
   { id: 'PM',          name: 'مدير المشروع' },
   { id: 'Legal',       name: 'القانونية' },
@@ -276,14 +284,14 @@ const contracts = [
       },
       {
         id: 'CT2-C4', ref: '5.4', title: 'تسليم مخططات الورشة والعينات',
-        excerpt: 'يلتزم المقاول من الباطن بتسليم مخططات الورشة والنماذج الأولية (Visual Mock-up) للمهندس قبل 120 يوماً من موعد بدء التركيب.',
+        excerpt: 'يلتزم المقاول من الباطن بتسليم مخططات الورشة والنماذج الأولية (Visual Mock-up) للمهندس قبل سبعين (70) يوماً من موعد بدء التركيب.',
         flag: 'obligation', severity: 44,
         explanation: 'موعد تسليم النموذج الأولي يحل خلال 26 يوماً فيما لم يُعتمد بعد مورد الزجاج؛ أي تأخير هنا ينتقل مباشرة إلى المسار الحرج لإغلاق الواجهة.',
-        redline: '', benchmark: 'المعيار السوقي: 90–120 يوماً؛ البند الحالي ضمن النطاق لكن الالتزام مهدد.', status: 'مفتوح',
+        redline: '', benchmark: 'المعيار السوقي: 90–120 يوماً؛ البند الحالي 70 يوماً — أقصر من المعتاد ويترك هامشاً ضيقاً لدورة الاعتماد.', status: 'مفتوح',
       },
     ],
     obligations: [
-      { id: 'CT2-O1', text: 'تسليم النموذج الأولي للواجهة (Visual Mock-up) واعتماد العينات', due: d(26), owner: 'شركة الخليج للواجهات', status: 'قادم', clauseRef: '5.4' },
+      { id: 'CT2-O1', text: 'تسليم النموذج الأولي للواجهة (Visual Mock-up) واعتماد العينات', due: d(26), owner: 'شركة الخليج للواجهات', status: 'قادم', clauseRef: '5.4', submittalId: 'SB1' },
       { id: 'CT2-O2', text: 'تقديم شهادة تأمين المسؤولية تجاه الغير المجددة', due: d(12), owner: 'شركة الخليج للواجهات', status: 'قادم', clauseRef: '18.2' },
     ],
   },
@@ -470,7 +478,7 @@ const contracts = [
         excerpt: 'ضمان منتج 12 سنة وضمان أداء خطي 30 سنة بتدهور سنوي لا يتجاوز 0.4%.',
         flag: null, severity: 15,
         explanation: 'ضمانات مطابقة للمعيار الصناعي لتقنية TOPCon.',
-        redline: '', benchmark: 'المعيار السوقي: 12/30 سنة، تدهور ≤ 0.4%؛ مطابق.', status: 'مُعالج',
+        redline: '', benchmark: 'المعيار السوقي: 12/30 سنة، تدهور لا يزيد على 0.4%؛ مطابق.', status: 'مُعالج',
       },
     ],
     obligations: [
@@ -885,7 +893,14 @@ function boq(item, requiredOffset) {
 
 const boqItems = [
   boq({ id: 'BQ1',  code: 'BQ-S1-03.02.010', projectId: 'S1', description: 'حديد تسليح عالي المقاومة قطر 32 مم — الطوابق 24–30',            unit: 'طن',  boqQty: 1840,  bimQty: 1996,  unitPrice: 3190,   supplierId: 'SUP1',  leadTimeDays: 21,  specCompliance: 'مطابق',        riskScore: 58 }, 34),
-  boq({ id: 'BQ2',  code: 'BQ-S1-08.01.040', projectId: 'S1', description: 'وحدات الواجهة الزجاجية الموحدة (Unitized Curtain Wall) 1.5×4.2 م', unit: 'م²',  boqQty: 28600, bimQty: 27950, unitPrice: 2650,   supplierId: 'SUP4',  leadTimeDays: 110, specCompliance: 'قيد المراجعة', riskScore: 71 }, 96),
+  boq({ id: 'BQ2',  code: 'BQ-S1-08.01.040', projectId: 'S1', description: 'وحدات الواجهة الزجاجية الموحدة (Unitized Curtain Wall) 1.5×4.2 م', unit: 'م²',  boqQty: 28600, bimQty: 27950, unitPrice: 2650,   supplierId: 'SUP4',  leadTimeDays: 110, specCompliance: 'قيد المراجعة', riskScore: 71,
+    // v4: بوابة الشراء — أمر الشراء محجوب حتى اعتماد المادة SB1؛ حجز خط الإنتاج حتى d(14) (خطاب المورد GFC-L-2026-117)
+    procurement: {
+      prRef: 'PR-S1-2026-0412', prApprovedAt: t(-15, '15:40'),
+      poRef: 'PO-S1-2026-0871', poStatus: 'محجوب — بانتظار اعتماد المادة', poStatusEn: 'Blocked — awaiting material approval', blockedBy: 'SB1',
+      slotHoldUntil: d(14), nextSlotDelayDays: 21,
+      letterRef: 'GFC-L-2026-117', letterAt: t(-2, '17:25'),
+    } }, 96),
   boq({ id: 'BQ3',  code: 'BQ-S1-03.01.020', projectId: 'S1', description: 'خرسانة جاهزة C60 للأعمدة والنواة',                                unit: 'م³',  boqQty: 12400, bimQty: 12610, unitPrice: 385,    supplierId: 'SUP7',  leadTimeDays: 2,   specCompliance: 'مطابق',        riskScore: 12 }, 12),
   boq({ id: 'BQ4',  code: 'BQ-S1-14.01.010', projectId: 'S1', description: 'مصاعد ركاب عالية السرعة 6 م/ث — 18 وحدة',                           unit: 'عدد', boqQty: 18,    bimQty: 18,    unitPrice: 2_150_000, supplierId: 'SUP6', leadTimeDays: 140, specCompliance: 'مطابق',        riskScore: 44 }, 210),
   boq({ id: 'BQ5',  code: 'BQ-S2-16.02.030', projectId: 'S2', description: 'كابلات نحاسية XLPE 4×240 مم² — التغذية الرئيسية للمباني A–C',       unit: 'م',   boqQty: 18500, bimQty: 20310, unitPrice: 412,    supplierId: 'SUP5',  leadTimeDays: 35,  specCompliance: 'مطابق',        riskScore: 63 }, 25),
@@ -938,10 +953,14 @@ const scheduleTasks = [
   // S1 — برج الواجهة المالية: النواة → الهيكل → الواجهة → الكهروميكانيك
   task({ id: 'T1',  code: 'A1020', projectId: 'S1', name: 'صب نواة البرج — الطوابق 24–27',                     wbs: '1.3.2', floatDays: 0,  critical: true,  percentComplete: 62, delayProbability: 0.58, expectedDelayDays: 12, subcontractorId: 'SC2', trade: 'خرسانة',           weatherSensitive: true },  -28, 18, 9),
   task({ id: 'T2',  code: 'A1030', projectId: 'S1', name: 'تركيب حديد تسليح البلاطات — الطوابق 28–30',           wbs: '1.3.3', floatDays: 0,  critical: true,  percentComplete: 20, delayProbability: 0.49, expectedDelayDays: 9,  subcontractorId: 'SC2', trade: 'حديد تسليح',       weatherSensitive: false }, -6, 46, 38),
-  task({ id: 'T3',  code: 'A1100', projectId: 'S1', name: 'بدء تركيب وحدات الواجهة الزجاجية — الطوابق 8–15',        wbs: '1.5.1', floatDays: 0,  critical: true,  percentComplete: 0,  delayProbability: 0.71, expectedDelayDays: 28, subcontractorId: 'SC1', trade: 'واجهات',           weatherSensitive: true },  96, 170, 142),
+  task({ id: 'T3',  code: 'A1100', projectId: 'S1', name: 'بدء تركيب وحدات الواجهة الزجاجية — الطوابق 8–15',        wbs: '1.5.1', floatDays: 0,  critical: true,  percentComplete: 0,  delayProbability: 0.71, expectedDelayDays: 28, subcontractorId: 'SC1', trade: 'واجهات',           weatherSensitive: true, predecessors: [{ id: 'T34', type: 'FS', lagDays: 0 }] },  96, 170, 142),
   task({ id: 'T4',  code: 'A1140', projectId: 'S1', name: 'تركيب رافعة البرج رقم 3 ورفع الارتفاع (Climbing)',       wbs: '1.2.4', floatDays: 6,  critical: false, percentComplete: 45, delayProbability: 0.33, expectedDelayDays: 4,  subcontractorId: null,  trade: 'معدات رفع',        weatherSensitive: true },  -10, 11, 9),
   task({ id: 'T5',  code: 'A1210', projectId: 'S1', name: 'تمديدات الكهروميكانيك الرأسية — الطوابق 1–12',          wbs: '1.6.1', floatDays: 21, critical: false, percentComplete: 38, delayProbability: 0.22, expectedDelayDays: 3,  subcontractorId: null,  trade: 'كهروميكانيك',      weatherSensitive: false }, -40, 60, 60),
   task({ id: 'T6',  code: 'A1250', projectId: 'S1', name: 'تركيب المصاعد عالية السرعة — المجموعة الأولى',           wbs: '1.6.4', floatDays: 14, critical: false, percentComplete: 0,  delayProbability: 0.41, expectedDelayDays: 10, subcontractorId: null,  trade: 'مصاعد',            weatherSensitive: false }, 210, 300, 290),
+  // v4 — سلسلة المثال التطبيقي: اعتماد المادة ← التصنيع والتوريد ← A1100 ← إغلاق الواجهة
+  task({ id: 'T33', code: 'A1090', projectId: 'S1', name: 'اعتماد مواد الواجهة (MAR-S1-CW-014) وإصدار أمر شراء الدفعة الأولى', wbs: '1.5.0.1', floatDays: 0, critical: true, percentComplete: 60, delayProbability: 0.71, expectedDelayDays: 28, subcontractorId: 'SC1', trade: 'مشتريات واجهات', weatherSensitive: false, predecessors: [] }, -37, 14, -14),
+  task({ id: 'T34', code: 'A1095', projectId: 'S1', name: 'تصنيع وتوريد الدفعة الأولى لوحدات الواجهة (الطوابق 8–11)', wbs: '1.5.0.2', floatDays: 0, critical: true, percentComplete: 0, delayProbability: 0.71, expectedDelayDays: 28, subcontractorId: 'SC1', trade: 'توريد واجهات', weatherSensitive: false, predecessors: [{ id: 'T33', type: 'FS', lagDays: 0 }] }, 14, 124, 96),
+  task({ id: 'T35', code: 'M1150', projectId: 'S1', name: 'إغلاق الواجهة (Dry-in) للطوابق 8–15', wbs: '1.5.9', floatDays: 0, critical: true, percentComplete: 0, delayProbability: 0.71, expectedDelayDays: 28, subcontractorId: 'SC1', trade: 'معلم', weatherSensitive: false, milestone: true, predecessors: [{ id: 'T3', type: 'FF', lagDays: 0 }] }, 170, 170, 142),
   // S2 — مجمع البحر الأحمر: المصاعد والتشغيل التجريبي → التسلّم
   task({ id: 'T7',  code: 'B2040', projectId: 'S2', name: 'تركيب وتشغيل المصاعد — المبنى أ (6 وحدات)',              wbs: '2.6.3', floatDays: 0,  critical: true,  percentComplete: 71, delayProbability: 0.62, expectedDelayDays: 14, subcontractorId: 'SC3', trade: 'مصاعد',            weatherSensitive: false }, -35, 36, 30),
   task({ id: 'T8',  code: 'B2050', projectId: 'S2', name: 'اختبارات التشغيل والموازنة للتكييف — المبنى أ',           wbs: '2.6.5', floatDays: 0,  critical: true,  percentComplete: 44, delayProbability: 0.55, expectedDelayDays: 10, subcontractorId: 'SC3', trade: 'كهروميكانيك',      weatherSensitive: false }, -12, 34, 28),
@@ -1046,7 +1065,8 @@ function approval(a, submittedOff) {
 }
 
 const approvals = [
-  approval({ id: 'AP1',  projectId: 'S1', authority: 'أمانة منطقة الرياض',                                   type: 'ترخيص إغلاق جزئي لطريق الملك فهد الخدمي (رفع وحدات الواجهة)', statutoryDays: 30, status: 'قيد المعالجة',   riskScore: 61 }, -26),
+  approval({ id: 'AP1',  projectId: 'S1', authority: 'أمانة منطقة الرياض',                                   type: 'ترخيص إغلاق جزئي لطريق الملك فهد الخدمي (رفع وحدات الواجهة)', statutoryDays: 30, status: 'قيد المعالجة',   riskScore: 61,
+    windowFrom: d(96), windowTo: d(142), hours: 'ليلاً', hoursEn: 'Nights', windowAssumed: true }, -26),   // [ASM] النافذة الفعلية من الأمانة
   approval({ id: 'AP2',  projectId: 'S1', authority: 'الدفاع المدني',                                        type: 'اعتماد مخططات أنظمة الإطفاء — الطوابق 1–30',               statutoryDays: 21, status: 'مطلوب استكمال',  riskScore: 55 }, -34),
   approval({ id: 'AP3',  projectId: 'S2', authority: 'الشركة السعودية للكهرباء',                              type: 'توصيل التيار الدائم — المبنى ج (محطة محولات 13.8 ك.ف)',     statutoryDays: 60, status: 'متأخر',          riskScore: 83 }, -94),
   approval({ id: 'AP4',  projectId: 'S2', authority: 'أمانة محافظة جدة',                                     type: 'شهادة إشغال — المبنى أ',                                   statutoryDays: 15, status: 'قيد المعالجة',   riskScore: 38 }, -4),
@@ -1175,7 +1195,7 @@ const costLines = [
 const changeOrders = [
   { id: 'CO1',  code: 'CO-027', projectId: 'S1', title: 'تعديل تصميم نواة البرج — زيادة سماكة الجدران 24–30',            amountSAR: 18_400_000, status: 'معتمد',        submittedAt: d(-74), impactDays: 12, driver: 'تغيير تصميمي من الاستشاري' },
   { id: 'CO2',  code: 'CO-031', projectId: 'S1', title: 'تعويض إيقاف الأعمال بسبب العواصف الترابية (11 يوماً)',           amountSAR: 6_900_000,  status: 'مرفوض',        submittedAt: d(-41), impactDays: 11, driver: 'ظروف جوية' },
-  { id: 'CO3',  code: 'CO-034', projectId: 'S1', title: 'تغيير مواصفة الزجاج العازل إلى ثلاثي الطبقات',                 amountSAR: 14_200_000, status: 'قيد الاعتماد', submittedAt: d(-16), impactDays: 0,  driver: 'طلب صاحب العمل' },
+  { id: 'CO3',  code: 'CO-034', projectId: 'S1', title: 'تغيير مواصفة الزجاج العازل إلى ثلاثي الطبقات',                 amountSAR: 14_200_000, status: 'قيد الاعتماد', submittedAt: d(-16), impactDays: 0,  driver: 'طلب صاحب العمل', blocksSubmittalId: 'SB1' },
   { id: 'CO4',  code: 'CO-012', projectId: 'S2', title: 'تمديد شبكة الصرف لربط المبنى ج بغرفة التفتيش الجديدة',          amountSAR: 2_350_000,  status: 'معتمد',        submittedAt: d(-120), impactDays: 6, driver: 'اشتراطات الجهات الخدمية' },
   { id: 'CO5',  code: 'CO-015', projectId: 'S2', title: 'استبدال بلاط البورسلين غير المطابق (الدفعة 4)',                 amountSAR: 1_120_000,  status: 'مقترح',        submittedAt: d(-9),  impactDays: 8,  driver: 'عدم مطابقة المواصفات' },
   { id: 'CO6',  code: 'CO-048', projectId: 'S3', title: 'زيادة سعة BESS من 300 إلى 320 ميجاواط ساعة (4 حاويات إضافية)',  amountSAR: 27_600_000, status: 'قيد الاعتماد', submittedAt: d(-22), impactDays: 15, driver: 'طلب صاحب العمل' },
@@ -1250,12 +1270,39 @@ function ratingOf(score) {
   return score >= 70 ? 'أحمر' : score >= 40 ? 'أصفر' : 'أخضر';
 }
 
+/**
+ * v3 (CONTRACT §8, spec D5): الشدة = الاحتمالية × الأثر × 4 (0–100) — قيمة واحدة مشتقة، لا تُكتب يدوياً.
+ * [الاحتمالية، الأثر] لكل مخاطرة، مختارة لتبقى وفية للدرجة السابقة وللسرد: نفس التقييم (أحمر/أصفر/أخضر)
+ * ونفس قرار التنبيه مقابل العتبتين الافتراضيتين (> 60 تنبيه، ≥ 85 تصعيد فوري)، والاحتمالية تعكس
+ * احتمال الحدوث المذكور في التفسير (احتمال التأخير، تكرار الملاحظة، حدوثه فعلاً) والأثر يعكس حجم العاقبة
+ * (التعرض المالي، أيام المسار الحرج، احتمال الإصابة الجسيمة).
+ *   ≥ 85 → 100 (5×5) · 70–84 → 80 (4×5 أو 5×4) · 61–69 → 64 (4×4) · 40–60 → 40/48/60 · < 40 → 4…36
+ */
+export const AI_RISK_LI = Object.freeze({
+  1: [5, 5], 2: [5, 4], 3: [4, 5], 4: [4, 5], 5: [5, 4], 6: [5, 4], 7: [4, 5], 8: [5, 4], 9: [5, 4], 10: [5, 5],
+  11: [4, 5], 12: [5, 4], 13: [4, 5], 14: [4, 5], 15: [4, 5], 16: [4, 5], 17: [5, 5], 18: [5, 5], 19: [4, 5], 20: [5, 5],
+  21: [5, 4], 22: [5, 4], 23: [5, 4], 24: [4, 4], 25: [4, 4], 26: [3, 5], 27: [4, 3], 28: [4, 4], 29: [5, 3], 30: [4, 3],
+  31: [4, 3], 32: [4, 4], 33: [4, 4], 34: [4, 4], 35: [4, 4], 36: [5, 3], 37: [5, 3], 38: [4, 4], 39: [4, 4], 40: [3, 4],
+  41: [3, 4], 42: [4, 4], 43: [4, 3], 44: [4, 4], 45: [3, 5], 46: [4, 4], 47: [4, 4], 48: [4, 4], 49: [3, 5], 50: [5, 2],
+  51: [3, 5], 52: [3, 3], 53: [4, 2], 54: [2, 2], 55: [2, 2], 56: [3, 3], 57: [2, 3], 58: [2, 3], 59: [2, 4], 60: [3, 3],
+  61: [2, 3], 62: [3, 2], 63: [2, 2], 64: [2, 2], 65: [4, 2], 66: [2, 3], 67: [2, 4], 68: [2, 4],
+  69: [4, 5],   // v4 المثال التطبيقي AIR-1069: 4 × 5 × 4 = 80 (أحمر؛ تنبيه قياسي؛ لا تصعيد تلقائي)
+});
+
+/** الدرجة المشتقة للمخاطرة رقم n (تُستخدم أيضاً في نصوص التنبيهات والسجل حتى لا تتعارض الأرقام). */
+export function liScore(likelihood, impact) {
+  return Math.round(Number(likelihood) || 0) * Math.round(Number(impact) || 0) * 4;
+}
+const S = (n) => liScore(AI_RISK_LI[n][0], AI_RISK_LI[n][1]);
+
 /** يملأ الحقول الافتراضية لمخاطرة مكتوبة يدوياً (الكود، إصدار النموذج، السجل الزمني الأولي). */
 function air(n, x) {
   const meta = PIPELINE_META[x.pipeline];
   const detected = x.detectedAt;
+  const [likelihood, impact] = AI_RISK_LI[n];
+  const score = liScore(likelihood, impact);
   const history = [
-    { at: detected, by: meta.nameAr, text: `اكتشاف تلقائي — الدرجة ${x.score} (${ratingOf(x.score)})، الثقة ${Math.round(x.confidence * 100)}%` },
+    { at: detected, by: meta.nameAr, text: `اكتشاف تلقائي — الدرجة ${score} (${ratingOf(score)})، الثقة ${Math.round(x.confidence * 100)}%` },
     ...(x.history || []),
   ];
   return {
@@ -1265,6 +1312,12 @@ function air(n, x) {
     updatedAt: x.updatedAt || (history[history.length - 1] || {}).at || detected,
     owner: null, dueDate: null, taskId: null, escalated: false, overrides: [],
     ...x,
+    likelihood,
+    impact,
+    score,
+    residualLikelihood: null,
+    residualImpact: null,
+    residualAssessment: null,
     history,
   };
 }
@@ -1286,7 +1339,7 @@ const aiRisks = [
       Finance: { budgetImpactSAR: 133_000_000, cashflowMonth: '2028-07' },
     },
     history: [
-      { at: t(-61, '14:30'), by: 'النظام', text: 'إرسال تنبيه تصعيد فوري (البريد، Slack) — الدرجة فوق عتبة الحرج 85' },
+      { at: t(-61, '14:30'), by: 'النظام', text: 'تسجيل تنبيه تصعيد فوري — الدرجة فوق عتبة الحرج 85؛ القنوات: البريد، Slack (توجيه فقط، لم يُرسل في هذا الإصدار)' },
       { at: t(-58, '10:02'), by: 'م. هيا الدوسري', text: 'قبول التوصية وإسناد المهمة MT-0201 إلى المستشار القانوني' },
       { at: t(-2, '11:05'), by: 'أ. فيصل الحربي', text: 'عُقد اجتماع تفاوضي أول مع صاحب العمل؛ قبول مبدئي بمناقشة السقف في جولة 20 نوفمبر' },
     ],
@@ -1312,11 +1365,11 @@ const aiRisks = [
     overrides: [{ at: t(-55, '09:20'), by: 'م. خالد العتيبي', fromAction: 'طلب تعديل الأجل إلى 30 يوماً مع تكاليف تمويل', toAction: 'طلب تعديل الأجل إلى 30 يوماً + ترتيب تسهيل تمويل مستخلصات 150 مليون ريال', reason: 'التفاوض قد يستغرق شهرين؛ نحتاج غطاءً نقدياً فورياً لدفعات الباطن' }],
   }),
   air(3, {
-    projectId: 'S1', category: 'schedule', type: 'Delay', score: 76,
+    projectId: 'S1', category: 'schedule', type: 'Delay',
     title: 'انزلاق بدء تركيب الواجهة الزجاجية (A1100) على المسار الحرج',
     driverExplanation: 'النشاط A1100 حرج بطفو صفر وموعد انتهاء مخطط d+142 لكن توقع النموذج d+170 (28 يوماً). المحرك الأول: تقدم المقاول من الباطن شركة الخليج للواجهات 14% مقابل 22% مخطط (بطاقة أداء 58/100)، والثاني: النموذج الأولي (Mock-up) مستحق خلال 26 يوماً ولم يُعتمد مورد الزجاج بعد. احتمال التأخير 0.71.',
-    evidence: { kind: 'task', ref: 'A1100 — WBS 1.5.1', excerpt: 'Start 2027-02-13 · Finish 2027-04-28 · Baseline 2027-03-31 · Total Float 0 · Delay probability 0.71', sourceSystem: 'Primavera P6' },
-    recommendation: { action: 'تقسيم تركيب الواجهة إلى حزمتين متوازيتين (الطوابق 8–11 و12–15) بفريقين، واعتماد مورد الزجاج خلال 7 أيام بموافقة مشروطة على العينات.', rationale: 'التوازي يسترد ~18 يوماً من الـ28 المتوقعة؛ اعتماد المورد يزيل أكبر تبعية مفتوحة.', effort: 'متوسط', impact: 'خفض الدرجة إلى ~48', alternatives: ['تحويل بدء الواجهة إلى الطوابق المكتملة إنشائياً مبكراً (8–10) قبل الموعد', 'تفعيل بند الاستبدال الجزئي للمقاول من الباطن (§15.2)'] },
+    evidence: { kind: 'task', ref: 'A1100 — WBS 1.5.1', excerpt: 'Start d+96 · Finish d+170 · Baseline d+142 · Total Float 0 · Delay probability 0.71', sourceSystem: 'Primavera P6' },
+    recommendation: { action: 'تقسيم تركيب الواجهة إلى حزمتين متوازيتين (الطوابق 8–11 و12–15) بفريقين، واعتماد مورد الزجاج خلال 7 أيام بموافقة مشروطة على العينات.', rationale: 'التوازي يسترد 12–18 يوماً من الـ28 المتوقعة حسب موعد وصول الدفعة الثانية؛ اعتماد المورد يزيل أكبر تبعية مفتوحة.', effort: 'متوسط', impact: 'خفض الدرجة إلى ~48', alternatives: ['تحويل بدء الواجهة إلى الطوابق المكتملة إنشائياً مبكراً (8–10) قبل الموعد', 'تفعيل بند الاستبدال الجزئي للمقاول من الباطن (§15.2)'] },
     pipeline: 'schedule-model', confidence: 0.84, detectedAt: t(-21, '07:30'), updatedAt: t(-1, '08:00'),
     status: 'تنبيه', owner: OWNERS.planning, dueDate: d(10),
     stakeholders: ['PM', 'Procurement', 'PMO'],
@@ -1339,7 +1392,7 @@ const aiRisks = [
       Site: { location: 'المنطقة أ — الطابق 23، الحافتان الشمالية والشرقية', hazard: 'سقوط من ارتفاع', controls: ['حواجز حافة معتمدة (EN 13374 Class A)', 'خطوط حياة أفقية', 'تصريح عمل على ارتفاع'] },
       PM: { scheduleImpactDays: 1, costImpactSAR: 180_000, criticalPath: true },
     },
-    history: [{ at: t(-1, '13:10'), by: 'م. سارة القحطاني', text: 'قبول التوصية؛ أُنشئت المهمة MT-0203 وكُتبت إلى Biltix PM' }],
+    history: [{ at: t(-1, '13:10'), by: 'م. سارة القحطاني', text: 'قبول التوصية؛ أُنشئت المهمة MT-0203 (الكتابة العكسية إلى BILTIX PM محاكاة)' }],
   }),
   air(5, {
     projectId: 'S1', category: 'bom', type: 'Delay', score: 73,
@@ -1387,7 +1440,7 @@ const aiRisks = [
       PMO: { trend: 'ثابت عند الأحمر منذ 5 أسابيع', kpi: 'SPI 0.96', portfolioRank: 5 },
     },
     history: [
-      { at: t(-33, '09:00'), by: 'النظام', text: 'تنبيه قياسي عبر البريد وSlack إلى مدير المشروع' },
+      { at: t(-33, '09:00'), by: 'النظام', text: 'تسجيل تنبيه قياسي لمدير المشروع؛ القنوات: البريد، Slack (توجيه فقط، لم يُرسل في هذا الإصدار)' },
       { at: t(-29, '11:15'), by: 'م. نورة الزهراني', text: 'قبول التوصية؛ المهمة MT-0205 — متابعة الكهرباء وإرسال إشعار التمديد' },
       { at: t(-4, '15:20'), by: 'م. نورة الزهراني', text: 'تصعيد فوري: الفحص لم يُجدول بعد 25 يوماً من المتابعة' },
     ],
@@ -1425,7 +1478,7 @@ const aiRisks = [
   air(10, {
     projectId: 'S3', category: 'schedule', type: 'Delay', score: 91,
     title: 'توريد محولات 33/380 ك.ف من مورد متعثر يهدد تاريخ التشغيل التجاري',
-    driverExplanation: 'النشاط C3010 (توريد المحولات) على المسار الحرج بطفو صفر وانتهاء متوقع d+72 مقابل خط الأساس d+30. المورد شركة المحولات الوطنية بصحة مالية 47/100 وتصنيف ائتماني C وأداء تسليم 69%، وزمن توريد 180 يوماً. احتمال التأخير 0.78 بأثر 45 يوماً يُحرّك سلسلة C3020 → C3030 (التنشيط والربط) ويُفعّل غرامة 1.2 مليون ريال يومياً.',
+    driverExplanation: 'النشاط C3010 (توريد المحولات) على المسار الحرج بطفو صفر وانتهاء متوقع d+72 مقابل خط الأساس d+30. المورد شركة المحولات الوطنية بصحة مالية 47/100 وتصنيف ائتماني C وأداء تسليم 69%، وزمن توريد 180 يوماً. احتمال التأخير 0.78 بأثر 45 يوماً يُحرّك سلسلة من C3020 إلى C3030 (التنشيط والربط) ويُفعّل غرامة 1.2 مليون ريال يومياً.',
     evidence: { kind: 'supplier', ref: 'SUP9 — PO-2026-0388', excerpt: 'شركة المحولات الوطنية · Financial health 47 · Credit C · On-time delivery 69% · أمر الشراء PO-2026-0388: اختبار المصنع (FAT) مؤجل للمرة الثانية — أحدث موعد d+41', sourceSystem: 'Oracle ERP' },
     recommendation: { action: 'إيفاد فريق فحص مقيم إلى مصنع المورد وتحويل 30% من الدفعة التالية إلى معلم FAT، مع التعاقد الاحتياطي على محول واحد من مورد بديل (زمن 150 يوماً) لتأمين تنشيط جزئي.', rationale: 'يرفع احتمال التسليم في موعده إلى 0.6 ويؤمّن خيار التنشيط بمحول واحد الذي يُسقط 70% من غرامة التأخير.', effort: 'عالٍ', impact: 'خفض الدرجة إلى ~58', alternatives: ['استئجار محول متنقل 100 م.ف.أ من الشركة السعودية للكهرباء للتنشيط المبكر', 'تفعيل ضمان الأداء البنكي للمورد والشراء البديل'] },
     pipeline: 'schedule-model', confidence: 0.9, detectedAt: t(-45, '07:30'), updatedAt: t(-3, '17:45'),
@@ -1439,7 +1492,7 @@ const aiRisks = [
       PMO: { trend: 'متدهور بحدة', kpi: 'SPI 0.93 · P80 +82 يوماً', portfolioRank: 1 },
     },
     history: [
-      { at: t(-45, '07:35'), by: 'النظام', text: 'تصعيد فوري — الدرجة 91 ≥ 85 (البريد، Slack، Teams)' },
+      { at: t(-45, '07:35'), by: 'النظام', text: `تسجيل تصعيد فوري — الدرجة ${S(10)} لا تقل عن 85؛ القنوات: البريد، Slack، Teams (توجيه فقط، لم يُرسل في هذا الإصدار)` },
       { at: t(-40, '12:00'), by: 'م. فهد الشمري', text: 'تعديل التوصية: إضافة التعاقد الاحتياطي على محول من مورد بديل' },
       { at: t(-3, '17:45'), by: 'م. بدر القرني', text: 'فريق الفحص المقيم في المصنع منذ 10 أيام؛ FAT للمحول الأول مجدول d+41' },
     ],
@@ -1464,7 +1517,7 @@ const aiRisks = [
   air(12, {
     projectId: 'S3', category: 'bom', type: 'Delay', score: 78,
     title: 'تركّز الألواح الكهروضوئية في مورد وحيد مع تأخر الشحنة الثالثة 19 يوماً',
-    driverExplanation: '19.6% من إنفاق المحفظة على مورد واحد (مصنع شنغهاي للألواح) بأداء تسليم 74% وصحة مالية 71. الشحنة الثالثة (260 ميجاواط) متأخرة 19 يوماً عن جدول PO-2026-0457 §5.1، وسقف غرامة المورد (5% من الشحنة ≈ 2.7 مليون ريال) لا يغطي أثر يوم واحد من غرامة المشروع تجاه نيوم.',
+    driverExplanation: '19.6% من إنفاق المحفظة على مورد واحد (مصنع شنغهاي للألواح) بأداء تسليم 74% وصحة مالية 71. الشحنة الثالثة (260 ميجاواط) متأخرة 19 يوماً عن جدول PO-2026-0457 §5.1، وسقف غرامة المورد (5% من الشحنة، نحو 2.7 مليون ريال) لا يغطي أثر يوم واحد من غرامة المشروع تجاه نيوم.',
     evidence: { kind: 'supplier', ref: 'SUP3 — PO-2026-0457 الشحنة 3', excerpt: 'مصنع شنغهاي للألواح الكهروضوئية · حصة الإنفاق 19.6% · مورد وحيد · التسليم في الموعد 74% · الشحنة 3: ETD مخطط d−24 · فعلي: لم تُشحن (تأخر 19 يوماً) · سبب معلن: نقص خلايا TOPCon', sourceSystem: 'Oracle ERP' },
     recommendation: { action: 'تأهيل مورد ثانٍ لـ 25% من الكمية المتبقية (الشحنات 6–8) وتعديل §5.1 لرفع سقف الغرامة إلى 15% مع حق الشراء البديل بعد 45 يوماً.', rationale: 'يخفض التركّز إلى 14.7% ويخلق ضغطاً تعاقدياً حقيقياً على المورد.', effort: 'عالٍ', impact: 'خفض الدرجة إلى ~45', alternatives: ['إعادة تسلسل تركيب الألواح لتقديم القطاع الشمالي المكتمل التوريد', 'شراء 100 ميجاواط من المخزون الفوري للموزعين الإقليميين (+6% سعر)'] },
     pipeline: 'bom-forecast', confidence: 0.85, detectedAt: t(-19, '10:20'), updatedAt: t(-5, '09:30'),
@@ -1488,7 +1541,7 @@ const aiRisks = [
     responseParams: {
       Finance: { budgetImpactSAR: 237_000_000, cashflowMonth: '2027-06' },
       PM: { scheduleImpactDays: 0, costImpactSAR: 237_000_000, criticalPath: false },
-      PMO: { trend: 'متدهور — CPI 0.95 → 0.91', kpi: 'CPI 0.91 / VAC −237 مليون', portfolioRank: 1 },
+      PMO: { trend: 'متدهور — CPI من 0.95 إلى 0.91', kpi: 'CPI 0.91 / VAC −237 مليون', portfolioRank: 1 },
     },
     history: [{ at: t(-6, '14:00'), by: 'أ. نوف السديري', text: 'قبول التوصية؛ المهمة MT-0209 — تجميد التغييرات وتقديم CO-052' }],
   }),
@@ -1509,7 +1562,7 @@ const aiRisks = [
   air(15, {
     projectId: 'S3', category: 'contract', type: 'Conflict', score: 79,
     title: 'منهجية اختبار نسبة الأداء غير محددة — §9.4 (خلاف مرجح عند الاستلام)',
-    driverExplanation: 'البند 9.4 يشترط نسبة أداء ≥ 84% وفق "المنهجية المتعارف عليها" دون تسمية IEC 61724-1 ولا تحديد فترة القياس أو التصحيح الحراري. فرق المنهجيتين عند حرارة نيوم يصل إلى 1.6 نقطة مئوية، وكل نقطة تعادل غرامة أداء ~9 ملايين ريال؛ إجراء الاختبار المقدم للاعتماد متأخر 13 يوماً.',
+    driverExplanation: 'البند 9.4 يشترط نسبة أداء لا تقل عن 84% وفق "المنهجية المتعارف عليها" دون تسمية IEC 61724-1 ولا تحديد فترة القياس أو التصحيح الحراري. فرق المنهجيتين عند حرارة نيوم يصل إلى 1.6 نقطة مئوية، وكل نقطة تعادل غرامة أداء ~9 ملايين ريال؛ إجراء الاختبار المقدم للاعتماد متأخر 13 يوماً.',
     evidence: { kind: 'clause', ref: 'CT-2025-102 §9.4', excerpt: 'يضمن المقاول نسبة أداء للمحطة لا تقل عن 84% عند اختبار الأداء، وتُحسب وفق "المنهجية المتعارف عليها".', sourceSystem: 'Biltix — العقود' },
     recommendation: { action: 'اعتماد ملحق تفسيري يحدد IEC 61724-1 مع التصحيح الحراري وفترة 15 يوماً وعتبة إشعاع 600 واط/م² واستثناء ساعات تقييد الشبكة، قبل اعتماد إجراء الاختبار.', rationale: 'يزيل الغموض قبل أن يصبح نزاعاً عند الاستلام ويحمي ~14 مليون ريال من غرامات الأداء.', effort: 'متوسط', impact: 'خفض الدرجة إلى ~30', alternatives: ['تعيين مهندس مستقل (Owner’s Engineer) متفق عليه لتحكيم المنهجية'] },
     pipeline: 'contract-nlp', confidence: 0.88, detectedAt: t(-48, '09:14'), updatedAt: t(-12, '13:00'),
@@ -1537,7 +1590,7 @@ const aiRisks = [
       Site: { location: 'المستودع 3 — منطقة الرفع، البوابة G2', hazard: 'أحمال معلقة / دهس — دخول غير مصرح', controls: ['حاجز مادي على G2', 'مراقب بوابة أثناء الرفع', 'تحويل مسار شاحنات الميناء'] },
       PM: { scheduleImpactDays: 0, costImpactSAR: 45_000, criticalPath: false },
     },
-    history: [{ at: t(0, '09:30'), by: 'م. مها الغامدي', text: 'قبول التوصية؛ المهمة MT-0211 أُنشئت وكُتبت إلى Biltix PM' }],
+    history: [{ at: t(0, '09:30'), by: 'م. مها الغامدي', text: 'قبول التوصية؛ المهمة MT-0211 أُنشئت (الكتابة العكسية المحاكاة إلى BILTIX PM بانتظار المزامنة)' }],
   }),
   air(17, {
     projectId: 'S5', category: 'contract', type: 'Conflict', score: 86,
@@ -1554,7 +1607,7 @@ const aiRisks = [
       Finance: { budgetImpactSAR: 62_800_000, cashflowMonth: '2027-01' },
     },
     history: [
-      { at: t(-9, '09:20'), by: 'النظام', text: 'تصعيد فوري — الدرجة 86 ≥ 85 (البريد، Slack)' },
+      { at: t(-9, '09:20'), by: 'النظام', text: `تسجيل تصعيد فوري — الدرجة ${S(17)} لا تقل عن 85؛ القنوات: البريد، Slack (توجيه فقط، لم يُرسل في هذا الإصدار)` },
       { at: t(-8, '08:30'), by: 'م. ريم السبيعي', text: 'قبول التوصية؛ المهمة MT-0212 للمستشار القانوني' },
       { at: t(-1, '09:00'), by: 'أ. فيصل الحربي', text: 'مسودة الإشعار جاهزة؛ بانتظار تقرير المختبر الجيوتقني المرفق' },
     ],
@@ -1575,7 +1628,7 @@ const aiRisks = [
       Finance: { budgetImpactSAR: 26_800_000, cashflowMonth: '2027-02' },
     },
     history: [
-      { at: t(-11, '07:40'), by: 'النظام', text: 'تصعيد فوري — الدرجة 89 ≥ 85' },
+      { at: t(-11, '07:40'), by: 'النظام', text: `تصعيد فوري — الدرجة ${S(18)} لا تقل عن 85` },
       { at: t(-10, '12:00'), by: 'م. ريم السبيعي', text: 'قبول التوصية؛ المهمة MT-0213 — طرح جبهة الحفر الثانية' },
       { at: t(-2, '16:00'), by: 'م. بدر القرني', text: 'استلام عرضين لجبهة الحفر الثانية؛ الترسية خلال 5 أيام' },
     ],
@@ -1610,7 +1663,7 @@ const aiRisks = [
       PMO: { trend: 'جديد — حرج', kpi: 'معدل الإزاحة 14 مم/أسبوع', portfolioRank: 1 },
     },
     history: [
-      { at: t(-1, '05:35'), by: 'النظام', text: 'تصعيد فوري — الدرجة 85 (البريد، Slack، WhatsApp)' },
+      { at: t(-1, '05:35'), by: 'النظام', text: `تسجيل تصعيد فوري — الدرجة ${S(20)} لا تقل عن 85؛ القنوات: البريد، Slack، WhatsApp (توجيه فقط، لم يُرسل في هذا الإصدار)` },
       { at: t(-1, '06:10'), by: 'م. تركي المطيري', text: 'إخلاء المنطقة وإيقاف التفجير؛ قبول التوصية والمهمة MT-0214' },
       { at: t(0, '08:15'), by: 'م. ريم السبيعي', text: 'المهندس الجيوتقني في الموقع؛ تصميم التثبيت خلال 48 ساعة' },
     ],
@@ -1691,13 +1744,13 @@ const aiRisks = [
       Legal: { clauseRef: 'CT-2026-014 §19.1 و §8.4(c) و §20.1', exposureSAR: 6_900_000, disputeLikelihood: 0.52 },
       PM: { scheduleImpactDays: 11, costImpactSAR: 6_900_000, criticalPath: true },
     },
-    history: [{ at: t(-40, '09:00'), by: 'النظام', text: 'تنبيه قياسي — الدرجة 61 تجاوزت العتبة 60' }],
+    history: [{ at: t(-40, '09:00'), by: 'النظام', text: `تنبيه قياسي — الدرجة ${S(25)} تجاوزت العتبة 60` }],
   }),
   air(26, {
     projectId: 'S1', category: 'site', type: 'Safety', score: 58,
     title: 'انحراف سماكة جدار النواة 18 مم عن النموذج — الطابق 25',
     driverExplanation: 'مقارنة المسح الليزري (2026-11-02) بنموذج BIM المعتمد تُظهر أن الجدار الغربي للنواة في الطابق 25 أرفع من التصميم بـ 18 مم على امتداد 6.4 م (التفاوت المسموح في SBC 304: 12 مم). الانحراف يقلل الغطاء الخرساني للتسليح ويستدعي مراجعة إنشائية قبل صب الطابق 26.',
-    evidence: { kind: 'image', ref: 'SCAN-S1-L25-20261102 ↔ BIM v38', excerpt: 'Scan-to-BIM deviation report: Core wall W-L25 · ΔT = −18 mm (tolerance ±12) · length 6.4 m · cover reduction est. 9 mm · 3 points > 15 mm', sourceSystem: 'Autodesk APS' },
+    evidence: { kind: 'image', ref: 'SCAN-S1-L25-20261102 – BIM v38', excerpt: 'Scan-to-BIM deviation report: Core wall W-L25 · deviation −18 mm (tolerance ±12) · length 6.4 m · cover reduction est. 9 mm · 3 points > 15 mm', sourceSystem: 'Autodesk APS' },
     recommendation: { action: 'مراجعة إنشائية عاجلة من المصمم للجدار W-L25 واعتماد إجراء إصلاح (طبقة إصلاح بمونة إنشائية أو قبول مشروط)، وفحص شدات الطابق 26 قبل الصب.', rationale: 'يمنع انتقال الانحراف إلى الطوابق التالية ويوثق القبول الهندسي.', effort: 'متوسط', impact: 'خفض الدرجة إلى ~20', alternatives: ['مسح ليزري بعد كل صبة نواة بدل كل 3 طوابق'] },
     pipeline: 'site-ai', confidence: 0.83, detectedAt: t(-6, '06:45'), updatedAt: t(-5, '12:00'),
     status: 'مهمة مُسندة', owner: OWNERS.pm.S1, dueDate: d(-3), taskId: 'MT17',
@@ -1810,13 +1863,13 @@ const aiRisks = [
       Finance: { budgetImpactSAR: 730_000, cashflowMonth: '2026-12' },
       Legal: { clauseRef: 'PO-2026-0512 §2.3', exposureSAR: 730_000, disputeLikelihood: 0.05 },
     },
-    history: [{ at: t(-13, '09:40'), by: 'أ. نوف السديري', text: 'تجاهل المخاطرة: التعرض محوط بالفعل بعقد آجل بتاريخ 2026-10-21 (مرجع الخزينة FX-2026-118) — لم يصل للمحرك بسبب تأخر مزامنة Oracle ERP' }],
+    history: [{ at: t(-13, '09:40'), by: 'أ. نوف السديري', text: 'تجاهل المخاطرة: التعرض محوط بالفعل بعقد آجل بتاريخ 2026-10-21 (مرجع الخزينة FX-2026-118) — لم يصل للمحرك لأن بيانات Oracle ERP في السيناريو لم تكن محدّثة' }],
   }),
   air(34, {
     projectId: 'S3', category: 'bom', type: 'Financial', score: 62,
     title: 'حاويات BESS: النموذج يتطلب 64 حاوية مقابل 60 في جدول الكميات',
     driverExplanation: 'نموذج BIM المحدث بعد طلب زيادة السعة (CO-048) يتضمن 64 حاوية BESS مقابل 60 في جدول الكميات (+6.7% = 27.6 مليون ريال). أمر التغيير قيد الاعتماد منذ 22 يوماً والمورد الصيني وحيد بزمن توريد 120 يوماً؛ تاريخ الطلب للحاويات الإضافية d+10.',
-    evidence: { kind: 'boq', ref: 'BQ-S3-26.33.010 ↔ CO-048', excerpt: 'حاويات بطاريات ليثيوم BESS 5 ميجاواط ساعة · BoQ 60 · BIM 64 · الفرق +6.7% · سعر الوحدة 6,900,000 ريال · المورد SUP14 (وحيد) · زمن التوريد 120 يوماً', sourceSystem: 'Autodesk APS' },
+    evidence: { kind: 'boq', ref: 'BQ-S3-26.33.010 – CO-048', excerpt: 'حاويات بطاريات ليثيوم BESS 5 ميجاواط ساعة · BoQ 60 · BIM 64 · الفرق +6.7% · سعر الوحدة 6,900,000 ريال · المورد SUP14 (وحيد) · زمن التوريد 120 يوماً', sourceSystem: 'Autodesk APS' },
     recommendation: { action: 'ربط إصدار أمر الشراء الإضافي باعتماد CO-048 خلال 10 أيام وطلب تعليمات خطية من المهندس بالمضي إن تأخر الاعتماد.', rationale: 'يحمي من شراء 27.6 مليون ريال دون غطاء تعاقدي ومن فوات تاريخ الطلب في آن.', effort: 'منخفض', impact: 'خفض الدرجة إلى ~30', alternatives: ['حجز خط إنتاج المورد بدفعة تأمين قابلة للاسترداد (3%)'] },
     pipeline: 'bom-forecast', confidence: 0.87, detectedAt: t(-6, '10:20'), updatedAt: t(-6, '10:30'),
     status: 'تنبيه', owner: OWNERS.procurement, dueDate: d(10),
@@ -1840,7 +1893,7 @@ const aiRisks = [
       Finance: { budgetImpactSAR: 26_000_000, cashflowMonth: '2027-03' },
       Procurement: { supplier: 'مصنع شنغهاي للألواح / مصنع شنتشن BESS', leadTimeDays: 95, alternates: ['إعادة التسعير بالدولار'] },
     },
-    history: [{ at: t(-8, '09:00'), by: 'النظام', text: 'تنبيه قياسي — الدرجة 66 تجاوزت العتبة 60' }],
+    history: [{ at: t(-8, '09:00'), by: 'النظام', text: `تنبيه قياسي — الدرجة ${S(35)} تجاوزت العتبة 60` }],
   }),
   air(36, {
     projectId: 'S3', category: 'schedule', type: 'Delay', score: 56,
@@ -1891,7 +1944,7 @@ const aiRisks = [
     projectId: 'S4', category: 'contract', type: 'Financial', score: 64,
     title: 'فجوة تعديل سعر الفولاذ بين العقد الرئيسي (15%) وعقد الباطن (5%)',
     driverExplanation: 'عقد الباطن CT-2026-019 §13.8 يمنح مقاولي الصلب تعويض فرق السعر فوق 5% بينما العقد الرئيسي CT-2026-008 §13.8 لا يعوّض المقاول إلا فوق 15%. ارتفع مؤشر الفولاذ الإنشائي 11% منذ التوقيع؛ الفجوة الحالية ~4.4 مليون ريال يتحملها المقاول الرئيسي وحده.',
-    evidence: { kind: 'clause', ref: 'CT-2026-019 §13.8 ↔ CT-2026-008 §13.8', excerpt: 'عقد الباطن: "يحق للمقاول من الباطن المطالبة بفرق سعر الفولاذ متى تجاوز التغير 5%". العقد الرئيسي: "لا تخضع أسعار الهياكل الفولاذية لأي تعديل إلا إذا تجاوز تغير المؤشر 15%".', sourceSystem: 'Biltix — العقود' },
+    evidence: { kind: 'clause', ref: 'CT-2026-019 §13.8 – CT-2026-008 §13.8', excerpt: 'عقد الباطن: "يحق للمقاول من الباطن المطالبة بفرق سعر الفولاذ متى تجاوز التغير 5%". العقد الرئيسي: "لا تخضع أسعار الهياكل الفولاذية لأي تعديل إلا إذا تجاوز تغير المؤشر 15%".', sourceSystem: 'Biltix — العقود' },
     recommendation: { action: 'التفاوض مع مقاولي الصلب على تعديل العتبة إلى 10% مقابل تسريع الدفع إلى 30 يوماً، وطلب خفض العتبة في العقد الرئيسي إلى 10% عبر ملحق.', rationale: 'يقلّص الفجوة من 10 نقاط إلى صفر ويوازن الشروط (back-to-back).', effort: 'متوسط', impact: 'خفض الدرجة إلى ~30', alternatives: ['شراء الفولاذ مباشرة وتوريده للمقاول من الباطن (Free-issue) للدفعات المتبقية'] },
     pipeline: 'contract-nlp', confidence: 0.87, detectedAt: t(-36, '09:14'), updatedAt: t(-30, '11:00'),
     status: 'مهمة مُسندة', owner: OWNERS.legal, dueDate: d(-2), taskId: 'MT22',
@@ -1947,13 +2000,13 @@ const aiRisks = [
       PM: { scheduleImpactDays: 7, costImpactSAR: 1_400_000, criticalPath: true },
       Site: { location: 'مستودع المتفجرات — الحزمة 2B', hazard: 'توقف التفجير / تخزين غير مرخص', controls: ['متابعة الترخيص', 'خطة حفر ميكانيكي بديلة'] },
     },
-    history: [{ at: t(-3, '08:00'), by: 'النظام', text: 'تنبيه قياسي — الدرجة 63 تجاوزت العتبة 60' }],
+    history: [{ at: t(-3, '08:00'), by: 'النظام', text: `تنبيه قياسي — الدرجة ${S(42)} تجاوزت العتبة 60` }],
   }),
   air(43, {
     projectId: 'S5', category: 'bom', type: 'Financial', score: 54,
     title: 'استهلاك ديزل 1.9 مليون لتر شهرياً مع توقع تعديل السعر إلى 1.52 ريال',
     driverExplanation: 'معدات الحفر والنقل تستهلك 1.9 مليون لتر شهرياً؛ يتوقع النموذج تعديلاً للسعر المحلي من 1.38 إلى 1.52 ريال/لتر خلال 4–5 أشهر (+10%) أي +266 ألف ريال شهرياً لبقية 30 شهراً من الأعمال الترابية، والعقد لا يتضمن معادلة تعديل للوقود.',
-    evidence: { kind: 'boq', ref: 'BQ-S5-31.05.010 · CM5', excerpt: 'وقود ديزل لمعدات الحفر والنقل · 1,900,000 لتر/شهر · السعر الحالي 1.38 ريال/لتر · التوقع 6 أشهر: 1.38 → 1.52 · تقلب 9.6%', sourceSystem: 'مؤشرات السلع' },
+    evidence: { kind: 'boq', ref: 'BQ-S5-31.05.010 · CM5', excerpt: 'وقود ديزل لمعدات الحفر والنقل · 1,900,000 لتر/شهر · السعر الحالي 1.38 ريال/لتر · التوقع 6 أشهر: من 1.38 إلى 1.52 · تقلب 9.6%', sourceSystem: 'مؤشرات السلع' },
     recommendation: { action: 'إدراج بند تعويض تغير سعر الوقود في مطالبة أمر التغيير القادم وتحسين كفاءة الأسطول (تتبع GPS للتشغيل الخامل — الهدف خفض 8%).', rationale: 'يعوّض جزءاً تعاقدياً ويخفض الاستهلاك فعلياً.', effort: 'متوسط', impact: 'خفض الدرجة إلى ~30', alternatives: ['عقد توريد سنوي بسعر ثابت مع المورد (علاوة 3%)'] },
     pipeline: 'bom-forecast', confidence: 0.74, detectedAt: t(-20, '10:20'),
     status: 'مكتشف', stakeholders: ['Procurement', 'Finance'],
@@ -2002,7 +2055,7 @@ const aiRisks = [
       Site: { location: 'المحيط الجنوبي — قرب منطقة استبعاد التفجير', hazard: 'دخول غير مصرح به إلى منطقة تفجير', controls: ['إصلاح السياج ورفعه', 'دورية قبل التفجير', 'تنبيه صوتي', 'توعية مجتمعية'] },
       PM: { scheduleImpactDays: 1, costImpactSAR: 220_000, criticalPath: false },
     },
-    history: [{ at: t(0, '10:00'), by: 'م. تركي المطيري', text: 'قبول التوصية؛ المهمة MT-0224 — الكتابة العكسية فشلت (انتهاء مهلة Biltix PM) وسيعاد الإرسال' }],
+    history: [{ at: t(0, '10:00'), by: 'م. تركي المطيري', text: 'قبول التوصية؛ المهمة MT-0224 — فشلت الكتابة العكسية المحاكاة إلى BILTIX PM (سيناريو انتهاء المهلة)' }],
   }),
   air(47, {
     projectId: 'S6', category: 'contract', type: 'Conflict', score: 67,
@@ -2165,7 +2218,7 @@ const aiRisks = [
     projectId: 'S3', category: 'site', type: 'Safety', score: 31,
     title: 'انحراف مواضع أوتاد هياكل التتبع 32 مم — ضمن التفاوت 50 مم',
     driverExplanation: 'مقارنة مسح المواضع بنموذج BIM للقطاع الشمالي (4,120 وتداً) تُظهر انحرافاً أقصى 32 مم ومتوسطاً 11 مم، ضمن تفاوت 50 مم في مواصفات هياكل التتبع. 6 أوتاد فقط تجاوزت 40 مم وعُولجت بوصلات تعديل.',
-    evidence: { kind: 'image', ref: 'SURVEY-S3-N-20261105 ↔ BIM v12', excerpt: 'As-built pile survey (northern sector): n=4,120 · max Δ 32 mm · mean 11 mm · tolerance ±50 mm · 6 piles > 40 mm corrected with adjustable brackets', sourceSystem: 'Autodesk APS' },
+    evidence: { kind: 'image', ref: 'SURVEY-S3-N-20261105 – BIM v12', excerpt: 'As-built pile survey (northern sector): n=4,120 · max deviation 32 mm · mean 11 mm · tolerance ±50 mm · 6 piles > 40 mm corrected with adjustable brackets', sourceSystem: 'Autodesk APS' },
     recommendation: { action: 'لا إجراء — مواصلة المسح لكل 500 وتد في القطاع الجنوبي.', rationale: 'ضمن التفاوت.', effort: 'منخفض', impact: 'لا تغيير', alternatives: [] },
     pipeline: 'site-ai', confidence: 0.9, detectedAt: t(-4, '06:45'),
     status: 'مكتشف', stakeholders: ['Site'],
@@ -2279,10 +2332,178 @@ const aiRisks = [
       { at: t(-6, '09:00'), by: 'م. هند الحربي', text: 'إغلاق: أُزيلت المواد وخُصصت منطقة تخزين؛ لا تكرار' },
     ],
   }),
+  // ======================= المثال التطبيقي (v4) — تأخر اعتماد مادة الواجهة =======================
+  // المخاطرة الجذر للفيلم والجولة الإرشادية (scenario.md §7–§13). كل ما فيها بيانات عرض تجريبي؛ ما يقع بعد
+  // ساعة العرض (القرار 10:05، المهام، الإغلاق) محفوظ في `scenario` كإسقاط مُعلَّم (projected) وليس حدثاً في السجل.
+  air(69, {
+    projectId: 'S1', zoneId: 'S1-Z2', category: 'bom', type: 'Delay',
+    title: 'اعتماد زجاج الواجهة MAR-S1-CW-014 معلّق — يهدد التوريد وبدء A1100 على المسار الحرج',
+    driverExplanation: 'اعتماد زجاج الواجهة (MAR-S1-CW-014، المراجعة 1) معلّق لدى الاستشاري بانتظار قرار صاحب العمل في أمر التغيير CO-034، وقد فات آخر موعد لإصدار أمر الشراء منذ 14 يوماً، ومهلة حجز خط الإنتاج تنتهي في 24 نوفمبر. إذا صدر الاعتماد في آخر يوم من المهلة تصل الوحدات الأولى بعد 28 يوماً من حاجة النشاط الحرج A1100 (طفو صفر)، وإذا فاتت المهلة يصبح التأخير نحو 50 يوماً.',
+    evidence: { kind: 'submittal', ref: 'MAR-S1-CW-014 Rev 1',
+      excerpt: 'طلب اعتماد مواد — زجاج عازل مزدوج Low-E ونظام الألمنيوم · المراجعة 0: رمز C · المراجعة 1: قيد المراجعة (مدة المراجعة 14 يوماً) · ملاحظة الاستشاري: بانتظار قرار صاحب العمل في CO-034',
+      sourceSystem: 'Biltix — الوثائق والاعتمادات (DMS)' },
+    recommendation: {   // التوصية المفردة للتوافق مع الواجهات الحالية = التركيبة المختارة R1 + R3
+      action: 'اجتماع مراجعة عاجل خلال 24 ساعة لاعتماد المراجعة 1 مشروطاً (رمز B) على مواصفة العقد للطوابق 8–15 وتأجيل CO-034 إلى ما بعد الطابق 15، وإصدار أمر الشراء في اليوم نفسه داخل مهلة الحجز؛ مع تقسيم A1100 إلى حزمتين متوازيتين.',
+      rationale: 'يحافظ على حجز خط الإنتاج ويعيد نهاية A1100 من ‎+28 إلى نحو ‎+4 أيام (توضيحي).',
+      effort: 'متوسط', impact: 'خفض الدرجة إلى ~32',
+      alternatives: ['تأهيل مورد بديل لـ 30% من الكمية (الطوابق 12–15) كتحوّط', 'انتظار قرار CO-034 (‎+28 يوماً، ويُفقد الحجز إن تأخر القرار)'],
+    },
+    pipeline: 'bom-forecast', confidence: 0.81, detectedAt: t(0, '09:50'),
+    status: 'تنبيه', owner: OWNERS.procurement, dueDate: d(14),
+    stakeholders: ['PM', 'Procurement', 'Legal', 'Finance', 'Site'],
+    responseParams: {
+      PM: { scheduleImpactDays: 28, costImpactSAR: 24_900_000, criticalPath: true },
+      Procurement: { supplier: 'شركة الخليج للواجهات', leadTimeDays: 110, alternates: ['مصنع الزجاج المعماري — الدمام', 'شركة الواجهات الحديثة — جدة'] },
+      Legal: { clauseRef: 'CT-2026-014 §20.1 و §13.1 و §8.4 · CT-2026-021 §5.4', exposureSAR: 24_900_000, disputeLikelihood: 0.3 },
+      Finance: { budgetImpactSAR: 24_900_000, cashflowMonth: '2027-03' },
+      Site: { location: 'S1-Z2 منطقة الرفع أسفل TC-2 + المسار الخدمي لطريق الملك فهد (AP1)', hazard: 'رفع واجهات مضغوط: رفع ليلي، فريقان على ارتفاع، تداخل نطاقي دوران الرافعتين', controls: ['خطة رفع حرج لكل نوع وحدة', 'تقسيم منطقة تداخل TC-1/TC-2', 'تصريح أعمال ليلية ومشغلون إضافيون', 'إيقاف الرفع عند 38 كم/س أو حد أشد'] },
+    },
+    // ── حقول مهيكلة (الإنجليزية مضمّنة كما في RESIDUAL / SOURCE_EVIDENCE) ──
+    worked: true,   // المثال التطبيقي: الجولة الإرشادية والفيلم يتبعان هذا السجل
+    drivers: [
+      { key: 'submittal-hold', weight: 0.35, label: 'المراجعة 1 معلّقة بانتظار قرار CO-034', labelEn: 'Rev 1 held for the CO-034 decision' },
+      { key: 'order-by-passed', weight: 0.25, label: 'فات آخر موعد للطلب بـ 14 يوماً وأمر الشراء محجوب', labelEn: 'Latest PO date passed 14 days ago; PO blocked' },
+      { key: 'zero-float', weight: 0.20, label: 'طفو A1100 صفر وغرامات بلا سقف', labelEn: 'A1100 zero float; uncapped delay damages' },
+      { key: 'slot-hold', weight: 0.15, label: 'ينتهي الحجز في 24 نوفمبر والتالي بعد نحو 21 يوماً', labelEn: 'Slot hold ends 24 Nov; next slot ≈ +21 days' },
+      { key: 'single-source', weight: 0.05, label: 'مورد وحيد بصحة مالية 58', labelEn: 'Single-source supplier, financial health 58' },
+    ],
+    driversIllustrative: true,
+    unknowns: [
+      { text: 'تاريخ قرار صاحب العمل في CO-034', textEn: "The employer's decision date on CO-034" },
+      { text: 'تكلفة الفريق الثاني', textEn: 'The cost of a second crew' },
+      { text: 'مدة توريد المورد البديل وسعره', textEn: "The alternative supplier's lead time and price" },
+      { text: 'نافذة ترخيص الإغلاق الجديدة', textEn: 'The new road-closure licence window' },
+    ],
+    links: {
+      risks: ['AR3', 'AR5', 'AR27', 'AR28', 'AR1'], hseRisks: ['R9'], submittals: ['SB1'], boqItems: ['BQ2'], suppliers: ['SUP4'],
+      scheduleTasks: ['T33', 'T34', 'T3', 'T35'], approvals: ['AP1'], changeOrders: ['CO3'], costLines: ['CL2'],
+      contracts: ['CT2-C4', 'CT2-O1', 'CT1-C2', 'CT1-O1'], resources: ['RS2'], cameras: ['CAM-S1-03', 'CAM-S1-05'], captures360: ['P360-S1-01'],
+    },
+    // E1–E15 (scenario.md §6) من سبعة أنظمة مصدر؛ `at` = وقت تسجيل المصدر (ماضٍ دائماً)
+    evidenceChain: [
+      { id: 'E1', kind: 'submittal', ref: 'MAR-S1-CW-014', sourceSystem: 'Biltix — الوثائق والاعتمادات (DMS)', role: 'cause', at: t(-12, '15:10'), route: 'bom', params: { submittal: 'SB1' }, title: 'سجل طلب الاعتماد — المراجعة 0 رمز C، المراجعة 1 قيد المراجعة', titleEn: 'Submittal register — Rev 0 Code C, Rev 1 under review' },
+      { id: 'E2', kind: 'file', ref: 'CRS-MAR-S1-CW-014-R0', sourceSystem: 'Biltix — الوثائق والاعتمادات (DMS)', role: 'cause', at: t(-22, '17:40'), title: 'ملاحظات المهندس على المراجعة 0', titleEn: "The Engineer's comments on Rev 0" },
+      { id: 'E3', kind: 'changeOrder', ref: 'CO-034', sourceSystem: 'Oracle ERP', role: 'cause', route: 'cost', params: { co: 'CO3' }, title: 'أمر التغيير CO-034 — 14.2 مليون ريال، معلّق', titleEn: 'Change order CO-034 — SAR 14.2 M, pending' },
+      { id: 'E4', kind: 'boq', ref: 'BQ-S1-08.01.040', sourceSystem: 'Oracle ERP', role: 'impact', route: 'bom', params: { item: 'BQ2' }, title: 'آخر موعد للطلب فات بـ 14 يوماً — مدة التوريد 110 أيام', titleEn: 'Latest PO date passed 14 days — lead time 110 days' },
+      { id: 'E5', kind: 'po', ref: 'PR-S1-2026-0412 / PO-S1-2026-0871', sourceSystem: 'Oracle ERP', role: 'impact', at: t(-15, '15:40'), title: 'طلب شراء معتمد وأمر شراء محجوب', titleEn: 'PR approved, PO blocked' },
+      { id: 'E6', kind: 'letter', ref: 'GFC-L-2026-117', sourceSystem: 'Biltix — الوثائق والاعتمادات (DMS)', role: 'impact', at: t(-2, '17:25'), title: 'خطاب المورد: الحجز حتى 24 نوفمبر', titleEn: 'Supplier letter: slot held until 24 Nov' },
+      { id: 'E7', kind: 'task', ref: 'A1100 — WBS 1.5.1', sourceSystem: 'Primavera P6', role: 'impact', route: 'schedule', params: { task: 'T3' }, title: 'A1100 حرج، طفو صفر، النهاية المتوقعة ‎+28', titleEn: 'A1100 critical, float 0, forecast finish +28' },
+      { id: 'E8', kind: 'note', ref: 'VQ3 / P6-A1100', sourceSystem: 'Primavera P6', role: 'context', route: 'dataquality', title: 'تصحيح سجل A1100 قبل التقييم', titleEn: 'A1100 record corrected before scoring' },
+      { id: 'E9', kind: 'clause', ref: 'CT-2026-021 §5.4 / CT2-O1', sourceSystem: 'Biltix — العقود', role: 'contract', route: 'contracts', title: 'التزام النموذج الأولي واعتماد العينات', titleEn: 'Mock-up and sample-approval obligation' },
+      { id: 'E10', kind: 'clause', ref: 'CT-2026-014 §8.7 · §20.1 · §13.1', sourceSystem: 'Biltix — العقود', role: 'contract', route: 'contracts', title: 'غرامات بلا سقف، إشعار 28 يوماً، تعليمات المهندس', titleEn: "Uncapped damages, 28-day notice, Engineer's instruction" },
+      { id: 'E11', kind: 'approval', ref: 'AP1', sourceSystem: 'Biltix — الجدول الزمني', role: 'safety', route: 'schedule', title: 'ترخيص الإغلاق الجزئي لرفع الواجهة — 26 من 30 يوماً', titleEn: 'Partial road-closure licence for façade lifting — 26 of 30 days' },
+      { id: 'E12', kind: 'note', ref: 'NCM S1 · CT1-C4', sourceSystem: 'المركز الوطني للأرصاد', role: 'safety', route: 'schedule', title: 'نافذة الطقس: 38/42 كم/س وغبار عالٍ + 11 يوم غبار في 2026', titleEn: 'Weather window: 38/42 km/h, high dust + 11 dust days in 2026' },
+      { id: 'E13', kind: 'photo', ref: 'IMG-S1-20261109-006', sourceSystem: 'Biltix — الصور', role: 'context', at: t(-1, '20:00'), title: 'الطوابق 8–11 جاهزة: حواف البلاطات وألواح التثبيت', titleEn: 'Floors 8–11 ready: slab edges and embed plates' },
+      { id: 'E14', kind: 'supplier', ref: 'SC1', sourceSystem: 'Biltix — الجدول الزمني', role: 'context', route: 'schedule', title: 'أداء المقاول من الباطن 14% مقابل 22%', titleEn: 'Subcontractor progress 14 % vs 22 %' },
+      { id: 'E15', kind: 'note', ref: 'RS2', sourceSystem: 'Biltix — الجدول الزمني', role: 'safety', route: 'schedule', title: 'مشغلو الرافعات 12/12 (100%)', titleEn: 'Crane operators 12/12 (100 %)' },
+    ],
+    exposure: {
+      ratePerDaySAR: 890_000, rateBasis: 'AIR-1003: 24.9M/28d · AIR-1005: 12.4M/14d',
+      scenarios: [
+        { key: 'slot-lost', finishSlipDays: 50, sar: 44_500_000, mark: 'derived', label: 'فات الحجز', labelEn: 'Slot lost' },
+        { key: 'no-action', finishSlipDays: 28, sar: 24_900_000, mark: 'app', label: 'دون إجراء', labelEn: 'No action' },
+        { key: 'r1', finishSlipDays: 16, sar: 14_200_000, mark: 'derived', label: 'R1 وحده', labelEn: 'R1 alone' },
+        { key: 'r1-r3', finishSlipDays: 4, sar: 3_600_000, mark: 'derived', label: 'R1 + R3', labelEn: 'R1 + R3', note: 'excl. second-crew cost (quote pending)', noteAr: 'دون تكلفة الفريق الثاني (بانتظار عرض السعر)' },
+      ],
+      ldPerWeekSAR: 8_900_000, ldRef: 'CT-2026-014 §8.7', ldNote: 'only if the slip reaches completion', ldNoteAr: 'فقط إن وصل الانزلاق إلى الإنجاز',
+    },
+    recommendationOptions: [
+      { id: 'R1', title: 'تسريع المراجعة والاعتماد المشروط', titleEn: 'Expedite the review and approve conditionally',
+        action: 'اجتماع مراجعة خلال 24 ساعة مع المهندس وممثل صاحب العمل؛ طلب رمز B على المراجعة 1 بمواصفة العقد للطوابق 8–15 وتأجيل CO-034 إلى ما بعد الطابق 15؛ إصدار أمر الشراء المُعدّ في اليوم نفسه داخل مهلة الحجز',
+        actionEn: "Review meeting within 24 h with the Engineer and the employer's representative; ask for Code B on Rev 1 with the contract specification for floors 8–15, deferring CO-034 to floor 16 onwards; release the drafted PO the same day, inside the slot hold",
+        recoversDays: 12, startSlipDays: 16, finishSlipDays: 16, recoversNote: 'البدء من ‎+28 إلى ‎+16', recoversNoteEn: 'start +28 → +16',
+        cost: 'لا تكلفة مباشرة', costEn: 'No direct cost',
+        introduces: 'إعادة عمل إن أصر صاحب العمل لاحقاً على الثلاثي للطوابق 8–15 — تحميه تعليمات خطية وفق §13.1؛ يجب الوفاء بشروط رمز B الثلاثة',
+        introducesEn: 'Rework if the employer later insists on triple glazing for floors 8–15 — protected by a written §13.1 instruction; the three Code B conditions must be met',
+        dependsOn: 'قبول صاحب العمل تقسيم المواصفة', dependsOnEn: 'Employer accepting the split specification',
+        owner: OWNERS.pm.S1, ownerRole: 'مدير المشروع (مع المشتريات والقانونية)', ownerRoleEn: 'PM (with procurement and legal)', basis: ['AR3', 'AR27'],
+        tasks: [
+          { key: 'MT-0229', title: 'عقد اجتماع المراجعة العاجل مع المهندس وممثل صاحب العمل والحصول على رمز B للمراجعة 1 من MAR-S1-CW-014 بمواصفة العقد للطوابق 8–15', titleEn: "Hold the expedite review meeting with the Engineer and the employer's representative; obtain Code B on MAR-S1-CW-014 Rev 1 with the contract specification for floors 8–15", owner: OWNERS.pm.S1, dueOffset: 1 },
+          { key: 'MT-0230', title: 'طلب تعليمات المهندس الخطية وفق §13.1 بشأن مواصفة الزجاج، وإرسال إشعار التأخير المحتمل وفق §20.1 (الحد: الأحد 22 نوفمبر)', titleEn: "Request the Engineer's written instruction under §13.1 on the glass specification and send the §20.1 notice of potential delay (bar: Sun 22 Nov)", owner: OWNERS.legal, dueOffset: 5 },
+          { key: 'MT-0231', title: 'إصدار أمر الشراء PO-S1-2026-0871 يوم الاعتماد داخل مهلة الحجز والحصول على تأكيد الحجز كتابياً', titleEn: 'Release PO-S1-2026-0871 on the day of approval, inside the slot hold, and obtain written slot confirmation', owner: OWNERS.procurement, dueOffset: 5 },
+        ] },
+      { id: 'R2', title: 'تأهيل مورد بديل', titleEn: 'Pre-qualify an alternative supplier',
+        action: 'تأهيل مصنع الزجاج المعماري — الدمام (أو الواجهات الحديثة — جدة) لـ 30% من الكمية (الطوابق 12–15)؛ دون أمر شراء الآن',
+        actionEn: 'Pre-qualify Architectural Glass Factory — Dammam (or Modern Façades — Jeddah) for 30 % of the quantity (floors 12–15); no order now',
+        recoversDays: 0, startSlipDays: null, finishSlipDays: null, recoversNote: 'صفر على الدفعة الأولى؛ يحمي الطوابق 12–15 من نتيجة فوات الحجز', recoversNoteEn: '0 on the first batch; protects floors 12–15 against the slot-lost outcome',
+        cost: 'غير متوفر في البيانات — يلزم عرض سعر', costEn: 'Not in the demo data — quote needed',
+        introduces: 'اعتماد مستقل (14 يوماً على الأقل) ونموذج أولي؛ التوافق مع النظام الموحد؛ تجزّؤ الضمانات (والبند CT2-C1 ضعيف أصلاً)',
+        introducesEn: 'Its own submittal (≥ 14 days) and mock-up; compatibility with the unitized system; split warranties (CT2-C1 is already weak)',
+        dependsOn: 'قدرة فريق المشتريات؛ استعداد المورد', dependsOnEn: 'Procurement capacity; supplier interest',
+        owner: OWNERS.procurement, ownerRole: 'مدير المشتريات', ownerRoleEn: 'Procurement manager', basis: ['AR5'],
+        tasks: [
+          { key: 'MT-0232', title: 'تأهيل مصنع الزجاج المعماري — الدمام لـ 30% من الكمية (الطوابق 12–15) — دون أمر شراء', titleEn: 'Pre-qualify Architectural Glass Factory — Dammam for 30 % of the quantity (floors 12–15) — no order', owner: OWNERS.procurement, dueOffset: 21 },
+        ] },
+      { id: 'R3', title: 'إعادة التسلسل: الإفراج على حزمتين', titleEn: 'Resequence: release in two packages',
+        action: 'تقسيم A1100 إلى A1100a (الطوابق 8–11، الدفعة الأولى) وA1100b (الطوابق 12–15، الدفعة الثانية) بفريقين متوازيين؛ تحديث P6',
+        actionEn: 'Split A1100 into A1100a (floors 8–11, first batch) and A1100b (floors 12–15, second batch) with two crews in parallel; update P6',
+        recoversDays: 12, startSlipDays: 16, finishSlipDays: 4, requires: ['R1'], recoversNote: 'التركيب من 46 إلى 34 يوماً (12 لأن الدفعة الثانية تصل لاحقاً)', recoversNoteEn: 'installation 46 → 34 days (12 because the second batch arrives later)',
+        cost: 'تكلفة الفريق الثاني — بانتظار عرض الخليج للواجهات', costEn: 'Second-crew cost — quote from Gulf Façades pending',
+        introduces: 'رفعات أكثر في الليلة، فريقان على ارتفاع، تداخل الرافعتين، مشغلون عند 100%، نافذة الترخيص — شرط السلامة',
+        introducesEn: 'More lifts per night, two crews at height, crane overlap, operators at 100 %, licence window — HSE condition',
+        dependsOn: 'R1 (المادة أولاً)؛ موافقة السلامة قبل أول رفع ليلي', dependsOnEn: 'R1 (material first); HSE sign-off before the first night lift',
+        owner: OWNERS.planning, ownerRole: 'مدير التخطيط (مع السلامة)', ownerRoleEn: 'Planning manager (with HSE)', basis: ['AR3'],
+        tasks: [
+          { key: 'MT-0233', title: 'تقسيم A1100 إلى A1100a/A1100b بفريقين؛ تحديث P6 وتقديمه مع التقرير الشهري (CT1-O1)', titleEn: 'Split A1100 into A1100a/A1100b with two crews; update P6 and submit with the monthly report (CT1-O1)', owner: OWNERS.planning, dueOffset: 5 },
+          { key: 'MT-0234', title: 'مراجعة الرفع والعمل الليلي: خطط الرفع الحرج، تقسيم منطقة تداخل TC-1/TC-2، مشغلو رافعات إضافيون، تصاريح الأعمال الليلية، فحص الرياح من الأرصاد؛ نقل نافذة ترخيص AP1 لتبدأ 2027-03-02', titleEn: 'Lift and night-work review: critical-lift plans, TC-1/TC-2 overlap zoning, extra crane operators, night-work permits, NCM wind check; move the AP1 licence window to start 2027-03-02', owner: OWNERS.hse.S1, dueOffset: 19, gate: { text: 'لا رفع ليلي قبل إغلاق هذه المهمة', textEn: 'No night lift before this task is closed' } },
+        ] },
+    ],
+    combined: { optionIds: ['R1', 'R3'], finishSlipDays: 4, exposureSAR: 3_600_000, residual: [2, 4], note: 'إضافة إلى عرض الفريق الثاني', noteEn: 'plus the second-crew quote' },
+    // 12 إشارة (scenario.md §11) تُقيَّم على السجلات المبذورة فقط — لا يُستطلع أي نظام
+    monitors: [
+      { key: 'submittal-code', signal: 'رمز المراجعة على MAR-S1-CW-014 المراجعة 1', signalEn: 'Review code on MAR-S1-CW-014 Rev 1', source: 'Biltix — الوثائق والاعتمادات (DMS)', threshold: 'A/B ← فك حجب مهمة أمر الشراء · C/D ← إعادة التقييم · لا رمز حتى نهاية الخميس 12 نوفمبر ← «تجاوز مدة المراجعة»', thresholdEn: 'A/B → unblock the PO task · C/D → re-score · no code by end of Thu 12 Nov → "review period exceeded"', byDate: d(2), action: 'إعادة تقييم AIR-1069؛ تذكير القانونية بحد §20.1', actionEn: 'Re-scores AIR-1069; reminds legal of the §20.1 bar', evaluate: 'submittalCode' },
+      { key: 'co-034', signal: 'حالة CO-034', signalEn: 'CO-034 status', source: 'Oracle ERP', threshold: 'تسجيل القرار', thresholdEn: 'Decision recorded', byDate: null, action: 'تحديث ملاحظة المواصفة للطوابق 16+', actionEn: 'Updates the specification note for floors 16+', evaluate: 'changeOrder' },
+      { key: 'slot-confirmation', signal: 'تأكيد الحجز', signalEn: 'Slot confirmation', source: 'Biltix — الوثائق والاعتمادات (DMS)', threshold: 'عدم التأكيد حتى الأحد 15 نوفمبر', thresholdEn: 'Not confirmed by Sun 15 Nov', byDate: d(5), action: 'طرح R2 لقرار الشراء؛ التصعيد إلى مكتب إدارة المشاريع', actionEn: 'Opens R2 to an order decision; escalates to the PMO', evaluate: 'slot' },
+      { key: 'po-status', signal: 'حالة أمر الشراء', signalEn: 'PO status', source: 'Oracle ERP', threshold: 'عدم الإصدار حتى الثلاثاء 17 نوفمبر', thresholdEn: 'Not released by Tue 17 Nov', byDate: d(7), action: 'يبقى التقييم أحمر؛ تصعيد', actionEn: 'Rating stays red; escalation', evaluate: 'po' },
+      { key: 'notice-20-1', signal: 'إشعار §20.1', signalEn: '§20.1 notice', source: 'Biltix — العقود', threshold: 'عدم الإرسال حتى الأحد 22 نوفمبر', thresholdEn: 'Not sent by Sun 22 Nov', byDate: d(12), action: 'تنبيه حرج للقانونية ومدير المشروع', actionEn: 'Critical alert to legal and the PM', evaluate: 'notice' },
+      { key: 'p6-float', signal: 'طفو A1100 / A1095 وتوقعهما', signalEn: 'A1100 / A1095 float and forecast', source: 'Primavera P6', threshold: 'نهاية متوقعة أسوأ من ‎+7 أيام، أو طفو سالب', thresholdEn: 'Forecast finish worse than +7 days, or float < 0', byDate: null, action: 'إعادة التقييم؛ إعادة فتح R3', actionEn: 'Re-score; reopen R3', evaluate: 'float' },
+      { key: 'mock-up', signal: 'النموذج الأولي CT2-O1', signalEn: 'Mock-up CT2-O1', source: 'Biltix — الوثائق والاعتمادات (DMS)', threshold: 'عدم الاعتماد حتى الأحد 6 ديسمبر', thresholdEn: 'Not approved by Sun 6 Dec', byDate: d(26), action: 'شرط رمز B مهدد؛ إعادة التقييم', actionEn: 'Code B condition at risk; re-score', evaluate: 'obligation' },
+      { key: 'shipment', signal: 'إشعارات الإنتاج والشحن من المورد', signalEn: 'Supplier production and shipment notices', source: 'Biltix — الوثائق والاعتمادات (DMS)', threshold: 'شحن بعد الثلاثاء 2 مارس 2027', thresholdEn: 'Shipment later than Tue 2 Mar 2027', byDate: d(112), action: 'إعادة التقييم؛ تنبيه المشتريات', actionEn: 'Re-score; alert procurement', evaluate: 'shipment' },
+      { key: 'ap1-window', signal: 'نافذة ترخيص AP1', signalEn: 'AP1 licence window', source: 'Biltix — الجدول الزمني', threshold: 'النافذة لا تغطي ليالي الرفع الجديدة', thresholdEn: 'Window does not cover the new lift nights', byDate: null, action: 'مهمة إعادة تقديم / تمديد', actionEn: 'Task to re-apply / extend', evaluate: 'licence' },
+      { key: 'wind', signal: 'الرياح والغبار قبل كل ليلة رفع', signalEn: 'Wind and dust before each lift night', source: 'المركز الوطني للأرصاد', threshold: 'توقع فوق حد الرفع (38 كم/س)', thresholdEn: 'Forecast above the lift limit (38 km/h)', byDate: null, action: 'إعادة جدولة ليلة الرفع (السلامة)', actionEn: 'Lift night rescheduled (HSE)', evaluate: 'weather' },
+      { key: 'operators', signal: 'توفر مشغلي الرافعات', signalEn: 'Crane operators available', source: 'Biltix — الجدول الزمني', threshold: 'أقل من المخطط للورديات الليلية', thresholdEn: 'Below plan for night shifts', byDate: null, action: 'منع الرفع الليلي', actionEn: 'Blocks night lifts', evaluate: 'resources' },
+      { key: 'qr-receipt', signal: 'مسح الاستلام مقابل بنود أمر الشراء', signalEn: 'Receipt scans vs PO lines', source: 'تطبيق QR الميداني (خارطة الطريق)', sourceEn: 'QR field app (roadmap)', threshold: 'صناديق ناقصة أو تالفة', thresholdEn: 'Missing or damaged crates', byDate: d(112), action: 'فتح مهمة مطالبة للمورد', actionEn: 'Opens a supplier claim task', evaluate: 'roadmap', roadmap: true },
+    ],
+    // C1–C9 (scenario.md §12): كل معيار بخانة دليل فارغة؛ الإغلاق يحتاج كل الخانات + مراجعة شخص ثانٍ (العينان الأربع)
+    closureCriteria: [
+      { id: 'C1', text: 'اعتماد المادة', textEn: 'Material approved', evidence: 'خطاب رمز B على MAR-S1-CW-014 المراجعة 1 (الرقم، المراجعة، التاريخ، الشروط)', evidenceEn: 'Code B letter on MAR-S1-CW-014 Rev 1 (number, revision, date, conditions)', evidenceKind: 'letter', sourceSystem: 'Biltix — الوثائق والاعتمادات (DMS)', plannedAt: d(2), status: 'pending', slot: null },
+      { id: 'C2', text: 'تثبيت المواصفة للطوابق 8–15', textEn: 'Specification fixed for floors 8–15', evidence: 'تعليمات المهندس EI-S1-044 (§13.1)', evidenceEn: "Engineer's instruction EI-S1-044 (§13.1)", evidenceKind: 'letter', sourceSystem: 'Biltix — العقود', plannedAt: d(5), status: 'pending', slot: null },
+      { id: 'C3', text: 'تأمين التوريد', textEn: 'Supply secured', evidence: 'إصدار PO-S1-2026-0871 + تأكيد الحجز GFC-L-2026-121', evidenceEn: 'PO-S1-2026-0871 released + supplier slot confirmation GFC-L-2026-121', evidenceKind: 'po', sourceSystem: 'Oracle ERP', plannedAt: d(2), plannedTo: d(5), status: 'pending', slot: null },
+      { id: 'C4', text: 'حفظ الحقوق التعاقدية', textEn: 'Entitlement protected', evidence: 'إشعار §20.1 CORR-S1-2026-0604 مُرسل قبل الحد', evidenceEn: '§20.1 notice CORR-S1-2026-0604 sent before the bar', evidenceKind: 'letter', sourceSystem: 'Biltix — العقود', plannedAt: d(5), status: 'pending', slot: null },
+      { id: 'C5', text: 'استعادة البرنامج', textEn: 'Programme recovered', evidence: 'برنامج P6 المعدّل Rev 7 (A1100a/b) معتمد من المهندس؛ نهاية A1100 لا تتجاوز ‎+7 أيام', evidenceEn: 'Revised P6 programme Rev 7 (A1100a/b) accepted by the Engineer; A1100 finish ≤ +7 days', evidenceKind: 'task', sourceSystem: 'Primavera P6', plannedAt: d(19), status: 'pending', slot: null },
+      { id: 'C6', text: 'الوفاء بشروط رمز B', textEn: 'Code B conditions met', evidence: 'اعتماد النموذج الأولي CT2-O1 + تصوير 360° 360-S1-MU-01؛ تقرير اختبار الزجاج قبل الشحن', evidenceEn: 'Mock-up approval CT2-O1 + 360° capture 360-S1-MU-01; pre-shipment IGU test report', evidenceKind: 'capture360', sourceSystem: 'Biltix — الوثائق والاعتمادات (DMS)', plannedAt: d(26), status: 'pending', slot: null, roadmap: ['360'] },
+      { id: 'C7', text: 'المادة في الموقع', textEn: 'Material on site', evidence: 'سند التسليم DN-GFC-27-0031 + مسح QR لكل صندوق ومطابقته مع بنود أمر الشراء؛ إشعار الاستلام؛ فحص التلف', evidenceEn: 'Delivery note DN-GFC-27-0031 + QR receipt scan of every crate, matched to the PO lines; goods receipt; damage check', evidenceKind: 'deliveryNote', sourceSystem: 'Oracle ERP', plannedAt: d(112), status: 'pending', slot: null, roadmap: ['offline', 'qr'] },
+      { id: 'C8', text: 'بدء النشاط', textEn: 'Activity started', evidence: 'البدء الفعلي لـ A1100a في P6 + صورة موقع + تصوير 360° 360-S1-L08-N للواجهة الشمالية للطابق 8', evidenceEn: 'A1100a actual start in P6 + site photo + 360° capture 360-S1-L08-N of floor 8 north', evidenceKind: 'capture360', sourceSystem: 'Primavera P6', plannedAt: d(112), plannedTo: d(113), status: 'pending', slot: null, roadmap: ['360'] },
+      { id: 'C9', text: 'قبول المخاطرة المتبقية', textEn: 'Residual accepted', evidence: 'تقييم متبقٍّ: احتمال 2 × أثر 4 = 32 (أخضر) مع المبرر، من مالك المخاطرة', evidenceEn: 'Residual assessment L2 × I4 = 32 (green) with justification, by the risk owner', evidenceKind: 'note', sourceSystem: 'المنصة', plannedAt: d(5), status: 'pending', slot: null },
+    ],
+    closureRule: { fourEyes: true, text: 'لا تُغلق إلا عند تحقق كل المعايير ومراجعة الأدلة من شخص ثانٍ', textEn: 'Closes only when every criterion is met and a second person has checked the evidence' },
+    // ما بعد ساعة العرض: إسقاط مُعلَّم — لا يدخل السجل ولا المهام ولا سجل التدقيق (AC-04)
+    scenario: {
+      projected: true,
+      decisionDate: d(0), decisionTime: '10:05', riskDueDate: d(14),
+      decidedBy: OWNERS.pm.S1, ownerAfter: OWNERS.procurement,
+      accept: ['R1', 'R3'], hedge: ['R2'], escalateTo: 'PMO',
+      condition: { text: 'لا رفع ليلي قبل أن تغلق م. سارة القحطاني مراجعة الرفع والعمل الليلي (MT-0234)', textEn: 'No night lift before the HSE lift-and-night-work review (MT-0234) is closed by Eng. Sarah Al-Qahtani' },
+      reason: 'R1 أسرع مسار يحافظ على حجز خط الإنتاج قبل 24 نوفمبر دون تكلفة مباشرة. R2 وحده لا يلحق بالحجز لأن المورد البديل يحتاج اعتماداً ونموذجاً مستقلين، لذا يبقى تحوطاً للطوابق 12–15. R3 يسترد مدة التركيب لكنه يرفع كثافة الرفع ليلاً، فاعتماده مشروط بموافقة السلامة على خطة الرفع والعمل الليلي.',
+      reasonEn: 'R1 is the fastest path that keeps the production slot before 24 November at no direct cost. R2 alone cannot meet the slot because the alternative supplier needs its own approval and mock-up, so it stays a hedge for floors 12–15. R3 recovers installation time but increases night lifting, so it is approved on condition that HSE signs off the lift and night-work plan.',
+      audit: [
+        { date: d(0), time: '10:05', actor: OWNERS.pm.S1, action: 'override', target: 'AIR-1069', detail: 'تعديل التوصية إلى R1 + R3 وR2 تحوّطاً — مع السبب', detailEn: 'Recommendation edited to R1 + R3, R2 as hedge — reason recorded', mark: 'live' },
+        { date: d(0), time: '10:05', actor: OWNERS.pm.S1, action: 'assign', target: 'MT-0229…MT-0234', detail: 'ست مهام بمسؤوليها ومواعيدها', detailEn: 'Six tasks, owners and due dates', mark: 'live' },
+        { date: d(0), time: '10:06', actor: 'النظام', action: 'writeback', target: 'MT-0229…MT-0234 → BILTIX PM', detail: 'محاكاة — لم يُرسل شيء', detailEn: 'Simulated — nothing sent', mark: 'live', simulated: true },
+        { date: d(0), time: '10:07', actor: OWNERS.pm.S1, action: 'escalate', target: 'AIR-1069', detail: 'تصعيد يدوي إلى مكتب إدارة المشاريع — توجيه فقط', detailEn: 'Manual escalation to the PMO — routing only', mark: 'live' },
+        { date: d(2), time: '13:20', actor: OWNERS.procurement, action: 'evidence', target: 'AIR-1069', detail: 'إرفاق خطاب رمز B', detailEn: 'Code B letter attached', mark: 'projected' },
+        { date: d(5), time: null, actor: OWNERS.procurement, action: 'residual', target: 'AIR-1069', detail: 'احتمال 2 × أثر 4 = 32 (أخضر) — صدر أمر الشراء وتأكد الحجز', detailEn: 'L2 × I4 = 32 (green) — PO released, slot confirmed', mark: 'projected' },
+        { date: d(112), time: null, actor: 'مهندس الموقع', action: 'evidence', target: 'AIR-1069', detail: 'سند التسليم + مسوحات QR للاستلام (التقاط دون اتصال ثم مزامنة)', detailEn: 'Delivery note + QR receipt scans (offline capture, synced)', mark: 'projected' },
+        { date: d(113), time: null, actor: `${OWNERS.procurement} / ${OWNERS.pm.S1}`, action: 'close', target: 'AIR-1069', detail: 'تسجيل النتيجة؛ مراجعة العينين الأربع', detailEn: 'Outcome recorded; four-eyes check', mark: 'projected' },
+      ],
+      closureOutcome: 'أُغلقت: اعتُمدت المادة برمز B في 12 نوفمبر ضمن مدة المراجعة، وصدر أمر الشراء في اليوم نفسه داخل مهلة الحجز، ووصلت الدفعة الأولى في 2 مارس 2027 مُتحقَّقاً منها برمز QR وبدأ التركيب في اليوم نفسه؛ الأثر على A1100 ‎+4 أيام بدل ‎+28.',
+      closureOutcomeEn: 'Closed: material approved with Code B on 12 November within the review period; PO released the same day inside the slot hold; first batch received on 2 March 2027, QR-verified, and installation started the same day; impact on A1100 +4 days instead of +28.',
+    },
+  }),
 ];
 
 // ------------------------------------------------------------------
-// 18. مهام المعالجة — ناتجة عن التوصيات مع حالة الكتابة العكسية إلى Biltix PM
+// 18. مهام المعالجة — ناتجة عن التوصيات مع حالة الكتابة العكسية إلى BILTIX PM
 // ------------------------------------------------------------------
 
 function mt(n, x) {
@@ -2290,7 +2511,8 @@ function mt(n, x) {
     id: `MT${n}`, code: `MT-${String(200 + n).padStart(4, '0')}`,
     closedAt: null, outcome: null,
     ...x,
-    writeback: { target: 'Biltix PM', status: 'synced', at: x.createdAt, ...(x.writeback || {}) },
+    // Seeded write-back states are part of the demo scenario: nothing was ever sent to BILTIX PM.
+    writeback: { target: 'BILTIX PM', status: 'synced', at: x.createdAt, simulated: true, ...(x.writeback || {}) },
   };
 }
 
@@ -2334,42 +2556,43 @@ function alert(n, x) {
 }
 
 const alerts = [
-  alert(1,  { riskId: 'AR10', projectId: 'S3', severity: 'critical', queue: 'immediate', channels: ['email', 'slack', 'teams'], sentAt: t(-45, '07:35'), acknowledged: true, ackBy: OWNERS.pm.S3, ackAt: t(-45, '08:10'), title: 'تصعيد فوري: توريد محولات 33/380 ك.ف من مورد متعثر — الدرجة 91' }),
-  alert(2,  { riskId: 'AR18', projectId: 'S5', severity: 'critical', queue: 'immediate', channels: ['email', 'slack'], sentAt: t(-11, '07:40'), acknowledged: true, ackBy: OWNERS.pm.S5, ackAt: t(-11, '09:05'), title: 'تصعيد فوري: الحفر الصخري 2B عند 17% — انزلاق متوقع 63 يوماً — الدرجة 89' }),
-  alert(3,  { riskId: 'AR1',  projectId: 'S1', severity: 'critical', queue: 'immediate', channels: ['email', 'slack'], sentAt: t(-61, '14:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-61, '15:20'), title: 'تصعيد فوري: غرامة تأخير بلا سقف CT-2026-014 §8.7 — الدرجة 88' }),
-  alert(4,  { riskId: 'AR17', projectId: 'S5', severity: 'critical', queue: 'immediate', channels: ['email', 'slack'], sentAt: t(-9, '09:20'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-9, '10:00'), title: 'تصعيد فوري: مهلة إشعار المطالبة الجيوتقنية تنتهي خلال أيام — الدرجة 86' }),
-  alert(5,  { riskId: 'AR20', projectId: 'S5', severity: 'critical', queue: 'immediate', channels: ['email', 'slack', 'whatsapp'], sentAt: t(-1, '05:35'), acknowledged: true, ackBy: OWNERS.hse.S5, ackAt: t(-1, '05:52'), title: 'تصعيد فوري: عدم استقرار منحدر الحفر الشمالي — إزاحة 14 مم/أسبوع — الدرجة 85' }),
+  alert(1,  { riskId: 'AR10', projectId: 'S3', severity: 'critical', queue: 'immediate', channels: ['email', 'slack', 'teams'], sentAt: t(-45, '07:35'), acknowledged: true, ackBy: OWNERS.pm.S3, ackAt: t(-45, '08:10'), title: `تصعيد فوري: توريد محولات 33/380 ك.ف من مورد متعثر — الدرجة ${S(10)}` }),
+  alert(2,  { riskId: 'AR18', projectId: 'S5', severity: 'critical', queue: 'immediate', channels: ['email', 'slack'], sentAt: t(-11, '07:40'), acknowledged: true, ackBy: OWNERS.pm.S5, ackAt: t(-11, '09:05'), title: `تصعيد فوري: الحفر الصخري 2B عند 17% — انزلاق متوقع 63 يوماً — الدرجة ${S(18)}` }),
+  alert(3,  { riskId: 'AR1',  projectId: 'S1', severity: 'critical', queue: 'immediate', channels: ['email', 'slack'], sentAt: t(-61, '14:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-61, '15:20'), title: `تصعيد فوري: غرامة تأخير بلا سقف CT-2026-014 §8.7 — الدرجة ${S(1)}` }),
+  alert(4,  { riskId: 'AR17', projectId: 'S5', severity: 'critical', queue: 'immediate', channels: ['email', 'slack'], sentAt: t(-9, '09:20'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-9, '10:00'), title: `تصعيد فوري: مهلة إشعار المطالبة الجيوتقنية تنتهي خلال أيام — الدرجة ${S(17)}` }),
+  alert(5,  { riskId: 'AR20', projectId: 'S5', severity: 'critical', queue: 'immediate', channels: ['email', 'slack', 'whatsapp'], sentAt: t(-1, '05:35'), acknowledged: true, ackBy: OWNERS.hse.S5, ackAt: t(-1, '05:52'), title: `تصعيد فوري: عدم استقرار منحدر الحفر الشمالي — إزاحة 14 مم/أسبوع — الدرجة ${S(20)}` }),
   alert(6,  { riskId: 'AR7',  projectId: 'S2', severity: 'critical', queue: 'immediate', channels: ['email', 'slack', 'teams'], sentAt: t(-4, '15:20'), title: 'تصعيد يدوي: تأخر توصيل التيار الدائم للمبنى ج — 94 يوماً دون جدولة فحص' }),
-  alert(7,  { riskId: 'AR11', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-48, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-47, '08:00'), title: 'تنبيه: غرامة 1.2 مليون ريال يومياً مرتبطة بتاريخ خارج سيطرة المقاول — الدرجة 84' }),
-  alert(8,  { riskId: 'AR19', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-5, '05:10'), title: 'تنبيه: أمر تغيير 62.8 مليون ريال غير معتمد وبند الأعمال الترابية +21% — الدرجة 83' }),
+  alert(7,  { riskId: 'AR11', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-48, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-47, '08:00'), title: `تنبيه: غرامة 1.2 مليون ريال يومياً مرتبطة بتاريخ خارج سيطرة المقاول — الدرجة ${S(11)}` }),
+  alert(8,  { riskId: 'AR19', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-5, '05:10'), title: `تنبيه: أمر تغيير 62.8 مليون ريال غير معتمد وبند الأعمال الترابية +21% — الدرجة ${S(19)}` }),
   alert(9,  { riskId: 'AR13', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-26, '05:10'), acknowledged: true, ackBy: OWNERS.finance, ackAt: t(-25, '09:00'), title: 'تنبيه: EAC يتجاوز الميزانية بـ 237 مليون ريال — CPI 0.91' }),
-  alert(10, { riskId: 'AR15', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-48, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-46, '11:00'), title: 'تنبيه: منهجية اختبار نسبة الأداء غير محددة — §9.4 — الدرجة 79' }),
-  alert(11, { riskId: 'AR12', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-19, '10:30'), title: 'تنبيه: تركّز الألواح في مورد وحيد وتأخر الشحنة الثالثة 19 يوماً — الدرجة 78' }),
-  alert(12, { riskId: 'AR14', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack', 'whatsapp'], sentAt: t(-1, '18:05'), title: 'تنبيه: رفع الألواح مع رياح متوقعة 46 كم/س — القطاع الجنوبي — الدرجة 77' }),
-  alert(13, { riskId: 'AR3',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-21, '07:40'), acknowledged: true, ackBy: OWNERS.planning, ackAt: t(-20, '08:30'), title: 'تنبيه: انزلاق بدء تركيب الواجهة الزجاجية (A1100) — الدرجة 76' }),
-  alert(14, { riskId: 'AR21', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-8, '10:30'), title: 'تنبيه: كمية الحفر الصخري في النموذج أعلى 20% من جدول الكميات — الدرجة 75' }),
-  alert(15, { riskId: 'AR4',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack', 'whatsapp'], sentAt: t(-2, '06:50'), acknowledged: true, ackBy: OWNERS.hse.S1, ackAt: t(-2, '07:15'), title: 'تنبيه: حواف بلاطة مكشوفة بلا حواجز — الطابق 23 — الدرجة 74' }),
-  alert(16, { riskId: 'AR5',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-13, '10:30'), title: 'تنبيه: مورد وحيد للواجهة الزجاجية مع تجاوز تاريخ الطلب — الدرجة 73' }),
-  alert(17, { riskId: 'AR8',  projectId: 'S2', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-16, '07:40'), acknowledged: true, ackBy: OWNERS.planning, ackAt: t(-15, '09:00'), title: 'تنبيه: فجوة فنيي المصاعد تهدد الموعد التعاقدي للمبنى أ — الدرجة 72' }),
-  alert(18, { riskId: 'AR16', projectId: 'S4', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-1, '07:15'), acknowledged: true, ackBy: OWNERS.hse.S4, ackAt: t(-1, '07:40'), title: 'تنبيه: دخول غير مصرح به إلى منطقة تركيب الهياكل — المستودع 3 — الدرجة 72' }),
-  alert(19, { riskId: 'AR22', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-14, '06:50'), acknowledged: true, ackBy: OWNERS.hse.S5, ackAt: t(-13, '08:00'), title: 'تنبيه: عدم استخدام واقيات السمع في منطقة التفجير — 38% — الدرجة 71' }),
-  alert(20, { riskId: 'AR6',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-30, '05:10'), acknowledged: true, ackBy: OWNERS.finance, ackAt: t(-29, '10:00'), title: 'تنبيه: تجاوز الميزانية المتوقع 118 مليون ريال — CPI 0.94 — الدرجة 70' }),
-  alert(21, { riskId: 'AR9',  projectId: 'S2', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-7, '10:30'), title: 'تنبيه: زيادة كمية الكابلات النحاسية 9.8% مع ارتفاع النحاس — الدرجة 70' }),
-  alert(22, { riskId: 'AR23', projectId: 'S6', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-9, '07:40'), acknowledged: true, ackBy: OWNERS.pm.S6, ackAt: t(-8, '09:00'), title: 'تنبيه: نقص فنيي الغازات الطبية يهدد اختبار الشبكة — الدرجة 70' }),
-  alert(23, { riskId: 'AR35', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-8, '09:00'), title: 'تنبيه: تعرض لليوان 22% من الميزانية بلا تحوط — الدرجة 66' }),
-  alert(24, { riskId: 'AR42', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-3, '08:00'), title: 'تنبيه: تصريح المتفجرات ينتهي خلال 19 يوماً — الدرجة 63' }),
-  alert(25, { riskId: 'AR25', projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-40, '09:00'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-39, '10:00'), title: 'تنبيه: استثناء العواصف الترابية من القوة القاهرة — الدرجة 61' }),
-  alert(26, { riskId: 'AR46', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-1, '08:05'), acknowledged: true, ackBy: OWNERS.hse.S5, ackAt: t(-1, '08:30'), title: 'تنبيه: اختراق السياج قرب منطقة استبعاد التفجير — الدرجة 68' }),
-  alert(27, { riskId: 'AR47', projectId: 'S6', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-27, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-26, '08:30'), title: 'تنبيه: معيار قبول الأنظمة الطبية "بما يرضي صاحب العمل" — §9.1 — الدرجة 67' }),
-  alert(28, { riskId: 'AR28', projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-50, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-49, '10:00'), title: 'تنبيه: غياب تأمين جميع أخطار المقاولين لمواد الواجهة — §18.2 — الدرجة 66' }),
-  alert(29, { riskId: 'AR38', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-48, '09:30'), title: 'تنبيه: قيود التصدير مستثناة من القوة القاهرة — §19.1 — الدرجة 66' }),
-  alert(30, { riskId: 'AR44', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-9, '09:30'), title: 'تنبيه: 14 يوم إيقاف بسبب العواصف الترابية غير قابلة للاسترداد — §19.1 — الدرجة 63' }),
-  alert(31, { riskId: 'AR34', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-6, '10:30'), title: 'تنبيه: حاويات BESS — النموذج يتطلب 64 حاوية مقابل 60 — الدرجة 62' }),
-  alert(32, { riskId: 'AR32', projectId: 'S2', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-5, '10:30'), acknowledged: true, ackBy: OWNERS.procurement, ackAt: t(-5, '11:10'), title: 'تنبيه: الشحنة الأخيرة من المصاعد تصل قبل 13 يوماً فقط من موعد التشغيل — الدرجة 61' }),
-  alert(33, { riskId: 'AR48', projectId: 'S6', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-2, '10:30'), title: 'تنبيه: أنابيب النحاس الطبية — تجاوز تاريخ الطلب 21 يوماً — الدرجة 61' }),
-  alert(34, { riskId: 'AR2',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-62, '09:30'), acknowledged: true, ackBy: OWNERS.finance, ackAt: t(-61, '09:00'), title: 'تنبيه: أجل سداد 90 يوماً بلا تعويض تأخير — CT-2026-014 §14.2 — الدرجة 82' }),
-  alert(35, { riskId: 'AR39', projectId: 'S4', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-36, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-35, '08:45'), title: 'تنبيه: فجوة تعديل سعر الفولاذ بين العقد الرئيسي وعقد الباطن — الدرجة 64' }),
-  alert(36, { riskId: 'AR24', projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-4, '10:30'), title: 'تنبيه: حديد التسليح قطر 32 مم — كمية النموذج أعلى 8.5% من جدول الكميات — الدرجة 64' }),
+  alert(10, { riskId: 'AR15', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-48, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-46, '11:00'), title: `تنبيه: منهجية اختبار نسبة الأداء غير محددة — §9.4 — الدرجة ${S(15)}` }),
+  alert(11, { riskId: 'AR12', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-19, '10:30'), title: `تنبيه: تركّز الألواح في مورد وحيد وتأخر الشحنة الثالثة 19 يوماً — الدرجة ${S(12)}` }),
+  alert(12, { riskId: 'AR14', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack', 'whatsapp'], sentAt: t(-1, '18:05'), title: `تنبيه: رفع الألواح مع رياح متوقعة 46 كم/س — القطاع الجنوبي — الدرجة ${S(14)}` }),
+  alert(13, { riskId: 'AR3',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-21, '07:40'), acknowledged: true, ackBy: OWNERS.planning, ackAt: t(-20, '08:30'), title: `تنبيه: انزلاق بدء تركيب الواجهة الزجاجية (A1100) — الدرجة ${S(3)}` }),
+  alert(14, { riskId: 'AR21', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-8, '10:30'), title: `تنبيه: كمية الحفر الصخري في النموذج أعلى 20% من جدول الكميات — الدرجة ${S(21)}` }),
+  alert(15, { riskId: 'AR4',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack', 'whatsapp'], sentAt: t(-2, '06:50'), acknowledged: true, ackBy: OWNERS.hse.S1, ackAt: t(-2, '07:15'), title: `تنبيه: حواف بلاطة مكشوفة بلا حواجز — الطابق 23 — الدرجة ${S(4)}` }),
+  alert(16, { riskId: 'AR5',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-13, '10:30'), title: `تنبيه: مورد وحيد للواجهة الزجاجية مع تجاوز تاريخ الطلب — الدرجة ${S(5)}` }),
+  alert(17, { riskId: 'AR8',  projectId: 'S2', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-16, '07:40'), acknowledged: true, ackBy: OWNERS.planning, ackAt: t(-15, '09:00'), title: `تنبيه: فجوة فنيي المصاعد تهدد الموعد التعاقدي للمبنى أ — الدرجة ${S(8)}` }),
+  alert(18, { riskId: 'AR16', projectId: 'S4', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-1, '07:15'), acknowledged: true, ackBy: OWNERS.hse.S4, ackAt: t(-1, '07:40'), title: `تنبيه: دخول غير مصرح به إلى منطقة تركيب الهياكل — المستودع 3 — الدرجة ${S(16)}` }),
+  alert(19, { riskId: 'AR22', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-14, '06:50'), acknowledged: true, ackBy: OWNERS.hse.S5, ackAt: t(-13, '08:00'), title: `تنبيه: عدم استخدام واقيات السمع في منطقة التفجير — 38% — الدرجة ${S(22)}` }),
+  alert(20, { riskId: 'AR6',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-30, '05:10'), acknowledged: true, ackBy: OWNERS.finance, ackAt: t(-29, '10:00'), title: `تنبيه: تجاوز الميزانية المتوقع 118 مليون ريال — CPI 0.94 — الدرجة ${S(6)}` }),
+  alert(21, { riskId: 'AR9',  projectId: 'S2', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-7, '10:30'), title: `تنبيه: زيادة كمية الكابلات النحاسية 9.8% مع ارتفاع النحاس — الدرجة ${S(9)}` }),
+  alert(22, { riskId: 'AR23', projectId: 'S6', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-9, '07:40'), acknowledged: true, ackBy: OWNERS.pm.S6, ackAt: t(-8, '09:00'), title: `تنبيه: نقص فنيي الغازات الطبية يهدد اختبار الشبكة — الدرجة ${S(23)}` }),
+  alert(23, { riskId: 'AR35', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-8, '09:00'), title: `تنبيه: تعرض لليوان 22% من الميزانية بلا تحوط — الدرجة ${S(35)}` }),
+  alert(24, { riskId: 'AR42', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-3, '08:00'), title: `تنبيه: تصريح المتفجرات ينتهي خلال 19 يوماً — الدرجة ${S(42)}` }),
+  alert(25, { riskId: 'AR25', projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-40, '09:00'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-39, '10:00'), title: `تنبيه: استثناء العواصف الترابية من القوة القاهرة — الدرجة ${S(25)}` }),
+  alert(26, { riskId: 'AR46', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-1, '08:05'), acknowledged: true, ackBy: OWNERS.hse.S5, ackAt: t(-1, '08:30'), title: `تنبيه: اختراق السياج قرب منطقة استبعاد التفجير — الدرجة ${S(46)}` }),
+  alert(27, { riskId: 'AR47', projectId: 'S6', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-27, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-26, '08:30'), title: `تنبيه: معيار قبول الأنظمة الطبية "بما يرضي صاحب العمل" — §9.1 — الدرجة ${S(47)}` }),
+  alert(28, { riskId: 'AR28', projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-50, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-49, '10:00'), title: `تنبيه: غياب تأمين جميع أخطار المقاولين لمواد الواجهة — §18.2 — الدرجة ${S(28)}` }),
+  alert(29, { riskId: 'AR38', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-48, '09:30'), title: `تنبيه: قيود التصدير مستثناة من القوة القاهرة — §19.1 — الدرجة ${S(38)}` }),
+  alert(30, { riskId: 'AR44', projectId: 'S5', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-9, '09:30'), title: `تنبيه: 14 يوم إيقاف بسبب العواصف الترابية غير قابلة للاسترداد — §19.1 — الدرجة ${S(44)}` }),
+  alert(31, { riskId: 'AR34', projectId: 'S3', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-6, '10:30'), title: `تنبيه: حاويات BESS — النموذج يتطلب 64 حاوية مقابل 60 — الدرجة ${S(34)}` }),
+  alert(32, { riskId: 'AR32', projectId: 'S2', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-5, '10:30'), acknowledged: true, ackBy: OWNERS.procurement, ackAt: t(-5, '11:10'), title: `تنبيه: الشحنة الأخيرة من المصاعد تصل قبل 13 يوماً فقط من موعد التشغيل — الدرجة ${S(32)}` }),
+  alert(33, { riskId: 'AR48', projectId: 'S6', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-2, '10:30'), title: `تنبيه: أنابيب النحاس الطبية — تجاوز تاريخ الطلب 21 يوماً — الدرجة ${S(48)}` }),
+  alert(34, { riskId: 'AR2',  projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-62, '09:30'), acknowledged: true, ackBy: OWNERS.finance, ackAt: t(-61, '09:00'), title: `تنبيه: أجل سداد 90 يوماً بلا تعويض تأخير — CT-2026-014 §14.2 — الدرجة ${S(2)}` }),
+  alert(35, { riskId: 'AR39', projectId: 'S4', severity: 'routine', queue: 'standard', channels: ['email'], sentAt: t(-36, '09:30'), acknowledged: true, ackBy: OWNERS.legal, ackAt: t(-35, '08:45'), title: `تنبيه: فجوة تعديل سعر الفولاذ بين العقد الرئيسي وعقد الباطن — الدرجة ${S(39)}` }),
+  alert(36, { riskId: 'AR24', projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(-4, '10:30'), title: `تنبيه: حديد التسليح قطر 32 مم — كمية النموذج أعلى 8.5% من جدول الكميات — الدرجة ${S(24)}` }),
+  alert(37, { riskId: 'AR69', projectId: 'S1', severity: 'routine', queue: 'standard', channels: ['email', 'slack'], sentAt: t(0, '09:52'), title: `تنبيه: اعتماد زجاج الواجهة MAR-S1-CW-014 معلّق — الدرجة ${S(69)}` }),
 ];
 
 // ------------------------------------------------------------------
@@ -2383,7 +2606,7 @@ const pipelines = [
     description: 'يقرأ العقود وأوامر الشراء والعطاءات من وحدة العقود في بلتكس، ويستخرج البنود ويصنّفها ويقارنها بمكتبة معايير سوقية، ويُنتج درجة مخاطرة لكل بند مع صياغة بديلة وتفسير بلغة واضحة.',
     techniques: ['تصنيف البنود بنماذج لغوية مُدرَّبة على عقود الإنشاء (FIDIC، نظام المنافسات)', 'التعرف على الكيانات (المبالغ، المدد، الأطراف، الإحالات)', 'مقارنة دلالية مع مكتبة الصياغات القياسية', 'استخراج الالتزامات والمواعيد وربطها بالتقويم', 'تحليل شبكة الأطراف لقياس التركّز'],
     inputs: ['Biltix — العقود (PDF/DOCX + بيانات وصفية)', 'مكتبة المعايير المرجعية', 'أوامر الشراء من Oracle ERP', 'سجل المقاولين من الباطن والموردين'],
-    status: 'running', lastRun: t(0, '09:14'), runsToday: 6, avgLatencyMs: 4200, precision: 0.91, recall: 0.86, calibrationError: 0.045, driftScore: 0.12, version: 'v2.3.1',
+    status: 'running', lastRun: t(0, '09:14'), runsToday: 6, avgLatencyMs: 4200, precision: null, recall: null, calibrationError: null, driftScore: null, // not measured: no test set or model service in this version version: 'v2.3.1',
     featureImportance: [
       { feature: 'وجود/غياب سقف الغرامات', weight: 0.24 }, { feature: 'أجل السداد مقارنة بالمعيار', weight: 0.19 }, { feature: 'عبارات غامضة ("معقول"، "بما يرضي")', weight: 0.17 },
       { feature: 'اكتمال بنود التأمين والتعويض', weight: 0.15 }, { feature: 'قيمة العقد والمدة المتبقية', weight: 0.13 }, { feature: 'تركّز المقاولين من الباطن', weight: 0.12 },
@@ -2400,11 +2623,11 @@ const pipelines = [
   {
     id: 'bom-forecast', name: 'BoM Forecasting', nameAr: 'محرك توقع المواد BoM',
     description: 'يطابق كميات جدول الكميات مع نموذج BIM عبر Autodesk APS، ويتوقع أسعار السلع وأزمنة التوريد، ويقيس تركّز الموردين وصحتهم المالية ومطابقة المواصفات.',
-    techniques: ['مطابقة الكميات BoQ↔BIM بالتصنيف الموحد (Uniclass/OmniClass)', 'توقع الأسعار بنماذج السلاسل الزمنية (Prophet/ARIMA) مع مؤشرات السلع', 'نموذج تسجيل الموردين (صحة مالية، أداء تسليم، تركّز)', 'حساب تواريخ الطلب من زمن التوريد وتاريخ الاحتياج', 'مطابقة المواصفات بالمعالجة اللغوية'],
+    techniques: ['مطابقة الكميات BoQ–BIM بالتصنيف الموحد (Uniclass/OmniClass)', 'توقع الأسعار بنماذج السلاسل الزمنية (Prophet/ARIMA) مع مؤشرات السلع', 'نموذج تسجيل الموردين (صحة مالية، أداء تسليم، تركّز)', 'حساب تواريخ الطلب من زمن التوريد وتاريخ الاحتياج', 'مطابقة المواصفات بالمعالجة اللغوية'],
     inputs: ['Biltix — BoQ/BoM', 'Autodesk APS (كميات النموذج)', 'Oracle ERP (أوامر الشراء، الموردون)', 'مؤشرات السلع', 'أسعار الصرف'],
-    status: 'running', lastRun: t(0, '10:20'), runsToday: 4, avgLatencyMs: 6800, precision: 0.87, recall: 0.83, calibrationError: 0.061, driftScore: 0.21, version: 'v1.8.0',
+    status: 'running', lastRun: t(0, '10:20'), runsToday: 4, avgLatencyMs: 6800, precision: null, recall: null, calibrationError: null, driftScore: null, // not measured: no test set or model service in this version version: 'v1.8.0',
     featureImportance: [
-      { feature: 'تباين الكمية BoQ↔BIM', weight: 0.22 }, { feature: 'تقلب سعر السلعة (12 شهراً)', weight: 0.2 }, { feature: 'مورد وحيد / حصة الإنفاق', weight: 0.18 },
+      { feature: 'تباين الكمية BoQ–BIM', weight: 0.22 }, { feature: 'تقلب سعر السلعة (12 شهراً)', weight: 0.2 }, { feature: 'مورد وحيد / حصة الإنفاق', weight: 0.18 },
       { feature: 'الأيام المتبقية حتى تاريخ الطلب', weight: 0.16 }, { feature: 'الصحة المالية للمورد', weight: 0.13 }, { feature: 'حالة مطابقة المواصفة', weight: 0.11 },
     ],
     acceptanceRatePct: 71, overridesLast30d: 6, risksLast30d: 11,
@@ -2421,7 +2644,7 @@ const pipelines = [
     description: 'يقرأ الجداول من Primavera P6 ويحسب احتمال التأخير لكل نشاط حرج ويشغّل محاكاة مونت كارلو (5,000 تكرار) لتوقع P50/P80/P90، مع دمج الموارد والطقس والموافقات وأداء المقاولين من الباطن.',
     techniques: ['تصنيف احتمال التأخير (Gradient Boosting) على خصائص النشاط', 'محاكاة مونت كارلو لمدد الأنشطة وتوزيعات الطفو', 'تحليل الموارد وفرط التخصيص', 'ربط توقعات الأرصاد بالأنشطة الحساسة للطقس', 'تتبع الموافقات التنظيمية مقابل المدد النظامية'],
     inputs: ['Primavera P6 EPPM (الأنشطة، العلاقات، خط الأساس)', 'Biltix — الجدول الزمني', 'المركز الوطني للأرصاد', 'سجل الموافقات', 'بطاقات أداء المقاولين من الباطن'],
-    status: 'running', lastRun: t(0, '07:30'), runsToday: 3, avgLatencyMs: 18400, precision: 0.84, recall: 0.88, calibrationError: 0.052, driftScore: 0.09, version: 'v3.1.2',
+    status: 'running', lastRun: t(0, '07:30'), runsToday: 3, avgLatencyMs: 18400, precision: null, recall: null, calibrationError: null, driftScore: null, // not measured: no test set or model service in this version version: 'v3.1.2',
     featureImportance: [
       { feature: 'الطفو الكلي والحرجية', weight: 0.21 }, { feature: 'فجوة التقدم الفعلي/المخطط', weight: 0.2 }, { feature: 'بطاقة أداء المقاول من الباطن', weight: 0.17 },
       { feature: 'فرط تخصيص الموارد', weight: 0.15 }, { feature: 'حساسية الطقس × توقع الأرصاد', weight: 0.14 }, { feature: 'نسبة المدة المنقضية للموافقات', weight: 0.13 },
@@ -2440,7 +2663,7 @@ const pipelines = [
     description: 'يحلل صور الموقع والتقارير اليومية وقراءات الحساسات والكاميرات لكشف مخالفات السلامة والمخاطر الجيوتقنية والانحراف عن التصميم والدخول غير المصرح والمخالفات البيئية، ويربطها بسجل السلامة.',
     techniques: ['رؤية حاسوبية لكشف معدات الوقاية والممارسات غير الآمنة', 'مقارنة المسح الليزري بنموذج BIM (Scan-to-BIM)', 'تحليل سلاسل الحساسات الجيوتقنية والبيئية', 'تحليل التقارير اليومية بالمعالجة اللغوية', 'تحليل تكرار الملاحظات لتحديد الأسباب الجذرية'],
     inputs: ['Biltix — تقارير الموقع (صور + نصوص)', 'Biltix — الصور', 'بوابة الحساسات (ميل، ضوضاء، غبار)', 'كاميرات الموقع', 'Autodesk APS (النموذج المرجعي)', 'المركز الوطني للأرصاد'],
-    status: 'running', lastRun: t(0, '06:45'), runsToday: 9, avgLatencyMs: 2900, precision: 0.88, recall: 0.81, calibrationError: 0.073, driftScore: 0.27, version: 'v2.0.4',
+    status: 'running', lastRun: t(0, '06:45'), runsToday: 9, avgLatencyMs: 2900, precision: null, recall: null, calibrationError: null, driftScore: null, // not measured: no test set or model service in this version version: 'v2.0.4',
     featureImportance: [
       { feature: 'تكرار الملاحظة (أيام متتالية)', weight: 0.23 }, { feature: 'شدة الخطر (ارتفاع، أحمال، انهيار)', weight: 0.21 }, { feature: 'عدد العمال المعرضين', weight: 0.17 },
       { feature: 'قراءات الحساسات مقابل الحدود', weight: 0.16 }, { feature: 'الانحراف عن النموذج مقابل التفاوت', weight: 0.12 }, { feature: 'الظروف الجوية المتوقعة', weight: 0.11 },
@@ -2459,7 +2682,7 @@ const pipelines = [
     description: 'يحسب مؤشرات القيمة المكتسبة (CPI/SPI/EAC/VAC) من Oracle ERP والجدول، ويتوقع التكلفة بنماذج السلاسل الزمنية مع تضخم المدخلات وتقلب العملات وزحف أوامر التغيير ومؤشر العمالة.',
     techniques: ['تحليل القيمة المكتسبة (EVM) الشهري', 'توقع التكلفة بالسلاسل الزمنية مع متغيرات خارجية (السلع، العملات، العمالة)', 'نمذجة التعرض للعملات والتحوط', 'تحليل زحف أوامر التغيير حسب المحرك والحالة', 'كشف الانحرافات على مستوى WBS'],
     inputs: ['Oracle ERP (الميزانية، الفعلي، الالتزامات)', 'Biltix — التكلفة والميزانية', 'Primavera P6 (القيمة المخططة)', 'أسعار الصرف', 'مؤشرات السلع ومؤشر العمالة'],
-    status: 'training', lastRun: t(0, '05:00'), runsToday: 2, avgLatencyMs: 9600, precision: 0.85, recall: 0.8, calibrationError: 0.058, driftScore: 0.33, version: 'v1.6.3',
+    status: 'idle', lastRun: t(0, '05:00'), runsToday: 2, avgLatencyMs: 9600, precision: null, recall: null, calibrationError: null, driftScore: null, // not measured: no test set or model service in this version version: 'v1.6.3',
     featureImportance: [
       { feature: 'CPI واتجاهه (8 أسابيع)', weight: 0.24 }, { feature: 'تباين WBS (التوقع/الميزانية)', weight: 0.2 }, { feature: 'أوامر التغيير غير المعتمدة', weight: 0.17 },
       { feature: 'تضخم السلع المرتبطة بالبنود', weight: 0.15 }, { feature: 'التعرض غير المحوط للعملات', weight: 0.13 }, { feature: 'مؤشر تكلفة العمالة', weight: 0.11 },
@@ -2498,6 +2721,8 @@ const validation = {
     source({ id: 'VS10', name: 'مؤشرات السلع',               recordsIn: 144,     rejected: 0,   deduplicated: 0,   completenessPct: 100,  consistencyPct: 100,  lastBatch: t(0, '08:00') }),
     source({ id: 'VS11', name: 'أسعار الصرف (ساما)',         recordsIn: 36,      rejected: 0,   deduplicated: 0,   completenessPct: 100,  consistencyPct: 100,  lastBatch: t(0, '11:00') }),
     source({ id: 'VS12', name: 'المركز الوطني للأرصاد',       recordsIn: 1_008,   rejected: 12,  deduplicated: 24,  completenessPct: 98.8, consistencyPct: 99.4, lastBatch: t(0, '06:00') }),
+    source({ id: 'VS13', name: 'بوابة الحساسات (MQTT)',      recordsIn: 86_400,  rejected: 310, deduplicated: 0,   completenessPct: 99.2, consistencyPct: 97.8, lastBatch: t(0, '12:35') }),
+    source({ id: 'VS14', name: 'Biltix — الوثائق والاعتمادات (DMS)', recordsIn: 860, rejected: 9, deduplicated: 22, completenessPct: 92.0, consistencyPct: 97.6, lastBatch: t(0, '09:30') }),
   ],
   rules: [
     { id: 'VR1',  name: 'مطابقة مخطط السجل (الحقول الإلزامية والأنواع)',                type: 'schema',       hitsToday: 94,  enabled: true },
@@ -2508,10 +2733,10 @@ const validation = {
     { id: 'VR6',  name: 'اكتمال البيانات الوصفية للصور (الموقع، الوقت، المنطقة)',          type: 'completeness', hitsToday: 188, enabled: true },
     { id: 'VR7',  name: 'اتساق الكميات: BoQ ضمن ±30% من BIM وإلا يُحجر للمراجعة',          type: 'consistency',  hitsToday: 27,  enabled: true },
     { id: 'VR8',  name: 'اتساق العملات: المبلغ بالعملة الأصلية × سعر ساما = المبلغ بالريال', type: 'consistency',  hitsToday: 9,   enabled: true },
-    { id: 'VR9',  name: 'اتساق الجدول: النشاط الحرج طفوه ≤ 0 والتواريخ ضمن نافذة المشروع', type: 'consistency',  hitsToday: 14,  enabled: true },
-    { id: 'VR10', name: 'نطاق قراءات الحساسات (قيم فيزيائية معقولة، لا قفزات > 5σ)',        type: 'consistency',  hitsToday: 42,  enabled: true },
+    { id: 'VR9',  name: 'اتساق الجدول: النشاط الحرج طفوه صفر أو أقل والتواريخ ضمن نافذة المشروع', type: 'consistency',  hitsToday: 14,  enabled: true },
+    { id: 'VR10', name: 'نطاق قراءات الحساسات (قيم فيزيائية معقولة، لا قفزات تتجاوز 5 انحرافات معيارية)',        type: 'consistency',  hitsToday: 42,  enabled: true },
     { id: 'VR11', name: 'مرجعية المعرّفات (المشروع، المورد، العقد موجودة في السجل الرئيسي)', type: 'consistency',  hitsToday: 23,  enabled: true },
-    { id: 'VR12', name: 'حجم ودقة الصور (≥ 1280 بكسل، غير معتمة، غير مشوشة)',             type: 'schema',       hitsToday: 67,  enabled: true },
+    { id: 'VR12', name: 'حجم ودقة الصور (1280 بكسل أو أكثر، غير معتمة، غير مشوشة)',             type: 'schema',       hitsToday: 67,  enabled: true },
   ],
   quarantine: [
     { id: 'VQ1',  sourceId: 'VS8',  recordRef: 'BIM-S5-31.23.010',        reason: 'تباين الكمية +20.1% يتجاوز حد الاتساق ±30%؟ لا — يتجاوز حد المراجعة 15%: يحتاج اعتماد المهندس', at: t(0, '03:35'), status: 'معلّق' },
@@ -2528,8 +2753,39 @@ const validation = {
     { id: 'VQ12', sourceId: 'VS8',  recordRef: 'BIM-S1-08.01.040 v39',     reason: 'إصدار نموذج أحدث من الإصدار المعتمد (v38) — بانتظار الاعتماد', at: t(0, '03:36'), status: 'معلّق' },
     { id: 'VQ13', sourceId: 'VS5',  recordRef: 'COST-S2-2.7-NOV',          reason: 'ميزانية البند تغيرت دون أمر تغيير مرتبط', at: t(0, '04:52'), status: 'معلّق' },
     { id: 'VQ14', sourceId: 'VS3',  recordRef: 'SCH-S6-F6020',             reason: 'نشاط حرج بطفو موجب (3 أيام) — تعارض مع P6', at: t(0, '07:21'), status: 'مُصحح' },
+    { id: 'VQ15', sourceId: 'VS14', recordRef: 'MAR-S1-MEP-021',           reason: 'سجل اعتماد بلا تاريخ استحقاق للمراجعة', at: t(0, '09:31'), status: 'معلّق' },
   ],
 };
+
+// ------------------------------------------------------------------
+// 21b. v4 — طلبات اعتماد المواد (Submittals) من نظام الوثائق والاعتمادات (DMS) — عرض تجريبي
+// ------------------------------------------------------------------
+
+/**
+ * Rev 0 قُدّمت ثم أُعيدت برمز C؛ Rev 1 قيد المراجعة (اليوم 12 من 14 عند ساعة العرض). الحقول: submittedAt/returnedAt لحظات
+ * ماضية؛ dueAt تواريخ تقويمية. SB1 هو سبب المثال التطبيقي (AR69) ويحجب أمر الشراء PO-S1-2026-0871.
+ */
+const submittals = [
+  {
+    id: 'SB1', code: 'MAR-S1-CW-014', projectId: 'S1', contractId: 'CT2', mainContractId: 'CT1',
+    boqItemId: 'BQ2', supplierId: 'SUP4', subcontractorId: 'SC1', discipline: 'واجهات', disciplineEn: 'Façades',
+    title: 'زجاج عازل مزدوج منخفض الانبعاث (Low-E) ونظام الألمنيوم لوحدات الواجهة الموحدة — عينات وبيانات فنية وتقارير اختبار',
+    titleEn: 'Double-glazed low-E insulating glass units and aluminium framing for the unitized curtain wall — samples, technical data and test reports',
+    reviewer: 'الاستشاري المشرف (المهندس)', reviewerEn: 'Supervising consultant (the Engineer)',
+    reviewPeriodDays: 14, status: 'قيد المراجعة', currentRev: 1,
+    changeOrderId: 'CO3', obligationId: 'CT2-O1', blocksPo: 'PO-S1-2026-0871', riskIds: ['AR69', 'AR5', 'AR3', 'AR27'],
+    revisions: [
+      { rev: 0, transmittal: 'TR-S1-1187', submittedAt: t(-37, '13:55'), dueAt: d(-23), returnedAt: t(-22, '17:40'), code: 'C',
+        comments: ['تقارير اختبار الزجاج العازل من جهة ثالثة غير مرفقة (الأداء الحراري والمتانة)', 'مُعالج الزجاج غير مدرج في قائمة الموردين المعتمدين', 'صاحب العمل يدرس الزجاج ثلاثي الطبقات — يُرجى تأكيد أساس التقديم'],
+        commentsEn: ['Third-party IGU test reports missing (thermal performance, durability)', 'Glass processor not on the approved vendor list', 'The employer is considering triple glazing — confirm the basis of the submittal'],
+        crsRef: 'CRS-MAR-S1-CW-014-R0' },
+      { rev: 1, transmittal: 'TR-S1-1242', submittedAt: t(-12, '15:10'), dueAt: d(2), returnedAt: null, code: null,
+        note: 'أُرفقت تقارير الاختبار وبيانات المُعالج وبديل مُسعّر بالزجاج ثلاثي الطبقات',
+        noteEn: 'Test reports, processor credentials and a priced triple-glazing alternative attached' },
+    ],
+    sourceSystem: 'Biltix — الوثائق والاعتمادات (DMS)', simulated: true,
+  },
+];
 
 // ------------------------------------------------------------------
 // 22. الموصلات المؤسسية — المنصة تقرأ من أنظمة العميل وتكتب عكسياً فقط
@@ -2555,11 +2811,12 @@ const connectors = [
   { id: 'biltix-schedule', name: 'بلتكس — الجدول الزمني', vendor: 'Biltix', layer: 'biltix', api: 'Biltix REST v1', mode: 'read+writeback', entities: ['المهام', 'المعالم', 'التبعيات'], status: 'connected', lastSync: t(0, '07:20'), recordsPerDay: 6_410, latencyMs: 160, writeback: ['علامات انزلاق المسار الحرج', 'مهام المعالجة'], description: 'جدول المشروع داخل بلتكس (مزامن مع P6) مع كتابة علامات الانزلاق.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.biltix.sa/v1'), CF.secret('apiKey', 'مفتاح API')] },
   { id: 'biltix-site-reports', name: 'بلتكس — تقارير الموقع', vendor: 'Biltix', layer: 'biltix', api: 'Biltix REST v1 + Webhooks', mode: 'read+writeback', entities: ['التقارير اليومية', 'الملاحظات', 'التفتيشات', 'الحضور'], status: 'connected', lastSync: t(0, '06:35'), recordsPerDay: 2_980, latencyMs: 190, writeback: ['علامات السلامة على التقارير', 'مهام المعالجة للموقع'], description: 'التقارير اليومية والتفتيشات؛ تُكتب علامات السلامة ومهام الموقع.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.biltix.sa/v1'), CF.secret('apiKey', 'مفتاح API')] },
   { id: 'biltix-cost', name: 'بلتكس — التكلفة والميزانية', vendor: 'Biltix', layer: 'biltix', api: 'Biltix REST v1', mode: 'read+writeback', entities: ['بنود التكلفة', 'أوامر التغيير', 'المستخلصات'], status: 'connected', lastSync: t(0, '04:50'), recordsPerDay: 9_870, latencyMs: 230, writeback: ['علامات تجاوز الميزانية', 'تنبيهات أوامر التغيير'], description: 'بيانات التكلفة داخل بلتكس (مزامنة مع ERP) مع كتابة علامات التجاوز.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.biltix.sa/v1'), CF.secret('apiKey', 'مفتاح API')] },
-  { id: 'biltix-images', name: 'بلتكس — الصور والوسائط', vendor: 'Biltix', layer: 'biltix', api: 'Biltix Media API (S3-compatible)', mode: 'read', entities: ['صور الموقع', 'الفيديو', 'المسوحات'], status: 'degraded', lastSync: t(0, '06:40'), recordsPerDay: 4_120, latencyMs: 2_800, writeback: [], description: 'مخزن الصور والوسائط؛ تدهور الأداء بسبب حجم الصور غير المضغوطة.', configFields: [CF.url('endpoint', 'عنوان المخزن', 'https://media.biltix.sa'), CF.text('bucket', 'Bucket', 'site-images'), CF.secret('accessKey', 'Access Key'), CF.secret('secretKey', 'Secret Key')] },
+  { id: 'biltix-images', name: 'بلتكس — الصور والوسائط', vendor: 'Biltix', layer: 'biltix', api: 'Biltix Media API (S3-compatible)', mode: 'read', entities: ['صور الموقع', 'الفيديو', 'المسوحات'], status: 'degraded', lastSync: t(0, '06:40'), recordsPerDay: 4_120, latencyMs: 2_800, writeback: [], description: 'مخزن الصور والوسائط؛ في السيناريو التجريبي يتدهور الأداء بسبب حجم الصور غير المضغوطة.', configFields: [CF.url('endpoint', 'عنوان المخزن', 'https://media.biltix.sa'), CF.text('bucket', 'Bucket', 'site-images'), CF.secret('accessKey', 'Access Key'), CF.secret('secretKey', 'Secret Key')] },
+  { id: 'biltix-dms', name: 'بلتكس — الوثائق والاعتمادات (DMS)', vendor: 'Biltix', layer: 'biltix', api: 'Biltix REST v1 + Webhooks', mode: 'read', entities: ['طلبات اعتماد المواد', 'المخططات التنفيذية', 'المراسلات', 'طلبات الاستيضاح RFI'], status: 'connected', lastSync: t(0, '09:30'), recordsPerDay: 860, latencyMs: 200, writeback: [], description: 'سجل طلبات الاعتماد ورموز المراجعة ومواعيدها والمراسلات الواردة؛ مصدر دليل الإغلاق.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.biltix.sa/v1'), CF.secret('apiKey', 'مفتاح API')] },
   { id: 'feed-commodities', name: 'مؤشرات أسعار السلع', vendor: 'مزود بيانات السلع', layer: 'external', api: 'REST (JSON) — يومي', mode: 'read', entities: ['حديد التسليح', 'الأسمنت', 'النحاس', 'الألمنيوم', 'الديزل', 'الخشب'], status: 'connected', lastSync: t(0, '08:00'), recordsPerDay: 6, latencyMs: 420, writeback: [], description: 'أسعار السلع المحلية والعالمية (LME، الهيئة العامة للإحصاء).', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.commodities.example/v1'), CF.secret('apiKey', 'مفتاح API')] },
   { id: 'feed-fx-sama', name: 'أسعار الصرف — البنك المركزي السعودي (ساما)', vendor: 'ساما', layer: 'external', api: 'REST (JSON) — يومي', mode: 'read', entities: ['USD', 'EUR', 'CNY', 'INR', 'TRY', 'GBP'], status: 'connected', lastSync: t(0, '11:00'), recordsPerDay: 6, latencyMs: 310, writeback: [], description: 'أسعار الصرف الرسمية اليومية.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.sama.gov.sa/rates')] },
   { id: 'feed-weather-ncm', name: 'المركز الوطني للأرصاد', vendor: 'المركز الوطني للأرصاد', layer: 'external', api: 'REST (JSON) — كل 6 ساعات', mode: 'read', entities: ['توقعات 7 أيام', 'إنذارات الغبار', 'الرياح'], status: 'connected', lastSync: t(0, '06:00'), recordsPerDay: 168, latencyMs: 560, writeback: [], description: 'توقعات وإنذارات لمواقع المشاريع الستة.', configFields: [CF.url('apiUrl', 'عنوان API', 'https://api.ncm.gov.sa/v1'), CF.secret('apiKey', 'مفتاح API')] },
-  { id: 'feed-gis', name: 'طبقات GIS (الهيئة العامة للمساحة والمعلومات الجيومكانية)', vendor: 'الهيئة العامة للمساحة', layer: 'external', api: 'OGC WMS/WFS', mode: 'read', entities: ['حدود المواقع', 'الطبقات الجيولوجية', 'المواقع الأثرية', 'المرافق'], status: 'disconnected', lastSync: t(-3, '14:00'), recordsPerDay: 0, latencyMs: 0, writeback: [], description: 'طبقات جغرافية للمخاطر الجيوتقنية والتراثية؛ انقطاع بسبب انتهاء شهادة TLS.', configFields: [CF.url('wmsUrl', 'عنوان WMS', 'https://gis.example.gov.sa/wms'), CF.text('layers', 'الطبقات', 'geology,heritage,utilities')] },
+  { id: 'feed-gis', name: 'طبقات GIS (الهيئة العامة للمساحة والمعلومات الجيومكانية)', vendor: 'الهيئة العامة للمساحة', layer: 'external', api: 'OGC WMS/WFS', mode: 'read', entities: ['حدود المواقع', 'الطبقات الجيولوجية', 'المواقع الأثرية', 'المرافق'], status: 'disconnected', lastSync: t(-3, '14:00'), recordsPerDay: 0, latencyMs: 0, writeback: [], description: 'طبقات جغرافية للمخاطر الجيوتقنية والتراثية؛ في السيناريو التجريبي: انقطاع بسبب انتهاء شهادة TLS.', configFields: [CF.url('wmsUrl', 'عنوان WMS', 'https://gis.example.gov.sa/wms'), CF.text('layers', 'الطبقات', 'geology,heritage,utilities')] },
 ];
 
 // ------------------------------------------------------------------
@@ -2573,34 +2830,36 @@ function audit(x) {
 }
 
 const auditLog = [
-  audit({ at: t(0, '10:01'), actor: 'النظام', action: 'writeback', target: 'MT-0224 → Biltix PM', detail: 'فشل الكتابة العكسية: انتهاء مهلة الاستجابة (30 ث) — سيعاد الإرسال تلقائياً' }),
+  audit({ at: t(0, '10:01'), actor: 'النظام', action: 'writeback', target: 'MT-0224 إلى BILTIX PM', detail: 'محاكاة: فشل الكتابة العكسية (سيناريو انتهاء مهلة 30 ث) — لم يُرسل شيء إلى BILTIX PM', simulated: true }),
   audit({ at: t(0, '10:00'), actor: OWNERS.hse.S5, action: 'accept', target: 'AIR-1046', detail: 'قبول التوصية وإنشاء المهمة MT-0224 (إصلاح السياج الجنوبي)' }),
-  audit({ at: t(0, '09:31'), actor: 'النظام', action: 'writeback', target: 'MT-0211 → Biltix PM', detail: 'إرسال المهمة إلى Biltix PM — بانتظار التأكيد' }),
+  audit({ at: t(0, '09:31'), actor: 'النظام', action: 'writeback', target: 'MT-0211 إلى BILTIX PM', detail: 'محاكاة: الكتابة العكسية للمهمة إلى BILTIX PM بانتظار المزامنة — لم يُرسل شيء', simulated: true }),
   audit({ at: t(0, '09:30'), actor: OWNERS.hse.S4, action: 'accept', target: 'AIR-1016', detail: 'قبول التوصية وإنشاء المهمة MT-0211 (إغلاق البوابة G2)' }),
   audit({ at: t(0, '08:15'), actor: OWNERS.pm.S5, action: 'escalate', target: 'AIR-1020', detail: 'تأكيد التصعيد الفوري؛ المهندس الجيوتقني في الموقع' }),
   audit({ at: t(0, '07:30'), actor: 'النظام', action: 'model-update', target: 'schedule-model v3.1.2', detail: 'تشغيل مجدول: 32 نشاطاً حرجاً مُقيَّماً، مونت كارلو 6 مشاريع × 5,000 تكرار' }),
   audit({ at: t(0, '06:36'), actor: 'النظام', action: 'validation', target: 'Biltix — تقارير الموقع', detail: 'رفض تقرير مكرر DR-S1-20261108 (بصمة مطابقة)' }),
   audit({ at: t(0, '06:01'), actor: 'النظام', action: 'validation', target: 'المركز الوطني للأرصاد', detail: 'رفض قراءة رياح 312 كم/س — خارج النطاق الفيزيائي (القاعدة VR10)' }),
-  audit({ at: t(0, '05:00'), actor: 'النظام', action: 'model-update', target: 'cost-forecast v1.6.3', detail: 'بدء إعادة التدريب: درجة الانحراف 0.33 تجاوزت العتبة 0.30' }),
+  audit({ at: t(0, '05:00'), actor: 'النظام', action: 'config', target: 'cost-forecast v1.6.3', detail: 'مراقبة الانحراف غير مفعّلة: تتطلب خدمة نماذج متصلة ومجموعة اختبار موسومة (غير متاحة في العرض التجريبي)' }),
   audit({ at: t(0, '05:02'), actor: 'النظام', action: 'validation', target: 'Oracle ERP', detail: 'حجر السجل ERP-PO-2026-0512-L3: عدم اتساق العملة (القاعدة VR8)' }),
   audit({ at: t(-1, '13:10'), actor: OWNERS.hse.S1, action: 'accept', target: 'AIR-1004', detail: 'قبول التوصية وإنشاء المهمة MT-0203 (حواجز الحافة — الطابق 23)' }),
-  audit({ at: t(-1, '13:11'), actor: 'النظام', action: 'writeback', target: 'MT-0203 → Biltix PM', detail: 'تمت الكتابة العكسية بنجاح (المعرّف الخارجي PM-TSK-88412)' }),
+  audit({ at: t(-1, '13:11'), actor: 'النظام', action: 'writeback', target: 'MT-0203 إلى BILTIX PM', detail: 'كتابة عكسية مُحاكاة إلى BILTIX PM (المعرّف الخارجي التجريبي PM-TSK-88412)', simulated: true }),
   audit({ at: t(-1, '08:40'), actor: OWNERS.legal, action: 'login', target: 'قمرة القيادة', detail: 'تسجيل دخول — الدور: القانونية' }),
   audit({ at: t(-1, '06:10'), actor: OWNERS.hse.S5, action: 'accept', target: 'AIR-1020', detail: 'قبول التوصية وإنشاء المهمة MT-0214 (إخلاء المنحدر الشمالي) مع تصعيد' }),
-  audit({ at: t(-1, '05:35'), actor: 'النظام', action: 'escalate', target: 'AIR-1020', detail: 'تصعيد فوري تلقائي — الدرجة 85 ≥ عتبة الحرج (البريد، Slack، WhatsApp)' }),
-  audit({ at: t(-3, '14:00'), actor: OWNERS.hse.S4, action: 'accept', target: 'MT-0223', detail: 'إغلاق المهمة مع النتيجة؛ إغلاق المخاطرة AIR-1041 — النتيجة مُغذّاة لإعادة المعايرة' }),
-  audit({ at: t(-4, '15:20'), actor: OWNERS.pm.S2, action: 'escalate', target: 'AIR-1007', detail: 'تصعيد يدوي عبر البريد وSlack وTeams — الفحص لم يُجدول بعد 25 يوماً' }),
+  audit({ at: t(-1, '05:35'), actor: 'النظام', action: 'escalate', target: 'AIR-1020', detail: `تصعيد فوري تلقائي — الدرجة ${S(20)} لا تقل عن عتبة الحرج؛ القنوات: البريد، Slack، WhatsApp (توجيه فقط، لم يُرسل في هذا الإصدار)` }),
+  audit({ at: t(-3, '14:00'), actor: OWNERS.hse.S4, action: 'accept', target: 'MT-0223', detail: 'إغلاق المهمة مع النتيجة؛ إغلاق المخاطرة AIR-1041 — النتيجة مسجّلة (تُستخدم في المعايرة عند ربط خدمة النماذج)' }),
+  audit({ at: t(-4, '15:20'), actor: OWNERS.pm.S2, action: 'escalate', target: 'AIR-1007', detail: 'تصعيد يدوي — الفحص لم يُجدول بعد 25 يوماً؛ القنوات: البريد، Slack، Teams (توجيه فقط، لم يُرسل في هذا الإصدار)' }),
   audit({ at: t(-7, '11:30'), actor: OWNERS.finance, action: 'override', target: 'AIR-1060', detail: 'تجاهل المخاطرة: سقف التحوط 70% وفق سياسة الخزينة' }),
   audit({ at: t(-8, '12:00'), actor: OWNERS.finance, action: 'accept', target: 'AIR-1006', detail: 'قبول التوصية وإنشاء المهمة MT-0204' }),
-  audit({ at: t(-9, '10:30'), actor: 'النظام', action: 'config', target: 'الإعدادات — القنوات', detail: 'تفعيل قناة WhatsApp للتنبيهات الحرجة لمشروعي القدية ونيوم' }),
-  audit({ at: t(-13, '09:40'), actor: OWNERS.finance, action: 'override', target: 'AIR-1033', detail: 'تجاهل المخاطرة: التعرض محوط مسبقاً (FX-2026-118) — تأخر مزامنة ERP' }),
+  audit({ at: t(-9, '10:30'), actor: 'النظام', action: 'config', target: 'الإعدادات — القنوات', detail: 'إضافة WhatsApp إلى توجيه التنبيهات الحرجة لمشروعي القدية ونيوم (توجيه فقط، لم يُرسل شيء في هذا الإصدار)' }),
+  audit({ at: t(-13, '09:40'), actor: OWNERS.finance, action: 'override', target: 'AIR-1033', detail: 'تجاهل المخاطرة: التعرض محوط مسبقاً (FX-2026-118) — بيانات ERP في السيناريو لم تكن محدّثة' }),
   audit({ at: t(-31, '10:00'), actor: OWNERS.pm.S2, action: 'override', target: 'AIR-1029', detail: 'تجاهل المخاطرة: صاحب العمل غير مشمول بتعميم التعويض؛ الفرق ممتص من الاحتياطي' }),
   audit({ at: t(-40, '12:00'), actor: OWNERS.pm.S3, action: 'override', target: 'AIR-1010', detail: 'تعديل التوصية: إضافة تعاقد احتياطي على محول بديل — السبب: خطة B لغرامة 1.2 مليون ريال/يوم' }),
-  audit({ at: t(-44, '09:00'), actor: 'النظام', action: 'model-update', target: 'contract-nlp v2.3.1', detail: 'نشر الإصدار v2.3.1: تحسين كشف السقوف المفقودة (الدقة 0.88 → 0.91)' }),
+  audit({ at: t(-44, '09:00'), actor: 'النظام', action: 'config', target: 'contract-nlp v2.3.1', detail: 'تسجيل إعدادات خط تحليل العقود (سيناريو توضيحي) — لا توجد خدمة نماذج متصلة، ولا تُقاس دقة النموذج في هذا الإصدار' }),
   audit({ at: t(-55, '09:20'), actor: OWNERS.pm.S1, action: 'override', target: 'AIR-1002', detail: 'تعديل التوصية: إضافة تسهيل تمويل المستخلصات — السبب: غطاء نقدي فوري لدفعات الباطن' }),
   audit({ at: t(-58, '10:02'), actor: OWNERS.pmo, action: 'accept', target: 'AIR-1001', detail: 'قبول التوصية وإنشاء المهمة MT-0201 (سقف غرامة التأخير)' }),
-  audit({ at: t(-61, '14:30'), actor: 'النظام', action: 'escalate', target: 'AIR-1001', detail: 'تصعيد فوري تلقائي — الدرجة 88 ≥ عتبة الحرج' }),
+  audit({ at: t(-61, '14:30'), actor: 'النظام', action: 'escalate', target: 'AIR-1001', detail: `تصعيد فوري تلقائي — الدرجة ${S(1)} لا تقل عن عتبة الحرج` }),
   audit({ at: t(-62, '08:00'), actor: 'النظام', action: 'config', target: 'الإعدادات — الأوزان', detail: 'اعتماد أوزان المجالات: العقود 0.20، المواد 0.20، الجدول 0.25، الموقع 0.20، التكلفة 0.15' }),
+  // v4 (appended: AU ids follow the call order)
+  audit({ at: t(0, '09:30'), actor: 'النظام', action: 'validation', target: 'Biltix — الوثائق والاعتمادات (DMS)', detail: 'حجر السجل MAR-S1-MEP-021: لا تاريخ استحقاق للمراجعة' }),
 ];
 
 // ------------------------------------------------------------------
@@ -2634,20 +2893,194 @@ const roadmap = {
     'نقل البيانات التاريخية من أنظمة غير مذكورة في طبقة التكامل',
   ],
   milestones: [
-    { id: 'M0', name: 'تخصيص الفريق وانطلاق المشروع', month: 0, durationMonths: 0.5, paymentPct: null, status: 'منجز',
+    { id: 'M0', name: 'تخصيص الفريق وانطلاق المشروع', month: 0, durationMonths: null, paymentPct: null, status: 'قادم',
       deliverables: ['ميثاق المشروع وخطة الحوكمة', 'تشكيل الفريق المشترك وتعيين مالك المنتج', 'ورشة الانطلاق وخارطة أصحاب المصلحة', 'بيئات العمل وقنوات التواصل'] },
-    { id: 'M1', name: 'الاستكشاف ومعمارية التكامل', month: 1, durationMonths: 1.5, paymentPct: null, status: 'جارٍ',
+    { id: 'M1', name: 'الاستكشاف ومعمارية التكامل', month: 1, durationMonths: null, paymentPct: null, status: 'قادم',
       deliverables: ['تقييم جاهزية البيانات والمصادر', 'وثيقة معمارية التكامل (طبقات 1–5)', 'نموذج البيانات الموحد لبحيرة المخاطر', 'مصفوفة مؤشرات المخاطر الرئيسية (KRI) المعتمدة', 'خطة الأمن والامتثال (ECC/PDPL)'] },
-    { id: 'M2', name: 'بناء التكاملات وطبقة التحقق', month: 3, durationMonths: 2.5, paymentPct: null, status: 'قادم',
+    { id: 'M2', name: 'بناء التكاملات وطبقة التحقق', month: 2, durationMonths: null, paymentPct: null, status: 'قادم',
       deliverables: ['موصلات بلتكس الست والموصلات المؤسسية (P6، APS، Oracle)', 'موصلات المصادر الخارجية (السلع، العملات، الأرصاد، GIS)', 'طبقة التحقق والتنظيف وقائمة الحجر', 'بحيرة بيانات المخاطر مع التصدير والتدقيق', 'اختبارات التكامل الشاملة'] },
-    { id: 'M3', name: 'تحسينات محرك المخاطر', month: 5, durationMonths: 2.5, paymentPct: null, status: 'قادم',
+    { id: 'M3', name: 'تحسينات محرك المخاطر', month: 3, durationMonths: null, paymentPct: null, status: 'قادم',
       deliverables: ['الخطوط الخمسة مدرّبة على بيانات العميل', 'طبقة التقييم والتفسير المشتركة (0–100 + تفسير)', 'منطق التصنيف (النوع/التقييم) والعتبات', 'التنبيه وسير العمل والكتابة العكسية', 'تقرير أداء النماذج (الدقة، الاستدعاء، المعايرة)'] },
-    { id: 'M4', name: 'قمرة القيادة ومعاملات الاستجابة واختبار القبول والإطلاق', month: 8, durationMonths: 2, paymentPct: null, status: 'قادم',
+    { id: 'M4', name: 'قمرة القيادة ومعاملات الاستجابة واختبار القبول والإطلاق', month: 4, durationMonths: null, paymentPct: null, status: 'قادم',
       deliverables: ['قمرة قيادة المخاطر وسجل المخاطر الذكي', 'معاملات الاستجابة لأصحاب المصلحة (PM/القانونية/المشتريات/الموقع/المالية/PMO)', 'اختبار قبول المستخدم (UAT) وتدريب المستخدمين', 'الإطلاق التدريجي ودعم ما بعد الإطلاق (Hypercare)', 'وثائق التشغيل ونقل المعرفة'] },
   ],
   paymentNote: 'النسب تُستكمل مع العميل؛ المجموع 100%',
-  totalMonths: 10,
+  paymentNoteEn: 'Percentages are agreed with the client; the total must be 100%.',
+  // v3: the proposal table fixes the START month of each milestone (0–4) and nothing else. Durations,
+  // the overall length and the payment split are not stated, so they stay null and the UI says "to be agreed".
+  totalMonths: null,
+  monthsSpan: [0, 4],
+  durationNote: 'المدد تُحدد بالاتفاق مع العميل — لم يذكرها المقترح',
+  durationNoteEn: 'Durations to be agreed with the client — the proposal does not state them',
+  statusNote: 'لم يبدأ التنفيذ بعد — تُحدَّث حالة كل معلم عند اعتماد المقترح وانطلاق المشروع',
+  statusNoteEn: 'Not started — each milestone status is updated once the proposal is approved and the engagement starts',
 };
+
+// ------------------------------------------------------------------
+// 24b. v3 — جودة بيانات المدخلات، التقييم المتبقي، خطة المعالجة، ووسم البيانات المحاكاة
+// ------------------------------------------------------------------
+
+/**
+ * Validation source that feeds each source system named in `evidence.sourceSystem`. Image evidence
+ * reported through the site reports comes from the media pipeline (VS6) rather than the report text (VS4).
+ */
+export const SOURCE_VALIDATION = Object.freeze({
+  'Biltix — العقود': 'VS1',
+  'Biltix — BoQ/BoM': 'VS2',
+  'Biltix — الجدول الزمني': 'VS3',
+  'Biltix — تقارير الموقع': 'VS4',
+  'Biltix — التكلفة': 'VS5',
+  'Biltix — التكلفة والميزانية': 'VS5',
+  'Biltix — الصور': 'VS6',
+  'Primavera P6': 'VS7',
+  'Autodesk APS': 'VS8',
+  'Oracle ERP': 'VS9',
+  'مؤشرات السلع': 'VS10',
+  'أسعار الصرف': 'VS11',
+  'المركز الوطني للأرصاد': 'VS12',
+  'بوابة الحساسات': 'VS13',
+  'Biltix — الوثائق والاعتمادات (DMS)': 'VS14',
+});
+
+/** Input-data quality bands (score 0–100). Distinct from severity (L×I×4) and from model confidence. */
+export const DATA_QUALITY_BANDS = Object.freeze({ high: 97, medium: 93 });
+const DQ_TARGET = 97;
+
+function r1v(n) { return Math.round(n * 10) / 10; }
+
+/**
+ * Input-data quality of a risk, derived from the validation layer of its source system (one definition,
+ * used by the seed, the store for new risks and psel.dataQuality for live values):
+ *   validity     = 100 × (1 − rejected / recordsIn)          (schema checks)
+ *   score        = mean(validity, completeness, consistency) − 1.5 × open quarantined records (max −9)
+ *   level        = high ≥ 97 · medium ≥ 93 · low < 93
+ *   issues       = each check below 97 % + every open quarantined record of that source (bilingual text)
+ * A source system without a validation feed yields { score: null, level: 'low', issues: [not-validated] }.
+ */
+export function deriveDataQuality(validationIn, sourceSystem, evidenceKind) {
+  const v = validationIn && typeof validationIn === 'object' ? validationIn : {};
+  const sources = Array.isArray(v.sources) ? v.sources : [];
+  const quarantine = Array.isArray(v.quarantine) ? v.quarantine : [];
+  let sourceId = SOURCE_VALIDATION[String(sourceSystem || '')] || null;
+  if (sourceId === 'VS4' && evidenceKind === 'image') sourceId = 'VS6';
+  const src = sourceId ? sources.find((s) => s && s.id === sourceId) : null;
+  if (!src || !(Number(src.recordsIn) > 0)) {
+    return {
+      score: null, level: 'low', sourceId: sourceId || null, sourceName: src ? src.name : (sourceSystem || null),
+      checks: null,
+      issues: [{ code: 'not-validated', text: 'مصدر البيانات غير مشمول بطبقة التحقق', textEn: 'This source is not covered by the validation layer' }],
+    };
+  }
+  const recordsIn = Number(src.recordsIn) || 0;
+  const validity = r1v(100 * (1 - (Number(src.rejected) || 0) / recordsIn));
+  const completeness = r1v(Number(src.completenessPct) || 0);
+  const consistency = r1v(Number(src.consistencyPct) || 0);
+  const open = quarantine.filter((q) => q && q.sourceId === src.id && q.status === 'معلّق');
+  const raw = (validity + completeness + consistency) / 3 - Math.min(9, 1.5 * open.length);
+  const score = Math.max(0, Math.min(100, Math.round(raw)));
+  const level = score >= DATA_QUALITY_BANDS.high ? 'high' : score >= DATA_QUALITY_BANDS.medium ? 'medium' : 'low';
+  const issues = [];
+  if (validity < DQ_TARGET) issues.push({ code: 'validity', value: validity, text: `اجتاز فحص المخطط ${validity}% من السجلات (المستهدف ${DQ_TARGET}%)`, textEn: `${validity}% of records passed schema checks (target ${DQ_TARGET}%)` });
+  if (completeness < DQ_TARGET) issues.push({ code: 'completeness', value: completeness, text: `اكتمال الحقول ${completeness}% (المستهدف ${DQ_TARGET}%)`, textEn: `Field completeness ${completeness}% (target ${DQ_TARGET}%)` });
+  if (consistency < DQ_TARGET) issues.push({ code: 'consistency', value: consistency, text: `اتساق البيانات ${consistency}% (المستهدف ${DQ_TARGET}%)`, textEn: `Data consistency ${consistency}% (target ${DQ_TARGET}%)` });
+  for (const q of open) {
+    issues.push({ code: 'quarantine', quarantineId: q.id, ref: q.recordRef, text: `سجل محجور بانتظار المراجعة: ${q.recordRef}`, textEn: `Quarantined record awaiting review: ${q.recordRef}` });
+  }
+  return {
+    score, level, sourceId: src.id, sourceName: src.name,
+    // (the batch time lives on the validation source — sourceId — so it is re-anchored with it, never copied here)
+    checks: { validityPct: validity, completenessPct: completeness, consistencyPct: consistency, quarantineOpen: open.length },
+    issues,
+  };
+}
+
+/**
+ * Residual assessments (after a mitigation) for risks in treatment (قيد المعالجة) or closed (مغلق).
+ * [residual likelihood, residual impact, at, by, justification, justificationEn]. Every other risk
+ * keeps residualLikelihood/residualImpact = null (not assessed). Closed risks that were accepted
+ * without extra treatment are assessed at their inherent level ("risk accepted").
+ */
+const RESIDUAL = {
+  2: [5, 2, t(-9, '16:45'), OWNERS.finance, 'اعتُمد تسهيل تمويل المستخلصات (150 مليون ريال) فانخفض أثر فجوة التدفق النقدي؛ احتمال تأخر السداد قائم حتى تعديل البند 14.2', 'The SAR 150M payment-certificate facility was approved, so the cash-flow impact drops; late payment stays likely until clause 14.2 is amended.'],
+  7: [4, 4, t(-4, '15:30'), OWNERS.pm.S2, 'أُرسل إشعار تمديد الوقت (§20.1) فانخفض التعرض للغرامات؛ احتمال تأخر الفحص ما زال مرتفعاً حتى تجدوله الشركة السعودية للكهرباء', 'The §20.1 extension-of-time notice was served, which reduces penalty exposure; the inspection delay stays likely until SEC schedules it.'],
+  10: [4, 4, t(-38, '10:00'), OWNERS.pm.S3, 'فريق فحص مقيم في المصنع وربط الدفعة بمعلم FAT وعقد احتياطي لمحول بديل؛ يبقى التعرض مرتفعاً حتى اجتياز اختبار FAT', 'Resident inspection team at the factory, payment tied to the FAT milestone and a back-up transformer contract; exposure stays high until FAT is passed.'],
+  15: [3, 5, t(-40, '11:00'), OWNERS.legal, 'الملحق التفسيري لمنهجية IEC 61724-1 قيد التفاوض؛ الأثر كما هو حتى توقيعه', 'The interpretation addendum for the IEC 61724-1 method is under negotiation; the impact is unchanged until it is signed.'],
+  18: [4, 4, t(-8, '12:00'), OWNERS.pm.S5, 'جبهة حفر ثانية بمقاول تفجير ثانٍ تعمل منذ أسبوع؛ معدل الإنجاز تحسّن لكنه ما زال دون المخطط', 'A second excavation front with a second blasting contractor has been running for a week; progress improved but is still below plan.'],
+  22: [2, 4, t(-6, '09:00'), OWNERS.hse.S5, 'نقطة تفتيش معدات الوقاية عند مدخل منطقة التفجير؛ انخفض عدم الالتزام إلى 6% في الجولات اللاحقة', 'PPE checkpoint at the blast-zone entrance; non-compliance fell to 6% in follow-up walks.'],
+  28: [2, 3, t(-30, '10:00'), OWNERS.legal, 'أُضيف المقاول من الباطن إلى وثيقة جميع أخطار المقاولين؛ يتبقى طلب وثيقة المسؤولية المهنية', 'The subcontractor was endorsed on the CAR policy; the professional-indemnity policy request is still open.'],
+  37: [3, 2, t(-5, '08:00'), OWNERS.hse.S3, 'تفعيل خطة قمع الغبار (رش المياه وحواجز الرياح)؛ قراءات PM10 خلال الأسبوع الماضي ضمن الحد', "Dust-suppression plan activated (water spraying and wind fences); last week's PM10 readings were within the limit."],
+  47: [3, 4, t(-20, '10:00'), OWNERS.legal, 'مسودة بروتوكول القبول المشترك (HTM 02-01 + NFPA 99) قيد المراجعة لدى صاحب العمل', 'The draft joint acceptance protocol (HTM 02-01 + NFPA 99) is under review by the employer.'],
+  41: [1, 4, t(-3, '13:30'), OWNERS.hse.S4, 'أُعيد تدريب 18 عاملاً وعُيّن مراقب سلامة على السقف؛ لا ملاحظات في صور الأسبوع التالي', "18 workers were retrained and a roof safety observer was assigned; no observations in the following week's photos."],
+  54: [2, 2, null, 'محرك توقع المواد BoM', 'قبول المخاطرة: الكمية ضمن التفاوت والمواصفة مطابقة — لا معالجة إضافية', 'Risk accepted: quantity within tolerance and specification compliant — no further treatment.'],
+  55: [2, 2, null, OWNERS.legal, 'قبول المخاطرة: بند ضمان قياسي (10%) — لا معالجة إضافية', 'Risk accepted: standard 10% performance bond — no further treatment.'],
+  58: [2, 3, null, OWNERS.pm.S2, 'قبول المخاطرة: التسلّم على مراحل بند مواتٍ — لا معالجة إضافية', 'Risk accepted: staged taking-over is a favourable clause — no further treatment.'],
+  64: [2, 2, null, 'محرك العقود NLP', 'قبول المخاطرة: آجال سداد متوازنة مع تعويض تأخير — لا معالجة إضافية', 'Risk accepted: balanced payment terms with late-payment compensation — no further treatment.'],
+  66: [1, 1, t(-8, '14:30'), OWNERS.procurement, 'المولدان مستلمان ومفحوصان (GRN-2026-0912) قبل الاحتياج بـ 9 أيام؛ زال خطر التأخر', 'Both generators were received and inspected (GRN-2026-0912) 9 days before they are needed; the delay risk no longer exists.'],
+  68: [1, 4, t(-6, '08:30'), OWNERS.hse.S6, 'أُزيلت المواد خلال 24 ساعة وخُصصت منطقة تخزين؛ الأثر المحتمل للحريق كما هو والاحتمال أصبح منخفضاً', 'Materials were removed within 24 hours and a storage area was assigned; the potential fire impact is unchanged and the likelihood is now low.'],
+};
+
+/** Closure outcome (bilingual) of the closed seed risks; closedAt = the closing history entry. */
+const CLOSURE_EN = {
+  41: 'Task closed: 18 workers retrained and a safety observer assigned; no observations in the following week\'s photos.',
+  54: 'Closed automatically: variance within tolerance and specification compliant.',
+  55: 'Closed: standard clause with no exposure; renewal added to the obligations calendar.',
+  58: 'Closed: favourable clause; partial taking-over request added to the obligations calendar.',
+  64: 'Closed automatically: clause within the market benchmark, no flags.',
+  66: 'Closed: both generators received and inspected (GRN-2026-0912).',
+  68: 'Closed: materials removed and a storage area assigned; no recurrence.',
+};
+
+/**
+ * Treatment evidence that is part of the SOURCE record (local: false — it lives in the client system the
+ * platform reads; nothing here was uploaded in this browser). Every other risk starts with an empty list.
+ */
+const SOURCE_EVIDENCE = {
+  2: [{ kind: 'note', title: 'موافقة البنك على تسهيل تمويل المستخلصات (150 مليون ريال)', titleEn: 'Bank approval of the SAR 150M payment-certificate facility', ref: 'FIN-FAC-2026-031', sourceSystem: 'Oracle ERP', addedAt: t(-9, '16:40'), by: OWNERS.finance }],
+  7: [{ kind: 'file', title: 'خطاب التصعيد إلى الشركة السعودية للكهرباء وإشعار تمديد الوقت §20.1', titleEn: 'Escalation letter to SEC and §20.1 extension-of-time notice', ref: 'CORR-S2-2026-0448', sourceSystem: 'Biltix — العقود', addedAt: t(-4, '15:25'), by: OWNERS.pm.S2 }],
+  22: [{ kind: 'note', title: 'سجل نقطة تفتيش معدات الوقاية — مدخل منطقة التفجير', titleEn: 'PPE checkpoint log — blast-zone entrance', ref: 'CHK-S5-2026-1101', sourceSystem: 'Biltix — تقارير الموقع', addedAt: t(-6, '08:45'), by: OWNERS.hse.S5 }],
+  41: [
+    { kind: 'file', title: 'سجل حضور إعادة التدريب على خطوط الحياة — 18 عاملاً', titleEn: 'Lifeline retraining attendance record — 18 workers', ref: 'TRN-S4-2026-1102', sourceSystem: 'Biltix — تقارير الموقع', addedAt: t(-4, '10:00'), by: OWNERS.hse.S4 },
+    { kind: 'file', title: 'صور الأسبوع التالي — سقف المستودع 2 دون ملاحظات', titleEn: "Following week's photos — warehouse 2 roof, no observations", ref: 'IMG-S4-20261105-022', sourceSystem: 'Biltix — الصور', addedAt: t(-3, '12:00'), by: OWNERS.hse.S4 },
+  ],
+  66: [{ kind: 'file', title: 'إشعار استلام البضاعة GRN-2026-0912 — المولدان 2000 ك.ف.أ', titleEn: 'Goods received note GRN-2026-0912 — two 2,000 kVA generators', ref: 'GRN-2026-0912', sourceSystem: 'Oracle ERP', addedAt: t(-8, '14:00'), by: OWNERS.procurement }],
+  68: [{ kind: 'file', title: 'صور قبل/بعد إزالة المواد من ممر الطابق 2', titleEn: 'Before/after photos of the level-2 corridor clearance', ref: 'IMG-S6-20261102-007', sourceSystem: 'Biltix — تقارير الموقع', addedAt: t(-7, '09:30'), by: OWNERS.hse.S6 }],
+};
+
+for (const risk of aiRisks) {
+  const n = Number(String(risk.id).replace(/\D/g, ''));
+  const task = risk.taskId ? tasks.find((x) => x.id === risk.taskId) : null;
+  const res = RESIDUAL[n];
+  if (res) {
+    const closing = (risk.history || []).slice().reverse().find((h) => /^إغلاق/.test(String(h.text || '')));
+    risk.residualLikelihood = res[0];
+    risk.residualImpact = res[1];
+    risk.residualAssessment = { at: res[2] || (closing ? closing.at : risk.updatedAt), by: res[3], justification: res[4], justificationEn: res[5] };
+  }
+  if (risk.status === 'مغلق') {
+    const closing = (risk.history || []).slice().reverse().find((h) => /^إغلاق/.test(String(h.text || '')));
+    risk.closedAt = closing ? closing.at : risk.updatedAt;
+    risk.outcome = closing ? closing.text : null;
+    risk.outcomeEn = CLOSURE_EN[n] || null;
+  }
+  risk.treatment = {
+    plan: task ? task.title : null,
+    taskId: task ? task.id : null,
+    evidence: (SOURCE_EVIDENCE[n] || []).map((e, i) => ({ id: `EV-${risk.id}-${i + 1}`, url: null, local: false, ...e })),
+  };
+  risk.dataQuality = deriveDataQuality(validation, risk.evidence && risk.evidence.sourceSystem, risk.evidence && risk.evidence.kind);
+}
+
+/*
+ * Honest status (CONTRACT §5): every number on connectors and model pipelines in this file is an
+ * illustrative scenario, not a measurement. `simulated: true` lets status.js classify them as Demo;
+ * a connector still marked 'configurable' was never configured (status.js → Not connected).
+ */
+for (const p of pipelines) { p.simulated = true; p.metricsIllustrative = true; }
+validation.simulated = true;
+for (const c of connectors) c.simulated = c.status !== 'configurable';
+
+/** Collection-level flags (status.js / views): which datasets are simulated in this demo build. */
+export const SIMULATED_DATASETS = Object.freeze({ connectors: true, pipelines: true, validation: true, aiRisks: true, tasks: true, alerts: true, auditLog: true });
 
 // ------------------------------------------------------------------
 // 25. التصدير
@@ -2656,18 +3089,20 @@ const roadmap = {
 const platformSeed = {
   product: {
     name: 'بلتكس — منصة إدارة المخاطر بالذكاء الاصطناعي',
-    nameEn: 'Biltix AI Risk Management Platform',
+    nameEn: 'BILTIX Risk AI — AI risk management platform',
+    brandShortEn: 'BILTIX Risk AI',
     brandShort: 'بلتكس Risk AI',
     tagline: 'قمرة قيادة المخاطر — خمسة مجالات، تصنيف فوري، معالجة مُتتبعة',
     proposalVersion: 'v2',
   },
+  simulated: { ...SIMULATED_DATASETS },
   projects, contracts, suppliers, commodities, boqItems, scheduleTasks, monteCarlo, resources, approvals,
   subcontractors, weather, costLines, changeOrders, currencies, labourIndex, aiRisks, tasks, alerts,
-  pipelines, validation, connectors, auditLog, roadmap,
+  pipelines, validation, connectors, auditLog, roadmap, submittals,
 };
 
 export { projects, contracts, suppliers, commodities, boqItems, scheduleTasks, monteCarlo, resources, approvals,
   subcontractors, weather, costLines, changeOrders, currencies, labourIndex, aiRisks, tasks, alerts,
-  pipelines, validation, connectors, auditLog, roadmap };
+  pipelines, validation, connectors, auditLog, roadmap, submittals };
 
 export default platformSeed;

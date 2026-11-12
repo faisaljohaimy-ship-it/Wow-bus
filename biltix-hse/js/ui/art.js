@@ -1,29 +1,36 @@
 /**
- * Biltix HSE — architectural SVG art & icon set (js/ui/art.js)
+ * BILTIX Risk AI — architectural SVG art & icon set (js/ui/art.js)
  *
- * Owner: ART. Contract: docs/ARCHITECTURE.md §1, §2 (visual DNA), §11.
+ * Owner: A-UI (v3). Contract: docs/ARCHITECTURE.md §1/§2, docs/specs/v3-precision/CONTRACT.md §3/§3.1.
  *
  * Exports (also bundled on `art`):
  *   icon(name, size = 18, opts)   → <svg> 24×24 line glyph, stroke currentColor 1.75, round joins.
  *                                    Unknown names fall back to a neutral circle glyph. Never throws.
- *   logoMark(size = 36)           → hexagon frame (gold) + isometric stepped structure (brand) + accent shield notch.
- *   logoLockup()                  → mark + "بلتكس HSE" + small mono "BILTIX HSE".
- *   backdrop()                    → full-bleed decorative <svg>: isometric block cluster (bottom inline-end, 6 %),
- *                                    mashrabiya lattice band (top, 4 %), three blueprint construction lines with
- *                                    dimension ticks, one slow drifting radial glow (CSS keyframes inside the svg,
- *                                    disabled under prefers-reduced-motion / html[data-motion="reduce"]).
+ *                                    opts: { label, class, mirror } — see "Direction" below.
+ *   logoMark(size = 36)           → BILTIX mark: gold hexagon frame, isometric block (brand), accent shield notch.
+ *                                    Drawn on a 32-unit grid without hairlines so it stays crisp at 24–40 px.
+ *   logoLockup()                  → mark + localized product name ("بلتكس Risk AI" / "BILTIX Risk AI") + mono tag.
+ *   emblem(size = 56)             → line-only BILTIX emblem (currentColor) for the background identity detail.
+ *   backdrop()                    → CONTRACT §3.1 structure: <div class="bg-layers" aria-hidden="true"> with
+ *                                    .bg-ambient, .bg-grid and .bg-mark (emblem + mono datum caption). All visuals
+ *                                    come from CSS per html[data-bg] mode; the layers pause (class .is-paused)
+ *                                    while the document is hidden.
  *   isoCube(size, tone)           → isometric cube with three shaded faces; tone → CSS variable.
  *   mashrabiyaTile(size)          → one eight-point-star lattice tile.
  *   sectorGlyph(categoryId)       → icon name for a hazard category id (seed.CATEGORIES icons).
  *
  * Rules honoured here:
- *   - Plain ES module, no dependencies, side-effect free on import (no DOM access until a function is called).
+ *   - Plain ES module, side-effect free on import (no DOM access until a function is called). The only
+ *     import is the UI i18n bridge (logo label / product name).
  *   - Every node is built with createElementNS + setAttribute; innerHTML is never used.
  *   - No hard-coded colours: everything is `currentColor` or a `var(--token)` from css/tokens.css.
- *   - The UI is RTL-only: directional glyphs (chevrons, arrows, folder tabs, speaker, wind, external link…)
- *     are drawn for right-to-left reading. `chevron-start` points right, `chevron-end` points left.
+ *   - Direction: glyphs with a reading direction (chevron-/arrow-start|end, export/import, external link,
+ *     list bullets, speaker, wind, feed, near-miss arrow, folder tab) are drawn for RTL and mirrored
+ *     automatically when the document is LTR. Physical names (chevron-right, arrow-left…) and time-based
+ *     glyphs (trend-up/down: time flows left→right in both languages) never mirror. opts.mirror forces it.
  *   - Vendor connectors use generic symbols (hash, bubble, servers, grid…), never a trademarked logo.
  */
+import { t, isRtl } from './i18n-bridge.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
@@ -329,6 +336,7 @@ const ICONS = {
   'dot': [D(12, 12, 3.2)],
   'rect': [R(5, 8.5, 14, 7, 2)],
   'hazard': [D(12, 12, 2.2), C(12, 12, 5.5), C(12, 12, 9, { opacity: 0.45 })],
+  'cloud-off': ['M7 19h10.5a4 4 0 0 0 1.8-.43', 'M20.9 15.2a4 4 0 0 0-2.8-4.15A6.5 6.5 0 0 0 9.4 6.4', 'M6.3 8.9a6.5 6.5 0 0 0-.6 3.7A3.3 3.3 0 0 0 7 19', 'M3 3l18 18'],
   'sparkles': ['M11 3.5l1.9 5.1 5.1 1.9-5.1 1.9L11 17.5l-1.9-5.1L4 10.5l5.1-1.9L11 3.5z', 'M18.5 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z', 'M5.5 16.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6.6-1.4z'],
   'circle': [C(12, 12, 8.5), D(12, 12, 1.6)],
 };
@@ -353,7 +361,17 @@ const ALIASES = {
   'hrms': 'hr', 'erp-sap': 'erp', 'email-smtp': 'mail', 'sms-twilio': 'sms', 'webhooks': 'webhook', 'google-sheets': 'sheets', 'power-bi': 'powerbi',
   'sheet': 'sheets', 'thermo': 'temperature', 'worker': 'dot', 'vehicle': 'rect', 'hazards': 'hazard', 'box': 'package', 'paper-plane': 'send', 'braces': 'json',
   'sparkle': 'sparkles', 'ai': 'sparkles', 'magic': 'sparkles', 'roadmap': 'map-pin', 'milestone': 'badge-check',
+  'offline': 'cloud-off', 'wifi-off': 'cloud-off', 'not-connected': 'plug', 'demo': 'flask', 'stale': 'clock',
 };
+
+/** Canonical glyphs drawn for RTL reading; mirrored when the document is LTR. */
+const DIRECTIONAL = new Set(['chevron-start', 'chevron-end', 'arrow-start', 'arrow-end', 'export', 'import', 'external', 'list', 'speaker', 'wind', 'feed', 'nearmiss', 'dms']);
+/** Requested names that denote a physical direction: never mirrored. */
+const PHYSICAL = new Set(['chevron-right', 'chevron-left', 'arrow-right', 'arrow-left']);
+
+function documentIsRtl() {
+  try { return isRtl(); } catch { return true; }
+}
 
 const FALLBACK = ICONS.circle;
 
@@ -389,6 +407,8 @@ function renderOp(svg, op) {
 export function icon(name, size = 18, opts = {}) {
   const key = resolveName(name);
   const def = key ? ICONS[key] : FALLBACK;
+  const forced = opts && typeof opts === 'object' && typeof opts.mirror === 'boolean' ? opts.mirror : null;
+  const mirror = forced !== null ? forced : (key !== null && DIRECTIONAL.has(key) && !PHYSICAL.has(normalizeName(name)) && !documentIsRtl());
   const px = sizeOf(size, 18);
   const label = typeof opts === 'string' ? opts : (opts && typeof opts.label === 'string' ? opts.label : '');
   const svg = el('svg', {
@@ -405,7 +425,14 @@ export function icon(name, size = 18, opts = {}) {
   } else {
     svg.setAttribute('aria-hidden', 'true');
   }
-  for (const op of def) renderOp(svg, op);
+  if (mirror) {
+    const g = el('g', { transform: 'matrix(-1 0 0 1 24 0)' });
+    for (const op of def) renderOp(g, op);
+    svg.appendChild(g);
+    svg.setAttribute('data-mirrored', 'true');
+  } else {
+    for (const op of def) renderOp(svg, op);
+  }
   return svg;
 }
 
@@ -419,46 +446,65 @@ export function iconNames() { return Object.keys(ICONS); }
 /* Logo mark & lockup                                                  */
 /* ------------------------------------------------------------------ */
 
-const LOGO_HEX = hexagonPath(24, 24, 21);
-const SHIELD_NOTCH = 'M0-4.8l4 1.7v2.9c0 2.7-1.7 4.8-4 5.6-2.3-.8-4-2.9-4-5.6v-2.9z';
+/* Mark geometry on a 32-unit grid: pointy-top hexagon (r 14.5) around an isometric block whose vertical
+   edges sit on whole units (x 9 / 16 / 23), so the silhouette stays sharp at 24, 32 and 40 px. */
+const MARK_HEX = 'M16 1.5L28.56 8.75V23.25L16 30.5L3.44 23.25V8.75Z';
+const MARK_TOP = 'M16 7.5L23 11.5L16 15.5L9 11.5Z';
+const MARK_LEFT = 'M9 11.5L16 15.5V24.5L9 20.5Z';
+const MARK_RIGHT = 'M16 15.5L23 11.5V20.5L16 24.5Z';
+const MARK_SHIELD = 'M0-4l3.4 1.4v2.4c0 2.3-1.4 4-3.4 4.7-2-.7-3.4-2.4-3.4-4.7v-2.4z';
 
 /**
- * Biltix HSE emblem: a hexagon frame (1.5 px, --gold) around an isometric stepped structure
- * (two stacked blocks in --brand with lit top faces) and a small --accent shield notch cut into
- * the lower inline-start edge of the frame. Crisp from 24 px to 96 px.
+ * BILTIX mark: a gold hexagon frame (1.5 px at any size) around an isometric block in --brand, lit from the
+ * top-left (top face tinted toward white, right face toward black — the same lighting in both themes) and an
+ * --accent shield notch on the lower-right corner (a logo never mirrors). No sub-pixel strokes, so it renders
+ * crisply from 24 px to 40 px (and scales up cleanly).
  */
 export function logoMark(size = 36) {
   const px = sizeOf(size, 36);
-  const svg = el('svg', { xmlns: SVG_NS, viewBox: '0 0 48 48', width: px, height: px, role: 'img', 'aria-label': 'شعار بلتكس HSE', focusable: 'false' });
+  const label = t('ui.brand.logo');
+  const svg = el('svg', { xmlns: SVG_NS, viewBox: '0 0 32 32', width: px, height: px, role: 'img', 'aria-label': label, focusable: 'false', 'shape-rendering': 'geometricPrecision' });
   svg.classList.add('logo-mark');
-  const title = el('title'); title.textContent = 'بلتكس HSE'; svg.appendChild(title);
+  const title = el('title'); title.textContent = t('ui.brand.name'); svg.appendChild(title);
 
-  // frame: translucent plate + gold hexagon (non-scaling stroke keeps 1.5 px at every size)
+  // frame: solid plate + gold hexagon (non-scaling stroke keeps 1.5 px at every size)
   const frame = el('g', { class: 'logo-mark-frame', style: { color: 'var(--gold)' } });
-  frame.appendChild(el('path', { d: LOGO_HEX, fill: 'var(--bg-1)', 'fill-opacity': '0.55' }));
-  frame.appendChild(el('path', { d: LOGO_HEX, fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5', 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' }));
+  frame.appendChild(el('path', { d: MARK_HEX, fill: 'var(--bg-1)' }));
+  frame.appendChild(el('path', { d: MARK_HEX, fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5', 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' }));
   svg.appendChild(frame);
 
-  // structure: base wing + tower, lit from the top-left
-  const blocks = el('g', { class: 'logo-mark-blocks', style: { color: 'var(--brand-ink)' } });
-  const shading = { fill: 'var(--brand)', light: 'currentColor', shade: 'var(--bg-0)', lightTop: 0.46, lightRight: 0.14, shadeLeft: 0.34 };
-  appendIsoBlock(blocks, 24, 18, 11, 11, 7, shading);
-  appendIsoBlock(blocks, 24 + 4 * ISO_UX, 18 + 4 * ISO_UY - 8, 7, 7, 8, shading);
-  // crisp ridge along the two top-face front edges
-  blocks.appendChild(el('path', { d: 'M14.47 23.5L24 29l3.46-2M21.4 15.5l6.06 3.5 6.07-3.5', fill: 'none', stroke: 'currentColor', 'stroke-width': '0.6', 'stroke-opacity': '0.55', 'stroke-linejoin': 'round' }));
-  svg.appendChild(blocks);
+  // block: three faces of one hue (brand) lit from the top-left; shades are derived from the token, not the theme
+  const block = el('g', { class: 'logo-mark-blocks' });
+  block.appendChild(el('path', { d: MARK_LEFT, style: { fill: 'var(--brand)' } }));
+  block.appendChild(el('path', { d: MARK_RIGHT, style: { fill: 'color-mix(in srgb, var(--brand) 64%, black)' } }));
+  block.appendChild(el('path', { d: MARK_TOP, style: { fill: 'color-mix(in srgb, var(--brand) 58%, var(--brand-ink))' } }));
+  svg.appendChild(block);
 
-  // shield notch: a bg-coloured halo cuts the frame, the accent shield sits in the gap
-  const notch = el('g', { class: 'logo-mark-notch', transform: 'translate(37.2 36.2)' });
-  notch.appendChild(el('path', { d: SHIELD_NOTCH, fill: 'var(--bg-0)', stroke: 'var(--bg-0)', 'stroke-width': '3.2', 'stroke-linejoin': 'round' }));
-  notch.appendChild(el('path', { d: SHIELD_NOTCH, fill: 'var(--accent)' }));
-  notch.appendChild(el('path', { d: 'M-1.9-.2l1.3 1.3L2-1.6', fill: 'none', stroke: 'var(--bg-0)', 'stroke-width': '1.1', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+  // shield notch: a page-coloured halo cuts the frame, the accent shield sits in the gap
+  const notch = el('g', { class: 'logo-mark-notch', transform: 'translate(25.2 24.6)' });
+  notch.appendChild(el('path', { d: MARK_SHIELD, fill: 'var(--bg-0)', stroke: 'var(--bg-0)', 'stroke-width': '2.6', 'stroke-linejoin': 'round' }));
+  notch.appendChild(el('path', { d: MARK_SHIELD, fill: 'var(--accent)' }));
   svg.appendChild(notch);
   return svg;
 }
 
 /**
- * Logo lockup: mark + Arabic product name + small Latin mono tag. Returns an inline-flex <span>.
+ * Line-only emblem (currentColor, 1 px non-scaling strokes): hexagon, isometric block edges and four
+ * survey ticks. Used as the quiet identity detail of the page background (CSS sets colour/opacity).
+ */
+export function emblem(size = 56) {
+  const px = sizeOf(size, 56);
+  const svg = el('svg', { xmlns: SVG_NS, viewBox: '0 0 32 32', width: px, height: px, 'aria-hidden': 'true', focusable: 'false', fill: 'none', stroke: 'currentColor', 'stroke-width': '1', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' });
+  svg.classList.add('bg-emblem');
+  const ns = { 'vector-effect': 'non-scaling-stroke' };
+  svg.appendChild(el('path', { d: MARK_HEX, ...ns }));
+  svg.appendChild(el('path', { d: 'M16 7.5L23 11.5L16 15.5L9 11.5Z M9 11.5V20.5L16 24.5L23 20.5V11.5 M16 15.5V24.5', ...ns }));
+  svg.appendChild(el('path', { d: 'M16 0V-1.5 M16 32V33.5 M0 16H1.6 M32 16H30.4', ...ns, opacity: '0.7' }));
+  return svg;
+}
+
+/**
+ * Logo lockup: mark + localized product name + small Latin mono tag. Returns an inline-flex <span>.
  */
 export function logoLockup({ size = 36 } = {}) {
   const wrap = document.createElement('span');
@@ -472,14 +518,14 @@ export function logoLockup({ size = 36 } = {}) {
 
   const name = document.createElement('strong');
   name.className = 'logo-lockup-name';
-  name.textContent = 'بلتكس HSE';
+  name.textContent = t('ui.brand.name');
   Object.assign(name.style, { fontWeight: '700', fontSize: 'var(--fs-lg)', letterSpacing: '-0.01em', whiteSpace: 'nowrap' });
 
   const mono = document.createElement('span');
   mono.className = 'logo-lockup-mono mono';
   mono.setAttribute('dir', 'ltr');
   mono.setAttribute('aria-hidden', 'true');
-  mono.textContent = 'BILTIX HSE';
+  mono.textContent = 'BILTIX · RISK AI';
   Object.assign(mono.style, { fontFamily: 'var(--font-mono)', fontSize: '10px', letterSpacing: '0.16em', color: 'var(--ink-3)', textAlign: 'start', whiteSpace: 'nowrap' });
 
   text.appendChild(name);
@@ -551,134 +597,69 @@ export function sectorIcon(categoryId, size = 18, opts) { return icon(sectorGlyp
 /* Page backdrop                                                       */
 /* ------------------------------------------------------------------ */
 
-const BACKDROP_CSS = [
-  '@keyframes bx-bd-drift{0%{transform:translate(0,0)}35%{transform:translate(56px,30px)}70%{transform:translate(-40px,66px)}100%{transform:translate(0,0)}}',
-  '@keyframes bx-bd-breathe{0%,100%{opacity:.7}50%{opacity:1}}',
-  '.bx-bd-glow{animation:bx-bd-drift 34s ease-in-out infinite;will-change:transform}',
-  '.bx-bd-glow-core{animation:bx-bd-breathe 11s ease-in-out infinite}',
-  '@media (prefers-reduced-motion:reduce){:root:not([data-motion="full"]) .bx-bd-glow,:root:not([data-motion="full"]) .bx-bd-glow-core{animation:none}}',
-  ':root[data-motion="reduce"] .bx-bd-glow,:root[data-motion="reduced"] .bx-bd-glow,:root[data-motion="reduce"] .bx-bd-glow-core,:root[data-motion="reduced"] .bx-bd-glow-core{animation:none}',
-  '@media (max-width:720px){.bx-bd-iso{transform:translate(10px,-186px) scale(.7)}}',
-  '@media print{.backdrop-art{display:none}}',
-].join('\n');
-
-// Sparse isometric cluster, drawn back-to-front. [tx, ty, a, b, c] in a 360×240 local box.
-const BACKDROP_BLOCKS = [
-  [126, 96, 22, 22, 14],
-  [64, 112, 26, 26, 48],
-  [168, 118, 36, 36, 72],
-  [250, 134, 28, 44, 30],
-  [118, 146, 50, 50, 36],
-  [82, 162, 30, 30, 22],
-  [214, 170, 40, 24, 18],
-];
+/** Live backdrops: paused (class .is-paused) while the document is hidden, so cinematic drift stops. */
+const liveBackdrops = new Set();
+let backdropVisibilityBound = false;
+function syncBackdropVisibility() {
+  for (const node of Array.from(liveBackdrops)) {
+    if (!node.isConnected && node.dataset.mounted === 'true') { liveBackdrops.delete(node); continue; }
+    if (node.isConnected) node.dataset.mounted = 'true';
+    node.classList.toggle('is-paused', !!document.hidden);
+  }
+}
 
 /**
- * Full-bleed decorative backdrop. Position: absolute; inset 0; pointer-events none; aria-hidden.
- * Colours come only from --ink-1, --accent and --gold. The glow drift is the single animation and
- * is switched off by prefers-reduced-motion and by html[data-motion="reduce"|"reduced"].
+ * Page background (CONTRACT §3 / §3.1). Returns
+ *   <div class="bg-layers" aria-hidden="true">
+ *     <div class="bg-ambient"></div>          two broad, very soft ambient lights (CSS)
+ *     <div class="bg-grid"></div>             sparse engineering grid at 2–4 % (CSS)
+ *     <div class="bg-mark">                   one small identity detail at the inline-end bottom
+ *       <svg class="bg-emblem">…</svg><span class="bg-mark-caption">…</span>
+ *     </div>
+ *   </div>
+ * Styling per html[data-bg="static"|"subtle"|"cinematic"] lives in css/ (A-STYLE). Nothing here moves:
+ * the cinematic drift is a CSS transform animation; this function only adds .is-paused while hidden.
+ * The caption is a drawing-datum flourish (Latin mono, dir=ltr), not a location claim.
  */
 export function backdrop() {
-  const id = uid('bx-bd');
-  const svg = el('svg', { xmlns: SVG_NS, width: '100%', height: '100%', 'aria-hidden': 'true', focusable: 'false' });
-  svg.classList.add('backdrop-art');
-  Object.assign(svg.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none', display: 'block', overflow: 'hidden' });
+  const root = document.createElement('div');
+  root.className = 'bg-layers';
+  root.setAttribute('aria-hidden', 'true');
 
-  const style = el('style');
-  style.textContent = BACKDROP_CSS;
-  svg.appendChild(style);
+  const ambient = document.createElement('div');
+  ambient.className = 'bg-ambient';
+  const grid = document.createElement('div');
+  grid.className = 'bg-grid';
 
-  /* defs: lattice pattern, alpha fade mask, glow gradient */
-  const defs = el('defs');
-  const pattern = el('pattern', { id: `${id}-lattice`, width: 56, height: 56, patternUnits: 'userSpaceOnUse', style: { color: 'var(--gold)' } });
-  appendLatticeTile(pattern, 56);
-  defs.appendChild(pattern);
+  const mark = document.createElement('div');
+  mark.className = 'bg-mark';
+  mark.appendChild(emblem(56));
+  const caption = document.createElement('span');
+  caption.className = 'bg-mark-caption mono';
+  caption.setAttribute('dir', 'ltr');
+  const l1 = document.createElement('span');
+  l1.className = 'bg-mark-line';
+  l1.textContent = 'BILTIX · RISK AI';
+  const l2 = document.createElement('span');
+  l2.className = 'bg-mark-line';
+  l2.textContent = 'DATUM X 0.000 · Y 0.000';
+  caption.append(l1, l2);
+  mark.appendChild(caption);
 
-  const fade = el('linearGradient', { id: `${id}-fade`, x1: '0', y1: '0', x2: '0', y2: '1' });
-  fade.appendChild(el('stop', { offset: '0', 'stop-color': 'currentColor', 'stop-opacity': '1' }));
-  fade.appendChild(el('stop', { offset: '0.55', 'stop-color': 'currentColor', 'stop-opacity': '0.45' }));
-  fade.appendChild(el('stop', { offset: '1', 'stop-color': 'currentColor', 'stop-opacity': '0' }));
-  defs.appendChild(fade);
+  root.append(ambient, grid, mark);
 
-  const mask = el('mask', { id: `${id}-mask`, maskUnits: 'userSpaceOnUse', x: '0', y: '0', width: '100%', height: '240', style: { maskType: 'alpha', color: 'var(--brand-ink)' } });
-  mask.appendChild(el('rect', { x: '0', y: '0', width: '100%', height: '240', fill: `url(#${id}-fade)` }));
-  defs.appendChild(mask);
-
-  const glow = el('radialGradient', { id: `${id}-glow`, cx: '0.5', cy: '0.5', r: '0.5' });
-  glow.appendChild(el('stop', { offset: '0', style: { stopColor: 'var(--accent)', stopOpacity: '0.14' } }));
-  glow.appendChild(el('stop', { offset: '0.45', style: { stopColor: 'var(--accent)', stopOpacity: '0.05' } }));
-  glow.appendChild(el('stop', { offset: '1', style: { stopColor: 'var(--accent)', stopOpacity: '0' } }));
-  defs.appendChild(glow);
-  svg.appendChild(defs);
-
-  /* 1. mashrabiya lattice band along the top, fading downwards */
-  svg.appendChild(el('rect', { class: 'bx-bd-lattice', x: '0', y: '0', width: '100%', height: '240', fill: `url(#${id}-lattice)`, mask: `url(#${id}-mask)`, opacity: '0.04' }));
-
-  /* 2. slow drifting radial glow (upper inline-end quadrant) */
-  const glowHost = el('svg', { x: '28%', y: '18%', width: '1', height: '1', overflow: 'visible', style: { overflow: 'visible' } });
-  const glowG = el('g', { class: 'bx-bd-glow' });
-  glowG.appendChild(el('circle', { class: 'bx-bd-glow-core', cx: '0', cy: '0', r: '420', fill: `url(#${id}-glow)` }));
-  glowHost.appendChild(glowG);
-  svg.appendChild(glowHost);
-
-  /* 3. three blueprint construction lines at 30°, anchored at the top inline-start corner, with dimension ticks */
-  const linesHost = el('svg', { x: '100%', y: '0', width: '1', height: '1', overflow: 'visible', style: { overflow: 'visible' } });
-  const lines = el('g', { class: 'bx-bd-lines', fill: 'none', stroke: 'currentColor', 'stroke-width': '1', 'stroke-linecap': 'round', style: { color: 'var(--accent)' }, opacity: '0.09' });
-  const ticks = el('g', { class: 'bx-bd-ticks', fill: 'none', stroke: 'currentColor', 'stroke-width': '1', 'stroke-linecap': 'round', style: { color: 'var(--gold)' }, opacity: '0.26' });
-  const nodes = el('g', { class: 'bx-bd-nodes', fill: 'none', stroke: 'currentColor', 'stroke-width': '1', style: { color: 'var(--gold)' }, opacity: '0.3' });
-  const dx = -ISO_UX, dy = ISO_UY; // down-left at 30°
-  const nx = ISO_UY, ny = ISO_UX;  // perpendicular
-  const LEN = 3200;
-  const starts = [[-120, 0], [0, 230], [-760, 0]];
-  starts.forEach(([sx, sy], i) => {
-    lines.appendChild(el('path', { d: `M${r2(sx)} ${r2(sy)}L${r2(sx + dx * LEN)} ${r2(sy + dy * LEN)}` }));
-    const tickCount = i === 1 ? 7 : 6;
-    for (let k = 0; k < tickCount; k++) {
-      const t = 96 + k * 112;
-      const px = sx + dx * t, py = sy + dy * t;
-      const h = k % 3 === 0 ? 7 : 4;
-      ticks.appendChild(el('path', { d: `M${r2(px - nx * h)} ${r2(py - ny * h)}L${r2(px + nx * h)} ${r2(py + ny * h)}` }));
-    }
-    const nt = 96 + 3 * 112;
-    nodes.appendChild(el('circle', { cx: r2(sx + dx * nt), cy: r2(sy + dy * nt), r: '3' }));
-  });
-  linesHost.appendChild(lines);
-  linesHost.appendChild(ticks);
-  linesHost.appendChild(nodes);
-  svg.appendChild(linesHost);
-
-  /* 4. sparse isometric block cluster at the bottom inline-end corner (6 % ink) */
-  const isoHost = el('svg', { x: '0', y: '100%', width: '1', height: '1', overflow: 'visible', style: { overflow: 'visible' } });
-  const iso = el('g', { class: 'bx-bd-iso', transform: 'translate(16 -252)', style: { color: 'var(--ink-1)' }, opacity: '0.06' });
-  // faint iso ground grid under the cluster
-  const grid = el('g', { fill: 'none', stroke: 'currentColor', 'stroke-width': '1', opacity: '0.5' });
-  for (let k = 0; k < 7; k++) {
-    const ox = 20 + k * 52;
-    grid.appendChild(el('path', { d: `M${r2(ox)} 240l${r2(ISO_UX * 160)} ${r2(-ISO_UY * 160)}` }));
-    grid.appendChild(el('path', { d: `M${r2(ox + 40)} 240l${r2(-ISO_UX * 160)} ${r2(-ISO_UY * 160)}` }));
+  liveBackdrops.add(root);
+  if (!backdropVisibilityBound && typeof document !== 'undefined') {
+    backdropVisibilityBound = true;
+    document.addEventListener('visibilitychange', syncBackdropVisibility);
   }
-  iso.appendChild(grid);
-  // each block: three faces at distinct opacities of the same ink token (top brightest), plus a hairline outline
-  BACKDROP_BLOCKS.forEach(([tx, ty, a, b, c]) => {
-    const f = isoFaces(tx, ty, a, b, c);
-    const block = el('g', { class: 'iso-block' });
-    // opaque page-coloured silhouette: hides the edges of blocks behind this one inside the 6 % group (hidden-line removal)
-    block.appendChild(el('polygon', { points: pts([f.top[0], f.top[1], f.right[3], f.right[2], f.left[3], f.top[3]]), fill: 'var(--bg-0)' }));
-    block.appendChild(el('polygon', { points: pts(f.left), fill: 'currentColor', opacity: '0.16' }));
-    block.appendChild(el('polygon', { points: pts(f.right), fill: 'currentColor', opacity: '0.32' }));
-    block.appendChild(el('polygon', { points: pts(f.top), fill: 'currentColor', opacity: '0.62' }));
-    block.appendChild(el('path', { d: `M${pts(f.top).replace(/ /g, 'L')}zM${pts(f.left).replace(/ /g, 'L')}zM${pts(f.right).replace(/ /g, 'L')}z`, fill: 'none', stroke: 'currentColor', 'stroke-width': '1', 'stroke-linejoin': 'round', opacity: '0.9' }));
-    iso.appendChild(block);
-  });
-  isoHost.appendChild(iso);
-  svg.appendChild(isoHost);
-
-  return svg;
+  if (document.hidden) root.classList.add('is-paused');
+  return root;
 }
 
 /* ------------------------------------------------------------------ */
 /* Bundle                                                              */
 /* ------------------------------------------------------------------ */
 
-export const art = { icon, logoMark, logoLockup, backdrop, isoCube, mashrabiyaTile, sectorGlyph, sectorIcon, hasIcon, iconNames };
+export const art = { icon, logoMark, logoLockup, emblem, backdrop, isoCube, mashrabiyaTile, sectorGlyph, sectorIcon, hasIcon, iconNames };
 export default art;

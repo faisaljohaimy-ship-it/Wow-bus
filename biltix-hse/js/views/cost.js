@@ -1,40 +1,92 @@
 /**
- * Biltix Risk AI — view: مخاطر التكلفة (js/views/cost.js) — DOM-04
+ * BILTIX Risk AI — view: cost risk (js/views/cost.js) — DOM-04. Owner: B-DOMAINS (v3 Precision).
  *
- * Cost-domain pillar of the Risk Cockpit: Earned-Value strip (CPI / SPI / EAC / ETC / VAC
- * with formula hints), three-series cost trend, commodity inflation impact, currency
- * exposure with hedging advice, change-order creep, labour index sparklines, cost-line
- * variance, the KRI matrix of the Cost Forecast pipeline and the open AI risks of the
- * `cost` category.
+ * Cost domain: v3 heading (scope, freshness, source status, CSV export), a scope filter bar (portfolio
+ * or one project while the global filter is "All projects"), four executive metrics, the earned-value
+ * strip (CPI / SPI / EAC / ETC / VAC with formulas), cost trend, commodity inflation impact, currency
+ * exposure with hedging advice, change-order creep, labour wage index, cost-line variance, the open AI
+ * risks of the `cost` domain (shared risk drawer) and the cost-forecast KRI matrix.
  *
- * Contract: docs/ARCHITECTURE.md §4 (components), §5 (charts), B2–B4 (psel), B9.8.
- * Data reaches the DOM only through textContent / components.h. No cross-view imports.
+ * Language: js/i18n/cost.js (namespace 'cost', shared block `cost.dom.*`); data through i18n.L / localize,
+ * enums through i18n.label, organisations through i18n.term. Nothing translated is cached at module
+ * level. Metrics come from psel (evm, costForecast, changeOrderSummary, currencyTable,
+ * labourIndexSummary, costLinesVariance, commodityExposure) with local fallbacks.
  */
 
+import { i18n } from '../core/i18n.js';
+import dict from '../i18n/cost.js';
+
+i18n.register('cost', dict);
+
+const NS = 'cost';
 const CATEGORY = 'cost';
 const PIPELINE_ID = 'cost-forecast';
+const SOURCE_CONNECTORS = ['biltix-cost', 'oracle-erp', 'feed-fx-sama', 'feed-commodities'];
 const CO_STATUS = ['مقترح', 'قيد الاعتماد', 'معتمد', 'مرفوض'];
 const CO_TONE = { 'مقترح': 'neutral', 'قيد الاعتماد': 'warning', 'معتمد': 'brand', 'مرفوض': 'neutral' };
-const TYPE_LABEL = { Financial: 'مالي', Safety: 'سلامة', Delay: 'تأخير', Conflict: 'نزاع' };
-const TYPE_ICON = { Financial: 'chart', Safety: 'helmet', Delay: 'clock', Conflict: 'file-text' };
-const RATING_LABEL = { red: 'أحمر', yellow: 'أصفر', green: 'أخضر' };
-const RATING_TONE = { red: 'critical', yellow: 'warning', green: 'good' };
-const CLOSED_STATUSES = new Set(['مغلق', 'مُتجاوز']);
-
-const STYLE_ID = 'view-cost-style';
-const STYLE_TEXT = `@layer views {
-  .view-cost .grid-12 { align-items: start; }
-  .view-cost .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
-  .view-cost .wrap-2 { overflow-wrap: break-word; }
-  @media (max-width: 599.98px) {
-    .view-cost .chips.is-scroll { flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; padding-block-end: 4px; scrollbar-width: thin; }
-    .view-cost .chips.is-scroll > .chip { flex: none; scroll-snap-align: start; }
-  }
-}`;
-const CODE_RE = /\b[A-Z]{1,5}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
 const LABOUR_DEFAULT = 6;
 
+const RATING_TONE = { red: 'critical', yellow: 'warning', green: 'good' };
+const TYPE_ICON = { Financial: 'chart', Safety: 'helmet', Delay: 'clock', Conflict: 'file-text' };
+const RISK_STATUS_TONE = { 'مكتشف': 'neutral', 'تنبيه': 'warning', 'مهمة مُسندة': 'brand', 'قيد المعالجة': 'accent', 'مغلق': 'good', 'مُتجاوز': 'neutral' };
+const CLOSED_RISK = new Set(['مغلق', 'مُتجاوز']);
+
+const V = '.view-cost';
+const STYLE_ID = 'view-cost-style';
+const STYLE_TEXT = `
+${V} .dom-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: var(--fs-sm); color: var(--ink-3); }
+${V} .dom-meta-item { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; min-inline-size: 0; }
+${V} .dom-meta-item > svg { flex: none; color: var(--ink-3); }
+${V} .dom-meta-item.is-source { display: block; line-height: 1.7; }
+${V} .dom-meta-item.is-source > svg { display: inline-block; vertical-align: -2px; margin-inline-end: 6px; }
+${V} .dom-meta-item.is-source > .status-badge { margin-inline-start: 6px; }
+${V} .dom-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap); align-items: start; }
+@container main (min-width: 761px) {
+  ${V} .dom-row.is-2-1 { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+  ${V} .dom-row.is-1-1 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  ${V} .dom-row.is-3-2 { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+}
+${V} .code { font-family: var(--font-mono); font-variant-numeric: tabular-nums; unicode-bidi: isolate; white-space: nowrap; }
+${V} .li-pos { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); unicode-bidi: isolate; }
+${V} .cell-stack { display: flex; flex-direction: column; gap: 3px; min-inline-size: 0; }
+${V} .cell-sub { font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.45; }
+${V} .cell-stack > .cell-code { align-self: flex-start; font-size: var(--fs-xs); color: var(--ink-2); }
+${V} .cell-sub.row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+${V} .score-cell { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+${V} .score-cell .t-num { font-weight: 600; font-variant-numeric: tabular-nums; }
+${V} .wrap-2 { overflow-wrap: break-word; }
+${V} .scope-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+${V} .scope-bar .filter-bar { flex: 1 1 320px; }
+${V} .evm-strip { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+${V} .evm-formula { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+${V} .hero-facts.evm-facts { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+${V} .fact-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; }
+${V} .fact-label .mono { font-weight: 600; color: var(--ink-1); }
+${V} .summary-strip { margin-block-end: var(--space-4); }
+${V} .summary-cell .badge { align-self: flex-start; }
+${V} .bar-pair-row { grid-template-columns: minmax(6rem, max-content) minmax(48px, 1fr) 3.5em; }
+${V} .labour-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding-block: 8px; border-block-end: 1px solid var(--line); }
+${V} .labour-row:last-child { border-block-end: 0; }
+${V} .commodity-list .urgent-item { grid-template-columns: minmax(0, 1fr) auto; }
+${V} .link-btn { display: inline; padding: 0; border: 0; background: none; color: var(--ink-1); font: inherit; font-weight: 600; text-align: start; cursor: pointer; border-radius: 4px; min-block-size: 24px; }
+${V} .link-btn:hover { color: var(--link, var(--brand-text)); text-decoration: underline; }
+${V} .kri-wrap[hidden] { display: none; }
+${V} .chev { transition: transform var(--dur-micro) var(--ease-out); }
+${V} [aria-expanded="true"] .chev { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { ${V} .chev { transition: none; } }
+@media (pointer: coarse) { ${V} .link-btn { min-block-size: 40px; min-inline-size: 40px; } }
+`;
+
+/** UI state that survives re-renders inside one visit (no strings). */
+let localProject = 'portfolio';
+let labourExpanded = false;
+let kriOpen = false;
+let riskDrawerFailed = false;
+
+const LATIN_NUM_TOKEN = /[A-Za-z][A-Za-z0-9._-]*\d[A-Za-z0-9._-]*|\d+[A-Za-z][A-Za-z0-9._-]*/g;
+const CODE_RE = /\b[A-Z]{1,5}-[A-Z0-9-]*\d[A-Z0-9-]*\b/g;
 const safe = (fn, fallback) => { try { const v = fn(); return v === undefined ? fallback : v; } catch { return fallback; } };
+const lower = (v) => String(v ?? '').toLowerCase();
 const arr = (v) => (Array.isArray(v) ? v : []);
 const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
@@ -49,517 +101,616 @@ function ensureStyle() {
 export default {
   id: 'cost',
   code: 'DOM-04',
-  title: 'مخاطر التكلفة',
+  get title() { return i18n.t('core.nav.cost.title'); },
   icon: 'chart',
 
   render(container, ctx) {
-    const { store, bus, fmt, charts, components, psel, sources, router } = ctx;
-    const { h, card, statTile, badge, dataTable, button, toast, emptyState, progress, svgIcon, glyph } = components;
+    const { store, bus, fmt, charts, components, sources, router } = ctx;
+    const psel = ctx.psel || null;
+    const statusApi = ctx.status || null;
+    const motion = ctx.motion || components.motion || null;
+    const { h, card, badge, dataTable, button, toast, emptyState, errorState, progress, svgIcon, glyph, statusBadge, filterBar } = components;
+
+    const t = (k, p) => i18n.t(`${NS}.${k}`, p);
+    const tn = (k, n, p) => i18n.tn(`${NS}.${k}`, n, p);
+    const L = (rec, field, ns) => i18n.L(rec, field, ns);
+    const term = (s) => (s ? i18n.term(String(s)) : s);
+    const label = (ns, v) => i18n.label(ns, v);
+    const psf = (name, ...args) => (psel && typeof psel[name] === 'function' ? safe(() => psel[name](...args), null) : null);
 
     ensureStyle();
     const root = h('section', { class: 'view view-cost' });
     container.appendChild(root);
 
     let raf = 0;
-    let localProject = 'portfolio'; // used only while the global project filter is "all"
-    let labourExpanded = false;
+    let built = false;
+    let resetPages = false;
+    let lastNumerals = safe(() => store.state.settings.numerals, 'latn');
+    const tableStates = new Map();
+    const tables = new Map();
+    const rowSigs = new Map();
+    const tileVals = new Map();
+    let pendingFlash = [];
 
-    /* ───────────────────────── helpers ───────────────────────── */
+    /* ───────────────────────── primitives ───────────────────────── */
 
-    const mono = (text, extra = []) => h('span', { class: ['mono', 'num', ...arr(extra)] }, String(text ?? '—'));
-    /** A code such as CO-0042 / AIR-0042 as an isolated LTR mono run that never breaks (RTL-5). */
-    const codeSpan = (code, extra = null) => h('span', { class: ['code', 'mono', 'nowrap', extra], dir: 'ltr' }, String(code ?? '—'));
-    function withCodes(str) {
-      const t = String(str ?? ''); const out = []; let last = 0; let m;
-      CODE_RE.lastIndex = 0;
-      while ((m = CODE_RE.exec(t))) { if (m.index > last) out.push(t.slice(last, m.index)); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
-      if (last < t.length) out.push(t.slice(last));
-      return out.length ? out : [t];
+    function digitsIn(value) {
+      const s = String(value ?? '');
+      if (typeof fmt.digits !== 'function' || !/\d/.test(s)) return s;
+      let out = ''; let last = 0; let m;
+      LATIN_NUM_TOKEN.lastIndex = 0;
+      while ((m = LATIN_NUM_TOKEN.exec(s))) { out += fmt.digits(s.slice(last, m.index)) + m[0]; last = m.index + m[0].length; }
+      return out + fmt.digits(s.slice(last));
     }
-    /** Signed percentage through fmt.signedPct when the core provides it (RTL-4 / RTL-23). */
-    const signedPct = (n, d = 0) => (typeof fmt.signedPct === 'function' ? fmt.signedPct(n, d) : `${fmt.signed(n, d)}${typeof fmt.getNumerals === 'function' && fmt.getNumerals() === 'arab' ? '٪' : '%'}`);
-    const sar = (v) => (Number.isFinite(Number(v)) ? `${fmt.compact(Number(v))} ر.س` : '—');
-    const sarFull = (v) => (Number.isFinite(Number(v)) ? `${fmt.num(Number(v))} ر.س` : '—');
+    const codeSpan = (code, extra = null) => h('span', { class: ['code', 'mono', extra], dir: 'ltr', translate: 'no' }, String(code ?? '—'));
+    function withCodes(str) {
+      const s = String(str ?? ''); const out = []; let last = 0; let m;
+      CODE_RE.lastIndex = 0;
+      while ((m = CODE_RE.exec(s))) { if (m.index > last) out.push(digitsIn(s.slice(last, m.index))); out.push(codeSpan(m[0])); last = m.index + m[0].length; }
+      if (last < s.length) out.push(digitsIn(s.slice(last)));
+      return out.length ? out : [digitsIn(s)];
+    }
+    const money = (v) => (Number.isFinite(Number(v)) ? fmt.currency(Number(v), { compact: true }) : '—');
+    const moneyFull = (v) => (Number.isFinite(Number(v)) ? fmt.currency(Number(v)) : '—');
+    const signedMoney = (v) => (Number.isFinite(Number(v)) ? fmt.currency(Number(v), { compact: true }) : '—');
     const ratio = (v) => (Number.isFinite(Number(v)) ? fmt.num(Number(v), { maximumFractionDigits: 2, minimumFractionDigits: 2 }) : '—');
+    const nowDate = () => (typeof store.now === 'function' ? store.now() : new Date());
+    const siteOf = (state, id) => (state.sites || []).find((x) => x && x.id === id) || null;
+    const siteName = (state, id) => { const s = siteOf(state, id); return digitsIn(s ? L(s, 'name', 'sites') : (id || '—')); };
+    const projectCode = (state, id) => { const s = siteOf(state, id); return s && s.code ? s.code : String(id); };
+    const scopeName = (data) => (data.scopeId === 'portfolio' ? t('portfolio') : siteName(data.state, data.scopeId));
+    let monthFmt = null;
+    const monthLabel = (d) => { try { if (!monthFmt) monthFmt = new Intl.DateTimeFormat(fmt.locale(), { month: 'short', year: '2-digit' }); return monthFmt.format(d); } catch { return fmt.date(d, { style: 'short' }); } };
+
+    function ratingOf(score) {
+      const r = psf('rating', num(score));
+      if (r && RATING_TONE[r]) return r;
+      const s = num(score);
+      return s >= 70 ? 'red' : s >= 40 ? 'yellow' : 'green';
+    }
+    function ratingBadge(score) {
+      const r = ratingOf(score);
+      const b = badge(i18n.t(`core.rating.${r}`), RATING_TONE[r]);
+      b.classList.add('rating', `is-${r}`);
+      b.dataset.rating = r;
+      b.title = label('ratingHint', r);
+      return b;
+    }
+    function scoreCell(score, risk = null) {
+      const cell = h('span', { class: 'score-cell' }, h('span', { class: 't-num mono' }, fmt.num(num(score))), ratingBadge(score));
+      if (risk && num(risk.likelihood) && num(risk.impact)) {
+        const p = { l: fmt.num(num(risk.likelihood)), i: fmt.num(num(risk.impact)) };
+        cell.appendChild(h('span', { class: 'li-pos', dir: 'ltr', title: t('dom.liTitle', p), 'aria-label': t('dom.liTitle', p) }, t('dom.li', p)));
+      }
+      return cell;
+    }
+    const typeChip = (type) => h('span', { class: ['type-chip', type ? `is-${lower(type)}` : null], 'data-type': type || undefined }, svgIcon(TYPE_ICON[type] || 'chart', 12), h('span', {}, label('aiType', type) || '—'));
+    const enumBadge = (ns, value, tones, fallback = 'neutral') => badge(label(ns, value) || '—', tones[value] || fallback);
+
+    const indexTone = (v) => (!Number.isFinite(v) ? 'neutral' : v >= 1 ? 'good' : v >= 0.9 ? 'warning' : 'critical');
+    const cpiLabel = (v) => t(`evm.status.${!Number.isFinite(v) ? 'na' : v >= 1 ? 'within' : v >= 0.9 ? 'pressure' : 'over'}`);
+    const spiLabel = (v) => t(`evm.status.${!Number.isFinite(v) ? 'na' : v >= 1 ? 'onTrack' : v >= 0.9 ? 'slight' : 'late'}`);
+    const eacTone = (eac, bac) => { if (!Number.isFinite(eac) || !bac) return 'neutral'; const r = eac / bac; return r <= 1 ? 'good' : r <= 1.05 ? 'warning' : 'critical'; };
+    const eacLabel = (eac, bac) => { if (!Number.isFinite(eac) || !bac) return t('evm.status.na'); const r = eac / bac; return t(`evm.status.${r <= 1 ? 'eacOk' : r <= 1.05 ? 'eacWarn' : 'eacOver'}`); };
+    const varianceTone = (v) => (!Number.isFinite(v) ? 'neutral' : v <= 0 ? 'good' : v <= 5 ? 'warning' : v <= 10 ? 'serious' : 'critical');
+    const changeTone = (pct, { badAbove = 2, warnAbove = 0.5 } = {}) => (!Number.isFinite(pct) ? 'neutral' : pct > badAbove ? 'critical' : pct > warnAbove ? 'warning' : 'good');
+    function hedge(c) {
+      if (c.pegged || c.code === 'USD') return { label: t('currency.hedge.pegged'), tone: 'good' };
+      const tone = c.hedging && c.hedging.tone ? c.hedging.tone : (Math.abs(num(c.change30dPct)) >= 3 ? 'critical' : Math.abs(num(c.change30dPct)) >= 1.5 ? 'warning' : 'neutral');
+      return { label: t(`currency.hedge.${tone === 'critical' ? 'recommended' : tone === 'warning' ? 'partial' : 'monitor'}`), tone: tone === 'critical' ? 'serious' : tone };
+    }
 
     function makeChart(name, opts) {
       if (!charts || typeof charts[name] !== 'function') return null;
-      try { const c = charts[name](opts); return c && c.el instanceof Node ? c : null; } catch (err) { console.warn(`[cost] charts.${name} failed`, err); return null; }
+      try { const c = charts[name](opts); return c && c.el instanceof Node ? c : null; } catch (err) { console.warn(`[cost] charts.${name}`, err); return null; }
     }
-    const chartOr = (chart, fallback) => (chart ? chart.el : (fallback || emptyState({ title: 'الرسم غير متاح حالياً', text: 'استخدم عرض الجدول للاطلاع على البيانات.' })));
-    const tableOf = (chart, fallbackFn) => () => {
-      if (chart && typeof chart.table === 'function') { const t = safe(() => chart.table(), null); if (t instanceof Node) return t; }
-      return fallbackFn ? fallbackFn() : h('table');
-    };
-    function simpleTable(headers, rows) {
-      const table = h('table', { class: 'table is-dense' });
-      table.appendChild(h('thead', {}, h('tr', {}, ...headers.map((t) => h('th', { scope: 'col' }, String(t))))));
-      table.appendChild(h('tbody', {}, ...rows.map((r) => h('tr', {}, ...r.map((c) => h('td', {}, c instanceof Node ? c : String(c ?? '—')))))));
-      return table;
+    const chartTable = (chart, fallback) => () => ((chart && typeof chart.table === 'function' && safe(() => chart.table(), null)) || fallback());
+    function simpleTable(caption, headers, rows) {
+      const tbl = h('table', { class: 'table is-dense' }, h('caption', { class: 'sr-only' }, caption));
+      tbl.appendChild(h('thead', {}, h('tr', {}, ...headers.map((x) => h('th', { scope: 'col' }, x)))));
+      tbl.appendChild(h('tbody', {}, ...rows.map((r) => h('tr', {}, ...r.map((c) => h('td', {}, c))))));
+      return tbl;
     }
 
-    function ratingOf(score) {
-      const r = safe(() => psel.rating(score), null);
-      if (r) return r;
-      return score >= 70 ? 'red' : (score >= 40 ? 'yellow' : 'green');
-    }
-    function ratingBadge(score) {
-      const r = ratingOf(num(score));
-      const tone = safe(() => psel.ratingTone(r), RATING_TONE[r]) || RATING_TONE[r];
-      const label = safe(() => psel.ratingLabel(r), RATING_LABEL[r]) || RATING_LABEL[r];
-      const el = badge(label, tone);
-      el.classList.add('rating', `is-${r}`);
+    function metricTile({ key, label: lbl, value, scale = null, unit = '', tone = null, icon = null, foot = null, helper = '', spark = null, onClick = null, title = null }) {
+      const clickable = typeof onClick === 'function';
+      const el = h(clickable ? 'button' : 'div', { class: ['metric-tile', tone ? `tone-${tone}` : null, clickable ? 'is-clickable' : null], type: clickable ? 'button' : undefined, onClick: clickable ? onClick : undefined, title: title || undefined, 'data-key': key });
+      el.appendChild(h('div', { class: 'metric-head' }, h('span', { class: 'metric-label' }, lbl), icon ? h('span', { class: 'metric-icon', 'aria-hidden': 'true' }, icon) : null));
+      el.appendChild(h('div', { class: 'metric-value' }, h('span', { class: 't-metric', dir: scale ? 'ltr' : undefined }, String(value ?? '—'), scale ? h('small', {}, scale) : null), unit ? h('span', { class: 'metric-unit' }, unit) : null));
+      if (spark) el.appendChild(h('span', { class: 'metric-spark', 'aria-hidden': 'true' }, spark));
+      el.appendChild(h('div', { class: 'metric-foot' }, foot, helper ? h('span', { class: 'metric-helper' }, helper) : null));
+      const sig = `${value}|${scale || ''}|${tone || ''}`;
+      if (built && tileVals.has(key) && tileVals.get(key) !== sig) pendingFlash.push(el);
+      tileVals.set(key, sig);
       return el;
     }
-    function typeChip(type) {
-      const label = safe(() => psel.typeLabel(type), null) || TYPE_LABEL[type] || String(type ?? '—');
-      const key = String(type || '').toLowerCase();
-      return h('span', { class: ['type-chip', key ? `is-${key}` : null], 'data-type': type ? String(type) : undefined }, svgIcon(TYPE_ICON[type] || 'chart', 12), h('span', {}, label));
+    const scrollToSection = (id) => { const el = root.querySelector(`[data-section="${id}"]`); if (el) { el.scrollIntoView({ behavior: motion && motion.enabled && motion.enabled() ? 'smooth' : 'auto', block: 'start' }); const head = el.querySelector('.card-title'); if (head) { head.setAttribute('tabindex', '-1'); head.focus({ preventScroll: true }); } } };
+
+    function makeTable(key, opts, sigOf) {
+      const tbl = dataTable(opts);
+      const prev = tableStates.get(key);
+      if (prev) tbl.setState(resetPages ? { ...prev, page: 0, scrollTop: 0 } : prev);
+      tables.set(key, tbl);
+      if (typeof sigOf === 'function') {
+        const before = rowSigs.get(key);
+        const now = new Map((opts.rows || []).map((r) => [String(r[opts.rowKey || 'id']), sigOf(r)]));
+        if (built && before) tbl.table.querySelectorAll('tbody tr[data-key]').forEach((tr) => { const k = tr.getAttribute('data-key'); if (before.get(k) !== now.get(k)) pendingFlash.push(tr); });
+        rowSigs.set(key, now);
+      }
+      return tbl;
     }
-    function toneBadge(label, tone) { return badge(label, tone); }
+    const rowOpener = (e) => { const tr = e && e.target && e.target.closest ? e.target.closest('tr') : null; return (tr && tr.querySelector('.row-open')) || null; };
 
-    function indexTone(v) { if (!Number.isFinite(v)) return 'neutral'; if (v >= 1) return 'good'; if (v >= 0.9) return 'warning'; return 'critical'; }
-    function cpiLabel(v) { if (!Number.isFinite(v)) return 'غير متاح'; if (v >= 1) return 'ضمن الميزانية'; if (v >= 0.9) return 'ضغط على التكلفة'; return 'تجاوز في التكلفة'; }
-    function spiLabel(v) { if (!Number.isFinite(v)) return 'غير متاح'; if (v >= 1) return 'ضمن الجدول'; if (v >= 0.9) return 'تأخر طفيف'; return 'تأخر في الجدول'; }
-    function eacTone(eac, bac) { if (!Number.isFinite(eac) || !bac) return 'neutral'; const r = eac / bac; if (r <= 1) return 'good'; if (r <= 1.05) return 'warning'; return 'critical'; }
-    function eacLabel(eac, bac) { if (!Number.isFinite(eac) || !bac) return 'غير متاح'; const r = eac / bac; if (r <= 1) return 'ضمن الميزانية'; if (r <= 1.05) return 'تحذير'; return 'تجاوز متوقع'; }
-    function vacTone(v) { if (!Number.isFinite(v)) return 'neutral'; return v >= 0 ? 'good' : 'critical'; }
-    function vacLabel(v) { if (!Number.isFinite(v)) return 'غير متاح'; return v >= 0 ? 'وفر متوقع' : 'عجز متوقع'; }
-    function varianceTone(v) { if (!Number.isFinite(v)) return 'neutral'; if (v <= 0) return 'good'; if (v <= 5) return 'warning'; if (v <= 10) return 'serious'; return 'critical'; }
-    function varianceLabel(v) { if (!Number.isFinite(v)) return '—'; if (v <= 0) return 'ضمن الميزانية'; if (v <= 5) return 'انحراف طفيف'; if (v <= 10) return 'انحراف مرتفع'; return 'تجاوز'; }
-    function changeTone(pct, { badAbove = 2, warnAbove = 0.5 } = {}) { if (!Number.isFinite(pct)) return 'neutral'; if (pct > badAbove) return 'critical'; if (pct > warnAbove) return 'warning'; return 'good'; }
-
-    function hedgeAdvice(c) {
-      if (c.code === 'USD' || c.pegged) return { label: 'مربوط بالريال — لا حاجة', tone: 'good' };
-      const ch = Math.abs(num(c.change30dPct));
-      const fcMove = c.forecast30d && c.rate ? Math.abs(num(c.forecast30d) / num(c.rate, 1) - 1) * 100 : 0;
-      const exposure = num(c.exposureSAR);
-      if ((ch >= 3 || fcMove >= 2.5) && exposure > 0) return { label: 'تحوّط آجل موصى به', tone: 'serious' };
-      if (ch >= 1.5 || fcMove >= 1.2) return { label: 'مراقبة وتثبيت جزئي', tone: 'warning' };
-      return { label: 'لا إجراء مطلوب', tone: 'neutral' };
-    }
-
-    function formulaHint(text) {
-      return h('span', { class: 'mono text-xs muted ltr', dir: 'ltr', title: 'صيغة الحساب' }, String(text));
+    async function openRisk(risk, returnFocus = null) {
+      const id = risk && (risk.id || risk.code);
+      if (!id) return;
+      if (!riskDrawerFailed) {
+        try {
+          const mod = await import('./shared/risk-drawer.js');
+          const fn = mod && (mod.openRiskDrawer || (mod.default && mod.default.openRiskDrawer));
+          if (typeof fn === 'function') { fn(ctx, id, { returnFocus: returnFocus && returnFocus.isConnected ? returnFocus : null }); return; }
+        } catch { riskDrawerFailed = true; }
+      }
+      router.navigate('airisks', { risk: id });
     }
 
     /* ───────────────────────── data ───────────────────────── */
 
-    function platformOf(state) {
-      return safe(() => psel.platform(state), null) || state.platform || {};
-    }
-    function projectName(state, id) {
-      if (!id || id === 'all' || id === 'portfolio') return 'محفظة المشاريع';
-      const s = arr(state.sites).find((x) => x.id === id);
-      return s ? s.name : String(id);
-    }
-    function projectCode(state, id) {
-      const s = arr(state.sites).find((x) => x.id === id);
-      return s ? s.code : String(id);
-    }
-
-    function evmFor(state, projectId) {
-      const direct = safe(() => psel.evm(state, projectId), null);
-      if (direct && Number.isFinite(Number(direct.BAC))) return direct;
-      const p = arr(platformOf(state).projects).find((x) => x.id === projectId);
-      if (!p || !p.evm) return null;
-      const e = p.evm;
-      const BAC = num(e.BAC); const PV = num(e.PV); const EV = num(e.EV); const AC = num(e.AC);
-      const CPI = AC ? EV / AC : NaN; const SPI = PV ? EV / PV : NaN;
-      const EAC = Number.isFinite(CPI) && CPI ? BAC / CPI : NaN;
-      return { BAC, PV, EV, AC, CPI: num(e.CPI, CPI), SPI: num(e.SPI, SPI), EAC: num(e.EAC, EAC), ETC: num(e.ETC, EAC - AC), VAC: num(e.VAC, BAC - EAC), SV: EV - PV, CV: EV - AC, percentComplete: num(p.percentComplete, BAC ? (EV / BAC) * 100 : 0), plannedPercent: num(p.plannedPercent, BAC ? (PV / BAC) * 100 : 0), status: CPI >= 1 ? 'ضمن الميزانية' : (CPI >= 0.9 ? 'تحذير' : 'تجاوز') };
-    }
-
-    function aggregateEvm(state, ids) {
-      const parts = ids.map((id) => evmFor(state, id)).filter(Boolean);
+    function evmLocal(plat, ids) {
+      const parts = arr(plat.projects).filter((p) => ids.includes(p.id) && p.evm);
       if (!parts.length) return null;
-      const sum = (k) => parts.reduce((acc, p) => acc + num(p[k]), 0);
+      const sum = (k) => parts.reduce((a, p) => a + num(p.evm[k]), 0);
       const BAC = sum('BAC'); const PV = sum('PV'); const EV = sum('EV'); const AC = sum('AC');
-      const CPI = AC ? EV / AC : NaN; const SPI = PV ? EV / PV : NaN;
-      const EAC = Number.isFinite(CPI) && CPI ? BAC / CPI : NaN;
-      return { BAC, PV, EV, AC, CPI, SPI, EAC, ETC: EAC - AC, VAC: BAC - EAC, SV: EV - PV, CV: EV - AC, percentComplete: BAC ? (EV / BAC) * 100 : 0, plannedPercent: BAC ? (PV / BAC) * 100 : 0, status: CPI >= 1 ? 'ضمن الميزانية' : (CPI >= 0.9 ? 'تحذير' : 'تجاوز'), projects: parts.length };
-    }
-
-    function forecastFor(state, ids, scopeId) {
-      // psel.costForecast aggregates the portfolio itself when asked for 'all'; per-project summing is the fallback.
-      const direct = safe(() => psel.costForecast(state, scopeId === 'portfolio' ? 'all' : scopeId), null);
-      if (direct && Array.isArray(direct.months) && direct.months.length) return direct;
-      const series = ids.map((id) => safe(() => psel.costForecast(state, id), null)).filter((f) => f && Array.isArray(f.months) && f.months.length);
-      if (!series.length) return null;
-      if (series.length === 1) return series[0];
-      const base = series[0];
-      const sumAt = (key, i) => series.reduce((acc, f) => acc + num(arr(f[key])[i]), 0);
-      return {
-        months: base.months.slice(),
-        budget: base.months.map((_, i) => sumAt('budget', i)),
-        actual: base.months.map((_, i) => (series.some((f) => arr(f.actual)[i] !== null && arr(f.actual)[i] !== undefined) ? sumAt('actual', i) : null)),
-        forecast: base.months.map((_, i) => sumAt('forecast', i)),
-      };
+      const CPI = AC ? EV / AC : NaN; const SPI = PV ? EV / PV : NaN; const EAC = Number.isFinite(CPI) && CPI ? BAC / CPI : NaN;
+      return { BAC, PV, EV, AC, CPI, SPI, EAC, ETC: EAC - AC, VAC: BAC - EAC, SV: EV - PV, CV: EV - AC, percentComplete: BAC ? (EV / BAC) * 100 : 0, plannedPercent: BAC ? (PV / BAC) * 100 : 0 };
     }
 
     function collect() {
       const state = store.state;
       const filters = store.filters || { siteId: 'all', range: 30, search: '' };
-      const plat = platformOf(state);
+      const plat = psf('platform', state) || state.platform || null;
+      if (!plat || !Array.isArray(plat.projects)) return { state, filters, plat: null, scopeAll: true, scopeId: 'portfolio' };
       const siteId = filters.siteId || 'all';
       const projects = arr(plat.projects);
       const projectIds = projects.map((p) => p.id);
       const scopeAll = siteId === 'all';
       const scopeId = scopeAll ? (localProject === 'portfolio' || !projectIds.includes(localProject) ? 'portfolio' : localProject) : siteId;
       const ids = scopeId === 'portfolio' ? projectIds : [scopeId];
+      const selId = scopeId === 'portfolio' ? 'all' : scopeId;
+      const scopedFilters = { ...filters, siteId: selId };
       const inScope = (pid) => ids.includes(pid);
 
-      const evm = scopeId === 'portfolio' ? aggregateEvm(state, ids) : evmFor(state, scopeId);
-      const forecast = forecastFor(state, ids, scopeId);
+      let evm = psf('evm', state, selId);
+      if (!evm || !Number.isFinite(Number(evm.BAC)) || !num(evm.BAC)) evm = evmLocal(plat, ids);
 
-      const viaPsel = safe(() => psel.commodityExposure(state), null);
-      const commodities = (Array.isArray(viaPsel) && viaPsel.length ? viaPsel : arr(plat.commodities)).map((c) => {
+      let forecast = psf('costForecast', state, selId, nowDate());
+      if (forecast && Array.isArray(forecast.budget) && forecast.budget.length) {
+        const n = forecast.budget.length;
+        const nowIdx = Number.isInteger(forecast.nowIndex) ? forecast.nowIndex : 7;
+        const base = nowDate();
+        forecast = { ...forecast, labels: Array.from({ length: n }, (_, i) => monthLabel(new Date(base.getFullYear(), base.getMonth() + (i - nowIdx), 1))) };
+      } else forecast = null;
+
+      const commodities = arr(psf('commodityExposure', state) || plat.commodities).map((c) => {
         const series = arr(c.series); const fc = arr(c.forecast);
         const last = num(c.lastPrice, num(series[series.length - 1])); const fcLast = num(fc[fc.length - 1], last);
         const impactPct = num(c.forecastChangePct, last ? ((fcLast / last) - 1) * 100 : 0);
-        return { ...c, impactPct, impactSAR: num(c.impactSAR, num(c.exposureSAR) * (impactPct / 100)) };
+        return { ...i18n.localize(c, 'commodities'), impactPct, impactSAR: num(c.impactSAR, num(c.exposureSAR) * (impactPct / 100)), fcMonths: fc.length };
       }).sort((a, b) => Math.abs(b.impactSAR) - Math.abs(a.impactSAR));
 
-      const currencies = arr(plat.currencies).map((c) => ({ ...c, advice: hedgeAdvice(c) })).sort((a, b) => num(b.exposureSAR) - num(a.exposureSAR));
+      const currencies = arr(psf('currencyTable', state) || plat.currencies).map((c) => ({ ...c, advice: hedge(c) })).sort((a, b) => num(b.exposureSAR) - num(a.exposureSAR));
 
-      const changeOrders = arr(plat.changeOrders).filter((co) => inScope(co.projectId));
-      const coByStatus = CO_STATUS.map((s, i) => ({ id: s, label: s, status: s, count: changeOrders.filter((c) => c.status === s).length, amount: changeOrders.filter((c) => c.status === s).reduce((a, c) => a + num(c.amountSAR), 0), color: safe(() => charts.paletteFor(i), `var(--s${i + 1})`) }));
+      const coSum = psf('changeOrderSummary', state, scopedFilters);
+      const changeOrders = arr(coSum ? coSum.items : arr(plat.changeOrders).filter((c) => inScope(c.projectId))).map((c) => i18n.localize(c, 'changeOrders'));
+      const coByStatus = CO_STATUS.map((s, i) => {
+        const items = changeOrders.filter((c) => c.status === s);
+        return { id: s, status: s, label: label('changeOrderStatus', s), count: items.length, amount: items.reduce((a, c) => a + num(c.amountSAR), 0), color: safe(() => charts.paletteFor(i), `var(--s${i + 1})`) };
+      });
       const contractValue = projects.filter((p) => inScope(p.id)).reduce((a, p) => a + num(p.contractValueSAR, num(p.budgetSAR)), 0);
-      const approvedCO = coByStatus.find((x) => x.status === 'معتمد');
-      const pendingCO = coByStatus.find((x) => x.status === 'قيد الاعتماد');
-      const creepPct = contractValue ? ((approvedCO ? approvedCO.amount : 0) / contractValue) * 100 : 0;
+      const creepPct = coSum && Number.isFinite(coSum.creepPct) ? coSum.creepPct : (contractValue ? (changeOrders.filter((c) => c.status !== 'مرفوض').reduce((a, c) => a + num(c.amountSAR), 0) / contractValue) * 100 : 0);
+      const pendingAmount = coSum ? num(coSum.pending) : changeOrders.filter((c) => c.status === 'مقترح' || c.status === 'قيد الاعتماد').reduce((a, c) => a + num(c.amountSAR), 0);
+      const pendingCount = coSum ? num(coSum.pendingCount) : changeOrders.filter((c) => c.status === 'مقترح' || c.status === 'قيد الاعتماد').length;
+      const impactDays = coSum ? num(coSum.impactDays) : changeOrders.filter((c) => c.status !== 'مرفوض').reduce((a, c) => a + num(c.impactDays), 0);
 
-      const labour = arr(plat.labourIndex);
-      const costLines = arr(plat.costLines).filter((l) => inScope(l.projectId)).map((l) => ({ ...l, variancePct: num(l.variancePct, l.budget ? ((num(l.forecast) - num(l.budget)) / num(l.budget)) * 100 : 0) })).sort((a, b) => b.variancePct - a.variancePct);
+      const labour = arr(psf('labourIndexSummary', state) || plat.labourIndex).map((l) => ({ ...i18n.localize(l, 'labourIndex'), change12mPct: num(l.change12mPct) })).sort((a, b) => b.change12mPct - a.change12mPct);
+      const linesSel = psf('costLinesVariance', state, scopedFilters);
+      const costLines = arr(linesSel || arr(plat.costLines).filter((l) => inScope(l.projectId)))
+        .map((l) => ({ ...i18n.localize(l, 'costLines'), variancePct: num(l.variancePct, l.budget ? ((num(l.forecast) - num(l.budget)) / num(l.budget)) * 100 : 0) }))
+        .sort((a, b) => b.variancePct - a.variancePct);
 
+      let aiRisks = psf('openAiRisks', state, filters);
+      if (!Array.isArray(aiRisks)) aiRisks = arr(plat.aiRisks).filter((r) => !CLOSED_RISK.has(r.status));
+      aiRisks = aiRisks.filter((r) => r && r.category === CATEGORY && inScope(r.projectId)).sort((a, b) => num(b.score) - num(a.score));
+
+      let categoryScore = null;
+      const scores = psf('categoryScores', state, scopedFilters);
+      if (Array.isArray(scores)) categoryScore = scores.find((s) => s && s.category === CATEGORY) || null;
+      if (!categoryScore) {
+        const vals = aiRisks.map((r) => num(r.score));
+        const score = vals.length ? Math.round(0.5 * Math.max(...vals) + 0.5 * (vals.reduce((a, b) => a + b, 0) / vals.length)) : 0;
+        categoryScore = { score, open: vals.length, red: vals.filter((v) => ratingOf(v) === 'red').length, trend: [] };
+      }
+
+      const nowMs = nowDate().getTime();
+      const fresh = arr(plat.aiRisks).filter((r) => r && r.category === CATEGORY && inScope(r.projectId))
+        .map((r) => fmt.toDate(r.updatedAt || r.detectedAt)).filter((d) => d && d.getTime() <= nowMs).sort((a, b) => b - a)[0] || null;
+      const connectors = SOURCE_CONNECTORS.map((id) => arr(plat.connectors).find((c) => c && c.id === id)).filter(Boolean);
       const pipeline = arr(plat.pipelines).find((p) => p.id === PIPELINE_ID) || null;
 
-      let aiRisks = safe(() => psel.openAiRisks(state, filters), null);
-      if (!Array.isArray(aiRisks)) aiRisks = arr(plat.aiRisks).filter((r) => !CLOSED_STATUSES.has(r.status) && (scopeAll || r.projectId === siteId));
-      aiRisks = aiRisks.filter((r) => r.category === CATEGORY && inScope(r.projectId)).sort((a, b) => num(b.score) - num(a.score));
-
-      return { state, plat, siteId, scopeAll, scopeId, ids, projects, evm, forecast, commodities, currencies, changeOrders, coByStatus, contractValue, approvedCO, pendingCO, creepPct, labour, costLines, pipeline, aiRisks };
+      return { state, filters, plat, siteId, scopeAll, scopeId, ids, projects, evm, forecast, commodities, currencies, changeOrders, coByStatus, contractValue, creepPct, pendingAmount, pendingCount, impactDays, labour, costLines, aiRisks, categoryScore, fresh, connectors, pipeline: pipeline ? i18n.localize(pipeline, 'pipelines') : null };
     }
 
     /* ───────────────────────── sections ───────────────────────── */
 
-    function buildHead(data) {
-      const actions = [];
-      if (sources && typeof sources.exportCSV === 'function') {
-        actions.push(button('تصدير بنود التكلفة', {
-          variant: 'outline', size: 'sm', icon: 'download',
-          onClick: () => {
-            try {
-              sources.exportCSV(data.costLines, [
-                { key: 'wbs', label: 'WBS' }, { key: 'name', label: 'البند' }, { key: 'budget', label: 'الميزانية' }, { key: 'actual', label: 'الفعلي' },
-                { key: 'committed', label: 'الملتزم به' }, { key: 'forecast', label: 'المتوقع' }, { key: 'variancePct', label: 'الانحراف %' },
-              ], `biltix-cost-lines-${data.scopeId}.csv`);
-              toast('تم تصدير بنود التكلفة بصيغة CSV', { tone: 'good' });
-            } catch { toast('تعذر التصدير حالياً', { tone: 'warning' }); }
-          },
-        }));
-      }
-      actions.push(button('سجل المخاطر الذكي', { variant: 'ghost', size: 'sm', icon: 'shield-alert', onClick: () => router.navigate('airisks', { category: CATEGORY }) }));
+    function exportLines(data) {
+      if (!sources || typeof sources.exportCSV !== 'function') { toast(t('exportFailed'), { tone: 'warning' }); return; }
+      try {
+        sources.exportCSV(data.costLines, [
+          { key: 'wbs', label: t('exportHead.wbs') }, { key: 'name', label: t('exportHead.name') },
+          { key: 'projectId', label: t('exportHead.project'), format: (v) => projectCode(data.state, v) },
+          { key: 'budget', label: t('exportHead.budget') }, { key: 'actual', label: t('exportHead.actual') },
+          { key: 'committed', label: t('exportHead.committed') }, { key: 'forecast', label: t('exportHead.forecast') },
+          { key: 'variancePct', label: t('exportHead.variance') },
+        ], `biltix-risk-ai-cost-lines-${data.scopeId === 'portfolio' ? 'portfolio' : projectCode(data.state, data.scopeId)}-${i18n.lang()}.csv`);
+        toast(t('exported', { count: fmt.num(data.costLines.length) }), { tone: 'good' });
+      } catch { toast(t('exportFailed'), { tone: 'warning' }); }
+    }
 
-      return h('div', { class: 'view-head' },
+    function buildHead(data) {
+      const conns = data.connectors || [];
+      const statuses = [...new Set(conns.map((c) => (statusApi && typeof statusApi.connector === 'function' ? safe(() => statusApi.connector(data.state, c), 'not_connected') : 'not_connected')))];
+      const freshText = data.fresh ? t('dom.fresh', { time: fmt.relative(data.fresh, nowDate()) }) : t('dom.freshNone');
+      const names = conns.map((c) => digitsIn(L(c, 'name', 'connectors')));
+      return h('header', { class: 'view-head' },
         h('div', { class: 'view-head-text' },
           h('span', { class: 'code-tag' }, 'DOM-04'),
-          h('h1', { tabindex: '-1' }, 'مخاطر التكلفة'),
-          h('p', { class: 'view-lead' }, `القيمة المكتسبة، اتجاه التكلفة، التعرض للعملات والسلع، أوامر التغيير وانحراف بنود التكلفة لـ ${projectName(data.state, data.scopeId)} — تغذّيها خط «توقع التكلفة» في محرك الذكاء الاصطناعي.`),
+          h('h1', { tabindex: '-1' }, t('title')),
+          h('p', { class: 'view-lead' }, t('lead')),
+          h('div', { class: 'dom-meta' },
+            h('span', { class: 'dom-meta-item' }, svgIcon('building', 14), h('span', {}, t('dom.scope', { scope: data.plat ? scopeName(data) : i18n.t('core.filters.allProjects') }))),
+            h('span', { class: 'dom-meta-item', title: data.fresh ? t('dom.freshTitle', { time: fmt.dateTime(data.fresh) }) : undefined }, glyph('clock', 14), h('span', {}, freshText)),
+            h('span', { class: 'dom-meta-item is-source' }, svgIcon('plug', 14), h('span', {}, names.length ? t('dom.source', { source: names.join(' · ') }) : t('dom.sourceMissing')), ...(statuses.length ? statuses : ['not_connected']).map((st) => statusBadge(st, { size: 'sm' }))),
+          ),
         ),
-        h('div', { class: 'view-actions' }, ...actions),
+        h('div', { class: 'view-actions' },
+          data.plat && sources && typeof sources.exportCSV === 'function' ? components.setLabelInName(button(t('export'), { variant: 'outline', size: 'sm', icon: 'download', onClick: () => exportLines(data) }), t('exportAria')) : null,
+          button(t('dom.register'), { variant: 'ghost', size: 'sm', icon: 'shield-alert', attrs: { 'aria-label': t('dom.registerAria') }, onClick: () => router.navigate('airisks', { domain: CATEGORY }) }),
+        ),
       );
     }
 
     function buildScopeBar(data) {
-      if (!data.scopeAll) {
-        return h('div', { class: 'toolbar' },
-          h('span', { class: 'text-sm muted' }, 'نطاق العرض:'),
-          badge(projectName(data.state, data.scopeId), 'brand', { icon: 'building' }),
-          h('span', { class: 'text-xs muted' }, 'يتبع مرشح المشروع في شريط الفلاتر'),
-        );
-      }
-      const options = [{ value: 'portfolio', label: 'المحفظة', icon: 'layers' }, ...data.projects.map((p) => ({ value: p.id, label: projectCode(data.state, p.id), icon: 'building', title: projectName(data.state, p.id) }))];
-      const chips = h('div', { class: 'chip-group chips is-scroll', role: 'group', 'aria-label': 'اختيار المشروع', style: { overflowX: 'auto' } }, ...options.map((o) => {
-        const active = o.value === data.scopeId;
-        return h('button', { type: 'button', class: ['chip', 'is-sm', active ? 'is-active' : null], 'aria-pressed': active ? 'true' : 'false', title: o.title || undefined, onClick: () => { localProject = o.value; schedule(); } }, svgIcon(o.icon, 12), h('span', {}, o.label));
-      }));
-      return h('div', { class: 'toolbar' },
-        h('span', { class: 'text-sm muted' }, 'نطاق العرض:'),
-        chips,
-        h('span', { class: 'toolbar-spacer' }),
-        h('span', { class: 'text-xs muted' }, data.scopeId === 'portfolio' ? `إجمالي ${fmt.num(data.projects.length)} مشاريع` : projectName(data.state, data.scopeId)),
+      if (!data.scopeAll) return null;
+      const bar = filterBar({
+        label: t('scope.aria'),
+        filters: [{ id: 'project', type: 'select', label: t('scope.label'), allOption: false, options: [{ value: 'portfolio', label: t('scope.portfolio') }, ...data.projects.map((p) => ({ value: p.id, label: `${projectCode(data.state, p.id)} — ${siteName(data.state, p.id)}` }))] }],
+        value: { project: data.scopeId },
+        onChange: (v) => { localProject = v.project || 'portfolio'; resetPages = true; schedule(); },
+        onReset: () => { localProject = 'portfolio'; },
+      });
+      return h('div', { class: 'scope-bar' }, bar.el, h('span', { class: 't-helper' }, data.scopeId === 'portfolio' ? tn('scope.projects', data.projects.length) : t('scope.follows')));
+    }
+
+    function buildKpis(data) {
+      const cs = data.categoryScore;
+      const r = ratingOf(cs.score);
+      const spark = Array.isArray(cs.trend) && cs.trend.length > 1 ? makeChart('sparkline', { values: cs.trend, width: 96, height: 28, color: 'var(--ink-3)', accentLast: true }) : null;
+      const e = data.evm;
+      const cpi = e ? Number(e.CPI) : NaN;
+      const creepTone = data.creepPct > 5 ? 'critical' : data.creepPct > 2.5 ? 'warning' : 'good';
+      return h('div', { class: 'metric-grid', role: 'group', 'aria-label': t('title') },
+        metricTile({ key: 'score', label: t('kpi.score'), value: fmt.num(num(cs.score)), scale: `/${fmt.num(100)}`, tone: RATING_TONE[r], icon: svgIcon('chart', 16), spark: spark ? spark.el : null, foot: ratingBadge(cs.score), helper: t('dom.scoreHelper', { open: tn('dom.openRisks', num(cs.open)), red: tn('dom.redRisks', num(cs.red)) }), title: t('dom.scoreFormula') }),
+        metricTile({ key: 'cpi', label: t('kpi.cpi'), value: ratio(cpi), tone: indexTone(cpi), icon: glyph(indexTone(cpi), 16), foot: badge(cpiLabel(cpi), indexTone(cpi)), helper: 'CPI = EV / AC', onClick: () => scrollToSection('evm') }),
+        metricTile({ key: 'eac', label: t('kpi.eac'), value: e ? money(e.EAC) : '—', tone: e ? eacTone(Number(e.EAC), Number(e.BAC)) : null, icon: svgIcon('trend-up', 16), helper: e ? t('kpi.eacHelper', { bac: money(e.BAC), vac: signedMoney(e.VAC) }) : '', onClick: () => scrollToSection('evm') }),
+        metricTile({ key: 'creep', label: t('kpi.creep'), value: fmt.pct(data.creepPct, 1), tone: creepTone, icon: glyph(creepTone, 16), helper: t('kpi.creepHelper', { count: tn('orders', data.changeOrders.length) }), onClick: () => scrollToSection('co') }),
       );
     }
 
-    /** .evm-cell[data-tone] > .evm-label(.mono abbr + name) + .evm-value(.mono) + .evm-status + .evm-hint — structure from css/platform.css */
-    function evmCell({ code, label, value, tone, statusLabel, formula, hint }) {
-      const cell = h('div', { class: ['evm-cell', `tone-${tone}`], 'data-tone': tone, 'data-metric': code });
-      cell.appendChild(h('span', { class: 'evm-label' }, h('abbr', { class: 'mono evm-abbr', title: label }, code), h('span', {}, label)));
-      cell.appendChild(h('span', { class: 'evm-value mono num' }, value));
-      cell.appendChild(h('span', { class: 'evm-status' }, toneBadge(statusLabel, tone)));
-      cell.appendChild(h('span', { class: 'evm-hint', style: { whiteSpace: 'nowrap' } }, formulaHint(formula)));
-      if (hint) cell.appendChild(h('span', { class: 'evm-hint' }, hint));
-      return cell;
+    function evmCell({ code, name, value, tone, status, formula, hint }) {
+      return h('div', { class: ['evm-cell', `tone-${tone}`], 'data-tone': tone, 'data-metric': code },
+        h('span', { class: 'evm-label' }, h('abbr', { class: 'mono evm-abbr', title: name, lang: 'en' }, code), h('span', {}, name)),
+        h('span', { class: 'evm-value mono' }, value),
+        h('span', { class: 'evm-status' }, badge(status, tone)),
+        h('span', { class: 'evm-formula', dir: 'ltr', title: t('evm.formula') }, formula),
+        hint ? h('span', { class: 'evm-hint' }, hint) : null);
     }
 
     function buildEvmCard(data) {
       const e = data.evm;
-      if (!e) {
-        return card({ code: 'CST-01', title: 'إدارة القيمة المكتسبة (EVM)', body: emptyState({ title: 'لا تتوفر بيانات القيمة المكتسبة', text: 'تأكد من اتصال موصل «Biltix — التكلفة والميزانية».' }) });
-      }
-      const strip = h('div', { class: 'evm-strip', role: 'group', 'aria-label': 'مؤشرات القيمة المكتسبة' },
-        evmCell({ code: 'CPI', label: 'مؤشر أداء التكلفة', value: ratio(e.CPI), tone: indexTone(e.CPI), statusLabel: cpiLabel(e.CPI), formula: 'CPI = EV / AC', hint: 'أعلى من 1 يعني إنفاقاً أقل من القيمة المُنجزة' }),
-        evmCell({ code: 'SPI', label: 'مؤشر أداء الجدول', value: ratio(e.SPI), tone: indexTone(e.SPI), statusLabel: spiLabel(e.SPI), formula: 'SPI = EV / PV', hint: 'أقل من 1 يعني إنجازاً أبطأ من المخطط' }),
-        evmCell({ code: 'EAC', label: 'التقدير عند الإنجاز', value: sar(e.EAC), tone: eacTone(e.EAC, e.BAC), statusLabel: eacLabel(e.EAC, e.BAC), formula: 'EAC = BAC / CPI', hint: `الميزانية عند الإنجاز (BAC): ${sar(e.BAC)}` }),
-        evmCell({ code: 'ETC', label: 'التقدير للإنجاز المتبقي', value: sar(e.ETC), tone: 'brand', statusLabel: 'المتبقي للإنجاز', formula: 'ETC = EAC − AC', hint: `التكلفة الفعلية حتى اليوم (AC): ${sar(e.AC)}` }),
-        evmCell({ code: 'VAC', label: 'الانحراف عند الإنجاز', value: `${e.VAC < 0 ? '−' : ''}${sar(Math.abs(e.VAC))}`, tone: vacTone(e.VAC), statusLabel: vacLabel(e.VAC), formula: 'VAC = BAC − EAC', hint: e.VAC < 0 ? 'قيمة سالبة: التكلفة المتوقعة تتجاوز الميزانية' : 'قيمة موجبة: وفر متوقع مقابل الميزانية' }),
+      if (!e) { const c = card({ code: 'CST-01', title: t('evm.title'), body: emptyState({ title: t('evm.emptyTitle'), text: t('evm.emptyText') }) }); c.dataset.section = 'evm'; return c; }
+      const CPI = Number(e.CPI); const SPI = Number(e.SPI); const EAC = Number(e.EAC); const BAC = Number(e.BAC); const VAC = Number(e.VAC);
+      const one = fmt.num(1);
+      const strip = h('div', { class: 'evm-strip', role: 'group', 'aria-label': t('evm.aria') },
+        evmCell({ code: 'CPI', name: t('evm.cpi'), value: ratio(CPI), tone: indexTone(CPI), status: cpiLabel(CPI), formula: 'CPI = EV / AC', hint: t('evm.cpiHint', { one }) }),
+        evmCell({ code: 'SPI', name: t('evm.spi'), value: ratio(SPI), tone: indexTone(SPI), status: spiLabel(SPI), formula: 'SPI = EV / PV', hint: t('evm.spiHint', { one }) }),
+        evmCell({ code: 'EAC', name: t('evm.eac'), value: money(EAC), tone: eacTone(EAC, BAC), status: eacLabel(EAC, BAC), formula: 'EAC = BAC / CPI', hint: t('evm.eacHint', { value: money(BAC) }) }),
+        evmCell({ code: 'ETC', name: t('evm.etc'), value: money(e.ETC), tone: 'brand', status: t('evm.status.remaining'), formula: 'ETC = EAC − AC', hint: t('evm.etcHint', { value: money(e.AC) }) }),
+        evmCell({ code: 'VAC', name: t('evm.vac'), value: signedMoney(VAC), tone: Number.isFinite(VAC) ? (VAC >= 0 ? 'good' : 'critical') : 'neutral', status: t(`evm.status.${!Number.isFinite(VAC) ? 'na' : VAC >= 0 ? 'saving' : 'deficit'}`), formula: 'VAC = BAC − EAC', hint: VAC < 0 ? t('evm.vacNeg') : t('evm.vacPos') }),
       );
-
-      const signedSar = (v) => `${v < 0 ? '−' : ''}${sar(Math.abs(v))}`;
-      const facts = h('div', { class: 'hero-facts evm-facts', style: { gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' } },
-        ...[
-          ['BAC', 'الميزانية عند الإنجاز', sar(e.BAC), sarFull(e.BAC), 'neutral'],
-          ['PV', 'القيمة المخططة', sar(e.PV), sarFull(e.PV), 'neutral'],
-          ['EV', 'القيمة المكتسبة', sar(e.EV), sarFull(e.EV), 'neutral'],
-          ['AC', 'التكلفة الفعلية', sar(e.AC), sarFull(e.AC), 'neutral'],
-          ['SV', 'انحراف الجدول (EV − PV)', signedSar(e.SV), `${e.SV < 0 ? '−' : ''}${sarFull(Math.abs(e.SV))}`, e.SV >= 0 ? 'good' : 'warning'],
-          ['CV', 'انحراف التكلفة (EV − AC)', signedSar(e.CV), `${e.CV < 0 ? '−' : ''}${sarFull(Math.abs(e.CV))}`, e.CV >= 0 ? 'good' : 'critical'],
-        ].map(([code, label, value, full, tone]) => h('div', { class: ['fact', `tone-${tone}`], title: full },
-          h('span', { class: 'fact-label row gap-1' }, mono(code, ['text-xs']), h('span', {}, label)),
-          h('span', { class: 'fact-value mono num row gap-1' }, tone === 'neutral' ? null : glyph(tone, 13), h('span', {}, value)),
-        )),
-      );
-
+      const facts = h('div', { class: 'hero-facts evm-facts' }, ...[
+        ['BAC', t('evm.bac'), e.BAC, 'neutral'], ['PV', t('evm.pv'), e.PV, 'neutral'], ['EV', t('evm.ev'), e.EV, 'neutral'], ['AC', t('evm.ac'), e.AC, 'neutral'],
+        ['SV', t('evm.sv'), e.SV, num(e.SV) >= 0 ? 'good' : 'warning'], ['CV', t('evm.cv'), e.CV, num(e.CV) >= 0 ? 'good' : 'critical'],
+      ].map(([code, name, value, tone]) => h('div', { class: ['fact', `tone-${tone}`], title: moneyFull(value) },
+        h('span', { class: 'fact-label' }, h('span', { class: 'mono', lang: 'en' }, code), h('span', {}, name)),
+        h('span', { class: 'fact-value row gap-1', style: { alignItems: 'center' } }, tone === 'neutral' ? null : glyph(tone, 13), h('span', {}, signedMoney(value))))));
       const pc = Math.max(0, Math.min(100, num(e.percentComplete)));
       const pp = Math.max(0, Math.min(100, num(e.plannedPercent)));
-      const progressPair = h('div', { class: 'bar-pair', 'aria-label': 'نسبة الإنجاز الفعلية مقابل المخططة' },
-        h('div', { class: 'bar-pair-row' }, h('span', {}, 'الإنجاز الفعلي'), progress({ value: pc, tone: pc >= pp ? 'good' : 'warning', label: 'نسبة الإنجاز الفعلية' }), h('span', { class: 'progress-value' }, fmt.pct(pc))),
-        h('div', { class: 'bar-pair-row' }, h('span', {}, 'الإنجاز المخطط'), progress({ value: pp, tone: 'brand', label: 'نسبة الإنجاز المخططة' }), h('span', { class: 'progress-value' }, fmt.pct(pp))),
-      );
-
-      const statusTone = e.status === 'ضمن الميزانية' ? 'good' : (e.status === 'تحذير' ? 'warning' : 'critical');
-      return card({
-        code: 'CST-01', title: 'إدارة القيمة المكتسبة (EVM)',
-        subtitle: `${projectName(data.state, data.scopeId)} — حالة التكلفة الإجمالية`,
-        actions: [toneBadge(e.status || '—', statusTone)],
-        body: h('div', { class: 'stack gap-4' }, strip, facts, progressPair),
-        footer: h('p', { class: 'text-xs muted' }, 'تُحسب المؤشرات من بيانات Oracle ERP و«Biltix — التكلفة والميزانية» بعد اجتياز طبقة التحقق؛ الدرجات 0–100 لمخاطر التكلفة تُشتق من CPI وVAC واتجاه السلع وأوامر التغيير.'),
+      const pair = h('div', { class: 'bar-pair', role: 'group', 'aria-label': t('evm.progressAria') },
+        h('div', { class: 'bar-pair-row' }, h('span', {}, t('evm.actual')), progress({ value: pc, tone: pc >= pp ? 'good' : 'warning', label: t('evm.actual') }), h('span', { class: 'progress-value' }, fmt.pct(pc))),
+        h('div', { class: 'bar-pair-row' }, h('span', {}, t('evm.planned')), progress({ value: pp, tone: 'brand', label: t('evm.planned') }), h('span', { class: 'progress-value' }, fmt.pct(pp))));
+      const statusTone = indexTone(CPI);
+      const el = card({
+        code: 'CST-01', title: t('evm.title'), subtitle: t('evm.sub', { scope: scopeName(data) }), hero: true,
+        actions: [badge(cpiLabel(CPI), statusTone)],
+        body: h('div', { class: 'stack gap-4' }, strip, facts, pair),
+        footer: h('p', { class: 't-helper' }, t('evm.note')),
       });
+      el.dataset.section = 'evm';
+      return el;
     }
 
     function buildTrendCard(data) {
       const f = data.forecast;
-      let chart = null;
-      if (f) {
-        chart = makeChart('lineChart', {
-          series: [
-            { id: 'budget', label: 'الميزانية', color: 'var(--s1)', values: arr(f.budget).map((v) => num(v)) },
-            { id: 'actual', label: 'الفعلي', color: 'var(--s2)', values: arr(f.actual).map((v) => (v === null || v === undefined ? null : num(v))) },
-            { id: 'forecast', label: 'المتوقع', color: 'var(--s3)', values: arr(f.forecast).map((v) => num(v)) },
-          ],
-          labels: arr(f.labels && f.labels.length ? f.labels : f.months).map((m) => (m instanceof Date ? fmt.date(m, { style: 'short' }) : String(m))), height: 240, yFormat: (v) => fmt.compact(v), ariaLabel: 'اتجاه التكلفة: الميزانية مقابل الفعلي والمتوقع',
-        });
-      }
-      const fallbackTable = () => simpleTable(['الشهر', 'الميزانية', 'الفعلي', 'المتوقع'], arr(f && f.months).map((m, i) => [m, sar(arr(f.budget)[i]), arr(f.actual)[i] == null ? '—' : sar(arr(f.actual)[i]), sar(arr(f.forecast)[i])]));
-      return card({
-        code: 'CST-02', title: 'اتجاه التكلفة', subtitle: 'الميزانية التراكمية مقابل الفعلي والمتوقع (ر.س)',
-        body: f ? chartOr(chart) : emptyState({ title: 'لا تتوفر سلسلة التكلفة لهذا النطاق' }),
-        tableView: f ? tableOf(chart, fallbackTable) : null,
-      });
+      const chart = f ? makeChart('lineChart', {
+        series: [
+          { id: 'budget', label: t('trend.budget'), color: 'var(--s1)', values: arr(f.budget).map((v) => num(v)) },
+          { id: 'actual', label: t('trend.actual'), color: 'var(--s2)', values: arr(f.actual).map((v) => (v === null || v === undefined ? null : num(v))) },
+          { id: 'forecast', label: t('trend.forecast'), color: 'var(--s3)', values: arr(f.forecast).map((v) => num(v)) },
+        ],
+        labels: f.labels, height: 240, yFormat: (v) => fmt.compact(v), ariaLabel: t('trend.aria'),
+      }) : null;
+      const fallback = () => simpleTable(t('trend.caption'), [t('trend.month'), t('trend.budget'), t('trend.actual'), t('trend.forecast')], arr(f && f.labels).map((m, i) => [m, money(arr(f.budget)[i]), arr(f.actual)[i] == null ? '—' : money(arr(f.actual)[i]), money(arr(f.forecast)[i])]));
+      return card({ code: 'CST-02', title: t('trend.title'), subtitle: t('trend.sub'), body: f ? (chart ? chart.el : fallback()) : emptyState({ title: t('trend.empty') }), tableView: f ? chartTable(chart, fallback) : null });
     }
 
     function buildCommodityCard(data) {
       const items = data.commodities.slice(0, 6);
-      if (!items.length) return card({ code: 'CST-03', title: 'أثر تضخم السلع', body: emptyState({ title: 'لا تتوفر مؤشرات السلع' }) });
-      const tiles = items.map((c) => statTile({
-        label: c.name, value: fmt.compact(num(c.exposureSAR)), unit: 'ر.س', delta: Number(num(c.impactPct).toFixed(1)), deltaGoodWhen: 'down',
-        tone: changeTone(c.impactPct, { badAbove: 4, warnAbove: 1 }), icon: 'package',
-        hint: `${c.trend || '—'} · تقلب ${fmt.pct(num(c.volatilityPct), 1)} · أثر متوقع ${c.impactSAR < 0 ? '−' : ''}${sar(Math.abs(c.impactSAR))}`,
-        onClick: () => router.navigate('bom', { commodity: c.id }),
+      if (!items.length) return card({ code: 'CST-03', title: t('commodity.title'), body: emptyState({ title: t('commodity.empty') }) });
+      const months = tn('commodity.months', items[0].fcMonths || 6);
+      const totalImpact = items.reduce((a, c) => a + num(c.impactSAR), 0);
+      const totalExp = data.commodities.reduce((a, c) => a + num(c.exposureSAR), 0);
+      const list = h('ul', { class: 'urgent-list commodity-list', 'aria-label': t('commodity.aria') }, ...items.map((c) => {
+        const tone = changeTone(c.impactPct, { badAbove: 4, warnAbove: 1 });
+        return h('li', { class: ['urgent-item', `tone-${tone}`] },
+          h('div', { class: 'urgent-text' },
+            h('button', { type: 'button', class: 'link-btn', 'aria-label': t('commodity.openAria', { name: digitsIn(c.name) }), onClick: () => router.navigate('bom', { commodity: c.id }) }, digitsIn(c.name)),
+            h('span', { class: 'urgent-sub' }, t('commodity.meta', { exposure: money(c.exposureSAR), vol: fmt.pct(num(c.volatilityPct), 1) }))),
+          h('div', { class: 'urgent-due' }, badge(fmt.signedPct(num(c.impactPct), 1), tone), h('span', {}, t('commodity.impact', { value: signedMoney(c.impactSAR) }))));
       }));
-      const totalImpact = items.reduce((a, c) => a + c.impactSAR, 0);
-      const totalPct = data.commodities.reduce((a, c) => a + num(c.exposureSAR), 0) ? (totalImpact / data.commodities.reduce((a, c) => a + num(c.exposureSAR), 0)) * 100 : 0;
       return card({
-        code: 'CST-03', title: 'أثر تضخم السلع', subtitle: `التعرض الحالي لكل سلعة والتغير المتوقع في سعرها خلال ${fmt.num(6)} أشهر — انقر للتفاصيل في مخاطر المواد`,
-        actions: [toneBadge(`${totalImpact < 0 ? '−' : '+'}${sar(Math.abs(totalImpact))}`, changeTone(totalPct, { badAbove: 4, warnAbove: 1 }))],
-        body: h('div', { class: 'kpi-row' }, ...tiles),
+        code: 'CST-03', title: t('commodity.title'), subtitle: t('commodity.sub', { months }),
+        body: list,
+        footer: badge(t('commodity.total', { value: signedMoney(totalImpact) }), changeTone(totalExp ? (totalImpact / totalExp) * 100 : 0, { badAbove: 4, warnAbove: 1 })),
       });
     }
 
     function buildCurrencyCard(data) {
       const rows = data.currencies;
-      const table = dataTable({
-        dense: true, pageSize: 0, rowKey: 'code', stickyFirst: true, emptyText: 'لا تتوفر بيانات العملات',
-        caption: 'التعرض للعملات الأجنبية',
+      const days30 = fmt.num(30);
+      const table = makeTable('currencies', {
+        dense: true, pageSize: 0, rowKey: 'code', stickyFirst: true, emptyText: t('currency.empty'), caption: t('currency.caption'),
+        initialSort: { key: 'exposureSAR', dir: 'desc' },
         columns: [
-          { key: 'code', label: 'العملة', priority: 'high', render: (r) => h('span', { class: 'row gap-2' }, h('span', { class: 'code mono nowrap', lang: 'en', dir: 'ltr' }, r.code), h('span', { class: 'text-sm' }, r.nameAr || '')) },
-          { key: 'rate', label: 'السعر (ر.س)', align: 'end', priority: 'medium', render: (r) => mono(fmt.num(num(r.rate), { maximumFractionDigits: 4, minimumFractionDigits: 2 })) },
-          { key: 'change30dPct', label: `التغير خلال ${fmt.num(30)} يوماً`, align: 'end', priority: 'high', render: (r) => h('span', { class: ['num', 'mono', `tone-${changeTone(Math.abs(num(r.change30dPct)), { badAbove: 3, warnAbove: 1.5 })}`], style: { color: 'var(--tone-ink)' } }, signedPct(num(r.change30dPct), 1)) },
-          { key: 'exposureSAR', label: 'التعرض', align: 'end', priority: 'high', render: (r) => mono(sar(r.exposureSAR)), sortValue: (r) => num(r.exposureSAR) },
-          { key: 'forecast30d', label: `توقع ${fmt.num(30)} يوماً`, align: 'end', priority: 'low', render: (r) => mono(fmt.num(num(r.forecast30d), { maximumFractionDigits: 4, minimumFractionDigits: 2 })) },
-          { key: 'advice', label: 'توصية التحوّط', sortable: false, priority: 'medium', render: (r) => toneBadge(r.advice.label, r.advice.tone) },
+          { key: 'code', label: t('currency.currency'), priority: 'high', render: (r) => h('span', { class: 'row gap-2', style: { alignItems: 'center' } }, codeSpan(r.code), h('span', { class: 'cell-sub', style: { margin: 0 } }, label('currency', r.code) || L(r, 'nameAr', 'currencies'))) },
+          { key: 'rate', label: t('currency.rate'), align: 'end', priority: 'medium', render: (r) => h('span', { class: 'mono' }, fmt.num(num(r.rate), { maximumFractionDigits: 4, minimumFractionDigits: 2 })) },
+          { key: 'change30dPct', label: t('currency.change', { days: days30 }), align: 'end', priority: 'high', sortValue: (r) => num(r.change30dPct), render: (r) => { const tone = changeTone(Math.abs(num(r.change30dPct)), { badAbove: 3, warnAbove: 1.5 }); return h('span', { class: ['mono', `tone-${tone}`], style: { color: 'var(--tone-ink)' } }, fmt.signedPct(num(r.change30dPct), 1)); } },
+          { key: 'exposureSAR', label: t('currency.exposure'), align: 'end', priority: 'high', sortValue: (r) => num(r.exposureSAR), render: (r) => h('span', { class: 'mono nowrap' }, money(r.exposureSAR)) },
+          { key: 'forecast30d', label: t('currency.forecast', { days: days30 }), align: 'end', priority: 'low', render: (r) => h('span', { class: 'mono' }, fmt.num(num(r.forecast30d), { maximumFractionDigits: 4, minimumFractionDigits: 2 })) },
+          { key: 'advice', label: t('currency.advice'), sortable: false, priority: 'medium', render: (r) => badge(r.advice.label, r.advice.tone) },
         ],
-        rows, initialSort: { key: 'exposureSAR', dir: 'desc' },
-      });
-      const totalExposure = rows.reduce((a, c) => a + num(c.exposureSAR), 0);
-      return card({
-        code: 'CST-04', title: 'التعرض للعملات', subtitle: 'أسعار الصرف (ساما) والتعرض غير المُحوَّط مع توصية التحوّط لكل عملة',
-        actions: [h('span', { class: 'text-sm muted' }, 'إجمالي التعرض: ', mono(sar(totalExposure)))],
-        body: table.el,
-      });
+        rows,
+      }, (r) => `${r.rate}|${r.exposureSAR}|${r.change30dPct}`);
+      const total = rows.reduce((a, c) => a + num(c.exposureSAR), 0);
+      return card({ code: 'CST-04', title: t('currency.title'), subtitle: t('currency.sub'), actions: [h('span', { class: 't-helper' }, t('currency.total', { value: money(total) }))], body: table.el });
     }
 
     function buildChangeOrdersCard(data) {
       const parts = data.coByStatus.filter((p) => p.amount > 0).map((p) => ({ id: p.id, label: p.label, value: p.amount, color: p.color }));
-      const millions = (v) => fmt.num(v / 1e6, { maximumFractionDigits: 1 });
-      const seg = parts.length ? makeChart('segmentedBar', { parts, tall: true, valueFormat: millions, ariaLabel: 'قيمة أوامر التغيير حسب الحالة (بملايين الريالات)' }) : null;
+      const seg = parts.length ? makeChart('segmentedBar', { parts, tall: true, valueFormat: (v) => money(v), ariaLabel: t('co.splitAria') }) : null;
+      const creepTone = data.creepPct > 5 ? 'critical' : data.creepPct > 2.5 ? 'warning' : 'good';
       const strip = h('div', { class: 'summary-strip' },
-        h('div', { class: 'summary-cell' }, h('span', { class: 'summary-label' }, 'زحف التكلفة (معتمد ÷ قيمة العقد)'), h('span', { class: ['summary-value', 'mono', 'num'] }, fmt.pct(data.creepPct, 1)), toneBadge(data.creepPct > 5 ? 'تجاوز حد التحمل' : (data.creepPct > 2.5 ? 'يقترب من الحد' : 'ضمن حد التحمل'), data.creepPct > 5 ? 'critical' : (data.creepPct > 2.5 ? 'warning' : 'good'))),
-        h('div', { class: 'summary-cell' }, h('span', { class: 'summary-label' }, 'قيد الاعتماد'), h('span', { class: ['summary-value', 'mono', 'num'] }, sar(data.pendingCO ? data.pendingCO.amount : 0)), h('span', { class: 'text-xs muted' }, `${fmt.num(data.pendingCO ? data.pendingCO.count : 0)} أوامر`)),
-        h('div', { class: 'summary-cell' }, h('span', { class: 'summary-label' }, 'إجمالي الأوامر'), h('span', { class: ['summary-value', 'mono', 'num'] }, fmt.num(data.changeOrders.length)), h('span', { class: 'text-xs muted' }, `أثر زمني ${fmt.num(data.changeOrders.reduce((a, c) => a + num(c.impactDays), 0))} يوماً`)),
+        h('div', { class: 'summary-cell' }, h('span', { class: 'summary-label' }, t('co.creep')), h('span', { class: 'summary-value mono' }, fmt.pct(data.creepPct, 1)), badge(t(creepTone === 'critical' ? 'co.creepOver' : creepTone === 'warning' ? 'co.creepNear' : 'co.creepOk'), creepTone)),
+        h('div', { class: 'summary-cell' }, h('span', { class: 'summary-label' }, t('co.pending')), h('span', { class: 'summary-value mono' }, money(data.pendingAmount)), h('span', { class: 'cell-sub' }, tn('orders', data.pendingCount))),
+        h('div', { class: 'summary-cell' }, h('span', { class: 'summary-label' }, t('co.total')), h('span', { class: 'summary-value mono' }, fmt.num(data.changeOrders.length)), h('span', { class: 'cell-sub' }, t('co.impact', { days: tn('dom.days', data.impactDays) }))),
       );
-      const table = dataTable({
-        dense: true, pageSize: 5, stickyFirst: true, emptyText: 'لا توجد أوامر تغيير في هذا النطاق', caption: 'أوامر التغيير',
+      const table = makeTable('co', {
+        dense: true, pageSize: 5, rowKey: 'id', stickyFirst: true, emptyText: t('co.empty'), caption: t('co.caption'),
+        initialSort: { key: 'amountSAR', dir: 'desc' },
         columns: [
-          { key: 'code', label: 'الرمز', priority: 'high', render: (r) => codeSpan(r.code) },
-          { key: 'title', label: 'الأمر', priority: 'high', render: (r) => h('span', { class: 'stack', style: { gap: '2px' } }, h('span', { class: 'wrap-2', title: r.title || '' }, ...withCodes(r.title || '—')), h('span', { class: 'text-xs muted' }, `${data.scopeId === 'portfolio' ? `${projectCode(data.state, r.projectId)} · ` : ''}أثر ${fmt.num(num(r.impactDays))} يوماً · قُدّم ${fmt.relative(r.submittedAt)}${r.driver ? ` · ${r.driver}` : ''}`)) },
-          { key: 'amountSAR', label: 'القيمة', align: 'end', priority: 'high', render: (r) => h('span', { class: 'mono num nowrap' }, sar(r.amountSAR)), sortValue: (r) => num(r.amountSAR) },
-          { key: 'status', label: 'الحالة', priority: 'medium', render: (r) => toneBadge(r.status || '—', CO_TONE[r.status] || 'neutral') },
+          { key: 'title', label: t('co.order'), priority: 'high', sortValue: (r) => r.title, render: (r) => h('span', { class: 'cell-stack wrap-2' }, codeSpan(r.code, 'cell-code'), h('span', { class: 'cell-title' }, ...withCodes(r.title || '—')), h('span', { class: 'cell-sub' }, t('co.meta', { project: data.scopeId === 'portfolio' ? `${projectCode(data.state, r.projectId)} · ` : '', days: tn('dom.days', num(r.impactDays)), when: fmt.relative(r.submittedAt, nowDate()), driver: r.driver ? ` · ${digitsIn(r.driver)}` : '' }))) },
+          { key: 'amountSAR', label: t('co.value'), align: 'end', priority: 'high', sortValue: (r) => num(r.amountSAR), render: (r) => h('span', { class: 'cell-stack', style: { alignItems: 'flex-end' } }, h('span', { class: 'mono nowrap' }, money(r.amountSAR)), enumBadge('changeOrderStatus', r.status, CO_TONE)) },
         ],
-        rows: data.changeOrders, initialSort: { key: 'amountSAR', dir: 'desc' },
+        rows: data.changeOrders,
+      }, (r) => `${r.status}|${r.amountSAR}`);
+      const el = card({
+        code: 'CST-05', title: t('co.title'), subtitle: t('co.sub'),
+        body: h('div', { class: 'stack gap-4' }, strip, seg ? h('div', { class: 'stack gap-1' }, h('span', { class: 't-label' }, t('co.split')), seg.el) : null, table.el),
+        tableView: parts.length ? chartTable(null, () => simpleTable(t('co.caption'), [t('co.status'), t('co.count'), t('co.amount')], data.coByStatus.map((p) => [p.label, fmt.num(p.count), money(p.amount)]))) : null,
       });
-      return card({
-        code: 'CST-05', title: 'زحف أوامر التغيير', subtitle: 'توزيع القيمة حسب الحالة وأحدث الأوامر',
-        className: 'col-span-7',
-        body: h('div', { class: 'stack gap-4' }, strip, seg ? h('div', { class: 'stack gap-1' }, h('span', { class: 'text-xs muted' }, 'توزيع القيمة حسب الحالة — بملايين الريالات'), seg.el) : null, table.el),
-        tableView: parts.length ? tableOf(seg, () => simpleTable(['الحالة', 'العدد', 'القيمة'], data.coByStatus.map((p) => [p.label, fmt.num(p.count), sar(p.amount)]))) : null,
-      });
+      el.dataset.section = 'co';
+      return el;
     }
 
     function buildLabourCard(data) {
-      if (!data.labour.length) return card({ code: 'CST-06', title: 'مؤشر أجور العمالة', className: 'col-span-5', body: emptyState({ title: 'لا تتوفر مؤشرات الأجور' }) });
+      if (!data.labour.length) return card({ code: 'CST-06', title: t('labour.title'), body: emptyState({ title: t('labour.empty') }) });
+      const months = tn('commodity.months', 12);
       const shown = labourExpanded ? data.labour : data.labour.slice(0, LABOUR_DEFAULT);
       const rows = shown.map((l) => {
-        const spark = makeChart('sparkline', { values: arr(l.series).map((v) => num(v)), width: 110, height: 28, color: 'var(--ink-3)', accentLast: true });
+        const spark = makeChart('sparkline', { values: arr(l.series).map((v) => num(v)), width: 96, height: 26, color: 'var(--ink-3)', accentLast: true });
         const tone = changeTone(num(l.change12mPct), { badAbove: 6, warnAbove: 3 });
-        return h('div', { class: 'row between gap-3', style: { paddingBlock: '8px', borderBlockEnd: '1px solid var(--line)' } },
-          h('div', { class: 'stack gap-1 grow wrap-2', style: { gap: '2px', minInlineSize: 0 } }, h('span', { class: 'text-sm semibold' }, l.trade || '—'), h('span', { class: 'text-xs muted' }, l.region || '—')),
-          spark ? h('span', { class: 'spark', 'aria-hidden': 'true' }, spark.el) : null,
-          h('span', { class: ['badge', `tone-${tone}`], 'data-tone': tone }, glyph(tone, 13), h('span', { class: 'badge-text mono num' }, signedPct(num(l.change12mPct), 1))),
-        );
+        return h('div', { class: 'labour-row' },
+          h('div', { class: 'cell-stack wrap-2' }, h('span', { class: 'cell-title' }, digitsIn(l.trade || '—')), h('span', { class: 'cell-sub', style: { margin: 0 } }, digitsIn(l.region || '—'))),
+          spark ? h('span', { class: 'spark', 'aria-hidden': 'true' }, spark.el) : h('span'),
+          badge(fmt.signedPct(num(l.change12mPct), 1), tone));
       });
+      const more = data.labour.length > LABOUR_DEFAULT ? button(labourExpanded ? t('dom.showLess') : t('dom.showAll', { count: fmt.num(data.labour.length) }), { variant: 'ghost', size: 'sm', icon: h('span', { class: 'chev' }, svgIcon('chevron-down', 15)), attrs: { 'aria-expanded': labourExpanded ? 'true' : 'false' }, onClick: () => { labourExpanded = !labourExpanded; schedule(); } }) : null;
       return card({
-        code: 'CST-06', title: 'مؤشر أجور العمالة', subtitle: `التغير خلال ${fmt.num(12)} شهراً حسب المنطقة والحرفة`,
-        className: 'col-span-5',
-        actions: data.labour.length > LABOUR_DEFAULT ? [button(labourExpanded ? 'عرض أقل' : `عرض الكل (${fmt.num(data.labour.length)})`, { variant: 'ghost', size: 'sm', icon: labourExpanded ? 'chevron-up' : 'chevron-down', onClick: () => { labourExpanded = !labourExpanded; schedule(); } })] : [],
-        body: h('div', { class: 'stack', style: { gap: '0' } }, ...rows),
-        tableView: () => simpleTable(['الحرفة', 'المنطقة', `التغير خلال ${fmt.num(12)} شهراً`], data.labour.map((l) => [l.trade, l.region, signedPct(num(l.change12mPct), 1)])),
-        footer: h('p', { class: 'text-xs muted' }, 'المصدر: مؤشرات السلع والأجور — يُستخدم كمدخل لنموذج توقع التكلفة.'),
+        code: 'CST-06', title: t('labour.title'), subtitle: t('labour.sub', { months }),
+        body: h('div', {}, ...rows),
+        tableView: () => simpleTable(t('labour.caption'), [t('labour.trade'), t('labour.region'), t('labour.change', { months })], data.labour.map((l) => [digitsIn(l.trade), digitsIn(l.region), fmt.signedPct(num(l.change12mPct), 1)])),
+        footer: h('div', { class: 'row between wrap gap-2', style: { inlineSize: '100%' } }, h('p', { class: 't-helper' }, data.labour.length > shown.length ? `${t('dom.shownOf', { shown: fmt.num(shown.length), total: fmt.num(data.labour.length) })} ${t('labour.footer')}` : t('labour.footer')), more),
       });
     }
 
     function buildCostLinesCard(data) {
       const over = data.costLines.filter((l) => l.variancePct > 5).length;
-      const table = dataTable({
-        dense: true, pageSize: 6, stickyFirst: true, emptyText: 'لا توجد بنود تكلفة في هذا النطاق', caption: 'انحراف بنود التكلفة',
+      const table = makeTable('lines', {
+        dense: true, pageSize: 6, rowKey: 'id', stickyFirst: true, emptyText: t('lines.empty'), caption: t('lines.caption'),
+        initialSort: { key: 'variancePct', dir: 'desc' },
         columns: [
-          { key: 'wbs', label: 'WBS', priority: 'high', render: (r) => h('span', { class: 'code mono nowrap', dir: 'ltr' }, String(r.wbs ?? '—')) },
-          { key: 'name', label: 'البند', priority: 'high', render: (r) => h('span', { class: 'stack wrap-2', style: { gap: '1px' } }, h('span', { title: r.name || '' }, r.name || '—'), data.scopeId === 'portfolio' ? h('span', { class: 'text-xs muted' }, projectCode(data.state, r.projectId)) : null) },
-          { key: 'budget', label: 'الميزانية', align: 'end', priority: 'medium', render: (r) => mono(sar(r.budget)), sortValue: (r) => num(r.budget) },
-          { key: 'actual', label: 'الفعلي', align: 'end', priority: 'low', render: (r) => mono(sar(r.actual)), sortValue: (r) => num(r.actual) },
-          { key: 'committed', label: 'الملتزم', align: 'end', priority: 'low', render: (r) => mono(sar(r.committed)), sortValue: (r) => num(r.committed) },
-          { key: 'forecast', label: 'المتوقع', align: 'end', priority: 'medium', render: (r) => mono(sar(r.forecast)), sortValue: (r) => num(r.forecast) },
-          { key: 'variancePct', label: 'الانحراف', align: 'end', priority: 'high', render: (r) => h('span', { class: 'row gap-2', style: { justifyContent: 'flex-end' } }, toneBadge(varianceLabel(r.variancePct), varianceTone(r.variancePct)), mono(signedPct(r.variancePct, 1))) },
+          { key: 'name', label: t('lines.name'), priority: 'high', sortValue: (r) => r.name, render: (r) => h('span', { class: 'cell-stack wrap-2' }, codeSpan(r.wbs ?? '—', 'cell-code'), h('span', { class: 'cell-title' }, digitsIn(r.name || '—')), data.scopeId === 'portfolio' ? h('span', { class: 'cell-sub' }, projectCode(data.state, r.projectId)) : null) },
+          { key: 'budget', label: t('lines.budget'), align: 'end', priority: 'medium', sortValue: (r) => num(r.budget), render: (r) => h('span', { class: 'mono nowrap' }, money(r.budget)) },
+          { key: 'actual', label: t('lines.actual'), align: 'end', priority: 'low', sortValue: (r) => num(r.actual), render: (r) => h('span', { class: 'mono nowrap' }, money(r.actual)) },
+          { key: 'committed', label: t('lines.committed'), align: 'end', priority: 'low', sortValue: (r) => num(r.committed), render: (r) => h('span', { class: 'mono nowrap' }, money(r.committed)) },
+          { key: 'forecast', label: t('lines.forecast'), align: 'end', priority: 'medium', sortValue: (r) => num(r.forecast), render: (r) => h('span', { class: 'mono nowrap' }, money(r.forecast)) },
+          { key: 'variancePct', label: t('lines.variance'), align: 'end', priority: 'high', sortValue: (r) => r.variancePct, render: (r) => { const tone = varianceTone(r.variancePct); return h('span', { class: 'row gap-2', style: { justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'nowrap' } }, badge(t(`lines.tone.${tone === 'neutral' ? 'good' : tone}`), tone), h('span', { class: 'mono' }, fmt.signedPct(r.variancePct, 1))); } },
         ],
-        rows: data.costLines, initialSort: { key: 'variancePct', dir: 'desc' },
-      });
+        rows: data.costLines,
+      }, (r) => `${r.forecast}|${r.actual}|${r.variancePct}`);
+      return card({ code: 'CST-07', title: t('lines.title'), subtitle: t('lines.sub'), actions: [badge(tn('lines.over', over), over ? 'warning' : 'good')], body: table.el });
+    }
+
+    function buildRisksCard(data) {
+      const rows = data.aiRisks;
+      const red = rows.filter((r) => ratingOf(r.score) === 'red').length;
+      const table = makeTable('risks', {
+        caption: t('dom.risks.caption', { domain: t('domain') }), pageSize: 6, rowKey: 'id', stickyFirst: true,
+        emptyText: t('dom.risks.empty'),
+        onRowClick: (r, e) => openRisk(r, rowOpener(e)),
+        rowLabel: (r) => t('dom.risks.rowLabel', { code: r.code, title: L(r, 'title', 'aiRisks') }),
+        initialSort: { key: 'score', dir: 'desc' },
+        columns: [
+          { key: 'title', label: t('dom.risks.risk'), priority: 'high', sortValue: (r) => L(r, 'title', 'aiRisks'), render: (r) => { const ev = r.evidence ? L(r, 'evidence', 'aiRisks') : null; return h('div', { class: 'cell-stack' }, codeSpan(r.code, 'cell-code'), h('span', { class: 'cell-title' }, ...withCodes(L(r, 'title', 'aiRisks'))), h('span', { class: 'cell-sub row' }, h('span', {}, siteName(data.state, r.projectId)), ev && ev.ref ? h('span', { 'aria-hidden': 'true' }, '·') : null, ev && ev.ref ? h('span', { class: 'mono', dir: 'ltr' }, digitsIn(ev.ref)) : null)); } },
+          { key: 'score', label: t('dom.risks.score'), priority: 'high', sortValue: (r) => num(r.score), render: (r) => scoreCell(r.score, r) },
+          { key: 'type', label: t('dom.risks.type'), priority: 'medium', sortValue: (r) => label('aiType', r.type), render: (r) => typeChip(r.type) },
+          { key: 'owner', label: t('dom.risks.owner'), priority: 'low', sortValue: (r) => term(r.owner) || '', render: (r) => (r.owner ? h('span', {}, term(r.owner)) : h('span', { class: 't-helper' }, t('dom.risks.unassigned'))) },
+          { key: 'status', label: t('dom.risks.status'), priority: 'medium', sortValue: (r) => label('aiRiskStatus', r.status), render: (r) => enumBadge('aiRiskStatus', r.status, RISK_STATUS_TONE) },
+        ],
+        rows,
+      }, (r) => `${r.score}|${r.status}|${r.owner}|${r.updatedAt}`);
       return card({
-        code: 'CST-07', title: 'انحراف بنود التكلفة', subtitle: 'المتوقع مقابل الميزانية لكل بند WBS — الأعلى انحرافاً أولاً',
-        actions: [toneBadge(`${fmt.num(over)} بنود متجاوزة`, over ? 'warning' : 'good')],
+        code: 'CST-08', title: t('dom.risks.title'),
+        subtitle: t('dom.risks.sub', { count: tn('dom.openRisks', rows.length), red: tn('dom.redRisks', red) }),
+        actions: [button(t('dom.risks.viewAll'), { variant: 'ghost', size: 'sm', icon: 'shield-alert', onClick: () => router.navigate('airisks', { domain: CATEGORY }) })],
         body: table.el,
       });
     }
 
     function buildKriCard(data) {
-      const kris = arr(data.pipeline && data.pipeline.kris);
-      const table = dataTable({
-        dense: true, pageSize: 0, emptyText: 'لا تتوفر مصفوفة مؤشرات المخاطر لهذا الخط', caption: 'مصفوفة مؤشرات المخاطر الرئيسية — توقع التكلفة',
-        columns: [
-          { key: 'indicator', label: 'المؤشر', sortable: false, render: (r) => h('span', { class: 'semibold' }, r.indicator || '—') },
-          { key: 'technique', label: 'التقنية', sortable: false, render: (r) => r.technique || '—' },
-          { key: 'inputs', label: 'المدخلات', sortable: false, render: (r) => (Array.isArray(r.inputs) ? r.inputs.join(' · ') : (r.inputs || '—')) },
-          { key: 'mitigation', label: 'المعالجة', sortable: false, render: (r) => r.mitigation || '—' },
-        ],
-        rows: kris.map((k, i) => ({ id: `kri-${i}`, ...k })),
+      const p = data.pipeline;
+      const kris = p && Array.isArray(p.kris) ? p.kris : [];
+      const asText = (v) => digitsIn(Array.isArray(v) ? v.filter(Boolean).join(' · ') : String(v ?? '—'));
+      const cols = [t('dom.kri.indicator'), t('dom.kri.technique'), t('dom.kri.inputs'), t('dom.kri.mitigation')];
+      const bodyId = 'cst-kri-body';
+      const wrap = h('div', { class: 'kri-wrap table-wrap', id: bodyId, hidden: !kriOpen },
+        kris.length
+          ? h('table', { class: 'kri-table table is-dense' },
+            h('caption', { class: 'sr-only' }, t('dom.kri.caption')),
+            h('thead', {}, h('tr', {}, ...cols.map((c) => h('th', { scope: 'col' }, c)))),
+            h('tbody', {}, ...kris.map((k) => h('tr', {},
+              h('td', { 'data-label': cols[0] }, asText(k.indicator)), h('td', { 'data-label': cols[1] }, asText(k.technique)),
+              h('td', { 'data-label': cols[2] }, asText(k.inputs)), h('td', { 'data-label': cols[3] }, asText(k.mitigation))))))
+          : emptyState({ title: t('dom.kri.emptyTitle'), text: t('dom.kri.emptyText') }));
+      const toggle = button(kriOpen ? t('dom.kri.hide') : t('dom.kri.show'), { variant: 'ghost', size: 'sm', icon: h('span', { class: 'chev' }, svgIcon('chevron-down', 15)), attrs: { 'aria-expanded': kriOpen ? 'true' : 'false', 'aria-controls': bodyId } });
+      toggle.addEventListener('click', () => {
+        kriOpen = !kriOpen;
+        wrap.hidden = !kriOpen;
+        toggle.setAttribute('aria-expanded', kriOpen ? 'true' : 'false');
+        const lbl = toggle.querySelector('.btn-label'); if (lbl) lbl.textContent = kriOpen ? t('dom.kri.hide') : t('dom.kri.show');
       });
-      table.table.classList.add('kri-table');
-      return card({
-        code: 'CST-08', title: 'مصفوفة مؤشرات المخاطر (KRI) — التكلفة',
-        subtitle: data.pipeline ? `${data.pipeline.nameAr || data.pipeline.name || ''} · ${data.pipeline.version || ''} — المؤشر، التقنية، المدخلات، وإجراء التخفيف` : 'خط توقع التكلفة',
-        actions: [button('المحرك', { variant: 'ghost', size: 'sm', icon: 'sliders', onClick: () => router.navigate('engine', { pipeline: PIPELINE_ID }) })],
-        body: table.el,
+      const pst = statusApi && typeof statusApi.pipeline === 'function' ? safe(() => statusApi.pipeline(data.state, p), 'demo') : 'demo';
+      const el = card({
+        code: 'CST-09', title: t('dom.kri.title'),
+        subtitle: p ? t('dom.kri.sub', { engine: L(p, 'nameAr', 'pipelines') || p.name, version: p.version || '', count: tn('dom.kri.count', kris.length) }) : label('pipeline', PIPELINE_ID),
+        actions: [statusBadge(pst, { size: 'sm', title: t('dom.kri.illustrative') }), toggle, button(t('dom.kri.engine'), { variant: 'ghost', size: 'sm', icon: 'sliders', attrs: { 'aria-label': t('dom.kri.engineAria') }, onClick: () => router.navigate('engine', { pipeline: PIPELINE_ID }) })],
+        body: wrap,
       });
-    }
-
-    function buildAiRisksCard(data) {
-      const rows = data.aiRisks;
-      const red = rows.filter((r) => ratingOf(num(r.score)) === 'red').length;
-      const table = dataTable({
-        dense: true, pageSize: 6, stickyFirst: true, emptyText: 'لا توجد مخاطر تكلفة مفتوحة في هذا النطاق', caption: 'مخاطر التكلفة المكتشفة بالذكاء الاصطناعي',
-        onRowClick: (r) => router.navigate('airisks', { risk: r.id }),
-        columns: [
-          { key: 'code', label: 'الرمز', priority: 'high', render: (r) => codeSpan(r.code) },
-          { key: 'title', label: 'المخاطرة', priority: 'high', render: (r) => h('span', { class: 'stack wrap-2', style: { gap: '1px' } }, h('span', { title: r.title || '' }, ...withCodes(r.title || '—')), h('span', { class: 'text-xs muted' }, projectCode(data.state, r.projectId))) },
-          { key: 'type', label: 'النوع', priority: 'medium', render: (r) => typeChip(r.type) },
-          { key: 'score', label: 'الدرجة', align: 'end', priority: 'high', render: (r) => h('span', { class: 'row gap-2', style: { justifyContent: 'flex-end' } }, mono(fmt.num(num(r.score))), ratingBadge(r.score)), sortValue: (r) => num(r.score) },
-          { key: 'owner', label: 'المالك', priority: 'low', render: (r) => { const o = String(r.owner || '—'); const short = o.split(/\s[—-]\s/)[0]; return h('span', { class: 'nowrap', title: o }, short); } },
-          { key: 'status', label: 'الحالة', priority: 'medium', render: (r) => badge(r.status || '—', 'neutral') },
-        ],
-        rows, initialSort: { key: 'score', dir: 'desc' },
-      });
-      return card({
-        code: 'CST-09', title: 'مخاطر التكلفة المفتوحة', subtitle: `${fmt.num(rows.length)} مخاطرة مفتوحة مكتشفة بواسطة خط توقع التكلفة — انقر على أي صف للدليل والتفسير والتوصية`,
-        actions: [toneBadge(`${fmt.num(red)} أحمر`, red ? 'critical' : 'good')],
-        body: table.el,
-      });
+      el.classList.add('kri-card');
+      return el;
     }
 
     /* ───────────────────────── build ───────────────────────── */
 
-    function build() {
-      raf = 0;
+    function compose() {
       const data = collect();
       const frag = document.createDocumentFragment();
+      if (!data.plat) {
+        frag.append(buildHead({ ...data, connectors: [], fresh: null }), emptyState({ icon: svgIcon('chart', 32), title: t('dom.states.noPlatformTitle'), text: t('dom.states.noPlatformText') }));
+        return frag;
+      }
       frag.append(
         buildHead(data),
-        buildScopeBar(data),
+        ...[buildScopeBar(data)].filter(Boolean),
+        buildKpis(data),
         buildEvmCard(data),
-        buildTrendCard(data),
-        buildCommodityCard(data),
+        h('div', { class: 'dom-row is-3-2' }, buildTrendCard(data), buildCommodityCard(data)),
         buildCurrencyCard(data),
-        h('div', { class: 'grid-12' }, buildChangeOrdersCard(data), buildLabourCard(data)),
+        h('div', { class: 'dom-row is-3-2' }, buildChangeOrdersCard(data), buildLabourCard(data)),
         buildCostLinesCard(data),
-        buildAiRisksCard(data),
+        buildRisksCard(data),
         buildKriCard(data),
       );
+      return frag;
+    }
+
+    function focusPath() {
+      const a = document.activeElement;
+      if (!a || a === root || !root.contains(a)) return null;
+      const path = []; let n = a;
+      while (n && n !== root) { const parent = n.parentElement; if (!parent) return null; path.unshift(Array.prototype.indexOf.call(parent.children, n)); n = parent; }
+      return path;
+    }
+    function restoreFocus(path) {
+      let n = root;
+      for (const i of path) { n = n && n.children ? n.children[i] : null; if (!n) return; }
+      if (n && typeof n.focus === 'function') { try { n.focus({ preventScroll: true }); } catch { /* ignore */ } }
+    }
+
+    function build() {
+      raf = 0;
+      const keep = built ? focusPath() : null;
+      const scroller = root.closest('.main') || document.scrollingElement;
+      const top = scroller ? scroller.scrollTop : 0;
+      for (const [key, tbl] of tables) tableStates.set(key, safe(() => tbl.getState(), null));
+      tables.clear();
+      pendingFlash = [];
+      let frag;
+      try { frag = compose(); } catch (err) {
+        console.warn('[cost] render failed', err);
+        frag = errorState({ title: t('dom.states.errorTitle'), text: t('dom.states.errorText'), retry: () => schedule() });
+      }
       root.replaceChildren(frag);
+      resetPages = false;
+      if (!built) {
+        built = true;
+        if (motion && typeof motion.enter === 'function') motion.enter(Array.from(root.children), { y: 8 });
+        return;
+      }
+      if (scroller && scroller.scrollTop !== top) scroller.scrollTop = top;
+      if (keep) restoreFocus(keep);
+      if (motion && typeof motion.flash === 'function') pendingFlash.forEach((el) => motion.flash(el));
+      pendingFlash = [];
     }
 
-    function schedule() {
-      if (raf) return;
-      raf = requestAnimationFrame(build);
-    }
+    function schedule() { if (!raf) raf = requestAnimationFrame(build); }
 
-    // Only the entities this view displays rebuild it (own data, AI risks, alerts, site names, full reset); pipeline / validation / connector telemetry and tasks never change it (C-4).
-    const RELEVANT = /^(\*|sites|platform\.(projects|commodities|currencies|changeOrders|labourIndex|costLines|aiRisks|alerts))/;
+    const RELEVANT = /^(\*|sites|platform$|platform\.(projects|commodities|currencies|changeOrders|labourIndex|costLines|aiRisks|alerts))/;
     const unsubs = [
       bus.on('store:change', (payload) => { const path = payload && payload.path ? String(payload.path) : '*'; if (RELEVANT.test(path)) schedule(); }),
-      bus.on('filters:change', (payload) => { const key = payload && payload.key; if (!key || key === 'siteId' || key === 'range' || key === 'search') schedule(); }),
-      bus.on('settings:change', () => schedule()),
+      bus.on('filters:change', (payload) => { const key = payload && payload.key; if (!key || key === 'siteId' || key === 'range' || key === 'search') { resetPages = true; schedule(); } }),
+      bus.on('settings:change', (payload) => {
+        const s = (payload && payload.settings) || store.state.settings || {};
+        const numerals = s.numerals || 'latn';
+        if (numerals !== lastNumerals) { lastNumerals = numerals; schedule(); }
+      }),
     ];
 
+    // Deep link: #/cost?project=S2 selects a project while the global filter is "All projects".
+    if (ctx.params && ctx.params.project) localProject = String(ctx.params.project);
     build();
+
+    // Deep link: ?risk=AIR-… (mirrored by the shared risk drawer while it is open) reopens that drawer.
+    if (ctx.params && ctx.params.risk) openRisk({ id: String(ctx.params.risk) });
 
     return () => {
       if (raf) cancelAnimationFrame(raf);

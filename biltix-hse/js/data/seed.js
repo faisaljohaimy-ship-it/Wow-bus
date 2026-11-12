@@ -115,10 +115,10 @@ export const INTEGRATION_STATUS = [
 
 const company = {
   name: 'بلتكس',
-  nameEn: 'Biltix',
+  nameEn: 'BILTIX',
   product: 'بلتكس Risk AI',
-  productEn: 'Biltix Risk AI',
-  hseProduct: 'بلتكس HSE',
+  productEn: 'BILTIX Risk AI',
+  hseProduct: 'بلتكس Risk AI · السلامة والصحة المهنية',
   pillar: 'ركيزة السلامة والصحة المهنية',
   tagline: 'مركز قيادة السلامة والصحة المهنية',
   website: 'https://biltix.sa',
@@ -1606,7 +1606,7 @@ const permits = [
     startsAt: t(0, '06:00'), expiresAt: t(0, '18:00'),
     location: 'ورشة الحديد — محطة القص والقطع بالقرص',
     hazards: ['شرر ولهب مكشوف', 'خزان ديزل على بعد 6 م', 'أبخرة قطع المعادن'],
-    controls: ['حاجز معدني لصد الشرر حول محطة القص', 'بطانيات لحام على خزان الديزل ومنع التزود بالوقود أثناء العمل', 'طفاية بودرة 9 كجم وطفاية CO₂ في متناول اليد', 'مراقب حريق لمدة 60 دقيقة بعد الانتهاء'],
+    controls: ['حاجز معدني لصد الشرر حول محطة القص', 'بطانيات لحام على خزان الديزل ومنع التزود بالوقود أثناء العمل', 'طفاية بودرة 9 كجم وطفاية CO2 في متناول اليد', 'مراقب حريق لمدة 60 دقيقة بعد الانتهاء'],
     workers: 4, gasTest: { o2: 20.9, lel: 0, h2s: 0, co: 2 },
     createdAt: t(-1, '15:30'),
   },
@@ -1616,7 +1616,7 @@ const permits = [
     startsAt: t(0, '07:30'), expiresAt: t(0, '13:30'),
     location: 'شبكة الصرف — غرفة التفتيش MH-14 (عمق 3.5 م)',
     hazards: ['غاز H2S من الشبكة البلدية', 'نقص الأكسجين', 'غمر مفاجئ بالمياه', 'صعوبة الإنقاذ'],
-    controls: ['تهوية قسرية 20 تغيير/ساعة قبل الدخول وأثناءه', 'قياس غازات مستمر مع إخلاء عند H2S 10 ppm أو O₂ أقل من 19.5%', 'مراقب خارجي دائم وثلاثي إنقاذ بحزام', 'سد الخط البلدي بسدادة هوائية وإشعار الأمانة'],
+    controls: ['تهوية قسرية 20 تغيير/ساعة قبل الدخول وأثناءه', 'قياس غازات مستمر مع إخلاء عند H2S 10 ppm أو O2 أقل من 19.5%', 'مراقب خارجي دائم وثلاثي إنقاذ بحزام', 'سد الخط البلدي بسدادة هوائية وإشعار الأمانة'],
     workers: 3, gasTest: { o2: 20.8, lel: 0, h2s: 1, co: 0 },
     createdAt: t(-1, '12:10'),
   },
@@ -1666,7 +1666,7 @@ const permits = [
     startsAt: t(0, '16:00'), expiresAt: t(1, '02:00'),
     location: 'القبو — خزان المياه الرئيسي (400 م³)',
     hazards: ['نقص الأكسجين', 'أبخرة مذيبات الإيبوكسي', 'فتحة دخول واحدة', 'إنارة منخفضة'],
-    controls: ['تهوية قسرية بسحب من القاع ومراقبة O₂ و LEL مستمرة', 'أقنعة بإمداد هواء وإنارة 24 V مضادة للانفجار', 'مراقب خارجي ونظام إنقاذ بثلاثي', 'اختبار غازات كل 30 دقيقة'],
+    controls: ['تهوية قسرية بسحب من القاع ومراقبة O2 و LEL مستمرة', 'أقنعة بإمداد هواء وإنارة 24 V مضادة للانفجار', 'مراقب خارجي ونظام إنقاذ بثلاثي', 'اختبار غازات كل 30 دقيقة'],
     workers: 3, gasTest: { o2: 20.6, lel: 0, h2s: 0, co: 1 },
     createdAt: t(0, '09:15'),
   },
@@ -1806,7 +1806,7 @@ const permits = [
     startsAt: t(-1, '08:00'), expiresAt: t(-1, '14:00'), closedAt: t(-1, '13:50'),
     location: 'القبو — خزان المياه الرئيسي — تنظيف وتحضير السطح',
     hazards: ['نقص الأكسجين', 'غبار الجلخ', 'فتحة دخول واحدة'],
-    controls: ['تهوية قسرية ومراقبة O₂', 'أقنعة P3', 'مراقب خارجي وثلاثي إنقاذ'],
+    controls: ['تهوية قسرية ومراقبة O2', 'أقنعة P3', 'مراقب خارجي وثلاثي إنقاذ'],
     workers: 3, gasTest: { o2: 20.7, lel: 0, h2s: 0, co: 0 },
     createdAt: t(-2, '15:10'),
   },
@@ -2015,13 +2015,13 @@ for (const inc of incidents) {
 // ------------------------------------------------------------------
 
 const courses = [
-  { id: 'C1',  code: 'HSE-IND-01', name: 'التوعية بالسلامة في الموقع',        validityMonths: 12, mandatory: true,  hours: 4,  provider: 'بلتكس HSE',                         description: 'تعريف إلزامي لكل عامل قبل أول دخول للموقع: قواعد الموقع الذهبية، معدات الوقاية، الإبلاغ عن الحوادث، ومسارات الإخلاء.' },
-  { id: 'C2',  code: 'HSE-WAH-02', name: 'العمل على ارتفاعات',                 validityMonths: 24, mandatory: true,  hours: 8,  provider: 'بلتكس HSE',                         description: 'هرمية الحماية من السقوط، فحص أحزمة الأمان ونقاط التثبيت، العمل على السقالات والمنصات المتحركة، وخطة الإنقاذ.' },
+  { id: 'C1',  code: 'HSE-IND-01', name: 'التوعية بالسلامة في الموقع',        validityMonths: 12, mandatory: true,  hours: 4,  provider: 'بلتكس (تدريب داخلي)',                         description: 'تعريف إلزامي لكل عامل قبل أول دخول للموقع: قواعد الموقع الذهبية، معدات الوقاية، الإبلاغ عن الحوادث، ومسارات الإخلاء.' },
+  { id: 'C2',  code: 'HSE-WAH-02', name: 'العمل على ارتفاعات',                 validityMonths: 24, mandatory: true,  hours: 8,  provider: 'بلتكس (تدريب داخلي)',                         description: 'هرمية الحماية من السقوط، فحص أحزمة الأمان ونقاط التثبيت، العمل على السقالات والمنصات المتحركة، وخطة الإنقاذ.' },
   { id: 'C3',  code: 'HSE-CSE-03', name: 'الأماكن المغلقة',                    validityMonths: 24, mandatory: false, hours: 8,  provider: 'معهد الخليج للسلامة',                description: 'تصنيف الأماكن المغلقة، اختبار الغازات، التهوية، أدوار الداخل والمراقب الخارجي، وتمرين إنقاذ عملي.' },
-  { id: 'C4',  code: 'HSE-PTW-04', name: 'تصاريح العمل',                       validityMonths: 24, mandatory: false, hours: 6,  provider: 'بلتكس HSE',                         description: 'نظام تصاريح العمل في بلتكس: الأنواع السبعة، أدوار الطالب والمعتمد، العزل والتسليم والإغلاق.' },
+  { id: 'C4',  code: 'HSE-PTW-04', name: 'تصاريح العمل',                       validityMonths: 24, mandatory: false, hours: 6,  provider: 'بلتكس (تدريب داخلي)',                         description: 'نظام تصاريح العمل في بلتكس: الأنواع السبعة، أدوار الطالب والمعتمد، العزل والتسليم والإغلاق.' },
   { id: 'C5',  code: 'HSE-FAD-05', name: 'الإسعافات الأولية',                  validityMonths: 36, mandatory: false, hours: 16, provider: 'هيئة الهلال الأحمر السعودي',          description: 'الإنعاش القلبي الرئوي واستخدام جهاز الصدمات، التعامل مع النزيف والكسور وضربة الشمس حتى وصول الإسعاف.' },
   { id: 'C6',  code: 'HSE-FIR-06', name: 'مكافحة الحريق',                      validityMonths: 24, mandatory: true,  hours: 4,  provider: 'معهد الخليج للسلامة',                description: 'مثلث الاحتراق، أنواع الطفايات واستخدامها العملي، مراقب الحريق في الأعمال الساخنة، وإجراءات الإخلاء.' },
-  { id: 'C7',  code: 'HSE-HST-07', name: 'الإجهاد الحراري',                    validityMonths: 12, mandatory: true,  hours: 2,  provider: 'بلتكس HSE',                         description: 'أعراض الإجهاد الحراري ودرجاته، الترطيب والتأقلم، جدول العمل/الراحة وفق WBGT، وحظر العمل تحت الشمس.' },
+  { id: 'C7',  code: 'HSE-HST-07', name: 'الإجهاد الحراري',                    validityMonths: 12, mandatory: true,  hours: 2,  provider: 'بلتكس (تدريب داخلي)',                         description: 'أعراض الإجهاد الحراري ودرجاته، الترطيب والتأقلم، جدول العمل/الراحة وفق WBGT، وحظر العمل تحت الشمس.' },
   { id: 'C8',  code: 'HSE-HEQ-08', name: 'قيادة المعدات الثقيلة',              validityMonths: 36, mandatory: false, hours: 24, provider: 'المؤسسة العامة للتدريب التقني والمهني', description: 'تشغيل الحفارات واللوادر وشاحنات القلاب بأمان، الفحص اليومي، النقاط العمياء، والعمل قرب الخنادق والخدمات المدفونة.' },
   { id: 'C9',  code: 'HSE-RIG-09', name: 'الإشارة والربط (Rigging)',           validityMonths: 24, mandatory: false, hours: 16, provider: 'معهد الخليج للسلامة',                description: 'اختيار أدوات الرفع وفحصها، حساب الأحمال وزوايا الرفع، إشارات اليد والاتصال اللاسلكي، وخطط الرفع الحرج.' },
   { id: 'C10', code: 'HSE-DDR-10', name: 'قيادة دفاعية',                       validityMonths: 24, mandatory: false, hours: 8,  provider: 'الإدارة العامة للمرور — برنامج معتمد',   description: 'القيادة على الطرق الترابية والداخلية، السرعة والمسافة الآمنة، الإرهاق، والقيادة قرب المشاة والمعدات.' },
@@ -2270,7 +2270,7 @@ const legalRegister = [
     authority: 'وزارة الموارد البشرية والتنمية الاجتماعية',
     status: 'ممتثل', lastReview: d(-41), nextReview: d(139), owner: 'م. سلطان الرشيدي',
     requirements: ['إحاطة العامل بمخاطر مهنته ووسائل الوقاية (المادة 123)', 'اتخاذ الاحتياطات اللازمة لحماية العمال (المادة 122)', 'توفير الإسعافات الأولية والرعاية الطبية', 'الإبلاغ عن إصابات العمل'],
-    evidence: 'برنامج التعريف بالسلامة، سجلات التدريب، عيادات المواقع، سجل الإصابات في Biltix HSE.',
+    evidence: 'برنامج التعريف بالسلامة، سجلات التدريب، عيادات المواقع، سجل الإصابات في ركيزة السلامة بمنصة بلتكس Risk AI.',
     gap: null,
   },
   {
@@ -2300,7 +2300,7 @@ const legalRegister = [
     authority: 'المؤسسة العامة للتأمينات الاجتماعية (GOSI)',
     status: 'ممتثل', lastReview: d(-33), nextReview: d(147), owner: 'م. سارة القحطاني',
     requirements: ['الإبلاغ عن إصابة العمل خلال 3 أيام من وقوعها', 'توثيق أيام الغياب والعلاج', 'تسجيل جميع العمال في الفرع المهني'],
-    evidence: 'بلاغا الإصابتين INC-2026-018 و INC-2026-009 مرسلان خلال المدة النظامية عبر تكامل GOSI.',
+    evidence: 'بلاغا الإصابتين INC-2026-018 و INC-2026-009 قُدِّما إلى GOSI خلال المدة النظامية (مسجّلان في إجراءات الحادثين؛ تكامل GOSI غير متصل في هذا الإصدار).',
     gap: null,
   },
   {
@@ -2391,7 +2391,7 @@ const integrations = [
     id: 'cctv-ai', name: 'الكاميرات الذكية — كشف معدات الوقاية', vendor: 'Biltix Vision', category: 'sensors', icon: 'camera',
     status: 'degraded', connectionType: null, lastSync: t(0, '12:31'), latencyMs: 2400, eventsPerHour: 95, uptimePct: 96.2,
     eventsHistory: [140, 138, 145, 132, 128, 121, 110, 104, 98, 102, 97, 95],
-    description: 'تحليل بث 48 كاميرا لرصد العمل بدون خوذة أو سترة أو حزام أمان والاقتراب من المناطق المحظورة. تدهور الأداء: تأخر معالجة الإطارات في NEOM-03 بسبب ضعف الاتصال.',
+    description: 'تحليل بث 48 كاميرا لرصد العمل بدون خوذة أو سترة أو حزام أمان والاقتراب من المناطق المحظورة. في السيناريو التجريبي: أداء متدهور وتأخر معالجة الإطارات في NEOM-03 بسبب ضعف الاتصال.',
     configFields: [
       { key: 'streamUrl', label: 'عنوان خادم التحليل', type: 'url', placeholder: 'https://vision.biltix.sa' },
       { key: 'apiKey', label: 'مفتاح API', type: 'password', placeholder: '' },
@@ -2424,7 +2424,7 @@ const integrations = [
     id: 'weather-ncm', name: 'المركز الوطني للأرصاد', vendor: 'NCM', category: 'external', icon: 'weather',
     status: 'degraded', connectionType: 'json', lastSync: t(0, '11:52'), latencyMs: 1850, eventsPerHour: 12, uptimePct: 97.4,
     eventsHistory: [12, 12, 12, 12, 11, 12, 12, 9, 7, 12, 12, 12],
-    description: 'إنذارات الرياح والأمطار والغبار ودرجات الحرارة للمواقع الستة؛ تغذي قواعد إيقاف الرفع وجداول الإجهاد الحراري. تدهور: انتهاء مهلة الطلبات منذ 48 دقيقة.',
+    description: 'إنذارات الرياح والأمطار والغبار ودرجات الحرارة للمواقع الستة؛ تغذي قواعد إيقاف الرفع وجداول الإجهاد الحراري. في السيناريو التجريبي: أداء متدهور وانتهاء مهلة الطلبات منذ 48 دقيقة.',
     configFields: [
       { key: 'apiUrl', label: 'عنوان API', type: 'url', placeholder: 'https://api.ncm.gov.sa/v1' },
       { key: 'apiKey', label: 'مفتاح API', type: 'password', placeholder: '' },
@@ -2558,7 +2558,7 @@ const integrations = [
     id: 'powerbi', name: 'Power BI', vendor: 'Microsoft', category: 'data', icon: 'chart',
     status: 'disconnected', connectionType: null, lastSync: t(0, '11:47'), latencyMs: null, eventsPerHour: 0, uptimePct: 91.0,
     eventsHistory: [6, 6, 6, 6, 6, 6, 6, 6, 0, 0, 0, 0],
-    description: 'دفع المؤشرات الساعية إلى مجموعة بيانات Power BI للتقارير التنفيذية. غير متصل: انتهت صلاحية سر التطبيق في Azure AD منذ 53 دقيقة.',
+    description: 'دفع المؤشرات الساعية إلى مجموعة بيانات Power BI للتقارير التنفيذية. في السيناريو التجريبي: غير متصل لانتهاء صلاحية سر التطبيق في Azure AD منذ 53 دقيقة.',
     configFields: [
       { key: 'workspaceId', label: 'معرّف مساحة العمل', type: 'text', placeholder: '' },
       { key: 'datasetId', label: 'معرّف مجموعة البيانات', type: 'text', placeholder: '' },
@@ -2619,7 +2619,7 @@ const feedTemplates = [
   { type: 'permit', tone: 'accent',  sourceId: 'biltix-pm', title: 'جولة تحقق ميدانية على التصريح {permit}', detail: '{permitType} — {permitLocation}؛ الضوابط مطبقة وعدد العاملين {workersCount}' },
   { type: 'permit', tone: 'accent',  sourceId: 'access-control', title: 'تحديث قائمة العاملين على التصريح {permit}', detail: '{workersCount} عاملاً مسجلون عبر بوابة الدخول — {permitLocation}' },
   { type: 'permit', tone: 'warning', sourceId: 'biltix-pm', title: 'ملاحظة على التصريح {permit}: حاجز المنطقة المحظورة غير مكتمل', detail: '{permitLocation} — تصحيح فوري قبل استئناف العمل' },
-  { type: 'permit', tone: 'accent',  sourceId: 'iot-gateway', title: 'اختبار غازات دوري: O₂ {o2}%، H2S {h2s} ppm، CO {co} ppm', detail: 'ضمن الحدود المسموحة — {zone}، {site}' },
+  { type: 'permit', tone: 'accent',  sourceId: 'iot-gateway', title: 'اختبار غازات دوري: O2 {o2}%، H2S {h2s} ppm، CO {co} ppm', detail: 'ضمن الحدود المسموحة — {zone}، {site}' },
   { type: 'permit', tone: 'accent',  sourceId: 'biltix-pm', title: 'طلب تصريح جديد بانتظار الاعتماد — {site}', detail: 'المعتمد المقترح: {approver} — {zone}' },
   { type: 'permit', tone: 'good',    sourceId: 'biltix-pm', title: 'إغلاق تصريح مكتمل وتسليم المنطقة — {zone}', detail: 'توقيع الطالب {requester} والمعتمد {approver} — {site}' },
   // --- incident ---
@@ -2638,17 +2638,17 @@ const feedTemplates = [
   { type: 'inspection', tone: 'warning', sourceId: 'biltix-pm',  title: 'تذكير: {inspectionType} مستحق خلال {days} يوماً — {site}', detail: 'المفتش {inspector}؛ تجهيز سجلات المعدات وبطاقات الفحص' },
   { type: 'inspection', tone: 'accent',  sourceId: 'biltix-pm',  title: 'بدء {inspectionType} في {zone}', detail: 'المفتش {inspector}؛ قائمة تحقق من {checklist} بنداً — {site}' },
   // --- training ---
-  { type: 'training', tone: 'accent',  sourceId: 'hrms', title: 'اكتمال دورة «{course}» لـ {n2} عاملاً — {site}', detail: 'تحديث مصفوفة التدريب عبر نظام الموارد البشرية' },
-  { type: 'training', tone: 'warning', sourceId: 'hrms', title: 'شهادات تنتهي خلال {days} يوماً — {site}', detail: 'إشعار المشرفين بجدولة التجديد؛ العامل {worker} ضمن القائمة' },
-  { type: 'training', tone: 'good',    sourceId: 'hrms', title: 'مزامنة سجل التدريب من نظام الموارد البشرية', detail: '{n2} شهادة محدثة — {site}' },
+  { type: 'training', tone: 'accent',  sourceId: 'hrms', title: 'اكتمال دورة «{course}» لـ {n2} عاملاً — {site}', detail: 'تحديث محاكى لمصفوفة التدريب من سيناريو نظام الموارد البشرية' },
+  { type: 'training', tone: 'warning', sourceId: 'hrms', title: 'شهادات تنتهي خلال {days} يوماً — {site}', detail: 'يُوصى بإبلاغ المشرفين لجدولة التجديد؛ العامل {worker} ضمن القائمة' },
+  { type: 'training', tone: 'good',    sourceId: 'hrms', title: 'محاكاة: تحديث سجل التدريب من سيناريو نظام الموارد البشرية', detail: '{n2} شهادة محدثة — {site}' },
   { type: 'training', tone: 'warning', sourceId: 'access-control', title: 'منع دخول عامل بشهادة إلزامية منتهية — {zone}', detail: '{site}؛ إحالة إلى التدريب' },
   // --- integration ---
-  { type: 'integration', tone: 'good',    sourceId: 'biltix-pm', title: 'فحص صحة التكامل {integration}: ناجح', detail: 'زمن الاستجابة {latency} مللي ثانية' },
-  { type: 'integration', tone: 'warning', sourceId: 'biltix-pm', title: 'تباطؤ مؤقت في التكامل {integration}', detail: 'زمن الاستجابة {latencyHigh} مللي ثانية — إعادة المحاولة تلقائياً' },
-  { type: 'integration', tone: 'accent',  sourceId: 'biltix-pm', title: 'مزامنة مكتملة مع {integration}', detail: '{n2} سجلاً محدثاً' },
-  { type: 'integration', tone: 'accent',  sourceId: 'biltix-pm', title: 'تجديد رمز الوصول للتكامل {integration}', detail: 'المصادقة سارية لمدة 24 ساعة' },
+  { type: 'integration', tone: 'good',    sourceId: 'biltix-pm', title: 'محاكاة: فحص صحة التكامل {integration}', detail: 'زمن استجابة افتراضي {latency} مللي ثانية — قيمة توضيحية' },
+  { type: 'integration', tone: 'warning', sourceId: 'biltix-pm', title: 'محاكاة: تباطؤ مؤقت في التكامل {integration}', detail: 'زمن استجابة افتراضي {latencyHigh} مللي ثانية — قيمة توضيحية' },
+  { type: 'integration', tone: 'accent',  sourceId: 'biltix-pm', title: 'محاكاة: مزامنة مع {integration}', detail: '{n2} سجلاً افتراضياً — حدث تجريبي' },
+  { type: 'integration', tone: 'accent',  sourceId: 'biltix-pm', title: 'محاكاة: تجديد رمز الوصول للتكامل {integration}', detail: 'حدث تجريبي — صلاحية افتراضية 24 ساعة؛ لا يوجد اتصال فعلي' },
   // --- ppe ---
-  { type: 'ppe', tone: 'warning', sourceId: 'cctv-ai', weight: 2, title: 'كاميرا ذكية: رصد عامل بدون خوذة — {zone}', detail: '{site}؛ إشعار المشرف المباشر' },
+  { type: 'ppe', tone: 'warning', sourceId: 'cctv-ai', weight: 2, title: 'كاميرا ذكية: رصد عامل بدون خوذة — {zone}', detail: '{site}؛ محاكاة: يُوصى بإبلاغ المشرف المباشر' },
   { type: 'ppe', tone: 'warning', sourceId: 'cctv-ai', title: 'كاميرا ذكية: رصد عامل بدون سترة عاكسة قرب الطريق الداخلي — {zone}', detail: '{site}' },
   { type: 'ppe', tone: 'serious', sourceId: 'cctv-ai', title: 'كاميرا ذكية: عامل على ارتفاع دون حزام أمان مربوط — {zone}', detail: '{site}؛ إيقاف العمل فوراً' },
   { type: 'ppe', tone: 'good',    sourceId: 'cctv-ai', weight: 2, title: 'كاميرا ذكية: التزام كامل بمعدات الوقاية خلال آخر ساعة — {zone}', detail: 'فحص {n2} عاملاً دون مخالفات — {site}' },
@@ -2660,7 +2660,7 @@ const feedTemplates = [
   // --- alert ---
   { type: 'alert', tone: 'serious', sourceId: 'wearables',      title: 'جهاز قابل للارتداء: تنبيه إجهاد حراري للعامل {worker}', detail: 'توجيه فوري إلى منطقة الراحة المكيفة — {zone}' },
   { type: 'alert', tone: 'serious', sourceId: 'access-control', title: 'عدد الأشخاص في {zone} تجاوز الحد المسموح ({n2})', detail: '{site} — إيقاف الدخول مؤقتاً' },
-  { type: 'alert', tone: 'warning', sourceId: 'access-control', title: 'محاولة دخول بشارة منتهية الصلاحية — {zone}', detail: 'رُفض الدخول وتم إشعار المشرف — {site}' },
+  { type: 'alert', tone: 'warning', sourceId: 'access-control', title: 'محاولة دخول بشارة منتهية الصلاحية — {zone}', detail: 'محاكاة: رُفض الدخول؛ يُوصى بإبلاغ المشرف — {site}' },
   { type: 'alert', tone: 'accent',  sourceId: 'iot-gateway',    title: 'اختبار دوري لنظام إنذار الحريق — {zone}', detail: 'استجابة غرفة التحكم خلال {n} ثوانٍ — {site}' },
 ];
 
@@ -2668,8 +2668,15 @@ const feedTemplates = [
 // 14. كائن التهيئة الافتراضي
 // ------------------------------------------------------------------
 
+/*
+ * Honest status (CONTRACT §5): the integration statuses, sync times, latencies and event rates above are a
+ * demo scenario, not measurements. `simulated: true` lets status.js classify them as Demo; an integration
+ * still 'configurable' was never set up (status.js → Not connected).
+ */
+for (const g of integrations) g.simulated = g.status !== 'configurable';
+
 const seed = {
-  meta: { version: 1, anchorDate: ANCHOR_DATE, anchorNow: ANCHOR_NOW, timezone: 'Asia/Riyadh' },
+  meta: { version: 1, anchorDate: ANCHOR_DATE, anchorNow: ANCHOR_NOW, timezone: 'Asia/Riyadh', simulated: { integrations: true, sensors: true, feed: true } },
   company,
   sites,
   risks,

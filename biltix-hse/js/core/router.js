@@ -1,5 +1,5 @@
 /**
- * Biltix Risk AI — hash router & view lifecycle (js/core/router.js)
+ * BILTIX Risk AI — hash router & view lifecycle (js/core/router.js)
  *
  * Contract (ARCHITECTURE.md §4):
  *   router.register(view)            view = {id, title, icon, code:'SEC-01', render(container, ctx) => cleanupFn|void}
@@ -9,12 +9,24 @@
  *   router.navigate(id, params={})   sets location.hash = '#/id?k=v'
  *   router.current()                 → {id, params}
  *   router.preload(id)               → Promise (import a lazy view without mounting it)
+ *   router.refresh({ preserveScroll = true } = {})   re-mount the current view in place
  *
  * Hash format: '#/overview', '#/risks?id=R12&tier=حرج'. Unknown ids fall back to the
  * default view (URL replaced, no history entry). On every navigation the router emits
  * `ui:route-leave` {from, to, params} FIRST (menus / drawers / sheets close on it), then runs
  * the previous view's cleanup, empties the container, awaits the module when the view is lazy,
- * renders, emits `route:change` and sets `document.title` to '<view title> — بلتكس Risk AI'.
+ * renders, emits `route:change` and sets `document.title` to '<view title> — <app name>' in the
+ * active language (titles from the 'core' dictionary: core.nav.<id>.page|title, core.app.name).
+ *
+ * v3 additions:
+ *   • Language: on bus 'lang:change' the current view is re-mounted with the same params and the
+ *     same scroll position (no focus move, no page transition).
+ *   • Scroll restoration per history entry: every entry gets a key in history.state; scroll
+ *     positions (the <main> scroller and the window — whichever scrolls at this width) are kept in
+ *     memory per key and persisted in history.state (debounced) so back / forward / reload return
+ *     to where the reader was. New navigations start at the top. history.scrollRestoration='manual'.
+ *   • Page transitions: after a user navigation the router calls ctx.motion.page(root) when the
+ *     shell provides js/ui/motion.js (guarded; never on first paint, refresh or language change).
  *
  * Focus: the FIRST paint focuses <main> itself (tabindex -1, preventScroll) so the skip link
  * and page order stay intact and no ring shows on load; after a USER-initiated navigation
@@ -27,9 +39,37 @@
  */
 
 import { bus } from './bus.js';
+import { i18n } from './i18n.js';
 
-const APP_NAME = 'بلتكس Risk AI';
 const LOADING_DELAY_MS = 120;
+const SCROLL_SAVE_MS = 180;
+const RESTORE_WINDOW_MS = 1200;
+
+const tr = (key, fallback, params) => {
+  try {
+    const value = i18n.t(key, params);
+    return value && value !== key ? value : fallback;
+  } catch {
+    return fallback;
+  }
+};
+const appName = () => tr('core.app.name', 'BILTIX Risk AI');
+
+/** Localised page title: core.nav.<id>.page → core.nav.<id>.title → the module's own title. */
+function viewTitle(view) {
+  if (!view) return '';
+  const id = view.id;
+  try {
+    if (id && i18n.has(`core.nav.${id}.page`)) return i18n.t(`core.nav.${id}.page`);
+    if (id && i18n.has(`core.nav.${id}.title`)) return i18n.t(`core.nav.${id}.title`);
+  } catch { /* fall through */ }
+  return view.title || '';
+}
+
+function documentTitle(view) {
+  const title = viewTitle(view);
+  return title ? `${title} — ${appName()}` : appName();
+}
 
 /** @type {Map<string, object>} */
 const registry = new Map();
@@ -48,6 +88,35 @@ let onHashChange = null;
 let navToken = 0;
 let firstMount = true;
 let userNavigation = false;
+let offLang = null;
+
+/* scroll restoration state */
+const scrollByKey = new Map();
+let entryKey = null;
+let keySeq = 0;
+let scrollSaveTimer = 0;
+let scrollListenersOn = false;
+let restoreCancel = null;
+
+/* ────────────────────────────── late-bound context members ────────────────────────────── */
+
+/**
+ * A stand-in for a module that loads after the first view (js/app.js: the live engines). Views read their context
+ * once, when they mount (`const { live } = ctx`), so a view mounted first would keep a null for its whole life.
+ * The stand-in forwards every member to `get()` once that returns the real object; until then each member reads as
+ * undefined, which views already treat as "not available" (`live && typeof live.getPings === 'function'`).
+ * Functions come back bound to the real object.
+ */
+export function lateBound(get) {
+  return new Proxy({}, {
+    get(_target, key) {
+      const real = typeof get === 'function' ? get() : null;
+      if (!real) return undefined;
+      const value = real[key];
+      return typeof value === 'function' ? value.bind(real) : value;
+    },
+  });
+}
 
 /* ────────────────────────────── hash helpers ────────────────────────────── */
 
@@ -104,15 +173,107 @@ function resolveContainer() {
   return container;
 }
 
-function resetScroll(el) {
+function windowScrollTo(top) {
   try {
-    el.scrollTop = 0;
-  } catch { /* ignore */ }
-  try {
-    window.scrollTo({ top: 0, behavior: 'instant' });
+    window.scrollTo({ top, behavior: 'instant' });
   } catch {
-    try { window.scrollTo(0, 0); } catch { /* ignore */ }
+    try { window.scrollTo(0, top); } catch { /* ignore */ }
   }
+}
+
+function resetScroll(el) {
+  try { el.scrollTop = 0; } catch { /* ignore */ }
+  windowScrollTo(0);
+}
+
+/** Current reading position: the <main> scroller (wide layouts) and the window (phones). */
+function readScroll() {
+  const root = resolveContainer();
+  return {
+    main: root ? root.scrollTop || 0 : 0,
+    win: typeof window !== 'undefined' ? window.scrollY || window.pageYOffset || 0 : 0,
+  };
+}
+
+function historyState() {
+  try { return history.state && typeof history.state === 'object' ? history.state : null; } catch { return null; }
+}
+
+/** Give the current history entry a key (kept across reloads in history.state). */
+function ensureEntryKey() {
+  const state = historyState();
+  if (state && typeof state.bxKey === 'string') return state.bxKey;
+  keySeq += 1;
+  const key = `bx-${Date.now().toString(36)}-${keySeq}`;
+  try { history.replaceState({ ...(state || {}), bxKey: key }, ''); } catch { /* sandboxed */ }
+  return key;
+}
+
+function persistScroll(hashAtSchedule) {
+  scrollSaveTimer = 0;
+  if (typeof location === 'undefined' || location.hash !== hashAtSchedule || !entryKey) return;
+  const pos = scrollByKey.get(entryKey);
+  if (!pos) return;
+  const state = historyState();
+  if (!state || state.bxKey !== entryKey) return;
+  try { history.replaceState({ ...state, bxScroll: pos }, ''); } catch { /* rate-limited or sandboxed */ }
+}
+
+function onScroll() {
+  if (!entryKey || !current.id) return;
+  scrollByKey.set(entryKey, readScroll());
+  if (scrollSaveTimer) clearTimeout(scrollSaveTimer);
+  const hash = typeof location !== 'undefined' ? location.hash : '';
+  scrollSaveTimer = setTimeout(() => persistScroll(hash), SCROLL_SAVE_MS);
+}
+
+function attachScrollListeners() {
+  if (scrollListenersOn || typeof window === 'undefined') return;
+  scrollListenersOn = true;
+  window.addEventListener('scroll', onScroll, { passive: true });
+  const root = resolveContainer();
+  if (root) root.addEventListener('scroll', onScroll, { passive: true });
+}
+
+/**
+ * Restore a reading position after render. Lazy content may still be growing, so retry for a
+ * short window until the target is reachable; stop as soon as the reader scrolls themselves.
+ */
+function restoreScroll(root, pos) {
+  if (restoreCancel) restoreCancel();
+  if (!pos) return;
+  const target = { main: Math.max(0, Number(pos.main) || 0), win: Math.max(0, Number(pos.win) || 0) };
+  let stopped = false;
+  const started = Date.now();
+  const stop = () => { stopped = true; cleanupListeners(); };
+  const events = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
+  function cleanupListeners() {
+    events.forEach((ev) => window.removeEventListener(ev, stop, true));
+    if (restoreCancel === stop) restoreCancel = null;
+  }
+  events.forEach((ev) => window.addEventListener(ev, stop, { capture: true, passive: true }));
+  restoreCancel = stop;
+  const apply = () => {
+    if (stopped) return;
+    try { if (target.main) root.scrollTop = target.main; } catch { /* ignore */ }
+    if (target.win) windowScrollTo(target.win);
+    const reachedMain = !target.main || Math.abs(root.scrollTop - target.main) < 2;
+    const reachedWin = !target.win || Math.abs((window.scrollY || 0) - target.win) < 2;
+    if ((reachedMain && reachedWin) || Date.now() - started > RESTORE_WINDOW_MS) { stop(); return; }
+    setTimeout(() => requestAnimationFrame(apply), 60);
+  };
+  requestAnimationFrame(apply);
+}
+
+/** Route transition (opacity + small translate) when js/ui/motion.js is available. */
+function pageTransition(root) {
+  const motion = context && context.motion;
+  if (!motion || typeof motion.page !== 'function') return;
+  try {
+    if (typeof motion.enabled === 'function' && !motion.enabled()) return;
+    const result = motion.page(root);
+    if (result && typeof result.catch === 'function') result.catch(() => {});
+  } catch { /* motion must never break navigation */ }
 }
 
 function safeFocus(el) {
@@ -156,10 +317,10 @@ function renderLoading(root, view) {
   code.className = 'code-tag';
   code.textContent = view.code || '';
   const h1 = doc.createElement('h1');
-  h1.textContent = view.title || '';
+  h1.textContent = viewTitle(view);
   const lead = doc.createElement('p');
   lead.className = 'view-lead';
-  lead.textContent = 'جارٍ تحميل القسم…';
+  lead.textContent = tr('core.router.loading', 'Loading…');
   head.append(code, h1, lead);
   section.append(head);
   root.replaceChildren(section);
@@ -178,10 +339,10 @@ function renderFailure(root, view, error) {
   code.className = 'code-tag';
   code.textContent = view.code || 'SEC-00';
   const h1 = doc.createElement('h1');
-  h1.textContent = view.title || 'القسم';
+  h1.textContent = viewTitle(view) || tr('core.router.section', 'Section');
   const lead = doc.createElement('p');
   lead.className = 'view-lead';
-  lead.textContent = 'تعذر عرض هذا القسم بسبب خطأ غير متوقع. يمكنك إعادة المحاولة أو العودة إلى قمرة القيادة.';
+  lead.textContent = tr('core.router.failedLead', 'This section could not be displayed.');
   head.append(code, h1, lead);
 
   const detail = doc.createElement('pre');
@@ -192,13 +353,13 @@ function renderFailure(root, view, error) {
   actions.className = 'view-error__actions';
   const retry = doc.createElement('button');
   retry.type = 'button';
-  retry.className = 'btn btn--primary';
-  retry.textContent = 'إعادة المحاولة';
+  retry.className = 'btn btn-primary';
+  retry.textContent = tr('core.router.retry', 'Retry');
   retry.addEventListener('click', () => { loads.delete(view.id); router.refresh(); });
   const home = doc.createElement('a');
-  home.className = 'btn btn--ghost';
+  home.className = 'btn btn-ghost';
   home.href = buildHash(defaultId);
-  home.textContent = 'العودة إلى قمرة القيادة';
+  home.textContent = tr('core.router.home', 'Back to the risk cockpit');
   actions.append(retry, home);
 
   section.append(head, detail, actions);
@@ -238,7 +399,7 @@ function resolveView(view) {
           return view;
         }
         const impl = isRenderable(mod) ? mod : pickExport(mod, view.id);
-        if (!impl) throw new Error(`الوحدة "${view.id}" لا تُصدّر عرضاً صالحاً {id, render}`);
+        if (!impl) throw new Error(`view module "${view.id}" does not export a valid view {id, render}`);
         view.render = (root, ctx) => impl.render.call(impl, root, ctx);
         view.module = impl;
         view.loaded = true;
@@ -272,23 +433,34 @@ function runCleanup() {
   }
 }
 
-async function mount(view, params) {
+/**
+ * Mount a view.
+ * @param {object} view
+ * @param {object} params
+ * @param {{ scroll?: {main:number, win:number}|null, transition?: boolean }} [opts]
+ *   scroll: position to restore after render (null = top); transition: run motion.page().
+ */
+async function mount(view, params, { scroll = null, transition = null } = {}) {
   const root = resolveContainer();
   if (!root || !view) return;
   const token = ++navToken;
   const previousId = current.id;
   const focusMode = firstMount ? 'main' : (userNavigation ? 'heading' : 'none');
+  const animate = transition === null ? (!firstMount && userNavigation) : Boolean(transition) && !firstMount;
   firstMount = false;
   userNavigation = false;
+  if (restoreCancel) restoreCancel();
+  // A refresh (language / numerals) replaces the focused node: hand focus to the new heading instead of <body>.
+  const active = typeof document !== 'undefined' ? document.activeElement : null;
+  const focusWasInside = Boolean(active && active !== root && root.contains(active));
 
   bus.emit('ui:route-leave', { from: previousId, to: view.id, params: { ...params } });
   runCleanup();
   root.replaceChildren();
   root.setAttribute('data-view', view.id);
   current = { id: view.id, params: { ...params } };
-  if (typeof document !== 'undefined') {
-    document.title = view.title ? `${view.title} — ${APP_NAME}` : APP_NAME;
-  }
+  entryKey = ensureEntryKey();
+  if (typeof document !== 'undefined') document.title = documentTitle(view);
 
   let resolved = null;
   let loadError = null;
@@ -324,20 +496,33 @@ async function mount(view, params) {
   }
   cleanup = typeof result === 'function' ? result : null;
 
-  if (typeof document !== 'undefined') {
-    const title = (resolved && resolved.title) || view.title;
-    document.title = title ? `${title} — ${APP_NAME}` : APP_NAME;
+  if (typeof document !== 'undefined') document.title = documentTitle(resolved || view);
+  if (scroll && (scroll.main || scroll.win)) {
+    try { root.scrollTop = scroll.main || 0; } catch { /* ignore */ }
+    if (scroll.win) windowScrollTo(scroll.win);
+    scrollByKey.set(entryKey, { main: scroll.main || 0, win: scroll.win || 0 });
+    restoreScroll(root, scroll);
+  } else {
+    resetScroll(root);
+    scrollByKey.set(entryKey, { main: 0, win: 0 });
   }
-  resetScroll(root);
   bus.emit('route:change', { id: view.id, params: { ...params }, view: resolved || view, previousId });
-  applyFocus(root, focusMode);
+  applyFocus(root, focusMode === 'none' && focusWasInside ? 'heading' : focusMode);
+  if (animate) pageTransition(root);
+}
+
+/** Scroll position remembered for the current history entry (back / forward / reload), else null. */
+function rememberedScroll() {
+  const state = historyState();
+  if (!state || typeof state.bxKey !== 'string') return null;
+  return scrollByKey.get(state.bxKey) || (state.bxScroll && typeof state.bxScroll === 'object' ? state.bxScroll : null);
 }
 
 function resolve() {
   if (typeof location === 'undefined') return;
   const { id, params } = parseHash(location.hash);
   if (id && registry.has(id)) {
-    mount(registry.get(id), params);
+    mount(registry.get(id), params, { scroll: rememberedScroll() });
     return;
   }
   const fallbackId = registry.has(defaultId) ? defaultId : order[0];
@@ -406,8 +591,16 @@ export const router = {
     if (opts.ctx) context = { ...context, ...opts.ctx };
     if (!resolveContainer()) return false;
     if (!started && typeof window !== 'undefined') {
-      onHashChange = () => { userNavigation = true; resolve(); };
+      onHashChange = () => {
+        if (scrollSaveTimer) { clearTimeout(scrollSaveTimer); scrollSaveTimer = 0; }
+        userNavigation = true;
+        resolve();
+      };
       window.addEventListener('hashchange', onHashChange);
+      try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; } catch { /* ignore */ }
+      attachScrollListeners();
+      // Language switch: same view, same params, same reading position; no focus move, no transition.
+      offLang = bus.on('lang:change', () => { if (current.id) router.refresh({ preserveScroll: true }); });
       started = true;
     }
     resolve();
@@ -420,6 +613,14 @@ export const router = {
       window.removeEventListener('hashchange', onHashChange);
     }
     onHashChange = null;
+    if (typeof offLang === 'function') offLang();
+    offLang = null;
+    if (scrollListenersOn && typeof window !== 'undefined') {
+      window.removeEventListener('scroll', onScroll);
+      const root = resolveContainer();
+      if (root) root.removeEventListener('scroll', onScroll);
+      scrollListenersOn = false;
+    }
     started = false;
     navToken += 1;
     runCleanup();
@@ -439,14 +640,23 @@ export const router = {
     location.hash = hash;
   },
 
-  /** Re-run the current view's render (after settings/numerals change, retry, etc.). Never moves focus. */
-  refresh() {
+  /**
+   * Re-run the current view's render (language / numerals change, retry …). Never moves focus and
+   * never animates; the reading position is kept unless `preserveScroll` is false.
+   */
+  refresh({ preserveScroll = true } = {}) {
     userNavigation = false;
     if (!current.id || !registry.has(current.id)) {
       resolve();
       return;
     }
-    mount(registry.get(current.id), current.params);
+    const scroll = preserveScroll ? readScroll() : null;
+    mount(registry.get(current.id), current.params, { scroll, transition: false });
+  },
+
+  /** Localised title for a view id (used by the shell for document titles and labels). */
+  title(id) {
+    return viewTitle(registry.get(id) || { id, title: '' });
   },
 
   /** Import a lazy view ahead of time (hover/focus prefetch, idle warm-up). Resolves to the view. */
