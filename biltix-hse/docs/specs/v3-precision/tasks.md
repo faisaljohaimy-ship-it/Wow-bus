@@ -117,10 +117,13 @@ English default and before the other v3.8 additions.
 - [ ] T10.5 Independent check of `e7be8a1` (so far checked by its author, with the reviewers' scripts and its own)
 
 ## Phase 11 — Icon effect (user request, 2026-11-12)
-- [~] T11.1 Icons on every screen melt, vanish into transparency and return as glass, with a wave across the screen
-      (v3.8.3: `js/ui/icon-fx.js`, css "Icon glass", `tests/icon-fx.test.mjs`). First version, built and checked by one
-      author in headless Chromium: frame sheets in both themes, icon contrast at rest ≥ 3.4:1 on seven routes, unit
-      tests, `tools/qa.mjs`. Not done: an independent review, a real phone or GPU measurement (in the software-rendered
-      test browser a wave on the densest page, `#/integrations`, at 4× CPU slowdown ran at about 20 frames a second),
-      Safari and Firefox, a settings control for `data-iconfx`
-- [ ] T11.2 Refined version from the three-design comparison (displacement + lit glass, CSS masks, layered strokes)
+- [x] T11.1 Icons on every screen melt, vanish into transparency and return as glass, as a wave across the screen.
+      v3.8.3 (`744bd23`): first version, `js/ui/icon-fx.js`, checked by its author only.
+- [~] T11.2 Refined version (v3.8.4): the design panel compared three techniques in separate worktrees. Designer A
+      (liquid displacement with lit glass, `js/ui/iconfx.js`, commit `1d65090`) was chosen: its melt reads as liquid, its
+      return as glass, and on the same benchmark its wave cost no more frames than v3.8.3 (integrations at 1x: p50 16.8 ms
+      against 33.3 ms, 67 of 149 frames over 33 ms against 80 of 131). Designer B (pure CSS, `1c8ed8e`) halved the frame
+      rate at 4x throttling and its return reads as blur, so it was not taken. Designer C failed (the model's usage limit)
+      and was not built. Not done: an independent review of v3.8.4, a real phone or GPU, Safari and Firefox, a settings
+      control for `data-iconfx`.
+- [ ] T11.3 Minor findings of the second review (task T10.4) — paused behind T11.2, to be done after it is published.

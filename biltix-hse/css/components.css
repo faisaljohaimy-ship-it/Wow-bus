@@ -3658,99 +3658,24 @@ dialog.modal { transform: translateY(16px) scale(.965); transition: transform va
   [data-amb] { animation: none !important; }
 }
 
-/* ================================================================== */
-/* Icon glass and the melt → vanish → glass-return cycle (v3.8.3)      */
-/* ------------------------------------------------------------------ */
-/* Every UI icon is an inline svg.icon. At rest it is drawn as glass:  */
-/* a translucent body, a bright rim above each stroke and a soft       */
-/* tinted shadow below it. js/ui/icon-fx.js adds .ifx-run to start one */
-/* cycle; the delay (--ifx-delay) makes a wave cross the screen.       */
-/* Paint only: no size, position or hit area changes. The cycle uses   */
-/* the individual `translate` / `scale` properties, so an icon's own   */
-/* `transform` (a turned chevron, a hover lift) is left alone.         */
-/*                                                                    */
-/* Two animations run together. ifx-move (translate, scale, opacity)   */
-/* is smooth and can run on the compositor. ifx-paint changes the      */
-/* filter and the body's opacity in a few steps (step-end), so nothing */
-/* is repainted between the steps.                                     */
-/* ================================================================== */
-:root {
-  --ifx-body: .8;                                   /* how much of the stroke's tone the glass keeps */
-  --ifx-rim: rgb(255 255 255 / .92);                /* light on the upper edge of each stroke */
-  --ifx-shade: 36%;                                 /* share of the icon's colour in the lower shadow */
-  --ifx-glow: color-mix(in srgb, var(--accent) 72%, #fff);
-}
-:root[data-theme="dark"] { --ifx-rim: rgb(255 255 255 / .62); --ifx-shade: 48%; }
-
-svg.icon {
-  stroke-opacity: var(--ifx-body);
-  fill-opacity: var(--ifx-body);
-  filter: drop-shadow(0 -.55px 0 var(--ifx-rim)) drop-shadow(0 .9px 1.1px color-mix(in srgb, currentColor var(--ifx-shade), transparent));
-}
-
-svg.icon.ifx-run {
-  animation: ifx-move 2400ms linear var(--ifx-delay, 0ms) 1 both, ifx-paint 2400ms step-end var(--ifx-delay, 0ms) 1 both;
-  will-change: translate, scale, opacity;
-}
-/* Small icons (chips, badges: under 15 px) melt without the SVG filters — at that size the sinking columns cannot be
-   seen, and a dense page holds hundreds of them. */
-svg.icon.ifx-run.ifx-lite { animation-name: ifx-move, ifx-paint-lite; }
-
-/* 0–42 %: melt (the icon stretches from its top edge, runs downward and thins out); 42–52 %: gone;
-   52–100 %: back out of blur and light. No 0 % / 100 % frames: the cycle starts from and settles on whatever the
-   icon looks like at rest. */
-@keyframes ifx-move {
-  7%   { translate: 0 1.5%; scale: 1 1.03;   opacity: 1; }
-  15%  { translate: 0 5%;   scale: .99 1.1;  opacity: 1; }
-  24%  { translate: 0 11%;  scale: .97 1.22; opacity: .92; }
-  33%  { translate: 0 19%;  scale: .94 1.38; opacity: .66; }
-  42%  { translate: 0 30%;  scale: .9 1.6;   opacity: 0; }
-  52%  { translate: 0 -7%;  scale: 1.3 1.3;  opacity: 0; animation-timing-function: cubic-bezier(.16, 1, .3, 1); }
-  72%  { translate: 0 0;    scale: 1.045 1.045; opacity: 1; animation-timing-function: cubic-bezier(.4, 0, .2, 1); }
-  86%  { translate: 0 0;    scale: 1 1;      opacity: 1; }
-}
-/* The melt filters #ifx-m1 … #ifx-m4 (js/ui/icon-fx.js) sink the columns of the icon by different amounts and smear
-   them downward. The return starts as a blurred, almost clear shape in a cool light and gains its rim and body. */
-@keyframes ifx-paint {
-  5%   { filter: url(#ifx-m1); }
-  13%  { filter: url(#ifx-m2); }
-  22%  { filter: url(#ifx-m3); }
-  31%  { filter: url(#ifx-m4); }
-  43%  { filter: blur(3px) drop-shadow(0 0 7px var(--ifx-glow)); stroke-opacity: .3; fill-opacity: .3; }
-  57%  { filter: blur(1.5px) drop-shadow(0 0 6px var(--ifx-glow)); stroke-opacity: .42; fill-opacity: .42; }
-  63%  { filter: blur(.55px) drop-shadow(0 -1px .6px rgb(255 255 255 / .96)) drop-shadow(0 0 5px var(--ifx-glow)); stroke-opacity: .54; fill-opacity: .54; }
-  70%  { filter: drop-shadow(0 -1px .6px rgb(255 255 255 / .96)) drop-shadow(0 0 4.5px var(--ifx-glow)); stroke-opacity: .62; fill-opacity: .62; }
-  79%  { filter: drop-shadow(0 -.8px .3px rgb(255 255 255 / .95)) drop-shadow(0 .3px 3px color-mix(in srgb, var(--ifx-glow) 72%, transparent)); stroke-opacity: .7; fill-opacity: .7; }
-  87%  { filter: drop-shadow(0 -.65px .1px var(--ifx-rim)) drop-shadow(0 .6px 2px color-mix(in srgb, var(--ifx-glow) 42%, transparent)); }
-  94%  { filter: drop-shadow(0 -.55px 0 var(--ifx-rim)) drop-shadow(0 .8px 1.4px color-mix(in srgb, var(--ifx-glow) 20%, transparent)); }
-}
-@keyframes ifx-paint-lite {
-  13%  { filter: blur(.3px); }
-  22%  { filter: blur(.7px); }
-  31%  { filter: blur(1.2px); }
-  43%  { filter: blur(2.2px) drop-shadow(0 0 5px var(--ifx-glow)); stroke-opacity: .3; fill-opacity: .3; }
-  57%  { filter: blur(1.1px) drop-shadow(0 0 4.5px var(--ifx-glow)); stroke-opacity: .42; fill-opacity: .42; }
-  63%  { filter: blur(.4px) drop-shadow(0 -.8px .5px rgb(255 255 255 / .96)) drop-shadow(0 0 4px var(--ifx-glow)); stroke-opacity: .54; fill-opacity: .54; }
-  70%  { filter: drop-shadow(0 -.8px .5px rgb(255 255 255 / .96)) drop-shadow(0 0 3.4px var(--ifx-glow)); stroke-opacity: .62; fill-opacity: .62; }
-  79%  { filter: drop-shadow(0 -.7px .3px rgb(255 255 255 / .95)) drop-shadow(0 .3px 2.4px color-mix(in srgb, var(--ifx-glow) 72%, transparent)); stroke-opacity: .7; fill-opacity: .7; }
-  87%  { filter: drop-shadow(0 -.6px .1px var(--ifx-rim)) drop-shadow(0 .6px 1.8px color-mix(in srgb, var(--ifx-glow) 42%, transparent)); }
-  94%  { filter: drop-shadow(0 -.55px 0 var(--ifx-rim)) drop-shadow(0 .8px 1.3px color-mix(in srgb, var(--ifx-glow) 20%, transparent)); }
-}
-
-/* The reader's own control never loses its icon: hover, focus or press ends a running cycle at once. */
-:is(a, button, [role="button"], [role="tab"], [role="menuitem"], [role="option"], summary, label):is(:hover, :focus-visible, :active) svg.icon.ifx-run { animation: none; }
-
-/* Off: the setting, reduced motion (OS unless forced on, or the setting), forced colours, print. */
-:root[data-iconfx="off"] svg.icon.ifx-run,
-:root[data-motion="reduce"] svg.icon.ifx-run, :root[data-motion="reduced"] svg.icon.ifx-run { animation: none; }
-@media (prefers-reduced-motion: reduce) {
-  :root:not([data-motion="full"]) svg.icon.ifx-run { animation: none; }
-}
-@media (forced-colors: active) {
-  svg.icon { stroke-opacity: 1; fill-opacity: 1; filter: none; }
-  svg.icon.ifx-run { animation: none; }
-}
-@media print {
-  svg.icon { stroke-opacity: 1 !important; fill-opacity: 1 !important; filter: none !important; }
-  svg.icon.ifx-run { animation: none !important; }
+/* ==========================================================================
+   Icon effect (js/ui/iconfx.js) — glass icons
+   Every UI icon (svg.icon) rests as lit glass: the shared SVG filter #ifx-rest gives the strokes a translucent
+   body, a specular edge toward the upper reading-start corner, a shade and a thin tinted glint (refraction) on the
+   far flank, and a tinted caustic shadow. The strokes are a little heavier so the glass has a body to light.
+   The two tints and their strengths are the custom properties below, per theme; the filters read them through
+   the flood colours of #ifx-defs. The melt / vanish / glass-return cycle is the module's: one Web Animation per
+   icon (scale, translate, opacity) and the liquid filter stages #ifx-s* as inline styles while it runs. Paint
+   only, no layout. The rule waits for the module (data-iconfx-glass is set once the filters are in the document),
+   so the icons are plain until then, when printing and under forced colours.
+   html[data-iconfx="cycle" | "enter" | "off"] chooses when the cycle plays (the module reads it); the resting
+   glass is the same in all three and under reduced motion.
+   ========================================================================== */
+:root { --ifx-caustic: #9FE9FF; --ifx-caustic-a: .22; --ifx-refract: #5FE1FF; --ifx-refract-a: .9; --ifx-stroke: 2.4; }
+:root[data-theme="light"] { --ifx-caustic: #1F5AD6; --ifx-caustic-a: .4; --ifx-refract: #38C8F0; --ifx-refract-a: .85; }
+#ifx-defs { position: absolute; inline-size: 0; block-size: 0; overflow: hidden; pointer-events: none; }
+#ifx-defs .ifx-caustic { flood-color: var(--ifx-caustic); flood-opacity: var(--ifx-caustic-a); }
+#ifx-defs .ifx-refract { flood-color: var(--ifx-refract); flood-opacity: var(--ifx-refract-a); }
+@media screen and (forced-colors: none) {
+  :root[data-iconfx-glass] svg.icon { filter: url(#ifx-rest); stroke-width: var(--ifx-stroke); }
 }

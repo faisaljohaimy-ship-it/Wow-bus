@@ -126,25 +126,36 @@ clear), not on the published HTTPS host.
 | Label in name on shell and view controls; roadmap grid roles; unique pagers | Complete | `components.labelInName` / `setLabelInName`; applied to the new v3.8 controls too (go-live strip, plan link, connector details, tour button). Checked on the integrated tree by script (every control with an `aria-label` and visible text, 25 routes, AR/EN, 1440 and 390 px) and with axe-core: the v3.8 screens are clean. **Still open in older views:** the five domain filter buttons on `#/airisks` and "Refer to legal" on `#/contracts` (names that reword the visible text), and the cockpit's dumbbell chart rows (visible label truncated with an ellipsis); axe reports these only at some widths | U Q P |
 | Register rows: open the drawer by clicking a row | Complete (was Broken) | `interactiveWithin` stops at the row, so `<main tabindex="-1">` no longer swallows the click. Checked in Chromium on every table with a row opener (mouse and touch) | U Q P |
 
-## Icon effect (v3.8.3, 2026-11-12 — first version, checked by its author only)
+## Icon effect (v3.8.4, 2026-11-12)
 
-- **What it is:** every UI icon (`svg.icon`: shell, views, drawers, dialogs, phone tab bar) rests as glass — a body at
-  80 % of its colour, a bright rim above each stroke, a soft tinted shadow below — and from time to time melts
-  (stretches from its top edge while its columns sink and smear), vanishes for about 240 ms, and returns out of blur and
-  a cool light. One cycle is 2.4 s; a wave crosses the screen from the reading start in about 3.5 s.
-- **When:** shortly after the app starts, after each route change, then every 12 s while the page is visible and the
-  reader has not pressed a key, pressed a pointer or scrolled for 4 s. A hovered, focused or pressed control keeps its
-  icon. `html[data-bg="static"]` or `data-iconfx="enter"` stops the repeats; `data-iconfx="off"` stops the cycle.
-- **Off:** reduced motion (the resting glass stays), forced colours and print (plain icons).
-- **Cost control:** icons under 15 px use a lighter melt without SVG filters; a page with more than 240 icons starts
-  28 per wave, taking turns; a wave whose median frame is slower than 34 ms halves the next waves and doubles the pause,
-  and after three slow waves the repeats stop for that page load.
-- **Checked (headless Chromium):** enlarged frame sheets of the cycle in both themes; a frozen wave on the cockpit in
-  English and Arabic, on `#/tasks` in dark, and at 390 px; contrast of resting icons against their background on seven
-  routes in both themes (lowest 3.45:1, none under 3:1); unit tests `tests/icon-fx.test.mjs`; `tools/qa.mjs`.
-- **Not checked:** a real phone, a GPU, Safari, Firefox; no independent review yet. In the software-rendered test
-  browser on a shared machine a wave ran at about 20 frames a second on `#/integrations` (386 icons) with the CPU slowed
-  4×; phone-size pages stayed close to the version without the effect. There is no settings control yet.
+- **What it is:** every UI icon (`svg.icon`: shell, views, drawers, dialogs, phone tab bar) rests as lit glass: a
+  translucent body, a specular edge toward the upper reading-start corner, a thin tinted glint and a tinted caustic
+  shadow (one shared SVG filter, `#ifx-rest`; the strokes are a little heavier, 2.4 instead of 1.75–2). A cycle is
+  2.4 s: the icon stretches from its top edge while its strokes sag and run (nine liquid stages, `#ifx-s1…9`), erodes
+  to nothing (three stages), is gone for about 260 ms, and returns out of blur and scale as glass with a second light
+  crossing it (the glint). A wave crosses the screen from the reading start in at most about 3.5 s.
+- **When:** shortly after the first view paints, after each route change (icons the new page adds within 1.4 s join
+  the wave), when an icon first scrolls into view, and as an ambient wave every 10–14 s while the tab is visible and
+  the reader has not pressed a key or pointer for 4 s. A hovered, focused or pressed control keeps its icon; a
+  running cycle ends at once when its control is hovered, focused or pressed.
+- **Controls:** `html[data-iconfx]` = `cycle` (default) | `enter` (no ambient waves) | `off` (resting glass only).
+  There is no settings control yet.
+- **Off:** reduced motion (OS or setting; the resting glass stays), printing and forced colours (plain icons).
+- **Cost control:** at most 40 icons mid-cycle at once; a governor takes fewer icons per wave after an ambient wave whose
+  frames were slow (never below 10). `window.__iconFx` (`play`, `seek`, `rest`, `delayOf`) exists for captures.
+- **Checked (headless Chromium, software rendering, shared machine):** enlarged frame sheets in both themes; a wave on
+  `#/integrations` (386 icons) at 1× and on `#/tasks` at 390 px with 4× CPU slowdown, against v3.8.3 on the same
+  benchmark (`v3/ifx/cmp/cmp.cjs`); resting contrast of the glass icons (mean at least 3.94:1, the weakest core pixels
+  at 3.22:1 in the light theme, per designer A's measurement); unit tests `tests/iconfx.test.mjs`; `tools/qa.mjs`.
+- **Not checked:** a real phone or GPU, Safari, Firefox, an independent review. The resting glass in the light theme is
+  lighter than in the dark theme; its weakest pixels are below 3:1, its mean is above it.
+- **Independent review (v3.8.4, two reviewers, read-only):** no blocker or major finding. Open, all minor:
+  (1) resting glass is an SVG lighting filter per icon, so on `#/integrations` (383 icons) at 4× CPU slowdown the
+  long-task time is about 2.9 s against 2.2–2.6 s on v3.8.3, also with `data-iconfx="off"` (the off setting keeps the
+  glass; a cheaper resting look would need a decision); (2) melt drips overrun the icon box for about 300 ms at the peak;
+  (3) icons are heavier than before (stroke 2.4 against 1.75–2); (4) detached icons stay reachable after route changes:
+  after 50 navigations about 530 detached `svg.icon` against 80 on v3.8.3 (a release of observed icons was added, but the
+  cause is not yet found; the JS heap grew by about 1 MB over 100 navigations).
 
 ## Not built (out of scope or awaiting a decision)
 
