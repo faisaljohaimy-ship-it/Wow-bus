@@ -30,8 +30,12 @@
  * direction, digits) and the step's screen is put back (the router re-mounts the view, and the risk drawer closes
  * with it).
  * Room: below 960 px the panel sits above the tab bar while no drawer covers it; from 641 px up the drawer the
- * tour explains leaves a 300 px column for the panel (they never overlap); on a short screen (a phone on its side)
- * the page leaves the same column on the page steps.
+ * tour explains leaves a 300 px column for the panel (they never overlap; below 900 px the drawer's launch button
+ * takes its own row, as on phones); on a short screen (a phone on its side) the page leaves the same column on the
+ * page steps — where it is too narrow for a column as well (up to 640 px wide, up to 480 px high) the panel keeps
+ * the bottom edge, over the tab bar. On phones the page's target stays between the fixed app bar and the panel:
+ * the panel gives up height for a tall target, down to about two lines of text (dock). After a change of the
+ * screen size (a phone turned, a window resized) that room is measured again.
  * Motion: one opacity/transform entrance of the panel and an opacity fade of the highlight ring — compositor
  * only, nothing replays on live updates (content renders on step change only), off under reduced motion,
  * the Static setting, forced colours and print (hidden in print).
@@ -117,7 +121,10 @@ function addDays(iso, n) {
 const STYLE_TEXT = `
 .wt-panel { position: fixed; z-index: calc(var(--z-toast, 70) + 1); inset-block-end: 16px; inset-inline-start: 16px; inline-size: min(420px, calc(100vw - 32px));
   max-block-size: min(70vh, 640px); display: flex; flex-direction: column; border: 1px solid var(--line-strong); border-radius: var(--radius-lg, 14px);
-  background: var(--bg-1); color: var(--ink-1); box-shadow: var(--elev-3, 0 12px 40px rgba(0,0,0,.18)); }
+  background: var(--bg-1); color: var(--ink-1); box-shadow: var(--elev-3, 0 12px 40px rgba(0,0,0,.18));
+  /* no transitions on the box: dock() changes its height and measures it in the same breath (under reduced motion
+     the app gives every transition .01 ms, which is still one frame of the old size) */
+  transition: none; }
 .wt-panel[data-side="end"] { inset-inline-start: auto; inset-inline-end: 16px; }
 .wt-head { display: flex; align-items: flex-start; gap: 8px; padding: 12px 14px 8px; border-block-end: 1px solid var(--line); }
 .wt-head-text { display: grid; gap: 2px; min-inline-size: 0; flex: 1; }
@@ -162,15 +169,34 @@ const STYLE_TEXT = `
   .drawer-head:has(> .wt-launch) > .drawer-titles { flex: 1 1 0; min-inline-size: 0; }
   .drawer-head > .wt-launch { order: 3; flex-basis: 100%; justify-content: center; }
 }
+/* A short phone screen: tighter panel edges, so more of the step text stays in view. */
+@media (max-width: 640px) and (max-height: 700px) {
+  .wt-head { padding: 8px 12px 6px; }
+  .wt-progress { padding: 0 12px 6px; }
+  .wt-body { padding: 6px 12px; }
+  .wt-foot { padding: 6px 12px 8px; }
+}
 /* Below 960 px the tab bar is the page's navigation: while no drawer covers it (data-side="end") the panel sits above it. */
 @media (max-width: 959.98px) {
   .wt-panel[data-side="end"] { inset-block-end: calc(var(--tabbar-h, 60px) + env(safe-area-inset-bottom, 0px) + 8px); }
+}
+/* Short and narrow (a small phone on its side): no room for the app bar, the target, the panel and the tab bar under
+   each other, and none for a column beside the page — the panel keeps the bottom edge, over the tab bar. */
+@media (max-width: 640px) and (max-height: 480px) {
+  .wt-panel[data-side="end"] { inset-block-end: 8px; }
 }
 /* From 641 px up the drawer and the panel stand side by side: where the screen cannot hold both at full width
    (below 1204 px) the drawer the tour explains leaves a 300 px column and the panel takes it. */
 @media (min-width: 641px) {
   html.wt-on dialog.drawer.risk-drawer { inline-size: min(760px, calc(100% - 300px)); }
   .wt-panel[data-side="start"] { inline-size: min(420px, max(276px, calc(100vw - 784px))); }
+}
+/* Below 900 px that column leaves the drawer less than 600 px: its launch button takes its own row under the title,
+   as on phones (in one row with the button and the X the title was squeezed to a few words per line). */
+@media (min-width: 641px) and (max-width: 899.98px) {
+  html.wt-on .risk-drawer .drawer-head:has(> .wt-launch) { flex-wrap: wrap; }
+  html.wt-on .risk-drawer .drawer-head:has(> .wt-launch) > .drawer-titles { flex: 1 1 0; min-inline-size: 0; }
+  html.wt-on .risk-drawer .drawer-head > .wt-launch { order: 3; flex-basis: 100%; justify-content: center; }
 }
 /* A short screen (a phone on its side) has no room above a bottom panel: on the page steps the page leaves the same
    column, and the panel takes the height between the app bar and the tab bar. */
@@ -406,11 +432,13 @@ function findTarget(stepId) {
   return null;
 }
 
+/** Keeps the panel off the drawer: the drawer sits at the inline end, the panel goes to the inline start. */
+function setSide() { if (active) active.root.setAttribute('data-side', openDrawerEl() ? 'start' : 'end'); }
+
 function placeRing() {
   const a = active;
   if (!a) return;
-  // keep the panel off the drawer: the drawer sits at the inline end, the panel goes to the inline start
-  a.root.setAttribute('data-side', openDrawerEl() ? 'start' : 'end');
+  setSide();
   // The view re-renders its rows (live data, language) and a drawer can close under the tour: look the target up
   // again when its node is gone, and drop the ring when the step's target is not on screen any more.
   if (a.target && !a.target.isConnected) a.target = a.busy ? null : findTarget(STEPS[a.step]);
@@ -436,7 +464,14 @@ function placeRing() {
  * scroll position in between); undone when the container changes and when the tour ends.
  * A page target beside the panel (a short screen) still has the tab bar over the end of the page: the same room is
  * made for the bar alone.
+ * Below 960 px the app bar is fixed over the start of the page: the page gets a scroll padding there too, so the
+ * target stops below the bar. On a phone the target then has to fit between the bar and the panel: when it does
+ * not, the panel gives up height (its text scrolls) — never below TEXT_MIN of text. A target that still does not
+ * fit is shown from its start: dock() returns true and the caller scrolls it to the start instead of the nearest
+ * edge.
  */
+const FREE = 12;       // px kept free between the target and the bar / the panel (the ring is drawn 4–7 px outside it)
+const TEXT_MIN = 60;   // px of step text the panel keeps when it gives up height for a tall target
 function undock() {
   const a = active;
   const d = a && a.docked;
@@ -444,6 +479,7 @@ function undock() {
   a.docked = null;
   d.el.style.paddingBlockEnd = d.pad;
   d.el.style.scrollPaddingBlockEnd = d.scrollPad;
+  d.el.style.scrollPaddingBlockStart = d.scrollPadStart;
 }
 /** The box that scrolls `target` vertically: inside a dialog its body, on the page `main` (wide) or the document. */
 function scrollerOf(target) {
@@ -457,33 +493,87 @@ function scrollerOf(target) {
   const body = dlg.querySelector('.drawer-body, .modal-body');
   return body && body.contains(target) ? body : null;
 }
+/** Where the app bar ends while it is fixed over the page (below 960 px); 0 when it is part of the layout. */
+function barEnd() {
+  const bar = document.getElementById('appbar');
+  if (!bar || getComputedStyle(bar).position !== 'fixed') return 0;
+  const r = bar.getBoundingClientRect();
+  return r.height && r.top <= 0 ? Math.max(0, Math.round(r.bottom)) : 0;
+}
+/** The panel's box where it rests: its entrance moves it by up to 12 px during the first 220 ms of the tour. */
+function panelBox() {
+  const r = active.root.getBoundingClientRect();
+  let dy = 0;
+  try { const m = getComputedStyle(active.root).transform; if (m && m !== 'none') dy = new DOMMatrixReadOnly(m).m42 || 0; } catch { dy = 0; }
+  return { top: r.top - dy, left: r.left, right: r.right, height: r.height };
+}
 function dock(target) {
   const a = active;
-  if (!a) return;
-  let sc = null;
-  let room = 0;
+  if (!a) return false;
+  let sc = null;      // the box that scrolls the target
+  let room = 0;       // px kept free at its end
+  let head = 0;       // px the fixed app bar takes at its start
+  let tall = false;   // the target is taller than what stays in view
+  a.root.style.maxBlockSize = '';   // the height given up for the last target or the last screen size
   if (target && target.isConnected) {
-    const pr = a.root.getBoundingClientRect();
+    let pr = panelBox();
     const tr = target.getBoundingClientRect();
-    if (pr.height && tr.right > pr.left + 1 && tr.left < pr.right - 1) {   // not beside the panel
-      sc = scrollerOf(target);
-      room = Math.max(0, Math.round(window.innerHeight - pr.top + 12));
-    } else if (!target.closest('dialog[open]')) {                           // beside it: only the tab bar is in the way
+    let end = 0;      // where the visible part of the scroller ends: at the panel, or beside it at the tab bar
+    const under = Boolean(pr.height) && tr.right > pr.left + 1 && tr.left < pr.right - 1;   // not beside the panel
+    if (under) { sc = scrollerOf(target); end = pr.top; }
+    else if (!target.closest('dialog[open]')) {                             // beside it: only the tab bar is in the way
       const bar = document.getElementById('tabbar');
       const br = bar && bar.getClientRects().length ? bar.getBoundingClientRect() : null;
-      if (br && br.height && br.top < window.innerHeight) { sc = scrollerOf(target); room = Math.max(0, Math.round(window.innerHeight - br.top + 12)); }
+      if (br && br.height && br.top < window.innerHeight) { sc = scrollerOf(target); end = br.top; }
     }
+    if (sc === document.documentElement) {
+      head = barEnd();
+      if (head && under && matchMedia('(max-width: 640px)').matches) {
+        const lack = tr.height + 2 * FREE - (end - head);
+        const least = Math.min(pr.height, pr.height - a.body.getBoundingClientRect().height + TEXT_MIN);
+        if (lack > 0 && pr.height > least) {
+          a.root.style.maxBlockSize = `${Math.max(least, Math.floor(pr.height - lack))}px`;
+          pr = panelBox();
+          end = pr.top;
+        }
+      }
+      tall = head > 0 && tr.height > end - head - 2 * FREE;
+    }
+    if (sc) room = Math.max(0, Math.round(window.innerHeight - end + FREE));
   }
   if (a.docked && (a.docked.el !== sc || !room)) undock();
-  if (!sc || !room) return;
-  if (!a.docked) a.docked = { el: sc, pad: sc.style.paddingBlockEnd, scrollPad: sc.style.scrollPaddingBlockEnd, own: parseFloat(getComputedStyle(sc).paddingBlockEnd) || 0 };
+  if (!sc || !room) return false;
+  if (!a.docked) a.docked = { el: sc, pad: sc.style.paddingBlockEnd, scrollPad: sc.style.scrollPaddingBlockEnd, scrollPadStart: sc.style.scrollPaddingBlockStart, own: parseFloat(getComputedStyle(sc).paddingBlockEnd) || 0 };
   sc.style.paddingBlockEnd = `${a.docked.own + room}px`;
   sc.style.scrollPaddingBlockEnd = `${room}px`;
+  sc.style.scrollPaddingBlockStart = head ? `${head + FREE}px` : a.docked.scrollPadStart;
+  return tall;
 }
 function scheduleRing() {
   const a = active;
   if (!a || a.ringRaf) return;
   a.ringRaf = requestAnimationFrame(() => { if (active) { active.ringRaf = 0; placeRing(); } });
+}
+/**
+ * Places the step's target for the screen as it is now: room for it (dock), the target in view, the ring on it.
+ * Runs when a step arrives and again when the screen size has changed — the room is measured for one layout, and a
+ * phone turned on a drawer step kept the room (or the lack of it) of the other orientation. `scroll: false` leaves
+ * the scroll position alone (a change of height only: the browser's own bars).
+ */
+function showTarget({ smooth = true, scroll = true } = {}) {
+  const a = active;
+  if (!a) return;
+  if (a.target && !a.target.isConnected) a.target = findTarget(STEPS[a.step]);
+  const target = a.target;
+  setSide();
+  const width = window.innerWidth;
+  let tall = dock(target);
+  // Chromium's phone layout can still be zoomed out after a turn (see onResize). The change dock() makes ends that
+  // state, and its numbers were then taken from a layout that is gone: measure once more for the real one.
+  if (window.innerWidth !== width) tall = dock(target);
+  a.vw = window.innerWidth;
+  if (target && scroll) { try { target.scrollIntoView({ block: tall ? 'start' : 'nearest', behavior: smooth && !reduced() ? 'smooth' : 'auto' }); } catch { /* ignore */ } }
+  scheduleRing();
 }
 
 /** Shows step `index`. `focus: false` puts the step's screen back without moving the focus (language change). */
@@ -514,9 +604,7 @@ async function go(index, { focus = true } = {}) {
   if (routeId() !== screenOf(n)) { stopWalkthrough('route'); return; }
   a.target = target;
   paint(stepId, { loading: false });   // first: the panel takes its height for this step, then the target is placed
-  dock(target);
-  if (target) { try { target.scrollIntoView({ block: 'nearest', behavior: reduced() ? 'auto' : 'smooth' }); } catch { /* ignore */ } }
-  scheduleRing();
+  showTarget();
   setTimeout(scheduleRing, reduced() ? 0 : 360);
   if (focus) { try { a.title.focus({ preventScroll: true }); } catch { /* ignore */ } }
 }
@@ -588,6 +676,8 @@ function syncOverlays() {
       const lost = !document.activeElement || document.activeElement === document.body;
       const to = back || (lost ? a.title : null);
       if (to) { try { to.focus({ preventScroll: true }); } catch { /* ignore */ } }
+      // the screen may have been turned while the panel was hidden: the room is measured for what it is now
+      if (!a.busy && a.vw && a.vw !== window.innerWidth) showTarget({ smooth: false });
     }
   }
   scheduleRing();
@@ -681,7 +771,22 @@ export function startWalkthrough(ctx = {}, { riskId = WORKED_RISK, step = 0, ret
   document.addEventListener('keydown', onKeyCapture, true);
   window.addEventListener('keydown', onKeyLate);
   const onMove = () => scheduleRing();
-  window.addEventListener('resize', onMove);
+  // A new screen size (a phone turned, a window resized, the browser's own bars): the ring follows at once; when the
+  // size has settled the target is placed again for the new layout (showTarget) — brought back into view only when
+  // the width changed, so the browser's bars sliding in and out while the reader scrolls never move the page.
+  // The visual viewport is watched as well. After a turn from landscape to portrait Chromium (seen in its phone
+  // emulation) can keep the page zoomed out — a 545 px layout on a 390 px screen — until the layout changes again.
+  // The placement is that change, and showTarget() measures again when the layout changed under it; a zoom that
+  // ends later ends with a visual-viewport resize only, which places the target once more.
+  let resizeTimer = 0;
+  const onResize = () => {
+    scheduleRing();
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { const a = active; if (a && !a.busy && !a.away) showTarget({ smooth: false, scroll: a.vw !== window.innerWidth }); }, 160);
+  };
+  const visual = window.visualViewport || null;
+  window.addEventListener('resize', onResize);
+  if (visual) visual.addEventListener('resize', onResize);
   document.addEventListener('scroll', onMove, true);
   const onHash = () => { setTimeout(scheduleRing, 250); };
   window.addEventListener('hashchange', onHash);
@@ -720,11 +825,13 @@ export function startWalkthrough(ctx = {}, { riskId = WORKED_RISK, step = 0, ret
     if (a && !a.busy && p && p.to && p.to !== screenOf(a.step)) stopWalkthrough('route');
   });
   const opener = returnFocus || (document.activeElement && document.activeElement !== document.body ? document.activeElement : null);
-  active = { ctx: ctx || {}, riskId: risk.id, step: 0, seq: 0, root, ring, kicker, title, progress, body, prev, next, closeX, hint, target: null, ringRaf: 0, opener, docked: null, away: false, busy: false, resume: null,
+  active = { ctx: ctx || {}, riskId: risk.id, step: 0, seq: 0, root, ring, vw: 0, kicker, title, progress, body, prev, next, closeX, hint, target: null, ringRaf: 0, opener, docked: null, away: false, busy: false, resume: null,
     cleanup: () => {
       inertGuard.disconnect(); overlayWatch.disconnect(); offLang(); offSettings(); offRoute();
       document.removeEventListener('keydown', onKeyCapture, true); window.removeEventListener('keydown', onKeyLate);
-      window.removeEventListener('resize', onMove); document.removeEventListener('scroll', onMove, true); window.removeEventListener('hashchange', onHash);
+      clearTimeout(resizeTimer);
+      window.removeEventListener('resize', onResize); document.removeEventListener('scroll', onMove, true); window.removeEventListener('hashchange', onHash);
+      if (visual) visual.removeEventListener('resize', onResize);
     } };
   paintChrome();
   syncOverlays();

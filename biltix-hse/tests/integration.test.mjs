@@ -370,4 +370,46 @@ export const tests = [
       assert.ok(/\.wt-panel\[data-away\], \.wt-ring\[data-away\] \{ display: none; \}/.test(src) && /function dialogOnTop\(\)/.test(src));
     },
   },
+  {
+    name: 'walkthrough: the target keeps its room on a short phone and after the screen is turned; the squeezed drawer keeps a readable header',
+    fn() {
+      const src = read('js/ui/walkthrough.js');
+      // A new screen size: the target is placed again for the new layout (room, ring); it is scrolled back into
+      // view only when the width changed — the browser's own bars change the height while the reader scrolls.
+      assert.ok(/window\.addEventListener\('resize', onResize\)/.test(src) && /window\.removeEventListener\('resize', onResize\)/.test(src) && /clearTimeout\(resizeTimer\);\n\s+window\.removeEventListener/.test(src), 'resize listener');
+      assert.ok(/if \(a && !a\.busy && !a\.away\) showTarget\(\{ smooth: false, scroll: a\.vw !== window\.innerWidth \}\)/.test(src), 'placed again after a resize');
+      // A phone turned back to portrait: the zoomed-out layout Chromium can keep ends with the placement or with a
+      // visual-viewport resize — the room is measured again in both cases (it was taken from the zoomed layout).
+      assert.ok(/if \(visual\) visual\.addEventListener\('resize', onResize\);/.test(src) && /if \(visual\) visual\.removeEventListener\('resize', onResize\);/.test(src), 'visual viewport');
+      assert.ok(/const width = window\.innerWidth;\n\s+let tall = dock\(target\);\n[\s\S]{0,300}if \(window\.innerWidth !== width\) tall = dock\(target\);\n\s+a\.vw = window\.innerWidth;/.test(src), 'measured again when the layout changed under the measurement');
+      // one function places a step's target, on arrival and after a resize
+      const go = /async function go\(index[\s\S]*?\n\}\n/.exec(src);
+      assert.ok(go && /paint\(stepId, \{ loading: false \}\);[^\n]*\n\s+showTarget\(\);/.test(go[0]) && !/dock\(target\)/.test(go[0]));
+      // The fixed app bar: the page gets a scroll padding at its start (restored with the rest), and a target that
+      // cannot fit is shown from its start instead of sliding under the bar.
+      const dock = /\nfunction dock\(target\) \{([\s\S]*?)\n\}\n/.exec(src);
+      assert.ok(dock, 'dock');
+      assert.ok(/sc\.style\.scrollPaddingBlockStart = head \? `\$\{head \+ FREE\}px` : a\.docked\.scrollPadStart;/.test(dock[1]) && /d\.el\.style\.scrollPaddingBlockStart = d\.scrollPadStart;/.test(src), 'scroll padding at the start');
+      assert.ok(/getComputedStyle\(bar\)\.position !== 'fixed'\) return 0;/.test(src), 'only while the app bar is fixed');
+      assert.ok(/block: tall \? 'start' : 'nearest'/.test(src) && /return tall;/.test(dock[1]));
+      // On phones the panel gives up height for a tall target — reset on every measurement, never below TEXT_MIN of text.
+      // The panel's box has no transition: under reduced motion the app gives every transition .01 ms, and a height
+      // written and measured in the same breath would still be the old one.
+      assert.ok(/\.wt-panel \{ position: fixed;[^}]*\n\s+transition: none; \}/.test(src), 'no transition on the panel box');
+      assert.ok(/a\.root\.style\.maxBlockSize = '';/.test(dock[1]) && /matchMedia\('\(max-width: 640px\)'\)\.matches/.test(dock[1]));
+      assert.ok(/const least = Math\.min\(pr\.height, pr\.height - a\.body\.getBoundingClientRect\(\)\.height \+ TEXT_MIN\);/.test(dock[1]) && /Math\.max\(least, Math\.floor\(pr\.height - lack\)\)/.test(dock[1]));
+      const textMin = /const TEXT_MIN = (\d+);/.exec(src);
+      assert.ok(textMin && Number(textMin[1]) >= 56, 'at least two lines of step text stay');
+      // layout rules: above the tab bar below 960 px; over it only where the screen is short and narrow; the
+      // drawer's launch button on its own row while the tour's column squeezes the drawer
+      const css = /const STYLE_TEXT = `([\s\S]*?)`;/.exec(src)[1];
+      const lift = css.indexOf('@media (max-width: 959.98px) {\n  .wt-panel[data-side="end"] { inset-block-end: calc(var(--tabbar-h, 60px)');
+      const low = css.indexOf('@media (max-width: 640px) and (max-height: 480px) {\n  .wt-panel[data-side="end"] { inset-block-end: 8px; }');
+      assert.ok(lift > 0 && low > lift, 'the short-and-narrow rule comes after the rule it narrows');
+      assert.ok(css.includes('@media (min-width: 641px) and (max-width: 899.98px) {\n  html.wt-on .risk-drawer .drawer-head:has(> .wt-launch) { flex-wrap: wrap; }'));
+      assert.ok(css.includes('html.wt-on .risk-drawer .drawer-head > .wt-launch { order: 3; flex-basis: 100%; justify-content: center; }'));
+      // logical properties only in the tour's own rules
+      assert.ok(!/(^|[\s;{])(left|right|margin-left|margin-right|padding-left|padding-right)\s*:/m.test(css), 'no physical left/right');
+    },
+  },
 ];
