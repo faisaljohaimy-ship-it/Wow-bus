@@ -126,6 +126,26 @@ clear), not on the published HTTPS host.
 | Label in name on shell and view controls; roadmap grid roles; unique pagers | Complete | `components.labelInName` / `setLabelInName`; applied to the new v3.8 controls too (go-live strip, plan link, connector details, tour button). Checked on the integrated tree by script (every control with an `aria-label` and visible text, 25 routes, AR/EN, 1440 and 390 px) and with axe-core: the v3.8 screens are clean. **Still open in older views:** the five domain filter buttons on `#/airisks` and "Refer to legal" on `#/contracts` (names that reword the visible text), and the cockpit's dumbbell chart rows (visible label truncated with an ellipsis); axe reports these only at some widths | U Q P |
 | Register rows: open the drawer by clicking a row | Complete (was Broken) | `interactiveWithin` stops at the row, so `<main tabindex="-1">` no longer swallows the click. Checked in Chromium on every table with a row opener (mouse and touch) | U Q P |
 
+## Icon effect (v3.8.3, 2026-11-12 — first version, checked by its author only)
+
+- **What it is:** every UI icon (`svg.icon`: shell, views, drawers, dialogs, phone tab bar) rests as glass — a body at
+  80 % of its colour, a bright rim above each stroke, a soft tinted shadow below — and from time to time melts
+  (stretches from its top edge while its columns sink and smear), vanishes for about 240 ms, and returns out of blur and
+  a cool light. One cycle is 2.4 s; a wave crosses the screen from the reading start in about 3.5 s.
+- **When:** shortly after the app starts, after each route change, then every 12 s while the page is visible and the
+  reader has not pressed a key, pressed a pointer or scrolled for 4 s. A hovered, focused or pressed control keeps its
+  icon. `html[data-bg="static"]` or `data-iconfx="enter"` stops the repeats; `data-iconfx="off"` stops the cycle.
+- **Off:** reduced motion (the resting glass stays), forced colours and print (plain icons).
+- **Cost control:** icons under 15 px use a lighter melt without SVG filters; a page with more than 240 icons starts
+  28 per wave, taking turns; a wave whose median frame is slower than 34 ms halves the next waves and doubles the pause,
+  and after three slow waves the repeats stop for that page load.
+- **Checked (headless Chromium):** enlarged frame sheets of the cycle in both themes; a frozen wave on the cockpit in
+  English and Arabic, on `#/tasks` in dark, and at 390 px; contrast of resting icons against their background on seven
+  routes in both themes (lowest 3.45:1, none under 3:1); unit tests `tests/icon-fx.test.mjs`; `tools/qa.mjs`.
+- **Not checked:** a real phone, a GPU, Safari, Firefox; no independent review yet. In the software-rendered test
+  browser on a shared machine a wave ran at about 20 frames a second on `#/integrations` (386 icons) with the CPU slowed
+  4×; phone-size pages stayed close to the version without the effect. There is no settings control yet.
+
 ## Not built (out of scope or awaiting a decision)
 
 - Multi-user storage, authentication, role-based access, server-side connectors and signed webhooks (Q4).

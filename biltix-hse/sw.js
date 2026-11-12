@@ -124,6 +124,7 @@ const PRECACHE = [
   'js/ui/edges.js',
   'js/ui/explainer-hero.js',
   'js/ui/i18n-bridge.js',
+  'js/ui/icon-fx.js',
   'js/ui/motion.js',
   'js/ui/pano360.js',
   'js/ui/qr.js',

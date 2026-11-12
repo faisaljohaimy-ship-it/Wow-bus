@@ -2,7 +2,7 @@
 
 Legend: [ ] todo · [~] in progress or partly done · [x] done · [!] blocked
 
-Status as of 2026-11-12, v3.8.2. `acceptance.md` holds the evidence for the acceptance criteria as measured at
+Status as of 2026-11-12, v3.8.3. `acceptance.md` holds the evidence for the acceptance criteria as measured at
 v3.5.1 (`da1fbc3`); Lighthouse and axe have not been re-run since.
 
 ## Phase 0 — Baseline
@@ -115,3 +115,12 @@ English default and before the other v3.8 additions.
       closed, and after "Accept and create task"; a focused control under the phone tab bar on `#/fieldkit`; Arabic
       360° viewer messages drawn left-to-right; tour Next below the screen at 320x256
 - [ ] T10.5 Independent check of `e7be8a1` (so far checked by its author, with the reviewers' scripts and its own)
+
+## Phase 11 — Icon effect (user request, 2026-11-12)
+- [~] T11.1 Icons on every screen melt, vanish into transparency and return as glass, with a wave across the screen
+      (v3.8.3: `js/ui/icon-fx.js`, css "Icon glass", `tests/icon-fx.test.mjs`). First version, built and checked by one
+      author in headless Chromium: frame sheets in both themes, icon contrast at rest ≥ 3.4:1 on seven routes, unit
+      tests, `tools/qa.mjs`. Not done: an independent review, a real phone or GPU measurement (in the software-rendered
+      test browser a wave on the densest page, `#/integrations`, at 4× CPU slowdown ran at about 20 frames a second),
+      Safari and Firefox, a settings control for `data-iconfx`
+- [ ] T11.2 Refined version from the three-design comparison (displacement + lit glass, CSS masks, layered strokes)

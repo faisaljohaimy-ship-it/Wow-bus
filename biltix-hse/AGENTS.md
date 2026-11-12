@@ -102,6 +102,11 @@ graph).
   multi-user database and never holds secrets. Real credentials belong server-side.
 - **Motion.** Use `js/ui/motion.js` (micro 120–200 ms, main 220–320 ms, stagger 25–40 ms) and
   respect `prefers-reduced-motion` and the Static / Subtle / Cinematic setting.
+- **Icons** are inline `svg.icon` and are drawn as glass by CSS (`css/components.css`, "Icon glass"); `js/ui/icon-fx.js`
+  runs the melt → vanish → glass-return cycle as a wave (after a route change, then every 12 s). The cycle animates
+  `translate` / `scale` / `opacity` / `filter` only — never `transform`, sizes or positions — and is off under reduced
+  motion, forced colours and print. `html[data-iconfx="enter" | "off"]` turns the repeats or the whole cycle off. Charts,
+  plans, QR codes and the logo are not `svg.icon`; keep it that way (`tests/icon-fx.test.mjs`).
 - **Label in name.** A control with visible text is named by that text: use `components.setLabelInName(el, label)`
   (or `labelInName(visible, label)`) instead of an `aria-label` that says something else (WCAG 2.5.3).
 - **First paint.** `index.html` is English and static (the default language); an Arabic session gets its shell

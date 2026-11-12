@@ -56,7 +56,7 @@ const CODE_TOKEN_RE = /\b[A-Z]{1,5}[-‑][A-Z0-9‑-]*\d[A-Z0-9‑-]*\b/g;
 const STANDALONE_DIGITS_RE = /(?<![A-Za-z0-9.])\d+(?:[.,]\d+)?(?![A-Za-z])/g;
 const ARABIC_RE = /[؀-ۿ]/;
 
-const APP_VERSION = '3.8.2';
+const APP_VERSION = '3.8.3';
 const RIYADH_TZ = 'Asia/Riyadh';
 const FEED_CAP = 200;
 const ALERT_CAP = 30;
@@ -2679,6 +2679,8 @@ async function boot() {
     import('./ui/edges.js').then((m) => m.initEdges()).catch((err) => reportError(err, 'edges'));
     // Pointer spotlight on the hovered card (fine pointers with hover only; js/ui/spotlight.js).
     import('./ui/spotlight.js').then((m) => m.initSpotlight()).catch((err) => reportError(err, 'spotlight'));
+    // Icon effect (css "Icon glass", js/ui/icon-fx.js): melt → vanish → glass return, as a wave after each route change.
+    import('./ui/icon-fx.js').then((m) => m.initIconFx({ bus })).catch((err) => reportError(err, 'icon-fx'));
   };
   if (typeof requestIdleCallback === 'function') requestIdleCallback(startEdges, { timeout: 1500 }); else setTimeout(startEdges, 500);
 }
