@@ -2,7 +2,8 @@
 
 Legend: [ ] todo · [~] in progress or partly done · [x] done · [!] blocked
 
-Status as of 2026-11-11, tree `da1fbc3` (v3.5.1). Evidence for every acceptance criterion: `acceptance.md`.
+Status as of 2026-11-12, v3.8.2. `acceptance.md` holds the evidence for the acceptance criteria as measured at
+v3.5.1 (`da1fbc3`); Lighthouse and axe have not been re-run since.
 
 ## Phase 0 — Baseline
 - [x] T0.1 Baseline screenshots (identical frozen clock/data) at 360–1440, dark/light — scratchpad/v3/baseline
@@ -88,6 +89,29 @@ English default and before the other v3.8 additions.
 - [x] T9.5 Integration: one registry (25 routes), loader preloads = import graph, go-live "today" follows the demo,
       label in name on the new controls, service worker never stores another document as the shell, offline layer
       start order; `tests/integration.test.mjs`, `tests/sw.test.mjs` (node suite green)
-- [ ] T9.6 Browser verification of the integrated tree: `tools/qa.mjs` on 25 routes × ar/en × light/dark × widths,
-      axe, Lighthouse mobile, service worker install / offline start / update, QR scan, 360° viewer, walkthrough
-- [ ] T9.7 Version bump to 3.8.0, stamps (`stamp-shell` → `stamp-build` → `sw-precache`), publish (needs Q3)
+- [~] T9.6 Browser verification of the integrated tree — done in headless Chromium: `tools/qa.mjs` on 25 routes ×
+      en/ar × light × 1440x900 and 390x844 (dark on five routes), scripted flows for the walkthrough, the 360° viewer,
+      the field kit form, the offline queue and its replay (service worker on localhost only), QR scan with a fake
+      camera. Not done: axe, Lighthouse mobile, Safari / Firefox / real devices, a screen reader, the service worker
+      on the published host
+- [x] T9.7 Version bump to 3.8.0, stamps (`stamp-shell` → `stamp-build` → `sw-precache`), publish — published
+      2026-11-11 on the user's instruction; BILTIX authorization (Q3) is still not recorded
+
+## Phase 10 — Reviews after v3.8.0
+- [x] T10.1 Independent review of v3.8.0 (two reviewers): four major defects, fixed in v3.8.1 — field kit form wiped
+      by background repaints, tour not following a language switch, tour keyboard trap, 360° viewer under the tour
+      panel
+- [x] T10.2 Minor findings of that review, fixed in v3.8.2 (`74ec0c0`): tour step 5 time, the tour leaves with the
+      reader (Back, links, the drawer's X) and keeps the tab bar free, one Esc closes one thing, outbox messages follow
+      the language, form validation names the fields, 360° viewer says why a picture is missing and shows its markers
+      on phones, field-action button names, copy gaps
+- [x] T10.3 Second independent review (two reviewers, on `74ec0c0`): no blocker or major. Three minor regressions of
+      T10.2 fixed in `e7be8a1` — drawer header at 641–899 px during the tour, a phone turned back to portrait, short
+      phones
+- [ ] T10.4 Minor findings of the second review still open (none is a regression): quick Next / Back / Next at tour
+      steps 7–8 ends the tour or leaves the drawer over the plan; a typed field kit form is lost on a language switch
+      when the page came from a `?code=` link and another record was opened; tour dates around midnight (step 1
+      "today", step 5 in a browser behind Riyadh time); focus falls to `<body>` after the tour and then its drawer are
+      closed, and after "Accept and create task"; a focused control under the phone tab bar on `#/fieldkit`; Arabic
+      360° viewer messages drawn left-to-right; tour Next below the screen at 320x256
+- [ ] T10.5 Independent check of `e7be8a1` (so far checked by its author, with the reviewers' scripts and its own)
