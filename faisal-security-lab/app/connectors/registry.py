@@ -93,7 +93,7 @@ def sync_registry() -> list[dict]:
                          "detail": f"readiness error: {e}"}
         existing = store.get_tool_registry(name)
         state = _state_for(readiness)
-        verified_ref = conn.verified_ref()
+        verified_ref = conn.verified_ref(readiness)
         if existing and existing.get("state") == "verified":
             if existing.get("last_verified_ref") == verified_ref and state == "ready":
                 state = "verified"
@@ -126,8 +126,9 @@ def sync_registry() -> list[dict]:
 def record_verified(name: str) -> None:
     conn = get_connector(name)
     if conn:
-        store.set_tool_state(name, "verified", readiness=conn.readiness(),
-                             verified_ref=conn.verified_ref())
+        readiness = conn.readiness()
+        store.set_tool_state(name, "verified", readiness=readiness,
+                             verified_ref=conn.verified_ref(readiness))
 
 
 def _repo_from_source(source: str) -> str:

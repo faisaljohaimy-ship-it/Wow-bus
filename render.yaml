@@ -2,7 +2,15 @@
 # Use the "Deploy to Render" button:
 #   https://render.com/deploy?repo=https://github.com/faisaljohaimy-ship-it/Wow-bus
 # Render reads this file, builds the Docker image in faisal-security-lab/, and
-# prompts you only for the owner password.
+# asks you only for the owner password.
+#
+# FSL_OWNER_PASSWORD must be at least 10 characters. If it is shorter the site
+# still starts, but no owner account is created and the sign-in page explains
+# what to change (Environment -> FSL_OWNER_PASSWORD, then redeploy).
+#
+# The free plan has no persistent disk: findings and evidence are reset whenever
+# the instance restarts or wakes from sleep. The owner account is re-created
+# from the two variables below on every start, so sign-in keeps working.
 services:
   - type: web
     name: faisal-security-lab
@@ -16,4 +24,6 @@ services:
       - key: FSL_OWNER_EMAIL
         value: owner@faisal-security-lab.local
       - key: FSL_OWNER_PASSWORD
-        sync: false   # Render asks you to type this when you deploy
+        sync: false   # Render asks you to type this when you deploy (10+ characters)
+      - key: FSL_WORKER_CONCURRENCY
+        value: "1"    # one scan at a time fits the free plan's memory

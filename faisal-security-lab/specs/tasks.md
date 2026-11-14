@@ -9,7 +9,7 @@
 | T5 | Findings + evidence + reports | `app/findings.py app/evidence.py app/reports.py` | `TestConnectors/Redaction/Reports` | ✅ verified |
 | T6 | AI layer + safety | `app/ai/*` | `TestAISafety`, gate 5 | ✅ verified (fallback; live provider unconfigured) |
 | T7 | HTTP API + bilingual UI | `app/server.py web/*` | HTTP flow + `evidence/ui/*.png` | ✅ verified |
-| T8 | Tests, failure modes, acceptance, CI, deploy, docs | `tests/* scripts/* deploy/* .github/* docs/*` | `make test`, `make acceptance` | ✅ verified (10/10, 37 tests) |
+| T8 | Tests, failure modes, acceptance, CI, deploy, docs | `tests/* scripts/* deploy/* .github/* docs/*` | `make test`, `make acceptance` | ✅ verified (10/10, 51 tests) |
 
 Resume point: all r1 tasks complete. Next expansion (not r1): active web connectors
 (ZAP, Nuclei with a reviewed template set) behind scope+policy; OSV egress; a

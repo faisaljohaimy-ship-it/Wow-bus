@@ -21,10 +21,11 @@ from urllib.parse import urlsplit, parse_qs
 
 from . import audit, auth, evidence, findings as F, metrics, policy, queue, reports, store, util
 from .ai import agents, evalset
-from .bootstrap import init_platform
+from .bootstrap import SETUP_NOTICES, describe_notice, init_platform
 from .config import get_config
 from .connectors import all_connectors, get_connector, sync_registry
-from .errors import AppError, AuthError, ForbiddenError, ValidationError, NotFoundError
+from .errors import (AppError, AuthError, ForbiddenError, NotFoundError, RateLimitError,
+                     ValidationError)
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
@@ -43,11 +44,12 @@ def route(method: str, pattern: str, *, auth_required: bool = True, min_global: 
 
 
 class Req:
-    def __init__(self, principal, params, query, body, token=None):
+    def __init__(self, principal, params, query, body, token=None, client_ip=""):
         self.principal = principal
         self.params = params
         self.query = query
         self.body = body or {}
+        self.client_ip = client_ip
         self.token = token
 
     def q(self, key, default=None):
@@ -58,9 +60,72 @@ class Req:
 # ===========================================================================
 # Auth + identity
 # ===========================================================================
+# --- sign-in throttling ----------------------------------------------------
+# Failed sign-ins are counted in a sliding window per (account, client), per
+# account and per client. This bounds online password guessing; it is in-memory
+# (per API process) and resets on restart. The client address is the right-most
+# X-Forwarded-For entry when a reverse proxy supplies one, else the socket peer;
+# a directly exposed server cannot trust that header, which is why the
+# per-account limit exists independently of it.
+LOGIN_WINDOW_SECONDS = 600
+LOGIN_LIMITS = {"pair": 8, "acct": 30, "ip": 60}
+_LOGIN_FAILS: dict[str, list[float]] = {}
+_LOGIN_LOCK = threading.Lock()
+_LOGIN_MAX_KEYS = 20000
+
+
+def _login_keys(email: str, ip: str) -> dict:
+    email = (email or "").strip().lower()[:254]
+    return {"pair": f"pair:{email}|{ip}", "acct": f"acct:{email}", "ip": f"ip:{ip}"}
+
+
+def login_throttled(email: str, ip: str, now: float | None = None) -> bool:
+    now = time.time() if now is None else now
+    with _LOGIN_LOCK:
+        for kind, key in _login_keys(email, ip).items():
+            hits = [t for t in _LOGIN_FAILS.get(key, []) if now - t < LOGIN_WINDOW_SECONDS]
+            if hits:
+                _LOGIN_FAILS[key] = hits
+            else:
+                _LOGIN_FAILS.pop(key, None)
+            if len(hits) >= LOGIN_LIMITS[kind]:
+                return True
+    return False
+
+
+def login_record_failure(email: str, ip: str, now: float | None = None) -> None:
+    now = time.time() if now is None else now
+    with _LOGIN_LOCK:
+        if len(_LOGIN_FAILS) > _LOGIN_MAX_KEYS:   # bound memory under spraying
+            for key in [k for k, v in _LOGIN_FAILS.items()
+                        if not v or now - v[-1] >= LOGIN_WINDOW_SECONDS]:
+                _LOGIN_FAILS.pop(key, None)
+            if len(_LOGIN_FAILS) > _LOGIN_MAX_KEYS:
+                _LOGIN_FAILS.clear()
+        for key in _login_keys(email, ip).values():
+            _LOGIN_FAILS.setdefault(key, []).append(now)
+
+
+def login_record_success(email: str, ip: str) -> None:
+    with _LOGIN_LOCK:
+        _LOGIN_FAILS.pop(_login_keys(email, ip)["pair"], None)
+
+
 @route("POST", r"/api/auth/login", auth_required=False)
 def login(req: Req):
-    out = auth.login(req.body.get("email", ""), req.body.get("password", ""))
+    email = str(req.body.get("email", ""))
+    if login_throttled(email, req.client_ip):
+        audit.record("auth.login_throttled", actor="anonymous", outcome="denied",
+                     detail={"email": email[:254]})
+        raise RateLimitError("too many failed sign-in attempts; try again in a few minutes")
+    try:
+        out = auth.login(email, str(req.body.get("password", "")))
+    except AuthError:
+        login_record_failure(email, req.client_ip)
+        audit.record("auth.login_failed", actor="anonymous", outcome="denied",
+                     detail={"email": email[:254]})
+        raise
+    login_record_success(email, req.client_ip)
     audit.record("auth.login", actor=out["user"]["email"], detail={"ok": True})
     return 200, out
 
@@ -86,8 +151,11 @@ def health(req: Req):
 @route("GET", r"/api/config", auth_required=False)
 def config_public(req: Req):
     cfg = get_config()
+    # setup_notices are stable codes for startup problems (never secrets); the
+    # sign-in page turns them into an explanation of what the operator must fix.
     return 200, {"environment": cfg.environment, "ai_available": cfg.ai.available,
-                 "brand": "FAISAL.AI"}
+                 "brand": "FAISAL.AI", "setup_notices": list(SETUP_NOTICES),
+                 "min_password_length": auth.MIN_PASSWORD_LENGTH}
 
 
 # ===========================================================================
@@ -470,6 +538,7 @@ def _rate_check(key: str, limit_per_min: int | None = None):
 class Handler(BaseHTTPRequestHandler):
     server_version = "faisal-security-lab/2.0"
     protocol_version = "HTTP/1.1"
+    _head_only = False
 
     def log_message(self, fmt, *args):  # quiet by default
         pass
@@ -496,7 +565,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self._security_headers()
         self.end_headers()
-        self.wfile.write(data)
+        if not self._head_only:
+            self.wfile.write(data)
+
+    def _client_ip(self) -> str:
+        forwarded = self.headers.get("X-Forwarded-For", "")
+        if forwarded:
+            last = forwarded.split(",")[-1].strip()
+            if last:
+                return last[:64]
+        return self.client_address[0] if self.client_address else ""
 
     def _token(self):
         auth_h = self.headers.get("Authorization", "")
@@ -541,7 +619,8 @@ class Handler(BaseHTTPRequestHandler):
                     principal = auth.principal_from_token(tok)
                     if min_global:
                         principal.require_global(min_global)
-                req = Req(principal, match.groupdict(), query, body, token=tok)
+                req = Req(principal, match.groupdict(), query, body, token=tok,
+                          client_ip=self._client_ip())
                 status, obj = fn(req)
                 return self._send_json(status, obj)
             except AppError as e:
@@ -551,9 +630,16 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_json(404, {"error": {"code": "not_found", "message": "no such route"}})
 
     def do_GET(self):
+        self._head_only = False
+        self._dispatch("GET")
+
+    def do_HEAD(self):
+        # Same as GET without the body (uptime monitors commonly use HEAD).
+        self._head_only = True
         self._dispatch("GET")
 
     def do_POST(self):
+        self._head_only = False
         self._dispatch("POST")
 
     def _serve_static(self, path):
@@ -577,7 +663,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self._security_headers()
         self.end_headers()
-        self.wfile.write(data)
+        if not self._head_only:
+            self.wfile.write(data)
 
 
 def build_server(host: str | None = None, port: int | None = None) -> ThreadingHTTPServer:
@@ -591,12 +678,17 @@ def main():
     import os
     import sys
     cfg = get_config()
-    info = init_platform()
-    if info["owner_bootstrap"] and info["owner_bootstrap"].get("generated"):
-        print(f"[init] owner created: {info['owner_bootstrap']['email']}", file=sys.stderr)
-        print(f"[init] ONE-TIME owner password: {info['owner_bootstrap']['password']}", file=sys.stderr)
-    print(f"[init] catalog={info['catalog_seeded']} connectors={len(info['connectors'])} "
-          f"ai_available={info['ai_available']}", file=sys.stderr)
+    # Tool probing is deferred until the port is bound (see below) so a small
+    # instance answers its health check in seconds, not minutes.
+    info = init_platform(sync_tools=False)
+    for code in info["setup_notices"]:
+        print(f"[setup] {describe_notice(code)}", file=sys.stderr)
+    boot = info["owner_bootstrap"]
+    if boot.get("generated"):
+        print(f"[init] owner created: {boot['email']}", file=sys.stderr)
+        print(f"[init] ONE-TIME owner password: {boot['password']}", file=sys.stderr)
+    print(f"[init] catalog={info['catalog_seeded']} ai_available={info['ai_available']}",
+          file=sys.stderr)
 
     # In-process worker(s) for standalone mode (disable with FSL_NO_WORKER=1 to
     # run workers as separate processes/containers).
@@ -609,6 +701,15 @@ def main():
 
     srv = build_server()
     print(f"[serve] http://{cfg.bind_host}:{cfg.bind_port}  (Ctrl-C to stop)", file=sys.stderr)
+
+    def _sync_tools():
+        try:
+            reg = sync_registry()
+            print(f"[init] tool registry synced: {len(reg)} connectors", file=sys.stderr)
+        except Exception as e:  # never take the server down over a probe
+            print(f"[init] tool registry sync failed: {type(e).__name__}: {e}", file=sys.stderr)
+
+    threading.Thread(target=_sync_tools, daemon=True).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

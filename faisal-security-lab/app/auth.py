@@ -60,13 +60,24 @@ class Principal:
 # ---------------------------------------------------------------------------
 # User management
 # ---------------------------------------------------------------------------
+MIN_PASSWORD_LENGTH = 10
+DEFAULT_OWNER_EMAIL = "owner@faisal-security-lab.local"
+
+
+def valid_email(email: str) -> bool:
+    email = (email or "").strip()
+    return ("@" in email and len(email) <= 254
+            and not any(c.isspace() for c in email)
+            and all(part for part in email.split("@", 1)))
+
+
 def create_user(email: str, password: str, *, display_name: str = "",
                 global_role: str = "reader") -> dict:
     email = (email or "").strip().lower()
-    if "@" not in email or len(email) > 254:
+    if not valid_email(email):
         raise ValidationError("valid email required")
-    if len(password or "") < 10:
-        raise ValidationError("password must be at least 10 characters")
+    if len(password or "") < MIN_PASSWORD_LENGTH:
+        raise ValidationError(f"password must be at least {MIN_PASSWORD_LENGTH} characters")
     if global_role not in ROLE_RANK:
         raise ValidationError("invalid role")
     db = get_db()
@@ -81,24 +92,49 @@ def create_user(email: str, password: str, *, display_name: str = "",
     return {"id": uid, "email": email, "global_role": global_role}
 
 
-def bootstrap_owner() -> dict | None:
+def bootstrap_owner() -> dict:
     """Ensure an owner exists. Password comes from FSL_OWNER_PASSWORD, else a
     one-time bootstrap password is generated and returned (surfaced once, to the
-    console only — never logged into the DB in plaintext)."""
+    console only — never logged into the DB in plaintext).
+
+    Operator input is typed by hand into a hosting dashboard, so a bad value
+    must never crash the service. Instead this returns `notices` (stable codes)
+    that the server logs and the sign-in page explains:
+      owner_email_invalid       FSL_OWNER_EMAIL is not an email; the default is used
+      owner_password_too_short  FSL_OWNER_PASSWORD is too short; NO owner is created
+      owner_password_generated  no password was set; a one-time one is in the logs
+    """
     cfg = get_config()
     db = get_db()
-    existing = db.query_one("SELECT id,email FROM users WHERE email=?", (cfg.owner_email,))
-    if existing:
-        return None
-    pw = os.environ.get("FSL_OWNER_PASSWORD", "")
+    notices: list[str] = []
+
+    email = cfg.owner_email
+    if not valid_email(email):
+        notices.append("owner_email_invalid")
+        email = DEFAULT_OWNER_EMAIL
+
+    result = {"email": email, "created": False, "generated": False,
+              "password": None, "notices": notices}
+    if db.query_one("SELECT id FROM users WHERE email=?", (email,)):
+        return result
+
+    # Surrounding whitespace from a pasted/typed dashboard value is never intended.
+    pw = os.environ.get("FSL_OWNER_PASSWORD", "").strip()
     generated = False
     if not pw:
         pw = util.token()[:20]
         generated = True
-    user = create_user(cfg.owner_email, pw, display_name="Owner", global_role="owner")
-    return {"email": user["email"],
-            "password": pw if generated else None,
-            "generated": generated}
+        notices.append("owner_password_generated")
+    elif len(pw) < MIN_PASSWORD_LENGTH:
+        # Refuse a weak owner password, but keep the service up so the sign-in
+        # page can say exactly what to fix. Nobody can sign in until it is fixed.
+        notices.append("owner_password_too_short")
+        return result
+
+    user = create_user(email, pw, display_name="Owner", global_role="owner")
+    result.update({"email": user["email"], "created": True, "generated": generated,
+                   "password": pw if generated else None})
+    return result
 
 
 # ---------------------------------------------------------------------------

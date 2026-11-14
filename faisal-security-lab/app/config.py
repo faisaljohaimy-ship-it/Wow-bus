@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import tempfile
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
@@ -29,6 +30,17 @@ def _env_bool(name: str, default: bool) -> bool:
     if v is None:
         return default
     return v.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _usable_dir(path: Path) -> bool:
+    """True when the directory exists (or can be created) and is writable."""
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=str(path)):
+            pass
+        return True
+    except OSError:
+        return False
 
 
 @dataclass(frozen=True)
@@ -88,14 +100,32 @@ class Config:
     seed_catalog_path: Path
     limits: Limits = field(default_factory=Limits)
     ai: AIConfig = field(default_factory=AIConfig)
+    # True when the configured data directory was not writable (for example a
+    # root-owned disk mounted for a non-root process) and temporary storage is
+    # used instead. The service stays up and reports it rather than crashing.
+    data_dir_fallback: bool = False
 
     @classmethod
     def from_env(cls) -> "Config":
         data_dir = Path(_env("FSL_DATA_DIR", str(Path(__file__).resolve().parent.parent / "var"))).resolve()
-        data_dir.mkdir(parents=True, exist_ok=True)
-        evidence_dir = Path(_env("FSL_EVIDENCE_DIR", str(data_dir / "evidence"))).resolve()
-        evidence_dir.mkdir(parents=True, exist_ok=True)
-        (evidence_dir).chmod(0o700)
+        data_dir_fallback = False
+        if not _usable_dir(data_dir):
+            data_dir = Path(tempfile.mkdtemp(prefix="fsl-data-"))
+            data_dir_fallback = True
+        if data_dir_fallback:
+            # Explicit paths most likely point into the same unwritable place.
+            evidence_dir = data_dir / "evidence"
+            db_path = data_dir / "faisal-security-lab.db"
+        else:
+            evidence_dir = Path(_env("FSL_EVIDENCE_DIR", str(data_dir / "evidence"))).resolve()
+            db_path = Path(_env("FSL_DB_PATH", str(data_dir / "faisal-security-lab.db"))).resolve()
+        if not _usable_dir(evidence_dir):
+            evidence_dir = data_dir / "evidence"
+            evidence_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            evidence_dir.chmod(0o700)
+        except OSError:
+            pass
 
         secret_key = cls._load_or_create_secret(data_dir)
 
@@ -120,7 +150,7 @@ class Config:
 
         return cls(
             data_dir=data_dir,
-            db_path=Path(_env("FSL_DB_PATH", str(data_dir / "faisal-security-lab.db"))).resolve(),
+            db_path=db_path,
             evidence_dir=evidence_dir,
             bind_host=_env("FSL_BIND_HOST", "127.0.0.1"),
             # PaaS hosts (Render, Railway, Heroku, ...) inject $PORT and route to
@@ -134,6 +164,7 @@ class Config:
             seed_catalog_path=seed,
             limits=limits,
             ai=ai,
+            data_dir_fallback=data_dir_fallback,
         )
 
     @staticmethod
