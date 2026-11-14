@@ -11,6 +11,12 @@ persistent database, reuses the same account, project, asset, scope and jobs.
 It goes through the same chokepoints as an operator would: the scope is a real
 authorization record, every scan passes `policy.evaluate_job` before it is
 enqueued (and again in the worker before it runs), and each step is audited.
+
+Two things do change between starts. A demo scan that ended without a result
+(failed, blocked, cancelled, undetermined) is enqueued again, up to
+DEMO_MAX_ATTEMPTS jobs per connector and scope. And the demo defers to an
+operator: once somebody revokes the demo's authorization scope, no new scope is
+issued and nothing is scanned until a person authorizes it again.
 """
 from __future__ import annotations
 
@@ -30,7 +36,18 @@ DEMO_ACTOR = "system:public-demo"
 # Demo scans yield to anything an operator submits (lower number = sooner).
 DEMO_PRIORITY = 9
 PUBLIC_PROJECT_KEY = auth.PUBLIC_PROJECT_KEY
+# Settings key: id of the authorization scope this module issued and manages.
+PUBLIC_SCOPE_KEY = "public_scope_id"
 NOTICE_SAMPLE_MISSING = "demo_sample_missing"
+
+# Jobs per connector under one scope, the first run included.
+DEMO_MAX_ATTEMPTS = 3
+# A demo job in one of these states is waiting, in progress or done; every
+# other state is an end without a result.
+SETTLED_JOB_STATES = queue.ACTIVE_STATES + ("succeeded",)
+SKIP_ALREADY_ENQUEUED = "already_enqueued"
+SKIP_ATTEMPTS_EXHAUSTED = "attempts_exhausted"
+SKIP_SCOPE_REVOKED = "scope_revoked"
 
 # Resolved relative to the package so it works from any working directory and
 # inside the container image (deploy/Dockerfile.fly copies ./samples).
@@ -100,12 +117,30 @@ def _ensure_asset(project_id: str, sample: Path, owner_id: str) -> dict:
     return asset
 
 
+def _scope_revoked_by_operator(project_id: str) -> dict | None:
+    """The scope this module manages, if somebody has revoked it.
+
+    _ensure_scope records a scope under PUBLIC_SCOPE_KEY before it revokes the
+    one it replaces, so the recorded scope is never one this code revoked."""
+    db = get_db()
+    sid = db.get_setting(PUBLIC_SCOPE_KEY, "")
+    if not sid:
+        return None
+    return db.query_one("SELECT id FROM scopes WHERE id=? AND project_id=? AND status='revoked'",
+                        (sid, project_id))
+
+
 def _ensure_scope(project_id: str, asset: dict, connectors: list[str], owner_id: str) -> dict:
     """One active lab scope limited to the sample directory and the demo
-    connectors. Scopes are immutable, so a changed connector list revokes the
-    old demo scope and issues a new one; scopes created by people are left alone."""
+    connectors. Scopes are immutable, so a changed connector list issues a new
+    demo scope and revokes the old one; scopes created by people are left alone.
+
+    The scope in force is recorded under PUBLIC_SCOPE_KEY before the superseded
+    ones are revoked. In that order an interruption at any point leaves the
+    record on an active scope, never on one revoked here."""
     targets = [asset["identifier"]]
     keep = None
+    superseded = []
     for scope in store.list_scopes(project_id, asset["id"]):
         if (scope["status"] != "active" or scope["created_by"] != owner_id
                 or scope["proof"] != DEMO_PROOF):
@@ -114,36 +149,57 @@ def _ensure_scope(project_id: str, asset: dict, connectors: list[str], owner_id:
                    and scope["scan_types"] == connectors)
         if matches and keep is None:
             keep = scope
-            continue
+        else:
+            superseded.append(scope)
+    if keep is None:
+        keep = store.create_scope(
+            project_id, asset["id"], owner_contact=DEMO_ACTOR, proof=DEMO_PROOF,
+            environment="lab", allowed_targets=targets, scan_types=connectors,
+            created_by=owner_id)
+        audit.record("scope.create", actor=DEMO_ACTOR, project_id=project_id, target=keep["id"],
+                     detail={"environment": keep["environment"],
+                             "scan_types": keep["scan_types"],
+                             "allowed_targets": keep["allowed_targets"]})
+    get_db().set_setting(PUBLIC_SCOPE_KEY, keep["id"])
+    for scope in superseded:
         store.revoke_scope(scope["id"])
         audit.record("scope.revoke", actor=DEMO_ACTOR, project_id=project_id,
                      target=scope["id"], detail={"reason": "superseded demo scope"})
-    if keep is not None:
-        return keep
-    scope = store.create_scope(
-        project_id, asset["id"], owner_contact=DEMO_ACTOR, proof=DEMO_PROOF,
-        environment="lab", allowed_targets=targets, scan_types=connectors,
-        created_by=owner_id)
-    audit.record("scope.create", actor=DEMO_ACTOR, project_id=project_id, target=scope["id"],
-                 detail={"environment": scope["environment"], "scan_types": scope["scan_types"],
-                         "allowed_targets": scope["allowed_targets"]})
-    return scope
+    return keep
+
+
+def _job_keys(scope_id: str, connector: str) -> list[str]:
+    """Idempotency keys of the demo jobs for one connector under one scope, in
+    the order they are used: the first run, then the retries ":2", ":3"."""
+    first = f"public-demo:{scope_id}:{connector}"
+    return [first] + [f"{first}:{n}" for n in range(2, DEMO_MAX_ATTEMPTS + 1)]
 
 
 def _enqueue_scans(project: dict, asset: dict, scope: dict, connectors: list[str],
                    owner_id: str) -> tuple[list[str], dict]:
     """Enqueue one scan per demo connector that is ready right now.
 
-    The idempotency key is stable for a given scope, so a restart on a
-    persistent database finds the earlier job instead of adding a duplicate."""
+    The idempotency keys are stable for a given scope, so a restart on a
+    persistent database finds the earlier jobs instead of adding duplicates.
+    A connector gets a new job only when its latest one ended without a result
+    and fewer than DEMO_MAX_ATTEMPTS jobs exist for it under this scope."""
     db = get_db()
     enqueued: list[str] = []
     skipped: dict = {}
     for name in connectors:
-        key = f"public-demo:{scope['id']}:{name}"
-        if db.query_one("SELECT id FROM jobs WHERE idempotency_key=?", (key,)):
-            skipped[name] = "already_enqueued"
+        keys = _job_keys(scope["id"], name)
+        marks = ",".join("?" for _ in keys)
+        states = {row["idempotency_key"]: row["state"] for row in db.query_all(
+            f"SELECT idempotency_key, state FROM jobs WHERE idempotency_key IN ({marks})",
+            tuple(keys))}
+        latest = max((i for i, key in enumerate(keys) if key in states), default=-1)
+        if latest >= 0 and states[keys[latest]] in SETTLED_JOB_STATES:
+            skipped[name] = SKIP_ALREADY_ENQUEUED
             continue
+        if latest + 1 >= len(keys):
+            skipped[name] = SKIP_ATTEMPTS_EXHAUSTED
+            continue
+        key = keys[latest + 1]
         conn = get_connector(name)
         try:
             ready = bool(conn.readiness().get("available"))
@@ -192,6 +248,16 @@ def ensure_public_demo() -> dict:
         project, created = _ensure_project(owner_id)
         asset = _ensure_asset(project["id"], sample, owner_id)
         connectors, rejected = demo_connectors()
+        revoked = _scope_revoked_by_operator(project["id"])
+        if revoked:
+            # An operator withdrew the authorization. It is not issued again
+            # and nothing is scanned; what the project already holds stays
+            # readable.
+            get_db().set_setting(PUBLIC_PROJECT_KEY, project["id"])
+            return {"enabled": True, "created": created, "project_id": project["id"],
+                    "asset_id": asset["id"], "scope_id": revoked["id"],
+                    "connectors": connectors, "enqueued": [],
+                    "skipped": {"*": SKIP_SCOPE_REVOKED}}
         scope = _ensure_scope(project["id"], asset, connectors, owner_id)
         # Only now does the project become visible to guests.
         get_db().set_setting(PUBLIC_PROJECT_KEY, project["id"])

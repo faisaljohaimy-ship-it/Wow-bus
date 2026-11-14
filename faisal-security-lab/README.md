@@ -47,10 +47,11 @@ Open the UI, sign in, create a project, register an asset, grant an authorizatio
 
 Optional: `FSL_PUBLIC_VIEW=1` lets visitors **read** one seeded demo project (the
 bundled `samples/vulnerable-app`, scanned for real) without signing in. It is off
-by default and strictly read-only — see [docs/DEPLOY.md](docs/DEPLOY.md).
+by default and strictly read-only; guests are never sent evidence text or server
+paths — see [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ```bash
-make test                   # 107 unit + integration tests (real tools where present)
+make test                   # 162 unit + integration tests (real tools where present)
 make acceptance             # the 10 release-acceptance gates → evidence/acceptance-report.json
 ```
 

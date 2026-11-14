@@ -6,7 +6,9 @@ Roles (ascending privilege): reader < analyst < admin < owner.
   registry, flipping the global stop switch.
 - Project role gates project data. A platform owner/admin has admin rights on
   every project; otherwise the project_members row (or project ownership)
-  decides. Everything is enforced server-side.
+  decides. Everything is enforced server-side. One addition while the public
+  read-only view is on: every signed-in account is at least a reader of the
+  public demo project.
 - "guest" is NOT a role a user can hold. It names the unauthenticated visitor
   of the optional public read-only view (FSL_PUBLIC_VIEW=1): it ranks below
   reader, fails every global check, and reads exactly one designated demo
@@ -46,7 +48,13 @@ class Principal:
         row = db.query_one(
             "SELECT role FROM project_members WHERE project_id=? AND user_id=?",
             (project_id, self.user_id))
-        return row["role"] if row else "none"
+        role = row["role"] if row else "none"
+        # While the public view is on, a signed-in account never sees less than
+        # an anonymous visitor: it is at least a reader of the public demo
+        # project. Anything above reader still comes from membership only.
+        if rank(role) < rank("reader") and project_id and project_id == public_project_id():
+            return "reader"
+        return role
 
     def require_global(self, min_role: str) -> None:
         if rank(self.global_role) < rank(min_role):
@@ -74,7 +82,8 @@ PUBLIC_PROJECT_KEY = "public_project_id"   # settings key written by app/demo.py
 
 
 def public_project_id() -> str:
-    """Id of the one project a guest may read, or "" when there is none.
+    """Id of the one project a guest (and every signed-in account) may read,
+    or "" when there is none.
 
     Empty whenever the public view is switched off, so turning the flag off
     revokes guest access even if a demo project was created earlier. The stored

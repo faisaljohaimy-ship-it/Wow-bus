@@ -110,8 +110,8 @@ class PublicViewCase(unittest.TestCase):
         self.addCleanup(_clean_env)
         self.cfg = boot(self.PUBLIC, **self.ENV)
         server._GUEST_HITS.clear()
+        server._GUEST_GLOBAL[:] = [0.0, 0]
         server._LOGIN_FAILS.clear()
-        server._CONNECTORS_CACHE.update(at=None, data=None)
         if self.FAKE_TOOLS:
             patcher = mock.patch.object(Connector, "readiness", lambda self: dict(FAKE_READY))
             patcher.start()
@@ -344,22 +344,14 @@ class TestGuestReads(PublicViewCase):
         status, body = self.get("/api/ai/status")
         self.assertEqual(status, 200)
         self.assertIs(body["available"], False)
+        # Connectors come from the stored tool registry: empty until the
+        # startup sync has filled it.
+        self.assertEqual(self.get("/api/connectors"), (200, {"connectors": []}))
+        from app.connectors import sync_registry
+        sync_registry()
         status, body = self.get("/api/connectors")
         self.assertEqual(status, 200)
         self.assertIn("bandit", [c["name"] for c in body["connectors"]])
-
-    def test_guest_connector_listing_does_not_probe_tools_on_every_request(self):
-        from app import server
-        with mock.patch.object(server, "_connectors_live",
-                               wraps=server._connectors_live) as live:
-            for _ in range(5):
-                self.assertEqual(self.get("/api/connectors")[0], 200)
-            self.assertEqual(live.call_count, 1)
-            # A signed-in caller still gets a live probe every time.
-            token = self.owner_token()
-            for _ in range(2):
-                self.assertEqual(self.get("/api/connectors", token=token)[0], 200)
-            self.assertEqual(live.call_count, 3)
 
     def test_head_is_served_like_get(self):
         self.assertEqual(self.http("HEAD", "/api/projects")[0], 200)
@@ -591,13 +583,18 @@ class TestCredentialsStillChecked(PublicViewCase):
         self.assertEqual(self.get("/api/metrics", token=token)[0], 200)
         self.assertEqual(self.get("/api/users", token=token)[0], 200)
 
-    def test_a_signed_in_user_is_judged_by_membership_only(self):
-        # Presenting a session never adds guest rights on top of the account's own.
+    def test_a_signed_in_non_member_reads_the_demo_but_nothing_else(self):
+        # Signing in never shows less than an anonymous visitor gets: the demo
+        # project stays readable. Everything beyond reading it is still decided
+        # by membership (see test_public_view_hardening.TestSignedInUsersSeeTheDemo).
         from app import auth
+        private = self.seed_private_project()
         auth.create_user("reader@test.local", "reader-password-1", global_role="reader")
         token = auth.login("reader@test.local", "reader-password-1")["token"]
-        self.assertEqual(self.get("/api/projects", token=token), (200, {"projects": []}))
-        self.assertEqual(self.get(f"/api/projects/{self.demo['pid']}", token=token)[0], 403)
+        status, body = self.get("/api/projects", token=token)
+        self.assertEqual((status, [p["id"] for p in body["projects"]]), (200, [self.demo["pid"]]))
+        self.assertEqual(self.get(f"/api/projects/{self.demo['pid']}", token=token)[0], 200)
+        self.assertEqual(self.get(f"/api/projects/{private['pid']}", token=token)[0], 403)
         self.assertEqual(self.http("POST", f"/api/projects/{self.demo['pid']}/scans", token=token,
                                    body={"asset_id": self.demo["aid"],
                                          "scope_id": self.demo["sid"],
@@ -664,16 +661,17 @@ class TestGuestRateLimit(PublicViewCase):
 
     def test_client_table_is_bounded(self):
         from app import server
-        from app.errors import RateLimitError
         now = 2_000_000.0
         with mock.patch.object(server, "GUEST_MAX_CLIENTS", 3):
             for i in range(3):
-                server.guest_rate_check(f"10.0.0.{i}", now)
-            with self.assertRaises(RateLimitError):
-                server.guest_rate_check("10.0.0.99", now)
-            server.guest_rate_check("10.0.0.1", now)           # known clients keep working
+                server.guest_rate_check(f"10.0.0.{i}", now + i)
             self.assertEqual(len(server._GUEST_HITS), 3)
-            server.guest_rate_check("10.0.0.99", now + server.GUEST_WINDOW_SECONDS)
+            # A full table never refuses a new client (see
+            # test_public_view_hardening.TestGuestRateLimitTable); it stays bounded.
+            for i in range(50):
+                server.guest_rate_check(f"10.0.1.{i}", now + 3)
+                self.assertLessEqual(len(server._GUEST_HITS), 3)
+            server.guest_rate_check("10.0.0.99", now + 2 * server.GUEST_WINDOW_SECONDS)
             self.assertLessEqual(len(server._GUEST_HITS), 3)
 
     def test_http_429_for_guests_only(self):

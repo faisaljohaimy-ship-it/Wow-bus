@@ -14,6 +14,8 @@ Security posture:
     global role and is a reader of one demo project, so the per-project checks
     in each handler confine it; every POST and every other route still needs a
     session. A request that carries a bad or expired token is always 401.
+    Whatever a guest is sent first passes through app/guest_view.py (no
+    evidence text, no server paths), applied in one place: Handler._dispatch.
 """
 from __future__ import annotations
 
@@ -25,7 +27,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 
-from . import audit, auth, demo, evidence, findings as F, metrics, policy, queue, reports, store, util
+from . import (audit, auth, demo, evidence, findings as F, guest_view, metrics, policy, queue,
+               reports, store, util)
 from .ai import agents, evalset
 from .bootstrap import SETUP_NOTICES, describe_notice, init_platform
 from .config import get_config
@@ -129,38 +132,64 @@ def login_record_success(email: str, ip: str) -> None:
 
 
 # --- guest (public read-only view) throttling --------------------------------
-# Every request served to a guest is counted per client address in a fixed
-# one-minute window; beyond the limit the answer is HTTP 429. In-memory, per API
-# process. The client address comes from Handler._client_ip (same logic as the
-# sign-in throttle). The table is bounded: once it holds GUEST_MAX_CLIENTS
-# clients in the current window, new clients are refused until it rolls over,
-# which also caps total guest load when addresses are sprayed.
+# Every request served to a guest is counted twice, both in fixed one-minute
+# windows: per client address (GUEST_LIMIT_PER_MINUTE) and across all guests
+# (GUEST_GLOBAL_LIMIT_PER_MINUTE). Beyond either limit the answer is HTTP 429.
+# In-memory, per API process; signed-in requests are never counted. The client
+# address comes from Handler._client_ip (same logic as the sign-in throttle).
+#
+# The per-client table holds at most GUEST_MAX_CLIENTS addresses. When it is
+# full, expired windows are dropped and, if that is not enough, the clients
+# with the oldest window start are forgotten, so a flood of new addresses
+# cannot lock other visitors out. Forgetting a client resets its count, which
+# is why the global ceiling exists: it bounds total guest load no matter how
+# many addresses the requests appear to come from. A client only enters the
+# table after passing the ceiling, so with these numbers at most 2400 client
+# windows are live at any moment (two ceilings' worth) and dropping the expired
+# ones always makes room in the 4096 slots.
 GUEST_WINDOW_SECONDS = 60
 GUEST_LIMIT_PER_MINUTE = 240
+GUEST_GLOBAL_LIMIT_PER_MINUTE = 1200
 GUEST_MAX_CLIENTS = 4096
 _GUEST_HITS: dict[str, list] = {}       # client -> [window_start, count]
+_GUEST_GLOBAL: list = [0.0, 0]          # [window_start, count] for all guests together
 _GUEST_LOCK = threading.Lock()
 
 
+def _guest_make_room(now: float) -> None:
+    """Free at least one slot in the full per-client table (lock held)."""
+    for key in [k for k, v in _GUEST_HITS.items() if now - v[0] >= GUEST_WINDOW_SECONDS]:
+        del _GUEST_HITS[key]
+    excess = len(_GUEST_HITS) - GUEST_MAX_CLIENTS + 1
+    if excess > 0:
+        # Evict a batch, oldest window first, so a burst of new addresses does
+        # not sort the whole table again on every request.
+        batch = max(excess, GUEST_MAX_CLIENTS // 8)
+        for key in sorted(_GUEST_HITS, key=lambda k: _GUEST_HITS[k][0])[:batch]:
+            del _GUEST_HITS[key]
+
+
 def guest_rate_check(client: str, now: float | None = None) -> None:
-    """Count one guest request for this client; raise RateLimitError if over."""
+    """Count one guest request for this client; raise RateLimitError if over.
+
+    Only a request that is let through counts toward the global ceiling, so a
+    single client hammering past its own limit cannot use the ceiling up."""
     now = time.time() if now is None else now
     client = (client or "unknown")[:64]
     with _GUEST_LOCK:
+        if now - _GUEST_GLOBAL[0] >= GUEST_WINDOW_SECONDS:
+            _GUEST_GLOBAL[:] = [now, 0]
+        if _GUEST_GLOBAL[1] >= GUEST_GLOBAL_LIMIT_PER_MINUTE:
+            raise RateLimitError("the public view is busy; try again in a minute")
         entry = _GUEST_HITS.get(client)
-        if entry is not None and now - entry[0] >= GUEST_WINDOW_SECONDS:
-            entry = None
-        if entry is None:
-            if len(_GUEST_HITS) >= GUEST_MAX_CLIENTS:
-                for key in [k for k, v in _GUEST_HITS.items()
-                            if now - v[0] >= GUEST_WINDOW_SECONDS]:
-                    _GUEST_HITS.pop(key, None)
-                if len(_GUEST_HITS) >= GUEST_MAX_CLIENTS:
-                    raise RateLimitError("too many visitors right now; try again in a minute")
+        if entry is None or now - entry[0] >= GUEST_WINDOW_SECONDS:
+            if entry is None and len(_GUEST_HITS) >= GUEST_MAX_CLIENTS:
+                _guest_make_room(now)
             entry = _GUEST_HITS[client] = [now, 0]
         if entry[1] >= GUEST_LIMIT_PER_MINUTE:
             raise RateLimitError("rate limit exceeded; slow down or sign in")
         entry[1] += 1
+        _GUEST_GLOBAL[1] += 1
 
 
 @route("POST", r"/api/auth/login", auth_required=False)
@@ -237,15 +266,20 @@ def users_create(req: Req):
 # ===========================================================================
 @route("GET", r"/api/projects", guest_ok=True)
 def projects_list(req: Req):
+    pid = auth.public_project_id()
+    try:
+        public = [store.get_project(pid)] if pid else []
+    except NotFoundError:
+        public = []
     if req.principal.guest:
         # A guest sees the public demo project and nothing else (an empty list
         # until it exists). Never falls through to the membership query.
-        pid = auth.public_project_id()
-        try:
-            return 200, {"projects": [store.get_project(pid)] if pid else []}
-        except NotFoundError:
-            return 200, {"projects": []}
-    return 200, {"projects": store.list_projects_for(req.principal.user_id, req.principal.global_role)}
+        return 200, {"projects": public}
+    projects = store.list_projects_for(req.principal.user_id, req.principal.global_role)
+    # While the public view is on, signing in never hides the demo project:
+    # every account is at least a reader of it (auth.Principal.project_role).
+    listed = {p["id"] for p in projects}
+    return 200, {"projects": projects + [p for p in public if p["id"] not in listed]}
 
 
 @route("POST", r"/api/projects")
@@ -353,15 +387,9 @@ def tools_sync(req: Req):
     return 200, {"synced": out}
 
 
-# Readiness is probed live (it runs each tool's version command). Signed-in
-# callers always get a fresh probe. Guests get a result at most
-# GUEST_CONNECTORS_TTL seconds old, so anonymous traffic cannot be used to
-# spawn tool processes on demand.
-GUEST_CONNECTORS_TTL = 60
-_CONNECTORS_CACHE: dict = {"at": None, "data": None}
-_CONNECTORS_LOCK = threading.Lock()
-
-
+# Readiness is probed live for signed-in callers (it runs each tool's version
+# command). A guest is answered from the stored tool registry instead, so
+# anonymous traffic never starts a process on the server.
 def _connectors_live() -> list:
     out = []
     for c in all_connectors():
@@ -375,16 +403,26 @@ def _connectors_live() -> list:
     return out
 
 
+def _connectors_from_registry() -> list:
+    """The listing in the shape of _connectors_live, read from the tool
+    registry table (written by the startup sync) without probing anything.
+    Each entry also carries the registry "state". Empty until the first sync
+    has finished."""
+    out = []
+    for row in store.list_tool_registry():
+        conn = get_connector(row["name"])
+        out.append({"name": row["name"], "category": row["category"], "source": row["source"],
+                    "license": row["license"], "connector_type": row["connector_type"],
+                    "capabilities": conn.capabilities() if conn else {},
+                    "readiness": row["readiness"], "state": row["state"]})
+    return out
+
+
 @route("GET", r"/api/connectors", guest_ok=True)
 def connectors(req: Req):
-    if not req.principal.guest:
-        return 200, {"connectors": _connectors_live()}
-    with _CONNECTORS_LOCK:
-        at = _CONNECTORS_CACHE["at"]
-        if at is None or time.monotonic() - at >= GUEST_CONNECTORS_TTL:
-            _CONNECTORS_CACHE["data"] = _connectors_live()
-            _CONNECTORS_CACHE["at"] = time.monotonic()
-        return 200, {"connectors": _CONNECTORS_CACHE["data"]}
+    if req.principal.guest:
+        return 200, {"connectors": _connectors_from_registry()}
+    return 200, {"connectors": _connectors_live()}
 
 
 # ===========================================================================
@@ -518,12 +556,22 @@ def evidence_read(req: Req):
 # ===========================================================================
 # Reports
 # ===========================================================================
+REPORT_FORMATS = ("json", "sarif", "md", "html")
+REPORT_LANGS = ("ar", "en")
+
+
 @route("GET", r"/api/projects/(?P<pid>[\w-]+)/report", guest_ok=True)
 def report(req: Req):
     pid = req.params["pid"]
     req.principal.require_project(pid, "reader")
+    # Both parameters are reduced to known values. The language ends up in the
+    # markup of the HTML report, so nothing a caller typed may pass through.
     fmt = req.q("format", "json")
+    if fmt not in REPORT_FORMATS:
+        fmt = "json"
     lang = req.q("lang", "ar")
+    if lang not in REPORT_LANGS:
+        lang = "ar"
     if fmt == "sarif":
         return 200, ("application/json", reports.to_sarif(pid))
     if fmt == "md":
@@ -711,9 +759,9 @@ class Handler(BaseHTTPRequestHandler):
             match = rx.match(path)
             if not match:
                 continue
+            principal = None
             try:
                 body = self._read_body() if method in ("POST", "PUT", "PATCH") else {}
-                principal = None
                 tok = self._token()
                 client_ip = self._client_ip()
                 if auth_required or min_global:
@@ -727,11 +775,15 @@ class Handler(BaseHTTPRequestHandler):
                 req = Req(principal, match.groupdict(), query, body, token=tok,
                           client_ip=client_ip)
                 status, obj = fn(req)
-                return self._send_json(status, obj)
             except AppError as e:
-                return self._send_json(e.status, e.public())
+                status, obj = e.status, e.public()
             except Exception as e:  # unexpected
-                return self._send_json(500, {"error": {"code": "internal", "message": str(e)[:200]}})
+                status, obj = 500, {"error": {"code": "internal", "message": str(e)[:200]}}
+            if principal is not None and principal.guest:
+                # The one place the guest view is applied: results and errors
+                # of every guest_ok route, JSON and report text alike.
+                obj = guest_view.apply(obj)
+            return self._send_json(status, obj)
         return self._send_json(404, {"error": {"code": "not_found", "message": "no such route"}})
 
     def do_GET(self):
@@ -794,6 +846,9 @@ def seed_public_demo() -> dict | None:
         return None
     if out.get("notice"):
         print(f"[setup] {describe_notice(out['notice'])}", file=sys.stderr)
+    elif out.get("skipped", {}).get("*") == demo.SKIP_SCOPE_REVOKED:
+        print("[init] public demo: the authorization scope was revoked by an operator; "
+              "not re-issuing", file=sys.stderr)
     elif out.get("enabled"):
         print(f"[init] public demo project {out['project_id']}: "
               f"{len(out['enqueued'])} scan(s) enqueued, skipped={out['skipped']}",
@@ -836,13 +891,20 @@ def main():
         except Exception as e:  # never take the server down over a probe
             print(f"[init] tool registry sync failed: {type(e).__name__}: {e}", file=sys.stderr)
 
-    threading.Thread(target=_sync_tools, daemon=True).start()
+    def _after_bind():
+        # One thread, in this order: a finished scan marks its tool "verified"
+        # by updating the tool's registry row, so the rows have to exist before
+        # the first demo scan is enqueued. Neither step raises.
+        _sync_tools()
+        if cfg.public_view:
+            seed_public_demo()
+
     if cfg.public_view:
         # After the bind, in the background: startup stays fast and a problem
         # with the demo can never stop the service from answering.
         print("[init] public read-only view is ON: visitors can read the demo project "
               "without signing in; every action still requires a sign-in", file=sys.stderr)
-        threading.Thread(target=seed_public_demo, daemon=True).start()
+    threading.Thread(target=_after_bind, daemon=True).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

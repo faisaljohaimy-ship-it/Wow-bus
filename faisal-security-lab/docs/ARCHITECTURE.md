@@ -41,8 +41,34 @@ Two deployable roles share one SQLite database (WAL):
    has no global role and is `reader` of exactly one project — the demo project
    owned by a reserved, non-loginable system account (`app/demo.py`) — so the same
    `require_project` checks that isolate tenants confine it. Any presented
-   credential, valid or not, is validated as before. Guests are rate limited per
-   client address.
+   credential, valid or not, is validated as before. While the view is on, every
+   signed-in account is also at least a `reader` of that project
+   (`Principal.project_role`); higher roles stay membership-based.
+   - *What a guest is sent.* `Handler._dispatch` passes every result and error
+     of a guest request through `app/guest_view.py` after the handler returns —
+     the only place this happens, so a new guest route is covered by default. It
+     drops `redacted_summary`, `storage_ref`, `local_path` and a readiness
+     object's `path` wherever they appear, and in every string (JSON values and
+     the HTML/Markdown/SARIF report text) cuts off the application directory and
+     shows the data directory as `data`. A guest therefore gets no evidence text
+     and no server paths; signed-in principals bypass the view entirely. The
+     report route accepts only `lang=ar|en` and its four known formats.
+   - *What a guest may cost.* Guest requests are counted per client address
+     (240/min) and across all guests (1200/min), both fixed one-minute windows,
+     in memory; a full per-client table evicts its oldest entries instead of
+     refusing new clients. The guest connector list is read from the
+     `tool_registry` table, so anonymous traffic never runs a tool's version
+     command.
+   - *The demo across restarts* (`app/demo.py`). Startup runs the registry sync
+     and then the demo seeding in one background thread, so a tool's registry
+     row exists before a demo scan can mark it verified. Demo jobs carry
+     idempotency keys `public-demo:<scope>:<connector>[:2|:3]`: a job that is
+     queued, leased, running or succeeded is final for that start, any other
+     end state gets the next key, at most three jobs per connector and scope.
+     The id of the scope the demo manages is kept in the `public_scope_id`
+     setting and is written before a superseded scope is revoked; finding that
+     scope revoked therefore means an operator did it, and the demo then issues
+     no scope and enqueues nothing.
 2. **API ↔ queue.** A job is only enqueued after `policy.evaluate_job` passes with
    the caller's principal. The policy engine is the single authorization chokepoint.
 3. **Queue ↔ worker.** The worker re-evaluates policy at execution time with no
