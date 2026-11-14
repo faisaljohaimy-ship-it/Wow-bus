@@ -291,13 +291,17 @@ class Worker:
 
 def main():  # `python -m app.worker`
     import sys
-    from .config import get_config
+    from .config import discard_fallback_dir, get_config
     from .db import get_db
     if get_config().data_dir_fallback:
         # Temporary storage is private to this process: its database is empty
         # and no API ever writes jobs to it, so polling it can never do work.
         print("[worker] data directory is not writable; a standalone worker needs "
               "the same data directory as the API. Exiting.", file=sys.stderr)
+        # Loading the configuration created that temporary storage. A worker
+        # that is restarted until its volume is fixed must not leave one
+        # behind per attempt.
+        discard_fallback_dir()
         sys.exit(1)
     get_db()
     w = Worker()

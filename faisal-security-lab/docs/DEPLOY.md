@@ -28,12 +28,19 @@ docker run -d -p 8080:8080 -v fsl_data:/data \
   faisal-security-lab
 ```
 → opens at `http://<your-host>:8080` (put it behind a TLS reverse proxy for production).
+Behind that proxy, set `FSL_TRUSTED_PROXY_HOPS=1` (one nginx or Caddy that adds the
+client address to `X-Forwarded-For`) and publish the port to the proxy only
+(`-p 127.0.0.1:8080:8080`); otherwise every visitor shares one sign-in allowance.
+See "Client address behind a proxy" below.
 The split API + isolated-worker setup is in `deploy/compose.yaml`.
 
 ## Option C — Render / Railway
 Point the service at this repo subdirectory `faisal-security-lab`, Dockerfile
 `deploy/Dockerfile.fly`, port `8080`, add a persistent disk mounted at `/data`, and
-set the same `FSL_OWNER_*` env vars.
+set the same `FSL_OWNER_*` env vars. A service created by hand does not get the
+client-address setting that `render.yaml` carries: add `FSL_CLIENT_IP_HEADER` yourself
+(`CF-Connecting-IP` on Render; on another host, the header its proxy sets), or every
+visitor shares one sign-in allowance. See "Client address behind a proxy" below.
 
 ## Option D — Render Blueprint (clicks only, no terminal)
 Open `https://render.com/deploy?repo=https://github.com/faisaljohaimy-ship-it/Wow-bus`,
@@ -57,7 +64,7 @@ problem, and the sign-in page explains what to change:
 |---|---|---|
 | `owner_password_too_short` | `FSL_OWNER_PASSWORD` is under 10 characters; **no owner account exists** | set a longer value, redeploy |
 | `owner_email_invalid` | `FSL_OWNER_EMAIL` is not an email | sign in with `owner@faisal-security-lab.local`, or fix the value |
-| `owner_email_ignored` | `FSL_OWNER_EMAIL` is not an email and an owner account already exists; nothing was created or changed | sign in with the existing owner address, or fix the value |
+| `owner_email_ignored` | `FSL_OWNER_EMAIL` is not an email and an owner account at another address already exists; nothing was created or changed | sign in with that owner address, or fix the value |
 | `owner_password_generated` | no password was set | read the one-time password in the service logs |
 | `data_dir_unwritable` | the data directory (or an explicit `FSL_DB_PATH` / `FSL_EVIDENCE_DIR`) cannot be written | that location is temporary; fix the mount/ownership |
 
@@ -65,7 +72,9 @@ Only the location that cannot be written moves to temporary storage: an explicit
 `FSL_DB_PATH` or `FSL_EVIDENCE_DIR` in a writable place is kept even when
 `FSL_DATA_DIR` is not usable. A standalone worker (`python -m app.worker`, the
 `deploy/compose.yaml` setup) does not fall back: it exits with an error, because a
-worker on its own empty database would never see the API's jobs.
+worker on its own empty database would never see the API's jobs. It does so whenever
+any of the three locations is unusable, so give it a writable `FSL_DATA_DIR` even when
+`FSL_DB_PATH` and `FSL_EVIDENCE_DIR` point somewhere else.
 
 ## Container user and data directory
 The single-image container starts as root only to make a host-mounted data
@@ -94,15 +103,26 @@ resolved, is not `/`, is not equal to or inside `/app`, `/usr`, `/etc`, `/bin`,
 `/sbin`, `/lib`, `/lib32`, `/lib64`, `/libx32`, `/home`, `/root`, `/proc`, `/sys`,
 `/dev`, `/boot` or `/run`, and is not exactly `/var`, `/tmp`, `/opt`, `/mnt`, `/srv`
 or `/media` (a sub-directory such as `/var/lib/fsl` is fine). Any other value is
-left untouched and named in one log line; the service then uses temporary storage
-and reports `data_dir_unwritable`. The owner is changed only when the directory is
-not already owned by uid 10001, so that happens on the first start with a new disk
-and not on every boot.
+left untouched and named in one log line. The service still uses that directory if
+uid 10001 can write to it; if not, it uses temporary storage and reports
+`data_dir_unwritable`. An empty `FSL_DATA_DIR` means `/data`.
+
+The owner is changed only when the directory, or anything in it, is not already
+owned by uid 10001. That is the case on the first start with a new disk and after
+files were put there from a root shell (a restored backup, `docker cp`), not on
+every boot. With `--user 10001` nothing in the container can change an owner, so
+files restored into the data directory must be given to uid 10001 by hand
+(`chown -R 10001:10001 <data directory>` on the host).
 
 ## Client address behind a proxy
 By default the server identifies a client by the socket peer address and ignores forwarding headers. Behind a platform proxy set FSL_CLIENT_IP_HEADER to the single-value header the platform sets (CF-Connecting-IP on Render, Fly-Client-IP on Fly.io), or set FSL_TRUSTED_PROXY_HOPS to the number of trusted proxies that append to X-Forwarded-For. A wrong value makes sign-in limits shared between visitors; a signed-in owner can see the detected address and its source in Settings.
 
 `render.yaml` and `fly.toml` already set `FSL_CLIENT_IP_HEADER` for their platform.
+A service that was created by hand, or before that line was added to the file, does
+not have it: check that the variable is listed in the host's environment settings.
+The service log says which source is in use (`[init] client address: ...`) and
+prints one `[setup]` line if a setting was given but unusable, or if a request
+arrives with a forwarding header while neither setting is set.
 The detected address and its source are also returned as `client` by `/api/me`;
 [OPERATIONS.md](OPERATIONS.md) ("Sign-in protection") shows how to read it and
 lists the sign-in limits.

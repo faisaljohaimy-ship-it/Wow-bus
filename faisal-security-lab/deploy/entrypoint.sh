@@ -9,8 +9,8 @@
 #
 # FSL_DATA_DIR is created and re-owned only when it is a dedicated directory.
 # A relative path or a system location (/, /usr, /etc, /app, ...) is left
-# untouched; the service then reports data_dir_unwritable and uses temporary
-# storage.
+# untouched. The service still uses it if the service user can write there;
+# if not, it reports data_dir_unwritable and uses temporary storage.
 #
 #   FSL_REQUIRE_NONROOT=1     refuse to start when privileges cannot be dropped
 #   FSL_ENTRYPOINT_DRY_RUN=1  print the decisions and exit; nothing is created,
@@ -18,6 +18,9 @@
 set -eu
 
 RAW_DATA_DIR="${FSL_DATA_DIR:-/data}"
+# An unset or empty value means /data here but another default to the server,
+# so the value decided on is passed along and both use the same directory.
+export FSL_DATA_DIR="$RAW_DATA_DIR"
 RUN_UID=10001
 RUN_GID=10001
 DRY_RUN="${FSL_ENTRYPOINT_DRY_RUN:-0}"
@@ -47,6 +50,13 @@ owned_by_service_user() {
   [ "$(stat -c %u -- "$1" 2>/dev/null || true)" = "$RUN_UID" ]
 }
 
+# True when something inside $1 has another owner, for example a backup
+# restored from a root shell. The tree is only read; symlinks are examined,
+# never followed.
+has_foreign_entry() {
+  [ -n "$(find "$1" ! -user "$RUN_UID" -print -quit 2>/dev/null)" ]
+}
+
 # Decisions are reported only in dry-run mode.
 decision() {
   if [ "$DRY_RUN" = "1" ]; then
@@ -71,9 +81,9 @@ if [ "$(id -u)" = "0" ]; then
     if [ "$DRY_RUN" != "1" ]; then
       mkdir -p -- "$DATA_DIR" 2>/dev/null || true
     fi
-    # Ownership is changed once, not on every boot: a directory the service
-    # user already owns is left alone.
-    if ! owned_by_service_user "$DATA_DIR"; then
+    # Ownership is changed only when something has the wrong owner, not on
+    # every boot: a tree the service user already owns is left alone.
+    if ! owned_by_service_user "$DATA_DIR" || has_foreign_entry "$DATA_DIR"; then
       CHOWN=yes
     fi
   fi

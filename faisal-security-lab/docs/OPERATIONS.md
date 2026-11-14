@@ -64,6 +64,15 @@ A 429 response says how long to wait (`error.detail.retry_after_seconds`). A
 successful sign-in is not counted and resets that client's count for the account.
 Unknown and known emails are treated identically.
 
+Password checks are slow on purpose, so they run one at a time, and one client
+address can have only one sign-in in progress. A sign-in that arrives while that
+client's previous one is still running, or that cannot get its turn within 10
+seconds, gets HTTP 429 "sign-in is busy" instead of queueing without limit; it is
+not counted as an attempt and not written to the audit log. This keeps a burst of
+sign-ins from using all the CPU of a small instance and starving the health check.
+While many addresses keep sending sign-ins, a genuine one can still get the busy
+answer and has to be repeated; everything else keeps responding.
+
 **There is no account-wide lock, on purpose.** With a single owner account, a
 lock that triggers on failures from anyone would let anybody who knows the
 owner's email keep the owner out indefinitely by failing on purpose. Instead,
@@ -101,6 +110,10 @@ choose its own address for every attempt.
 
 The bundled `render.yaml` and `fly.toml` set `FSL_CLIENT_IP_HEADER` to their
 platform's header. Any other host starts with the default until you set one.
+At start the service log states the source in use (`[init] client address: ...`),
+and a `[setup]` line follows if a setting was given but could not be used. With
+neither setting, the first request that carries a forwarding header is logged
+once as a `[setup]` line: a proxy is probably in front and not declared.
 
 To check the setting, sign in and open `/api/me`:
 
@@ -132,10 +145,27 @@ printf %s 'owner@example.com' | sha256sum | cut -c1-12
 
 Spaces or line breaks around `FSL_OWNER_PASSWORD` are removed when the owner
 account is created, and sign-in accepts the password typed with or without
-them. If `FSL_OWNER_EMAIL` is not a valid email and an active owner already
-exists, the value is ignored and no account is created or changed
-(`owner_email_ignored`); the default owner address is only used when there is
-no owner at all.
+them. If `FSL_OWNER_EMAIL` is not a valid email and an active owner at another
+address already exists, the value is ignored and no account is created or
+changed (`owner_email_ignored`). Otherwise the default owner address is used,
+and `owner_email_invalid` names it at every start for as long as the value
+stays wrong.
+
+`FSL_OWNER_EMAIL` and `FSL_OWNER_PASSWORD` only ever create an account; they
+never rename one or change its password. So after a mistyped address is
+corrected on a persistent disk there are two owners: the new one, and the one
+at the default address, which keeps the password it was created with. No
+notice reports the older account, and no screen or API can disable an account
+yet. To retire it, stop the service and mark the account inactive in the
+database:
+
+```bash
+python3 -m sqlite3 <data directory>/faisal-security-lab.db \
+  "UPDATE users SET active=0 WHERE email='owner@faisal-security-lab.local'"
+```
+
+On a host without a persistent disk (the free Render plan) the database is
+rebuilt at every start, so only the account for the current settings exists.
 
 Startup problems are logged as `[setup]` lines and published as codes. The
 sign-in page (`/api/config`) shows only the codes a visitor may need. Codes
@@ -161,6 +191,13 @@ make verify    # re-sync tool states on the restored host
 
 A restore drill: restore into a scratch `FSL_DATA_DIR`, start the API with
 `FSL_NO_WORKER=1`, and confirm `/api/health`, login, and a project's findings load.
+
+In the single-image container the service runs as uid 10001 and must own what it
+writes. Files restored from a root shell (`docker exec`, `docker cp`,
+`fly ssh console`) are root-owned; the entrypoint hands them to uid 10001 at the
+next start. A container started with `--user 10001` cannot do that: run
+`chown -R 10001:10001 <data directory>` on the host after restoring, or the
+service fails at start with "attempt to write a readonly database".
 
 ## Resource & cost estimate (rough)
 

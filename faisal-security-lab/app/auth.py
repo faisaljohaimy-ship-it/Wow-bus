@@ -106,8 +106,8 @@ def bootstrap_owner() -> dict:
     must never crash the service. Instead this returns `notices` (stable codes)
     that the server logs and the sign-in page explains:
       owner_email_invalid       FSL_OWNER_EMAIL is not an email; the default is used
-      owner_email_ignored       FSL_OWNER_EMAIL is not an email and an owner already
-                                exists; nothing is created or changed
+      owner_email_ignored       FSL_OWNER_EMAIL is not an email and an owner at another
+                                address exists; nothing is created or changed
       owner_password_too_short  FSL_OWNER_PASSWORD is too short; NO owner is created
       owner_password_generated  no password was set; a one-time one is in the logs
     """
@@ -118,9 +118,13 @@ def bootstrap_owner() -> dict:
     email = cfg.owner_email
     if not valid_email(email):
         # The default address is only for a system nobody can sign in to yet.
-        # Once an owner exists, a mistyped value must not add a second owner
-        # under a well-known address.
-        if db.query_one("SELECT id FROM users WHERE global_role='owner' AND active=1"):
+        # Once an owner exists at another address, a mistyped value must not
+        # add a second owner under a well-known address. An owner at the
+        # default address is this fallback's own account from an earlier
+        # start: it does not count, so every start keeps naming the address
+        # that works.
+        if db.query_one("SELECT id FROM users WHERE global_role='owner' AND active=1 "
+                        "AND email<>?", (DEFAULT_OWNER_EMAIL,)):
             notices.append("owner_email_ignored")
             return {"email": None, "created": False, "generated": False,
                     "password": None, "notices": notices}

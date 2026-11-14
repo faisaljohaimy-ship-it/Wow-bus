@@ -119,6 +119,28 @@ class TestStorageFallback(unittest.TestCase):
                          (good, elsewhere / "lab.db", elsewhere / "ev"))
         self.assertFalse(cfg.data_dir_fallback)
 
+    def test_discarding_the_fallback_directory_removes_it(self):
+        from app import config
+        os.environ["FSL_DATA_DIR"] = str(unusable_dir())
+        first = config.Config.from_env()
+        self.assertTrue((first.data_dir / ".session-secret").exists())
+        config.discard_fallback_dir()
+        self.assertFalse(first.data_dir.exists())
+        config.discard_fallback_dir()                       # nothing left to remove
+        # A later fallback starts over in a new directory.
+        second = config.Config.from_env()
+        self.assertNotEqual(second.data_dir, first.data_dir)
+        self.assertTrue(second.data_dir.is_dir())
+
+    def test_discarding_without_a_fallback_touches_nothing(self):
+        from app import config
+        good = writable_dir()
+        os.environ["FSL_DATA_DIR"] = str(good)
+        cfg = config.Config.from_env()
+        config.discard_fallback_dir()
+        self.assertTrue((cfg.data_dir / ".session-secret").exists())
+        self.assertTrue(cfg.evidence_dir.is_dir())
+
 
 class TestStandaloneWorker(unittest.TestCase):
     def _env(self, data_dir: Path, tmp: Path) -> dict:
@@ -138,8 +160,9 @@ class TestStandaloneWorker(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn(WORKER_EXIT_MESSAGE, proc.stderr)
         self.assertNotIn("polling queue", proc.stderr)
-        # It stopped before creating a database in the temporary storage.
-        self.assertEqual([p.name for p in tmp.rglob("*.db")], [])
+        # It stopped before creating a database, and took the temporary storage
+        # it had set up with it: a worker restarted in a loop leaves nothing.
+        self.assertEqual(sorted(p.name for p in tmp.rglob("*")), [])
 
     def test_starts_polling_when_the_data_directory_is_usable(self):
         tmp = Path(tempfile.mkdtemp(prefix="fsl-worker-"))
@@ -419,6 +442,37 @@ class TestEntrypointDryRun(unittest.TestCase):
         self.assertEqual(self.decisions(str(foreign)),
                          [f"data-dir: accept {foreign}", "chown: yes", "drop: yes"])
         self.assertEqual(os.stat(foreign).st_uid, 4242)     # reported, not performed
+
+    @unittest.skipUnless(os.geteuid() == 0, "ownership decisions only apply when started as root")
+    def test_foreign_entry_inside_an_owned_directory_is_re_owned(self):
+        # A backup restored from a root shell: the directory belongs to the
+        # service user, a file (or a nested directory's content) does not.
+        data = Path(tempfile.mkdtemp(prefix="fsl-restored-")).resolve()
+        (data / "evidence" / "run1").mkdir(parents=True)
+        database = data / "faisal-security-lab.db"
+        nested = data / "evidence" / "run1" / "report.json"
+        for path in (database, nested):
+            path.write_text("x")
+        for path in (data, data / "evidence", data / "evidence" / "run1", database, nested):
+            os.chown(path, 10001, 10001)
+        if not self.decisions(str(data))[0].startswith("data-dir: accept"):
+            self.skipTest("the temporary directory is inside a system tree")
+        clean = [f"data-dir: accept {data}", "chown: no", "drop: yes"]
+        repair = [f"data-dir: accept {data}", "chown: yes", "drop: yes"]
+        self.assertEqual(self.decisions(str(data)), clean)
+        for restored in (database, nested):
+            with self.subTest(restored=restored.name):
+                os.chown(restored, 0, 0)
+                self.assertEqual(self.decisions(str(data)), repair)
+                self.assertEqual(os.stat(restored).st_uid, 0)   # reported, not performed
+                os.chown(restored, 10001, 10001)
+                self.assertEqual(self.decisions(str(data)), clean)
+        # A symlink is judged by its own owner, never by what it points to.
+        link = data / "link"
+        link.symlink_to("/etc")
+        self.assertEqual(self.decisions(str(data)), repair)
+        os.chown(link, 10001, 10001, follow_symlinks=False)
+        self.assertEqual(self.decisions(str(data)), clean)
 
     @unittest.skipIf(os.geteuid() == 0, "as root the real entrypoint would create and re-own /data")
     def test_non_root_start_runs_the_command_as_is(self):

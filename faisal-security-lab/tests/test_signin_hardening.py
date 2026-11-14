@@ -121,6 +121,11 @@ class SignInCase(unittest.TestCase):
         self.addCleanup(env.stop)
         server.reset_login_throttle_for_tests()
         self.addCleanup(server.reset_login_throttle_for_tests)
+        # The undeclared-proxy log line is printed once per process; tests that
+        # are not about it start with it already spent.
+        reported = mock.patch.object(server, "_PROXY_HEADERS_REPORTED", True)
+        reported.start()
+        self.addCleanup(reported.stop)
 
     def live_server(self) -> LiveServer:
         srv = LiveServer()
@@ -254,6 +259,122 @@ class TestClientAddress(SignInCase):
         h = header_lines(("Fly-Client-IP", "198.51.100.7"), ("X-Forwarded-For", "203.0.113.9"))
         self.assertEqual(server.resolve_client(h, "10.0.0.1"), ("198.51.100.7", "header"))
 
+    def test_ipv6_zone_never_reaches_the_address(self):
+        from app import audit, server, util
+        from app.errors import AuthError
+        zone = "<img src=x onerror=alert(1)>" + "Z" * 3000
+        boot({"FSL_CLIENT_IP_HEADER": "CF-Connecting-IP"})
+        h = header_lines(("CF-Connecting-IP", f"2001:DB8:9:9::1%{zone}"))
+        self.assertEqual(server.resolve_client(h, "10.0.0.1"), ("2001:db8:9:9::1", "header"))
+        h = header_lines(("CF-Connecting-IP", "::ffff:203.0.113.7%eth0"))
+        self.assertEqual(server.resolve_client(h, "10.0.0.1"), ("203.0.113.7", "header"))
+        # A link-local peer legitimately carries a zone; it is dropped as well.
+        self.assertEqual(server.resolve_client(header_lines(), "fe80::1%eth0"),
+                         ("fe80::1", "peer"))
+        # What is written to the audit log is the bounded canonical form.
+        req = login_req(ip=server.resolve_client(
+            header_lines(("CF-Connecting-IP", f"2001:db8:9:9::1%{zone}")), "10.0.0.1")[0])
+        with mock.patch.object(util, "verify_password", return_value=False):
+            with self.assertRaises(AuthError):
+                server.login(req)
+        self.assertEqual([r["detail"]["client"] for r in audit.query(limit=10)
+                          if r["action"] == "auth.login_failed"], ["2001:db8:9:9::1"])
+        boot({"FSL_TRUSTED_PROXY_HOPS": "1"})
+        h = header_lines(("X-Forwarded-For", f"6.6.6.6, 2001:db8:9:9::1%{zone}"))
+        self.assertEqual(server.resolve_client(h, "10.0.0.1"), ("2001:db8:9:9::1", "forwarded"))
+
+    def test_start_up_log_states_where_the_client_address_comes_from(self):
+        from app import server
+
+        def report(env):
+            cfg, _ = boot(env)
+            return server.client_address_report(cfg, os.environ)
+
+        lines = report({})
+        self.assertEqual(len(lines), 1)
+        self.assertIn("[init] client address: the connecting address", lines[0])
+        self.assertIn("proxy headers are ignored", lines[0])
+        self.assertIn("FSL_CLIENT_IP_HEADER", lines[0])
+        self.assertEqual(report({"FSL_CLIENT_IP_HEADER": "CF-Connecting-IP"}),
+                         ["[init] client address: the CF-Connecting-IP header, "
+                          "else the connecting address"])
+        self.assertEqual(report({"FSL_TRUSTED_PROXY_HOPS": "1"}),
+                         ["[init] client address: X-Forwarded-For behind 1 trusted proxy, "
+                          "else the connecting address"])
+        self.assertEqual(report({"FSL_CLIENT_IP_HEADER": "Fly-Client-IP",
+                                 "FSL_TRUSTED_PROXY_HOPS": "02"}),
+                         ["[init] client address: the Fly-Client-IP header, then "
+                          "X-Forwarded-For behind 2 trusted proxies, else the connecting address"])
+        # A setting that was given but cannot be used is named, not dropped silently.
+        lines = report({"FSL_CLIENT_IP_HEADER": "CF_Connecting_IP"})
+        self.assertIn("the connecting address; proxy headers are ignored", lines[0])
+        self.assertEqual(len(lines), 2)
+        self.assertIn("[setup] FSL_CLIENT_IP_HEADER is not a header name", lines[1])
+        for raw, used in (("one", 0), ("99", 10), ("-1", 0)):
+            lines = report({"FSL_TRUSTED_PROXY_HOPS": raw})
+            self.assertEqual(len(lines), 2, raw)
+            self.assertIn("[setup] FSL_TRUSTED_PROXY_HOPS is not a whole number from 0 to 10; "
+                          f"using {used}.", lines[1])
+
+    def test_server_start_prints_the_client_address_mode(self):
+        from app import server
+        boot({"FSL_CLIENT_IP_HEADER": "CF-Connecting-IP"})
+
+        class StoppedServer:
+            def serve_forever(self):
+                raise KeyboardInterrupt
+
+            def shutdown(self):
+                pass
+
+        class NoThread:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def start(self):
+                pass
+
+        info = {"setup_notices": [], "owner_bootstrap": {}, "catalog_seeded": 0,
+                "ai_available": False}
+        log = io.StringIO()
+        with mock.patch.object(server, "connector_names", return_value=[]), \
+                mock.patch.object(server, "threading", types.SimpleNamespace(Thread=NoThread)), \
+                mock.patch.object(server, "build_server", return_value=StoppedServer()), \
+                mock.patch.object(server, "init_platform", return_value=info), \
+                mock.patch("sys.stderr", log):
+            server.main()
+        self.assertIn("[init] client address: the CF-Connecting-IP header, "
+                      "else the connecting address\n", log.getvalue())
+
+    def test_undeclared_proxy_is_logged_once(self):
+        from app import server
+        marker = "a request carried a forwarding header"
+
+        def log_of_two_forwarded_requests(env):
+            boot(env)
+            srv = self.live_server()
+            log = io.StringIO()
+            with mock.patch.object(server, "_PROXY_HEADERS_REPORTED", False), \
+                    mock.patch("sys.stderr", log):
+                for address in ("198.51.100.4", "198.51.100.5"):
+                    status, _ = srv.request("GET", "/api/health",
+                                            headers=[("X-Forwarded-For", address)])
+                    self.assertEqual(status, 200)
+                status, _ = srv.request("GET", "/api/health")
+                self.assertEqual(status, 200)
+            return log.getvalue()
+
+        log = log_of_two_forwarded_requests({})
+        self.assertEqual(log.count(marker), 1, log)
+        self.assertTrue(log.startswith("[setup] "), log)
+        self.assertIn("FSL_CLIENT_IP_HEADER", log)
+        self.assertIn("FSL_TRUSTED_PROXY_HOPS", log)
+        self.assertNotIn("198.51.100", log)      # nothing a client sent is echoed
+        # With a proxy declared the operator has made the choice; nothing is logged.
+        self.assertEqual(
+            log_of_two_forwarded_requests({"FSL_CLIENT_IP_HEADER": "CF-Connecting-IP"}), "")
+        self.assertEqual(log_of_two_forwarded_requests({"FSL_TRUSTED_PROXY_HOPS": "3"}), "")
+
     def test_client_key_is_the_ipv4_address_or_the_ipv6_slash_64(self):
         from app import server
         self.assertEqual(server.client_key("203.0.113.7"), "203.0.113.7")
@@ -312,10 +433,177 @@ class TestThrottle(SignInCase):
             for t in threads:
                 t.join(30)
         limit = server.LOGIN_LIMITS["pair"]
-        self.assertEqual(len(verifications), limit)
+        # One client has one attempt in progress at a time, so most of the
+        # burst is turned away before it is even counted; whatever does get
+        # through stays within the pair limit.
+        self.assertTrue(1 <= len(verifications) <= limit, len(verifications))
         self.assertEqual(sorted(set(outcomes)), ["denied", "limited"])
-        self.assertEqual(outcomes.count("denied"), limit)
-        self.assertEqual(outcomes.count("limited"), 40 - limit)
+        self.assertEqual(outcomes.count("denied"), len(verifications))
+        self.assertEqual(outcomes.count("limited"), 40 - len(verifications))
+        self.assertEqual(attempt_counts(OWNER, "9.9.9.9")["pair"], len(verifications))
+
+    def test_parallel_admissions_reserve_exactly_the_pair_limit(self):
+        from app import server
+        from app.errors import RateLimitError
+        admitted, refused = [], []
+        gate = threading.Barrier(40)
+
+        def admit():
+            gate.wait()
+            try:
+                admitted.append(server.login_admit("o@x.io", "192.0.2.1"))
+            except RateLimitError:
+                refused.append(1)
+
+        threads = [threading.Thread(target=admit) for _ in range(40)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(30)
+        limit = server.LOGIN_LIMITS["pair"]
+        self.assertEqual((len(admitted), len(refused)), (limit, 40 - limit))
+        self.assertEqual(attempt_counts("o@x.io", "192.0.2.1"),
+                         {"pair": limit, "acct": limit, "ip": limit})
+
+    def test_password_checks_never_run_side_by_side(self):
+        from app import server, util
+        from app.errors import AuthError
+        boot()
+        self.assertEqual(server.LOGIN_VERIFY_SLOTS, 1)
+        state = {"inside": 0, "peak": 0, "calls": 0}
+        state_lock = threading.Lock()
+
+        def slow_verify(password, encoded):
+            with state_lock:
+                state["inside"] += 1
+                state["calls"] += 1
+                state["peak"] = max(state["peak"], state["inside"])
+            time.sleep(0.03)
+            with state_lock:
+                state["inside"] -= 1
+            return False
+
+        clients = 12
+        outcomes = []
+        gate = threading.Barrier(clients)
+
+        def attempt(i):
+            # Distinct clients and accounts: nothing but the verification
+            # capacity stands between these requests and the hash.
+            req = login_req(email=f"user{i}@test.local", ip=f"198.51.100.{i + 1}")
+            gate.wait()
+            try:
+                server.login(req)
+                outcomes.append("ok")
+            except AuthError:
+                outcomes.append("denied")
+            except Exception as e:      # reported below
+                outcomes.append(type(e).__name__)
+
+        with mock.patch.object(util, "verify_password", slow_verify):
+            threads = [threading.Thread(target=attempt, args=(i,)) for i in range(clients)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(30)
+        self.assertEqual(outcomes, ["denied"] * clients)
+        self.assertEqual(state["calls"], clients)
+        self.assertEqual(state["peak"], server.LOGIN_VERIFY_SLOTS)
+        self.assertEqual(server._LOGIN_IN_PROGRESS, set())
+
+    def test_no_turn_in_time_is_a_429_that_counts_nothing(self):
+        from app import server, util
+        from app.errors import AuthError, RateLimitError
+        boot()
+        entered, finish = threading.Event(), threading.Event()
+
+        def stuck_verify(password, encoded):
+            entered.set()
+            finish.wait(30)
+            return False
+
+        first = []
+
+        def occupy():
+            try:
+                server.login(login_req(ip="198.51.100.1"))
+            except AuthError:
+                first.append("denied")
+
+        with mock.patch.object(util, "verify_password", stuck_verify), \
+                mock.patch.object(server, "LOGIN_VERIFY_WAIT_SECONDS", 0.2):
+            holder = threading.Thread(target=occupy)
+            holder.start()
+            self.assertTrue(entered.wait(30))
+            started = time.monotonic()
+            with self.assertRaises(RateLimitError) as busy:
+                # The right password, from another client, while the only
+                # slot is taken for longer than the wait.
+                server.login(login_req(password=PASSWORD, ip="203.0.113.50"))
+            waited = time.monotonic() - started
+            # Nothing of the refused attempt is left behind.
+            self.assertEqual(attempt_counts(OWNER, "203.0.113.50"),
+                             {"pair": 0, "acct": 1, "ip": 0})      # acct: the first attempt
+            self.assertEqual(server._LOGIN_IN_PROGRESS, {"198.51.100.1"})
+            finish.set()
+            holder.join(30)
+        self.assertEqual(busy.exception.status, 429)
+        self.assertEqual(busy.exception.detail, {"retry_after_seconds": 0.2})
+        self.assertIn("busy", busy.exception.message)
+        self.assertTrue(0.15 <= waited < 5, waited)
+        self.assertEqual(first, ["denied"])
+        self.assertEqual(server._LOGIN_IN_PROGRESS, set())
+        # Only the first attempt's failure was audited; the busy refusal was not.
+        self.assertEqual([(r["action"], r["detail"]["client"]) for r in anonymous_rows()],
+                         [("auth.login_failed", "198.51.100.1")])
+        # The slot is free again and the refused client lost none of its allowance.
+        self.assertEqual(server.login(login_req(password=PASSWORD, ip="203.0.113.50"))[0], 200)
+        self.assertEqual(server.LOGIN_VERIFY_WAIT_SECONDS, 10)
+        self.assertEqual(server._login_busy().detail, {"retry_after_seconds": 10})
+
+    def test_second_attempt_from_a_client_in_progress_is_refused_uncounted(self):
+        from app import server, util
+        from app.errors import AuthError, RateLimitError
+        boot()
+        entered, finish = threading.Event(), threading.Event()
+        calls = []
+
+        def stuck_verify(password, encoded):
+            calls.append(password)
+            entered.set()
+            finish.wait(30)
+            return False
+
+        first = []
+
+        def occupy():
+            try:
+                server.login(login_req(ip="2001:db8:1:2::1"))
+            except AuthError:
+                first.append("denied")
+
+        with mock.patch.object(util, "verify_password", stuck_verify):
+            holder = threading.Thread(target=occupy)
+            holder.start()
+            self.assertTrue(entered.wait(30))
+            started = time.monotonic()
+            # Same client (same /64), another account: refused at once.
+            with self.assertRaises(RateLimitError) as busy:
+                server.login(login_req(email="other@test.local", ip="2001:db8:1:2::2"))
+            self.assertLess(time.monotonic() - started, 5)
+            self.assertEqual(attempt_counts("other@test.local", "2001:db8:1:2::2"),
+                             {"pair": 0, "acct": 0, "ip": 1})      # ip: the first attempt
+            finish.set()
+            holder.join(30)
+        self.assertEqual(busy.exception.status, 429)
+        self.assertIn("busy", busy.exception.message)
+        self.assertTrue(busy.exception.detail["retry_after_seconds"] > 0)
+        self.assertEqual((first, len(calls)), (["denied"], 1))
+        self.assertEqual(len(anonymous_rows()), 1)                  # the first attempt only
+        # Once the first attempt is over the client may try again.
+        with mock.patch.object(util, "verify_password", return_value=False):
+            with self.assertRaises(AuthError):
+                server.login(login_req(email="other@test.local", ip="2001:db8:1:2::2"))
 
     def test_no_account_wide_lockout(self):
         from app import server, util
@@ -423,6 +711,9 @@ class TestThrottle(SignInCase):
         self.assertEqual(attempt_counts(OWNER, "9.9.9.9"), {"pair": 0, "acct": 0, "ip": 0})
         self.assertEqual(server._LOGIN_ATTEMPTS, {})
         self.assertEqual(anonymous_rows(), [])
+        # Neither the client's turn nor the verification slot is left taken.
+        self.assertEqual(server._LOGIN_IN_PROGRESS, set())
+        self.assertEqual(server.login(login_req(password=PASSWORD))[0], 200)
 
     def test_eviction_keeps_a_locked_pair_locked(self):
         from app import server
@@ -486,6 +777,26 @@ class TestAuditBudget(SignInCase):
             self.assertEqual(row["detail"], {"account": account, "client": "9.9.9.9"})
             self.assertEqual(row["outcome"], "denied")
         self.assertNotIn(OWNER, json.dumps(rows))
+
+    def test_budget_is_shared_by_every_address_of_one_ipv6_network(self):
+        from app import server, util
+        from app.errors import AuthError, RateLimitError
+        boot()
+        outcomes = []
+        with mock.patch.object(util, "verify_password", return_value=False):
+            # One host moving through its own /64, a new address and a new
+            # account for every request.
+            for i in range(1, 256):
+                try:
+                    server.login(login_req(email=f"user{i}@test.local", ip=f"2001:db8:1:2::{i:x}"))
+                except AuthError:
+                    outcomes.append("failed")
+                except RateLimitError:
+                    outcomes.append("throttled")
+        limit = server.LOGIN_LIMITS["ip"]
+        self.assertEqual(outcomes, ["failed"] * limit + ["throttled"] * (255 - limit))
+        actions = sorted(r["action"] for r in anonymous_rows())
+        self.assertEqual(actions, ["auth.login_failed"] * 5 + ["auth.login_throttled"])
 
     def test_budget_is_per_client_and_renews_with_the_window(self):
         from app import server
@@ -628,6 +939,37 @@ class TestOwnerAndNotices(SignInCase):
         self.assertTrue(auth.login(OWNER, PASSWORD)["token"])
         self.assertIn("existing owner accounts are unchanged",
                       bootstrap.describe_notice("owner_email_ignored"))
+
+    def test_invalid_owner_email_names_the_default_owner_on_every_start(self):
+        from app import auth, bootstrap
+        env = {"FSL_OWNER_EMAIL": "owner@example,com"}
+        cfg, first = boot(env)
+        self.assertEqual(first["setup_notices"], ["owner_email_invalid"])
+        self.assertTrue(first["owner_bootstrap"]["created"])
+        # The owner the fallback created must not turn the notice into
+        # owner_email_ignored on later starts: that one names no address.
+        for _ in range(2):
+            _, again = boot(env, data_dir=cfg.data_dir)
+            self.assertEqual(again["setup_notices"], ["owner_email_invalid"])
+            self.assertEqual(bootstrap.SETUP_NOTICES, ["owner_email_invalid"])
+            self.assertEqual(bootstrap.ADMIN_NOTICES, ["owner_email_invalid"])
+            self.assertFalse(again["owner_bootstrap"]["created"])
+            self.assertEqual(again["owner_bootstrap"]["email"], auth.DEFAULT_OWNER_EMAIL)
+        self.assertEqual([u["email"] for u in auth.list_users()], [auth.DEFAULT_OWNER_EMAIL])
+        self.assertTrue(auth.login(auth.DEFAULT_OWNER_EMAIL, PASSWORD)["token"])
+        self.assertIn(auth.DEFAULT_OWNER_EMAIL, bootstrap.describe_notice("owner_email_invalid"))
+
+    def test_invalid_owner_email_is_ignored_beside_a_real_and_a_default_owner(self):
+        from app import auth
+        # Mistyped first (default owner created), corrected later (real owner
+        # created), then mistyped again: nothing more is created.
+        cfg, _ = boot({"FSL_OWNER_EMAIL": "owner@example,com"})
+        boot({"FSL_OWNER_EMAIL": "owner@example.com"}, data_dir=cfg.data_dir)
+        _, again = boot({"FSL_OWNER_EMAIL": "owner@example,com"}, data_dir=cfg.data_dir)
+        self.assertEqual(again["setup_notices"], ["owner_email_ignored"])
+        self.assertIsNone(again["owner_bootstrap"]["email"])
+        self.assertEqual(sorted(u["email"] for u in auth.list_users()),
+                         ["owner@example.com", auth.DEFAULT_OWNER_EMAIL])
 
     def test_invalid_owner_email_falls_back_when_no_active_owner_exists(self):
         from app import auth

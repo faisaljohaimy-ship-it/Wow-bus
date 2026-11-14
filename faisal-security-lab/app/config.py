@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 import secrets
+import shutil
 import tempfile
 import threading
 from dataclasses import dataclass, field, asdict
@@ -64,6 +65,20 @@ def _fallback_dir() -> Path:
         if _FALLBACK_DIR is None:
             _FALLBACK_DIR = Path(tempfile.mkdtemp(prefix="fsl-data-")).resolve()
         return _FALLBACK_DIR
+
+
+def discard_fallback_dir() -> None:
+    """Delete the temporary storage root, if this process created one.
+
+    For a process that will not use it after all: one that gives up at start
+    and is restarted in a loop would otherwise leave a directory behind on
+    every attempt.
+    """
+    global _FALLBACK_DIR
+    with _FALLBACK_LOCK:
+        if _FALLBACK_DIR is not None:
+            shutil.rmtree(_FALLBACK_DIR, ignore_errors=True)
+            _FALLBACK_DIR = None
 
 
 def reset_fallback_dir_for_tests() -> None:

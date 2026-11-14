@@ -16,6 +16,7 @@ import ipaddress
 import json
 import math
 import re
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -81,13 +82,21 @@ _PROXY_HEADERS = ("X-Forwarded-For", "Forwarded", "CF-Connecting-IP", "True-Clie
 
 
 def _ip_text(value) -> str | None:
-    """Canonical text of an IP address (IPv4-mapped IPv6 as IPv4), else None."""
+    """Canonical text of an IP address (IPv4-mapped IPv6 as IPv4), else None.
+
+    An IPv6 zone ("fe80::1%eth0") is dropped: it only means something on the
+    host that wrote it, and it may be any text of any length, which must not
+    reach the audit log or a response as part of an address.
+    """
     try:
         ip = ipaddress.ip_address(str(value or "").strip())
     except ValueError:
         return None
-    if ip.version == 6 and ip.ipv4_mapped is not None:
-        ip = ip.ipv4_mapped
+    if ip.version == 6:
+        if ip.ipv4_mapped is not None:
+            ip = ip.ipv4_mapped
+        elif ip.scope_id is not None:
+            ip = ipaddress.IPv6Address(int(ip))
     return str(ip)
 
 
@@ -117,6 +126,57 @@ def resolve_client(headers, peer: str) -> tuple[str, str]:
     return _ip_text(peer) or str(peer or "")[:64], "peer"
 
 
+def client_address_report(cfg, env) -> list[str]:
+    """Start-up log lines saying where client addresses will be taken from.
+
+    A wrong answer here is silent in normal use (sign-in limits end up shared
+    by every visitor), so the mode is stated once, along with any proxy
+    setting that was given but could not be used.
+    """
+    sources = []
+    if cfg.client_ip_header:
+        sources.append(f"the {cfg.client_ip_header} header")
+    if cfg.trusted_proxy_hops:
+        sources.append(f"X-Forwarded-For behind {cfg.trusted_proxy_hops} trusted "
+                       f"prox{'y' if cfg.trusted_proxy_hops == 1 else 'ies'}")
+    if sources:
+        lines = [f"[init] client address: {', then '.join(sources)}, "
+                 "else the connecting address"]
+    else:
+        lines = ["[init] client address: the connecting address; proxy headers are ignored "
+                 "(behind a proxy, set FSL_CLIENT_IP_HEADER or FSL_TRUSTED_PROXY_HOPS)"]
+    if env.get("FSL_CLIENT_IP_HEADER", "").strip() and not cfg.client_ip_header:
+        lines.append("[setup] FSL_CLIENT_IP_HEADER is not a header name (letters, digits "
+                     "and hyphens) and was ignored.")
+    hops = env.get("FSL_TRUSTED_PROXY_HOPS", "").strip()
+    if hops:
+        try:
+            given = int(hops)
+        except ValueError:
+            given = None
+        if given != cfg.trusted_proxy_hops:
+            lines.append("[setup] FSL_TRUSTED_PROXY_HOPS is not a whole number from 0 to 10; "
+                         f"using {cfg.trusted_proxy_hops}.")
+    return lines
+
+
+_PROXY_HEADERS_REPORTED = False
+
+
+def _report_ignored_proxy_headers() -> None:
+    """Log, once per process, that a request carried proxy headers while no
+    proxy is declared."""
+    global _PROXY_HEADERS_REPORTED
+    if _PROXY_HEADERS_REPORTED:
+        return
+    _PROXY_HEADERS_REPORTED = True
+    print("[setup] a request carried a forwarding header, but neither FSL_CLIENT_IP_HEADER "
+          "nor FSL_TRUSTED_PROXY_HOPS is set, so the connecting address was taken as the "
+          "client. If a proxy is in front of this service, every visitor shares one sign-in "
+          "allowance until one of them is set (see docs/OPERATIONS.md, 'Sign-in protection').",
+          file=sys.stderr)
+
+
 def client_key(address: str) -> str:
     """The key a client is throttled under: its IPv4 address or its IPv6 /64.
 
@@ -141,9 +201,9 @@ def client_key(address: str) -> str:
 # are monotonic-clock readings, so a wall-clock correction cannot stretch or
 # cut short a window.
 #
-# Only the pair and client counts ever refuse a request. The account count
-# merely lowers the per-client allowance while an account is being guessed from
-# many clients. There is deliberately no account-wide lock: on a system with a
+# Of these counts, only the pair and client ones ever refuse a request. The
+# account count merely lowers the per-client allowance while an account is
+# being guessed from many clients. There is deliberately no account-wide lock: on a system with a
 # single owner it would be a denial-of-service lever, because anyone who knows
 # the owner's email could keep the owner out by failing on purpose. Guessing
 # stays bounded per client address and by the cost of each password hash.
@@ -160,6 +220,18 @@ _LOGIN_MAX_KEYS = 20000
 # Entries kept under one account key. Only "at least LOGIN_ACCOUNT_PRESSURE"
 # is ever asked of it, so the newest few are enough however many clients try.
 _LOGIN_ACCOUNT_KEEP = 4 * LOGIN_ACCOUNT_PRESSURE
+# Every admitted attempt runs a deliberately slow password hash (two when the
+# password has surrounding whitespace), for unknown emails as well. On a small
+# instance a few of those at once take all the CPU, and every other request,
+# the health check included, waits behind them. So hashes run
+# LOGIN_VERIFY_SLOTS at a time and an attempt waits at most
+# LOGIN_VERIFY_WAIT_SECONDS for its turn. Each client may have one attempt in
+# progress, which keeps the line no longer than the number of distinct clients:
+# one address cannot fill it and push everyone else past the wait.
+LOGIN_VERIFY_SLOTS = 1
+LOGIN_VERIFY_WAIT_SECONDS = 10
+_LOGIN_VERIFY = threading.BoundedSemaphore(LOGIN_VERIFY_SLOTS)
+_LOGIN_IN_PROGRESS: set[str] = set()
 
 
 class LoginTicket(NamedTuple):
@@ -262,7 +334,8 @@ def login_succeeded(ticket: LoginTicket) -> None:
 
 
 def login_release(ticket: LoginTicket) -> None:
-    """Withdraw an attempt whose password was never judged (an internal error)."""
+    """Withdraw an attempt whose password was never judged (it got no turn in
+    time, or an internal error stopped it)."""
     with _LOGIN_LOCK:
         _login_forget(ticket, ("pair", "acct", "ip"))
 
@@ -305,26 +378,59 @@ def _login_audit(action: str, kind: str, email: str, req: Req) -> None:
 
 
 def reset_login_throttle_for_tests() -> None:
+    global _LOGIN_VERIFY
     with _LOGIN_LOCK:
         _LOGIN_ATTEMPTS.clear()
         _LOGIN_AUDIT.clear()
+        _LOGIN_IN_PROGRESS.clear()
+        _LOGIN_VERIFY = threading.BoundedSemaphore(LOGIN_VERIFY_SLOTS)
+
+
+def _login_busy() -> RateLimitError:
+    """The refusal for an attempt that could not get a turn. It says nothing
+    about the password, so it is neither counted against the client nor
+    written to the audit log."""
+    return RateLimitError("sign-in is busy; wait a few seconds and try again",
+                          detail={"retry_after_seconds": LOGIN_VERIFY_WAIT_SECONDS})
 
 
 @route("POST", r"/api/auth/login", auth_required=False)
 def login(req: Req):
     email = str(req.body.get("email", ""))
+    client = client_key(req.client_ip)
+    # A client's next attempt is refused, before it is counted, for as long
+    # as its previous one is still waiting for or running its password check.
+    with _LOGIN_LOCK:
+        if client in _LOGIN_IN_PROGRESS:
+            raise _login_busy()
+        _LOGIN_IN_PROGRESS.add(client)
     try:
-        ticket = login_admit(email, client_key(req.client_ip))
+        return _login_attempt(email, client, req)
+    finally:
+        with _LOGIN_LOCK:
+            _LOGIN_IN_PROGRESS.discard(client)
+
+
+def _login_attempt(email: str, client: str, req: Req):
+    try:
+        ticket = login_admit(email, client)
     except RateLimitError:
         _login_audit("auth.login_throttled", "throttled", email, req)
         raise
+    verify = _LOGIN_VERIFY
     try:
-        out = auth.login(email, str(req.body.get("password", "")))
+        if not verify.acquire(timeout=LOGIN_VERIFY_WAIT_SECONDS):
+            raise _login_busy()
+        try:
+            out = auth.login(email, str(req.body.get("password", "")))
+        finally:
+            verify.release()
     except AuthError:
         # The admitted attempt stays counted: it is the record of this failure.
         _login_audit("auth.login_failed", "failed", email, req)
         raise
     except BaseException:
+        # The password was never judged (no turn in time, or an internal error).
         login_release(ticket)
         raise
     login_succeeded(ticket)
@@ -784,6 +890,10 @@ class Handler(BaseHTTPRequestHandler):
         address, source = resolve_client(self.headers, peer)
         ignored = source == "peer" and any(self.headers.get(h) is not None
                                            for h in _PROXY_HEADERS)
+        if ignored:
+            cfg = get_config()
+            if not (cfg.client_ip_header or cfg.trusted_proxy_hops):
+                _report_ignored_proxy_headers()
         return address, source, ignored
 
     def _token(self):
@@ -888,7 +998,6 @@ def build_server(host: str | None = None, port: int | None = None) -> ThreadingH
 
 def main():
     import os
-    import sys
     cfg = get_config()
     # Tool probing is deferred until the port is bound (see below) so a small
     # instance answers its health check in seconds, not minutes.
@@ -901,6 +1010,8 @@ def main():
         print(f"[init] ONE-TIME owner password: {boot['password']}", file=sys.stderr)
     print(f"[init] catalog={info['catalog_seeded']} ai_available={info['ai_available']}",
           file=sys.stderr)
+    for line in client_address_report(cfg, os.environ):
+        print(line, file=sys.stderr)
 
     # The connector registry is built on first use, under a lock. Build it
     # here, before any thread exists, so no worker, request or tool sync has to
