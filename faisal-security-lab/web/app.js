@@ -32,6 +32,7 @@ const I18N = {
     preparing:"يجري تجهيز العرض التوضيحي. حدّث الصفحة بعد لحظات.",
     open:"فتح", download:"تنزيل", report_note:"التقارير منقّحة: القيم الحساسة محجوبة.",
     throttled:"محاولات دخول خاطئة كثيرة من هذا الجهاز. انتظر {m} دقيقة ثم حاول من جديد.",
+    signinbusy:"تسجيل الدخول مشغول الآن. انتظر بضع ثوانٍ ثم حاول من جديد.",
     connection:"الاتصال", yourip:"عنوانك كما يراه الخادم", ipsource:"مصدر العنوان",
     src_header:"ترويسة منصّة الاستضافة", src_forwarded:"X-Forwarded-For", src_peer:"اتصال مباشر",
     proxywarn:"تصل الطلبات عبر وسيط لكن الخادم غير مضبوط للوثوق به، فيظهر كل الزوّار بعنوان واحد وتُحتسب محاولات الدخول الخاطئة عليهم جميعًا. اضبط FSL_CLIENT_IP_HEADER في إعدادات الاستضافة.",
@@ -60,6 +61,7 @@ const I18N = {
     preparing:"The demo is being prepared. Refresh in a moment.",
     open:"Open", download:"Download", report_note:"Reports are redacted: sensitive values are withheld.",
     throttled:"Too many wrong sign-in attempts from this device. Wait {m} minutes, then try again.",
+    signinbusy:"Sign-in is busy right now. Wait a few seconds, then try again.",
     connection:"Connection", yourip:"Your address as the server sees it", ipsource:"Address source",
     src_header:"hosting platform header", src_forwarded:"X-Forwarded-For", src_peer:"direct connection",
     proxywarn:"Requests arrive through a proxy the server is not set to trust, so every visitor appears under one address and wrong sign-in attempts count against all of them. Set FSL_CLIENT_IP_HEADER in the hosting settings.",
@@ -189,7 +191,8 @@ const OWNER_ACTS = ["revoke","scopeform","jobstop","runeval","aiplan","aireport"
   "ftriage","fremediate","fvalidate","fstatus","evread"].map(a => `[data-act="${a}"]`).join(",");
 let CARD_SEQ = 0;
 function decorate(){
-  document.body.classList.toggle("guest", S.guest && !S.token);
+  // Guest styling hides every form; the owner sign-in form a guest asked for is not one of them.
+  document.body.classList.toggle("guest", S.guest && !S.token && !S.loginOpen);
   document.querySelectorAll(".card,.stat,.login,.drawer").forEach(el => {
     const first = el.firstElementChild;
     if (first && first.classList.contains("cardhead")) return;
@@ -521,6 +524,10 @@ async function openJob(jid){
 // ---------- events ----------
 document.addEventListener("submit", async e=>{
   e.preventDefault(); const f=e.target; const fd=Object.fromEntries(new FormData(f).entries());
+  // One request per form at a time: a double tap must not send a second one.
+  if(f.dataset.busy) return;
+  f.dataset.busy="1";
+  const sendBtn=f.querySelector("button:not([type=button])"); if(sendBtn) sendBtn.disabled=true;
   try{
     if(f.id==="loginform"){ const r=await api("/api/auth/login","POST",{email:fd.email,password:fd.password});
       S.token=r.token; S.user=r.user; S.guest=false; S.loginOpen=false; S.project=null;
@@ -541,9 +548,12 @@ document.addEventListener("submit", async e=>{
     let msg=err.message+(err.code?` [${err.code}]`:"");
     if(f.id==="loginform" && err.status===429){
       const secs=(err.detail&&err.detail.retry_after_seconds)||600;
-      msg=t("throttled").replace("{m}", Math.max(1, Math.ceil(secs/60)));
+      // A short wait means the password check had no free turn; a long one
+      // means too many wrong attempts from this device.
+      msg = secs<=30 ? t("signinbusy") : t("throttled").replace("{m}", Math.max(1, Math.ceil(secs/60)));
     }
     if(box){ if(f.id==="loginform") box.innerHTML=""; box.insertAdjacentHTML("afterbegin", notice(msg,"err")); } }
+  finally{ delete f.dataset.busy; if(sendBtn) sendBtn.disabled=false; }
 });
 
 document.addEventListener("change", async e=>{
