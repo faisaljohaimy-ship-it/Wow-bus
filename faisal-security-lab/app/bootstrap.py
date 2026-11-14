@@ -2,11 +2,14 @@
 
 Initialization never raises on operator misconfiguration (a short owner
 password, a malformed owner email, an unwritable data directory). Problems are
-collected as stable notice codes in SETUP_NOTICES, logged in one line each, and
-shown on the sign-in page so a hosted deploy stays up and explains itself.
+collected as stable notice codes and logged in one line each, so a hosted
+deploy stays up and explains itself. SETUP_NOTICES holds the codes the sign-in
+page may show to anyone; ADMIN_NOTICES holds all of them, including the ones in
+PRIVATE_NOTICE_CODES that only a signed-in owner or admin gets to see.
 """
 from __future__ import annotations
 
+import os
 import sys
 
 from . import auth, store
@@ -14,13 +17,20 @@ from .config import get_config
 from .connectors import sync_registry
 from .db import get_db
 
-# Codes describing setup problems found at startup (no secrets, safe to expose).
-SETUP_NOTICES: list[str] = []
+# Codes describing setup problems found at startup (no secrets).
+SETUP_NOTICES: list[str] = []     # public: served by the unauthenticated /api/config
+ADMIN_NOTICES: list[str] = []     # every code: served to owners and admins by /api/me
+# Codes that describe the host rather than something a visitor has to work
+# around; they would only help someone probing the service.
+PRIVATE_NOTICE_CODES = frozenset({"running_as_root"})
 
 _NOTICE_LOG = {
     "owner_email_invalid":
         "FSL_OWNER_EMAIL is not a valid email; using the default "
         f"'{auth.DEFAULT_OWNER_EMAIL}' as the owner sign-in.",
+    "owner_email_ignored":
+        "FSL_OWNER_EMAIL is not a valid email and was ignored; existing owner "
+        "accounts are unchanged.",
     "owner_password_too_short":
         f"FSL_OWNER_PASSWORD is shorter than {auth.MIN_PASSWORD_LENGTH} characters; "
         "NO owner account was created. Set a longer value and redeploy.",
@@ -32,6 +42,9 @@ _NOTICE_LOG = {
     "data_dir_unwritable":
         "the data directory is not writable; using temporary storage "
         "(data is lost on restart).",
+    "running_as_root":
+        "the container could not drop root privileges; the service and its scan "
+        "tools are running as root.",
 }
 
 
@@ -45,6 +58,11 @@ def init_platform(sync_tools: bool = True) -> dict:
     notices: list[str] = []
     if cfg.data_dir_fallback:
         notices.append("data_dir_unwritable")
+    # The container entrypoint sets FSL_PRIVDROP_FAILED=1 when it had to keep
+    # running as root; a deliberate root run outside the container is not flagged.
+    if (os.environ.get("FSL_PRIVDROP_FAILED") == "1"
+            and hasattr(os, "geteuid") and os.geteuid() == 0):
+        notices.append("running_as_root")
 
     try:
         boot = auth.bootstrap_owner()
@@ -59,7 +77,8 @@ def init_platform(sync_tools: bool = True) -> dict:
     # the port is bound (sync_tools=False) so health checks pass quickly.
     reg = sync_registry() if sync_tools else []
 
-    SETUP_NOTICES[:] = notices
+    ADMIN_NOTICES[:] = notices
+    SETUP_NOTICES[:] = [n for n in notices if n not in PRIVATE_NOTICE_CODES]
     return {
         "owner_bootstrap": boot,          # includes a generated password ONCE if created
         "catalog_seeded": seeded,

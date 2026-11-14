@@ -11,6 +11,7 @@ Roles (ascending privilege): reader < analyst < admin < owner.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 
 from . import util
@@ -64,11 +65,15 @@ MIN_PASSWORD_LENGTH = 10
 DEFAULT_OWNER_EMAIL = "owner@faisal-security-lab.local"
 
 
+# The address syntax a browser <input type="email"> accepts (WHATWG HTML), so
+# the server and the sign-in form agree on what counts as an email.
+_LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+_EMAIL_RE = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@" + _LABEL + r"(?:\." + _LABEL + r")*")
+
+
 def valid_email(email: str) -> bool:
-    email = (email or "").strip()
-    return ("@" in email and len(email) <= 254
-            and not any(c.isspace() for c in email)
-            and all(part for part in email.split("@", 1)))
+    email = email or ""
+    return len(email) <= 254 and _EMAIL_RE.fullmatch(email) is not None
 
 
 def create_user(email: str, password: str, *, display_name: str = "",
@@ -101,6 +106,8 @@ def bootstrap_owner() -> dict:
     must never crash the service. Instead this returns `notices` (stable codes)
     that the server logs and the sign-in page explains:
       owner_email_invalid       FSL_OWNER_EMAIL is not an email; the default is used
+      owner_email_ignored       FSL_OWNER_EMAIL is not an email and an owner already
+                                exists; nothing is created or changed
       owner_password_too_short  FSL_OWNER_PASSWORD is too short; NO owner is created
       owner_password_generated  no password was set; a one-time one is in the logs
     """
@@ -110,6 +117,13 @@ def bootstrap_owner() -> dict:
 
     email = cfg.owner_email
     if not valid_email(email):
+        # The default address is only for a system nobody can sign in to yet.
+        # Once an owner exists, a mistyped value must not add a second owner
+        # under a well-known address.
+        if db.query_one("SELECT id FROM users WHERE global_role='owner' AND active=1"):
+            notices.append("owner_email_ignored")
+            return {"email": None, "created": False, "generated": False,
+                    "password": None, "notices": notices}
         notices.append("owner_email_invalid")
         email = DEFAULT_OWNER_EMAIL
 
@@ -140,11 +154,43 @@ def bootstrap_owner() -> dict:
 # ---------------------------------------------------------------------------
 # Sessions
 # ---------------------------------------------------------------------------
+_DUMMY_PASSWORD_HASH: str | None = None
+
+
+def _dummy_password_hash() -> str:
+    """A stand-in hash to verify against when there is no account; it costs
+    the same as a real one and is computed on first use."""
+    global _DUMMY_PASSWORD_HASH
+    if _DUMMY_PASSWORD_HASH is None:
+        _DUMMY_PASSWORD_HASH = util.hash_password(util.token())
+    return _DUMMY_PASSWORD_HASH
+
+
+def _password_matches(password: str, encoded: str) -> bool:
+    """Check the password as submitted, then without surrounding whitespace.
+
+    bootstrap_owner stores FSL_OWNER_PASSWORD stripped, so an operator who
+    types the padded value they put in the dashboard must still get in. The
+    submitted form is tried first so a password that really has surrounding
+    spaces keeps working.
+    """
+    if util.verify_password(password, encoded):
+        return True
+    stripped = password.strip()
+    return stripped != password and util.verify_password(stripped, encoded)
+
+
 def login(email: str, password: str) -> dict:
     email = (email or "").strip().lower()
+    password = password or ""
     db = get_db()
     row = db.query_one("SELECT * FROM users WHERE email=? AND active=1", (email,))
-    if not row or not util.verify_password(password or "", row["password_hash"]):
+    if not row:
+        # Spend the same hashing work as for a real account, so the response
+        # time does not reveal whether the email is registered.
+        _password_matches(password, _dummy_password_hash())
+        raise AuthError("invalid credentials")
+    if not _password_matches(password, row["password_hash"]):
         raise AuthError("invalid credentials")
     tok = util.token()
     cfg = get_config()

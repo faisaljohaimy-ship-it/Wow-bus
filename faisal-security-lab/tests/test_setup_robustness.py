@@ -115,37 +115,45 @@ class TestDataDirFallback(unittest.TestCase):
 class TestLoginThrottle(unittest.TestCase):
     def setUp(self):
         from app import server
-        server._LOGIN_FAILS.clear()
+        server.reset_login_throttle_for_tests()
+        self.addCleanup(server.reset_login_throttle_for_tests)
 
     def test_pair_limit_blocks_then_expires(self):
         from app import server
+        from app.errors import RateLimitError
         now = 1_000_000.0
+        # An admitted attempt that is never resolved counts as a failure.
         for _ in range(server.LOGIN_LIMITS["pair"]):
-            self.assertFalse(server.login_throttled("o@x.io", "1.2.3.4", now))
-            server.login_record_failure("o@x.io", "1.2.3.4", now)
-        self.assertTrue(server.login_throttled("o@x.io", "1.2.3.4", now))
+            server.login_admit("o@x.io", "1.2.3.4", now)
+        with self.assertRaises(RateLimitError):
+            server.login_admit("o@x.io", "1.2.3.4", now)
         # Another client is not blocked by this client's failures.
-        self.assertFalse(server.login_throttled("o@x.io", "5.6.7.8", now))
+        server.login_admit("o@x.io", "5.6.7.8", now)
         # The window slides.
-        self.assertFalse(server.login_throttled("o@x.io", "1.2.3.4",
-                                                now + server.LOGIN_WINDOW_SECONDS + 1))
+        server.login_admit("o@x.io", "1.2.3.4", now + server.LOGIN_WINDOW_SECONDS + 1)
 
-    def test_account_limit_holds_across_clients(self):
+    def test_account_pressure_lowers_the_allowance_without_locking(self):
         from app import server
+        from app.errors import RateLimitError
         now = 2_000_000.0
-        for i in range(server.LOGIN_LIMITS["acct"]):
-            server.login_record_failure("victim@x.io", f"10.0.{i // 250}.{i % 250}", now)
-        self.assertTrue(server.login_throttled("victim@x.io", "172.16.0.9", now))
-        self.assertFalse(server.login_throttled("other@x.io", "172.16.0.9", now))
+        for i in range(server.LOGIN_ACCOUNT_PRESSURE):
+            server.login_admit("victim@x.io", f"10.0.{i // 250}.{i % 250}", now)
+        # A client that has not failed can still try, only fewer times.
+        for _ in range(server.LOGIN_PAIR_LIMIT_UNDER_PRESSURE):
+            server.login_admit("victim@x.io", "172.16.0.9", now)
+        with self.assertRaises(RateLimitError):
+            server.login_admit("victim@x.io", "172.16.0.9", now)
+        # Other accounts keep the normal allowance from that client.
+        server.login_admit("other@x.io", "172.16.0.9", now)
 
     def test_success_clears_the_pair(self):
         from app import server
         now = 3_000_000.0
         for _ in range(server.LOGIN_LIMITS["pair"] - 1):
-            server.login_record_failure("o@x.io", "1.2.3.4", now)
-        server.login_record_success("o@x.io", "1.2.3.4")
-        server.login_record_failure("o@x.io", "1.2.3.4", now)
-        self.assertFalse(server.login_throttled("o@x.io", "1.2.3.4", now))
+            server.login_admit("o@x.io", "1.2.3.4", now)
+        server.login_succeeded(server.login_admit("o@x.io", "1.2.3.4", now))
+        for _ in range(server.LOGIN_LIMITS["pair"]):      # a full allowance again
+            server.login_admit("o@x.io", "1.2.3.4", now)
 
     def test_login_route_returns_429_after_repeated_failures(self):
         from app import server

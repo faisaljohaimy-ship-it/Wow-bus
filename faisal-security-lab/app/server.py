@@ -11,19 +11,23 @@ Security posture:
 """
 from __future__ import annotations
 
+import heapq
+import ipaddress
 import json
+import math
 import re
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import NamedTuple
 from urllib.parse import urlsplit, parse_qs
 
 from . import audit, auth, evidence, findings as F, metrics, policy, queue, reports, store, util
 from .ai import agents, evalset
-from .bootstrap import SETUP_NOTICES, describe_notice, init_platform
+from .bootstrap import ADMIN_NOTICES, SETUP_NOTICES, describe_notice, init_platform
 from .config import get_config
-from .connectors import all_connectors, get_connector, sync_registry
+from .connectors import all_connectors, connector_names, get_connector, sync_registry
 from .errors import (AppError, AuthError, ForbiddenError, NotFoundError, RateLimitError,
                      ValidationError)
 
@@ -44,12 +48,17 @@ def route(method: str, pattern: str, *, auth_required: bool = True, min_global: 
 
 
 class Req:
-    def __init__(self, principal, params, query, body, token=None, client_ip=""):
+    def __init__(self, principal, params, query, body, token=None, client_ip="",
+                 client_source="peer", proxy_headers_ignored=False):
         self.principal = principal
         self.params = params
         self.query = query
         self.body = body or {}
         self.client_ip = client_ip
+        # Where client_ip came from ("header", "forwarded" or "peer"), and
+        # whether the request carried proxy headers that were not believed.
+        self.client_source = client_source
+        self.proxy_headers_ignored = proxy_headers_ignored
         self.token = token
 
     def q(self, key, default=None):
@@ -60,72 +69,265 @@ class Req:
 # ===========================================================================
 # Auth + identity
 # ===========================================================================
+# --- client address --------------------------------------------------------
+# Headers a reverse proxy uses to pass the client address on. A client can send
+# any of them itself, so they are believed only when the operator has declared
+# what sits in front of the service: FSL_CLIENT_IP_HEADER names one header the
+# proxy always overwrites, FSL_TRUSTED_PROXY_HOPS counts the proxies that each
+# append one entry to X-Forwarded-For. With neither set, the socket peer is the
+# client and these headers are ignored.
+_PROXY_HEADERS = ("X-Forwarded-For", "Forwarded", "CF-Connecting-IP", "True-Client-IP",
+                  "Fly-Client-IP")
+
+
+def _ip_text(value) -> str | None:
+    """Canonical text of an IP address (IPv4-mapped IPv6 as IPv4), else None."""
+    try:
+        ip = ipaddress.ip_address(str(value or "").strip())
+    except ValueError:
+        return None
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return str(ip)
+
+
+def resolve_client(headers, peer: str) -> tuple[str, str]:
+    """Return (address, source) for a request with these headers and socket peer.
+
+    source is "header" (the configured single-value header), "forwarded" (the
+    X-Forwarded-For entry appended by the outermost trusted proxy) or "peer".
+    A configured source that is missing, repeated or not an address is not
+    used; the next one down applies instead.
+    """
+    cfg = get_config()
+    if cfg.client_ip_header:
+        lines = headers.get_all(cfg.client_ip_header) or []
+        if len(lines) == 1:
+            address = _ip_text(lines[0])
+            if address:
+                return address, "header"
+    hops = cfg.trusted_proxy_hops
+    if hops > 0:
+        joined = ",".join(str(line) for line in headers.get_all("X-Forwarded-For") or [])
+        entries = [e.strip() for e in joined.split(",") if e.strip()]
+        if len(entries) >= hops:
+            address = _ip_text(entries[-hops])
+            if address:
+                return address, "forwarded"
+    return _ip_text(peer) or str(peer or "")[:64], "peer"
+
+
+def client_key(address: str) -> str:
+    """The key a client is throttled under: its IPv4 address or its IPv6 /64.
+
+    One IPv6 host normally controls a whole /64, so keying on the full address
+    would let it use a fresh address for every attempt.
+    """
+    try:
+        ip = ipaddress.ip_address(str(address or ""))
+    except ValueError:
+        return str(address or "")[:64]
+    if ip.version == 6:
+        if ip.ipv4_mapped is not None:
+            return str(ip.ipv4_mapped)
+        return f"{ipaddress.IPv6Address(int(ip) >> 64 << 64)}/64"
+    return str(ip)
+
+
 # --- sign-in throttling ----------------------------------------------------
-# Failed sign-ins are counted in a sliding window per (account, client), per
-# account and per client. This bounds online password guessing; it is in-memory
-# (per API process) and resets on restart. The client address is the right-most
-# X-Forwarded-For entry when a reverse proxy supplies one, else the socket peer;
-# a directly exposed server cannot trust that header, which is why the
-# per-account limit exists independently of it.
+# Sign-in attempts are counted in a sliding window under three keys: the
+# (account, client) pair, the account, and the client (see client_key). The
+# table is in-memory, per API process, and starts empty after a restart. Times
+# are monotonic-clock readings, so a wall-clock correction cannot stretch or
+# cut short a window.
+#
+# Only the pair and client counts ever refuse a request. The account count
+# merely lowers the per-client allowance while an account is being guessed from
+# many clients. There is deliberately no account-wide lock: on a system with a
+# single owner it would be a denial-of-service lever, because anyone who knows
+# the owner's email could keep the owner out by failing on purpose. Guessing
+# stays bounded per client address and by the cost of each password hash.
 LOGIN_WINDOW_SECONDS = 600
-LOGIN_LIMITS = {"pair": 8, "acct": 30, "ip": 60}
-_LOGIN_FAILS: dict[str, list[float]] = {}
+LOGIN_LIMITS = {"pair": 8, "ip": 60}
+LOGIN_ACCOUNT_PRESSURE = 30
+LOGIN_PAIR_LIMIT_UNDER_PRESSURE = 3
+# Audit rows written per client and window for sign-ins that did not succeed.
+LOGIN_AUDIT_BUDGET = {"failed": 5, "throttled": 1}
+_LOGIN_ATTEMPTS: dict[str, list[float]] = {}
+_LOGIN_AUDIT: dict[str, dict] = {}
 _LOGIN_LOCK = threading.Lock()
 _LOGIN_MAX_KEYS = 20000
+# Entries kept under one account key. Only "at least LOGIN_ACCOUNT_PRESSURE"
+# is ever asked of it, so the newest few are enough however many clients try.
+_LOGIN_ACCOUNT_KEEP = 4 * LOGIN_ACCOUNT_PRESSURE
 
 
-def _login_keys(email: str, ip: str) -> dict:
-    email = (email or "").strip().lower()[:254]
-    return {"pair": f"pair:{email}|{ip}", "acct": f"acct:{email}", "ip": f"ip:{ip}"}
+class LoginTicket(NamedTuple):
+    """One admitted sign-in attempt: the keys it is counted under, and when."""
+    keys: dict
+    at: float
 
 
-def login_throttled(email: str, ip: str, now: float | None = None) -> bool:
-    now = time.time() if now is None else now
+def _login_account(email: str) -> str:
+    return (email or "").strip().lower()[:254]
+
+
+def _login_keys(email: str, client: str) -> dict:
+    account = _login_account(email)
+    return {"pair": f"pair:{account}|{client}", "acct": f"acct:{account}", "ip": f"ip:{client}"}
+
+
+def _login_evict(now: float) -> None:
+    """Shrink the table to 90% of its cap. The caller holds the lock.
+
+    Expired entries go first. If that is not enough, the keys holding the
+    fewest attempts go next, least recently used first, so a key that has
+    reached its limit outlives any number of one-off keys. The table is never
+    emptied: that would unlock every account under attack at once.
+    """
+    for key in list(_LOGIN_ATTEMPTS):
+        hits = [t for t in _LOGIN_ATTEMPTS[key] if now - t < LOGIN_WINDOW_SECONDS]
+        if hits:
+            _LOGIN_ATTEMPTS[key] = hits
+        else:
+            del _LOGIN_ATTEMPTS[key]
+    excess = len(_LOGIN_ATTEMPTS) - (_LOGIN_MAX_KEYS * 9) // 10
+    if excess > 0:
+        coldest = heapq.nsmallest(excess, _LOGIN_ATTEMPTS.items(),
+                                  key=lambda item: (len(item[1]), item[1][-1]))
+        for key, _ in coldest:
+            del _LOGIN_ATTEMPTS[key]
+
+
+def login_admit(email: str, client: str, now: float | None = None) -> LoginTicket:
+    """Admit one sign-in attempt for (email, client key) or raise RateLimitError.
+
+    The limit check and the count are one step under the lock, and the attempt
+    is counted before the slow password check runs, so parallel requests cannot
+    all pass the check while none of them has been counted yet. A refused
+    attempt is not counted.
+    """
+    now = time.monotonic() if now is None else now
+    keys = _login_keys(email, client)
     with _LOGIN_LOCK:
-        for kind, key in _login_keys(email, ip).items():
-            hits = [t for t in _LOGIN_FAILS.get(key, []) if now - t < LOGIN_WINDOW_SECONDS]
+        live = {}
+        for kind, key in keys.items():
+            hits = [t for t in _LOGIN_ATTEMPTS.get(key, ()) if now - t < LOGIN_WINDOW_SECONDS]
             if hits:
-                _LOGIN_FAILS[key] = hits
+                _LOGIN_ATTEMPTS[key] = hits
             else:
-                _LOGIN_FAILS.pop(key, None)
-            if len(hits) >= LOGIN_LIMITS[kind]:
-                return True
-    return False
+                _LOGIN_ATTEMPTS.pop(key, None)
+            live[kind] = hits
+        pair_limit = (LOGIN_PAIR_LIMIT_UNDER_PRESSURE
+                      if len(live["acct"]) >= LOGIN_ACCOUNT_PRESSURE else LOGIN_LIMITS["pair"])
+        for kind, limit in (("pair", pair_limit), ("ip", LOGIN_LIMITS["ip"])):
+            hits = live[kind]
+            if len(hits) >= limit:
+                # This key is back under its limit once this entry expires.
+                wait = max(1, math.ceil(hits[len(hits) - limit] + LOGIN_WINDOW_SECONDS - now))
+                minutes = math.ceil(wait / 60)
+                raise RateLimitError(
+                    f"too many sign-in attempts; wait about {minutes} "
+                    f"minute{'' if minutes == 1 else 's'} and try again",
+                    detail={"retry_after_seconds": wait})
+        if len(_LOGIN_ATTEMPTS) > _LOGIN_MAX_KEYS:
+            _login_evict(now)
+        for key in keys.values():
+            _LOGIN_ATTEMPTS.setdefault(key, []).append(now)
+        del _LOGIN_ATTEMPTS[keys["acct"]][:-_LOGIN_ACCOUNT_KEEP]
+    return LoginTicket(keys, now)
 
 
-def login_record_failure(email: str, ip: str, now: float | None = None) -> None:
-    now = time.time() if now is None else now
+def _login_forget(ticket: LoginTicket, kinds: tuple) -> None:
+    """Take a ticket's entry off the given keys. The caller holds the lock."""
+    for kind in kinds:
+        key = ticket.keys[kind]
+        hits = _LOGIN_ATTEMPTS.get(key)
+        if not hits:
+            continue
+        try:
+            hits.remove(ticket.at)
+        except ValueError:      # already expired or evicted
+            pass
+        if not hits:
+            del _LOGIN_ATTEMPTS[key]
+
+
+def login_succeeded(ticket: LoginTicket) -> None:
+    """A correct password is not a failed attempt: take it off the account and
+    client counts and let this client start over on this account."""
     with _LOGIN_LOCK:
-        if len(_LOGIN_FAILS) > _LOGIN_MAX_KEYS:   # bound memory under spraying
-            for key in [k for k, v in _LOGIN_FAILS.items()
-                        if not v or now - v[-1] >= LOGIN_WINDOW_SECONDS]:
-                _LOGIN_FAILS.pop(key, None)
-            if len(_LOGIN_FAILS) > _LOGIN_MAX_KEYS:
-                _LOGIN_FAILS.clear()
-        for key in _login_keys(email, ip).values():
-            _LOGIN_FAILS.setdefault(key, []).append(now)
+        _login_forget(ticket, ("acct", "ip"))
+        _LOGIN_ATTEMPTS.pop(ticket.keys["pair"], None)
 
 
-def login_record_success(email: str, ip: str) -> None:
+def login_release(ticket: LoginTicket) -> None:
+    """Withdraw an attempt whose password was never judged (an internal error)."""
     with _LOGIN_LOCK:
-        _LOGIN_FAILS.pop(_login_keys(email, ip)["pair"], None)
+        _login_forget(ticket, ("pair", "acct", "ip"))
+
+
+def _login_audit_allowed(client: str, kind: str, now: float | None = None) -> bool:
+    """Spend one audit row of `kind` from this client's budget, if any is left.
+
+    Anyone can send failing sign-ins, so each client key gets a fixed number of
+    audit rows per window; without that, anonymous requests could grow the
+    database without bound.
+    """
+    now = time.monotonic() if now is None else now
+    with _LOGIN_LOCK:
+        spent = _LOGIN_AUDIT.get(client)
+        if spent is None or now - spent["since"] >= LOGIN_WINDOW_SECONDS:
+            if spent is None and len(_LOGIN_AUDIT) >= _LOGIN_MAX_KEYS:
+                for key in [k for k, v in _LOGIN_AUDIT.items()
+                            if now - v["since"] >= LOGIN_WINDOW_SECONDS]:
+                    del _LOGIN_AUDIT[key]
+                if len(_LOGIN_AUDIT) >= _LOGIN_MAX_KEYS:
+                    return False    # more clients than can be tracked: log no new ones
+            spent = _LOGIN_AUDIT[client] = {"since": now, "failed": 0, "throttled": 0}
+        if spent[kind] >= LOGIN_AUDIT_BUDGET[kind]:
+            return False
+        spent[kind] += 1
+        return True
+
+
+def _login_audit(action: str, kind: str, email: str, req: Req) -> None:
+    """Record a sign-in that did not succeed, within the client's audit budget.
+
+    The audit log redacts email addresses, so the account is named by a short
+    hash that can be compared with the hash of a known address.
+    """
+    if not _login_audit_allowed(client_key(req.client_ip), kind):
+        return
+    audit.record(action, actor="anonymous", outcome="denied",
+                 detail={"account": util.sha256_text(_login_account(email))[:12],
+                         "client": req.client_ip})
+
+
+def reset_login_throttle_for_tests() -> None:
+    with _LOGIN_LOCK:
+        _LOGIN_ATTEMPTS.clear()
+        _LOGIN_AUDIT.clear()
 
 
 @route("POST", r"/api/auth/login", auth_required=False)
 def login(req: Req):
     email = str(req.body.get("email", ""))
-    if login_throttled(email, req.client_ip):
-        audit.record("auth.login_throttled", actor="anonymous", outcome="denied",
-                     detail={"email": email[:254]})
-        raise RateLimitError("too many failed sign-in attempts; try again in a few minutes")
+    try:
+        ticket = login_admit(email, client_key(req.client_ip))
+    except RateLimitError:
+        _login_audit("auth.login_throttled", "throttled", email, req)
+        raise
     try:
         out = auth.login(email, str(req.body.get("password", "")))
     except AuthError:
-        login_record_failure(email, req.client_ip)
-        audit.record("auth.login_failed", actor="anonymous", outcome="denied",
-                     detail={"email": email[:254]})
+        # The admitted attempt stays counted: it is the record of this failure.
+        _login_audit("auth.login_failed", "failed", email, req)
         raise
-    login_record_success(email, req.client_ip)
+    except BaseException:
+        login_release(ticket)
+        raise
+    login_succeeded(ticket)
     audit.record("auth.login", actor=out["user"]["email"], detail={"ok": True})
     return 200, out
 
@@ -139,8 +341,15 @@ def logout(req: Req):
 
 @route("GET", r"/api/me")
 def me(req: Req):
-    return 200, {"user": {"id": req.principal.user_id, "email": req.principal.email,
-                          "global_role": req.principal.global_role}}
+    out = {"user": {"id": req.principal.user_id, "email": req.principal.email,
+                    "global_role": req.principal.global_role},
+           # How this server identified the caller, so an operator can check
+           # that the proxy settings match the hosting setup.
+           "client": {"address": req.client_ip, "source": req.client_source,
+                      "proxy_headers_ignored": req.proxy_headers_ignored}}
+    if req.principal.global_role in ("owner", "admin"):
+        out["setup_notices"] = list(ADMIN_NOTICES)
+    return 200, out
 
 
 @route("GET", r"/api/health", auth_required=False)
@@ -153,6 +362,7 @@ def config_public(req: Req):
     cfg = get_config()
     # setup_notices are stable codes for startup problems (never secrets); the
     # sign-in page turns them into an explanation of what the operator must fix.
+    # Codes that describe the host itself are left out here (see /api/me).
     return 200, {"environment": cfg.environment, "ai_available": cfg.ai.available,
                  "brand": "FAISAL.AI", "setup_notices": list(SETUP_NOTICES),
                  "min_password_length": auth.MIN_PASSWORD_LENGTH}
@@ -568,13 +778,13 @@ class Handler(BaseHTTPRequestHandler):
         if not self._head_only:
             self.wfile.write(data)
 
-    def _client_ip(self) -> str:
-        forwarded = self.headers.get("X-Forwarded-For", "")
-        if forwarded:
-            last = forwarded.split(",")[-1].strip()
-            if last:
-                return last[:64]
-        return self.client_address[0] if self.client_address else ""
+    def _client(self) -> tuple[str, str, bool]:
+        """(address, source, proxy_headers_ignored) for this request."""
+        peer = self.client_address[0] if self.client_address else ""
+        address, source = resolve_client(self.headers, peer)
+        ignored = source == "peer" and any(self.headers.get(h) is not None
+                                           for h in _PROXY_HEADERS)
+        return address, source, ignored
 
     def _token(self):
         auth_h = self.headers.get("Authorization", "")
@@ -619,8 +829,10 @@ class Handler(BaseHTTPRequestHandler):
                     principal = auth.principal_from_token(tok)
                     if min_global:
                         principal.require_global(min_global)
+                address, source, ignored = self._client()
                 req = Req(principal, match.groupdict(), query, body, token=tok,
-                          client_ip=self._client_ip())
+                          client_ip=address, client_source=source,
+                          proxy_headers_ignored=ignored)
                 status, obj = fn(req)
                 return self._send_json(status, obj)
             except AppError as e:
@@ -689,6 +901,10 @@ def main():
         print(f"[init] ONE-TIME owner password: {boot['password']}", file=sys.stderr)
     print(f"[init] catalog={info['catalog_seeded']} ai_available={info['ai_available']}",
           file=sys.stderr)
+
+    # The connector registry is filled lazily and without a lock. Fill it here,
+    # before any thread exists, so the workers and the tool sync only read it.
+    connector_names()
 
     # In-process worker(s) for standalone mode (disable with FSL_NO_WORKER=1 to
     # run workers as separate processes/containers).

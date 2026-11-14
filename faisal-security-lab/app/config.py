@@ -7,6 +7,7 @@ once and persisted to a 0600 file inside the data directory — never committed.
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import tempfile
 from dataclasses import dataclass, field, asdict
@@ -23,6 +24,12 @@ def _env_int(name: str, default: int) -> int:
         return int(os.environ.get(name, "") or default)
     except ValueError:
         return default
+
+
+def _env_header_name(name: str) -> str:
+    """An HTTP header name from the environment, or "" when unset or malformed."""
+    value = os.environ.get(name, "").strip()
+    return value if re.fullmatch(r"[A-Za-z0-9-]{1,64}", value) else ""
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -104,6 +111,13 @@ class Config:
     # root-owned disk mounted for a non-root process) and temporary storage is
     # used instead. The service stays up and reports it rather than crashing.
     data_dir_fallback: bool = False
+    # How the client address is taken from a reverse proxy. Both are off by
+    # default, which means proxy headers are ignored and the socket peer is the
+    # client. client_ip_header names a single header the proxy always
+    # overwrites (for example CF-Connecting-IP); trusted_proxy_hops is the
+    # number of proxies that each append one entry to X-Forwarded-For.
+    client_ip_header: str = ""
+    trusted_proxy_hops: int = 0
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -165,6 +179,8 @@ class Config:
             limits=limits,
             ai=ai,
             data_dir_fallback=data_dir_fallback,
+            client_ip_header=_env_header_name("FSL_CLIENT_IP_HEADER"),
+            trusted_proxy_hops=max(0, min(10, _env_int("FSL_TRUSTED_PROXY_HOPS", 0))),
         )
 
     @staticmethod
