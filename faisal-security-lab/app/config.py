@@ -123,7 +123,9 @@ class Config:
             db_path=Path(_env("FSL_DB_PATH", str(data_dir / "faisal-security-lab.db"))).resolve(),
             evidence_dir=evidence_dir,
             bind_host=_env("FSL_BIND_HOST", "127.0.0.1"),
-            bind_port=_env_int("FSL_PORT", 8787),
+            # PaaS hosts (Render, Railway, Heroku, ...) inject $PORT and route to
+            # it; honor that first so click-based deploys work with no config.
+            bind_port=_env_int("PORT", _env_int("FSL_PORT", 8787)),
             owner_email=_env("FSL_OWNER_EMAIL", "owner@faisal-security-lab.local").strip().lower(),
             session_ttl_seconds=_env_int("FSL_SESSION_TTL", 60 * 60 * 12),
             secret_key=secret_key,
