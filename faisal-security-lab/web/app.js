@@ -44,6 +44,37 @@ const I18N = {
 };
 const t = k => (I18N[S.lang][k] || k);
 
+// Startup problems reported by the server as stable codes (see /api/config).
+const NOTICE_TEXT = {
+  ar: {
+    owner_password_too_short: "لم يُنشأ حساب المالك لأن كلمة المرور في إعدادات الاستضافة أقصر من {min} أحرف. افتح إعدادات الخدمة (Environment) واجعل قيمة FSL_OWNER_PASSWORD {min} أحرف أو أكثر، ثم أعد النشر.",
+    owner_email_invalid: "قيمة FSL_OWNER_EMAIL في إعدادات الاستضافة ليست بريدًا صالحًا، لذلك يُستخدم البريد الافتراضي owner@faisal-security-lab.local لتسجيل الدخول.",
+    owner_password_generated: "لم تُضبط كلمة مرور للمالك (FSL_OWNER_PASSWORD). أُنشئت كلمة مرور لمرة واحدة وطُبعت في سجل الخدمة (Logs).",
+    data_dir_unwritable: "مجلد البيانات غير قابل للكتابة، لذلك تُحفظ البيانات مؤقتًا وتُفقد عند إعادة التشغيل.",
+    owner_bootstrap_failed: "تعذّر إعداد حساب المالك. راجع سجل الخدمة (Logs)."
+  },
+  en: {
+    owner_password_too_short: "No owner account was created because the password in the hosting settings is shorter than {min} characters. Open the service's Environment settings, set FSL_OWNER_PASSWORD to {min} or more characters, and redeploy.",
+    owner_email_invalid: "FSL_OWNER_EMAIL in the hosting settings is not a valid email, so the default owner@faisal-security-lab.local is used to sign in.",
+    owner_password_generated: "No owner password is set (FSL_OWNER_PASSWORD). A one-time password was generated and printed in the service logs.",
+    data_dir_unwritable: "The data directory is not writable, so data is kept in temporary storage and lost on restart.",
+    owner_bootstrap_failed: "The owner account could not be set up. Check the service logs."
+  }
+};
+async function loadSetupNotices(){
+  try{
+    const c = await api("/api/config");
+    const box = document.getElementById("setupnotices");
+    if (!box) return;
+    const min = c.min_password_length || 10;
+    const blocking = ["owner_password_too_short","owner_bootstrap_failed"];
+    box.innerHTML = (c.setup_notices||[]).map(code => {
+      const text = (NOTICE_TEXT[S.lang][code] || code).replace(/\{min\}/g, min);
+      return notice(text, blocking.includes(code) ? "err" : "");
+    }).join("");
+  }catch(e){ /* the sign-in form still works without the notices */ }
+}
+
 // ---- api ----
 async function api(path, method="GET", body=null){
   const h = { "Content-Type":"application/json" };
@@ -94,6 +125,7 @@ function renderLogin(){
   root().innerHTML = h`<div class="login">
     <div class="logo-row">${LOGO}<h1 class="brand">FAISAL<span class="dot">.AI</span></h1></div>
     <div class="sub kicker">${esc(t("kicker"))}</div>
+    <div id="setupnotices"></div>
     <div id="loginmsg"></div>
     <form id="loginform">
       <label>${esc(t("email"))}</label><input type="email" name="email" required>
@@ -103,6 +135,7 @@ function renderLogin(){
         <button class="btn sm right" type="button" data-act="lang">🌐 ${esc(t("lang"))}</button>
       </div>
     </form></div>`;
+  loadSetupNotices();
 }
 
 function setMain(html){ const m=document.getElementById("main"); if(m) m.innerHTML=html; }

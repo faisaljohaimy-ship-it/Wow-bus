@@ -46,7 +46,7 @@ Open the UI, sign in, create a project, register an asset, grant an authorizatio
 **scope**, then run scans from the Scan Center.
 
 ```bash
-make test                   # 37 unit + integration tests (real tools where present)
+make test                   # 51 unit + integration tests (real tools where present)
 make acceptance             # the 10 release-acceptance gates → evidence/acceptance-report.json
 ```
 

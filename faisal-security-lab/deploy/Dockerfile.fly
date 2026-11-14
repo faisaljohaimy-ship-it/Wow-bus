@@ -19,9 +19,17 @@ ENV FSL_BIND_HOST=0.0.0.0 \
     FSL_DATA_DIR=/data \
     PATH="/usr/local/bin:${PATH}"
 EXPOSE 8080
-VOLUME ["/data"]
 
-RUN useradd -m -u 10001 fsl && mkdir -p /data && chown fsl /data
-USER fsl
+# Unprivileged service user. /data is created and owned before anything else
+# touches it, so its ownership does not depend on the image builder. No VOLUME
+# instruction: hosts attach storage explicitly (fly.toml mount, Render disk).
+RUN groupadd -g 10001 fsl && useradd -m -u 10001 -g 10001 fsl \
+    && mkdir -p /data && chown fsl:fsl /data
+COPY deploy/entrypoint.sh /usr/local/bin/fsl-entrypoint
+RUN chmod 755 /usr/local/bin/fsl-entrypoint
+
+# The entrypoint fixes ownership of a host-mounted /data, then drops to the
+# unprivileged user before starting the server (see deploy/entrypoint.sh).
+ENTRYPOINT ["/usr/local/bin/fsl-entrypoint"]
 # In-process workers are enabled (FSL_NO_WORKER is unset).
 CMD ["python3", "-m", "app.server"]

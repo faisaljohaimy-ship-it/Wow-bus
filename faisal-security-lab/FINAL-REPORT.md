@@ -20,7 +20,7 @@ a hard structured-output safety contract, and a bilingual RTL/LTR operator conso
   evidence → report, through the standalone server with in-process workers.
 - **Policy enforcement over the live API:** an out-of-scope connector returns
   HTTP 403 `policy_denied`; SSRF to a private address is blocked.
-- **Tests:** 37 (`make test`) pass — RBAC/isolation, policy/scope/SSRF, queue
+- **Tests:** 51 (`make test`) pass — RBAC/isolation, policy/scope/SSRF, queue
   idempotency + crash-safety, connectors (known vs clean), dedup/reopen,
   redaction, AI safety, reports — plus the 9-row failure-mode matrix.
 - **Acceptance:** 10/10 gates (`make acceptance` → `evidence/acceptance-report.json`).
@@ -52,7 +52,7 @@ reaches the asset is confirmed by a re-scan before the finding is closed.
 ```bash
 cd faisal-security-lab
 make install-tools && make verify     # honest tool states
-make test                             # 37 tests
+make test                             # 51 tests
 make acceptance                       # 10 gates → evidence/acceptance-report.json
 make serve                            # open the console at http://127.0.0.1:8787
 ```

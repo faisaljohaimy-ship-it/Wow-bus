@@ -134,8 +134,9 @@ class Connector:
     def execute(self, ctx: ExecContext) -> ConnectorResult:  # pragma: no cover - abstract
         raise NotImplementedError
 
-    def verified_ref(self) -> str:
-        r = self.readiness()
+    def verified_ref(self, readiness: dict | None = None) -> str:
+        # Pass an already-computed readiness to avoid probing the tool twice.
+        r = readiness if readiness is not None else self.readiness()
         return f"{self.name}@{r.get('version')}|connector={self.__class__.__name__}"
 
 

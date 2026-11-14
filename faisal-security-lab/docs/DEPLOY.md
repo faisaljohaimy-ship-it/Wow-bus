@@ -35,11 +35,33 @@ Point the service at this repo subdirectory `faisal-security-lab`, Dockerfile
 `deploy/Dockerfile.fly`, port `8080`, add a persistent disk mounted at `/data`, and
 set the same `FSL_OWNER_*` env vars.
 
+## Option D — Render Blueprint (clicks only, no terminal)
+Open `https://render.com/deploy?repo=https://github.com/faisaljohaimy-ship-it/Wow-bus`,
+leave **Blueprint Path** empty (it defaults to `render.yaml` at the repo root), type
+`FSL_OWNER_PASSWORD` (10+ characters) and press **Deploy Blueprint**. The free plan
+has no persistent disk, so findings reset when the instance restarts or wakes from
+sleep; the owner account is re-created from the environment on every start.
+
 ## First login
-On first boot an owner account is created from `FSL_OWNER_EMAIL`. If you did not set
-`FSL_OWNER_PASSWORD`, a one-time password is printed in the service logs. There is
-**no email bridge** — authentication is a server-side password + signed session, so
-there is no lock-out like the original app's owner-verification gate.
+On first boot an owner account is created from `FSL_OWNER_EMAIL` and
+`FSL_OWNER_PASSWORD` (**at least 10 characters**). There is **no email bridge** —
+authentication is a server-side password + signed session, so there is no lock-out
+like the original app's owner-verification gate. Repeated failed sign-ins are
+throttled (HTTP 429) for a few minutes.
+
+## If the values are wrong, the site still starts
+A mistyped value never stops the service. It starts, logs one `[setup]` line per
+problem, and the sign-in page explains what to change:
+
+| Notice | Meaning | Fix |
+|---|---|---|
+| `owner_password_too_short` | `FSL_OWNER_PASSWORD` is under 10 characters; **no owner account exists** | set a longer value, redeploy |
+| `owner_email_invalid` | `FSL_OWNER_EMAIL` is not an email | sign in with `owner@faisal-security-lab.local`, or fix the value |
+| `owner_password_generated` | no password was set | read the one-time password in the service logs |
+| `data_dir_unwritable` | the data directory cannot be written | data is temporary; fix the mount/ownership |
+
+The single-image container starts as root only to make a host-mounted `/data`
+writable (a Fly volume is root-owned), then drops to an unprivileged user.
 
 ## Enabling the AI layer later
 Set `FSL_AI_PROVIDER` + `FSL_AI_BASE_URL` + `FSL_AI_MODEL` + `FSL_AI_API_KEY` (any

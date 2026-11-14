@@ -22,8 +22,8 @@
       "title": "Integrated run: authorized asset → job → real tool → saved finding → report",
       "pass": true,
       "evidence": {
-        "findings": 44,
-        "report_bytes": 11171,
+        "findings": 43,
+        "report_bytes": 10966,
         "tools_run": [
           "bandit",
           "gitleaks",
@@ -43,7 +43,7 @@
           "pip_audit",
           "semgrep"
         ],
-        "known_findings": 44,
+        "known_findings": 43,
         "clean_findings": 0
       }
     },
@@ -112,7 +112,7 @@
         "driver": "bandit",
         "findings_before": 9,
         "reappeared_in_rescan": false,
-        "fix_job": "job_0f2facf1e5db4d7e9d878771",
+        "fix_job": "job_2fc8ea13f71d4710b48c6327",
         "validation_verified": true,
         "final_status": "fixed_on_asset"
       }
