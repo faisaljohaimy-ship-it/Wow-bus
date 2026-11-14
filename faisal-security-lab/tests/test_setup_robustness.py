@@ -101,15 +101,34 @@ class TestOwnerBootstrap(unittest.TestCase):
 
 
 class TestDataDirFallback(unittest.TestCase):
-    def test_unusable_data_dir_falls_back_instead_of_crashing(self):
+    def setUp(self):
+        # Temporary storage is shared by the whole process; give each test its own.
+        from app import config
+        config.reset_fallback_dir_for_tests()
+        self.addCleanup(config.reset_fallback_dir_for_tests)
+
+    def _unusable_dir(self) -> Path:
         # A path under a regular file can never be created, whoever we run as.
         blocker = Path(tempfile.mkdtemp(prefix="fsl-block-")) / "file"
         blocker.write_text("x")
-        cfg, info = boot({"FSL_DATA_DIR": str(blocker / "data")})
+        return blocker / "data"
+
+    def test_unusable_data_dir_falls_back_instead_of_crashing(self):
+        cfg, info = boot({"FSL_DATA_DIR": str(self._unusable_dir())})
         self.assertTrue(cfg.data_dir_fallback)
         self.assertIn("data_dir_unwritable", info["setup_notices"])
         self.assertTrue(cfg.db_path.exists())
         self.assertTrue(str(cfg.db_path).startswith(str(cfg.data_dir)))
+
+    def test_explicit_database_path_is_kept_when_the_data_dir_is_unusable(self):
+        good = Path(tempfile.mkdtemp(prefix="fsl-good-")).resolve()
+        cfg, info = boot({"FSL_DATA_DIR": str(self._unusable_dir()),
+                          "FSL_DB_PATH": str(good / "lab.db")})
+        self.assertEqual(cfg.db_path, good / "lab.db")
+        self.assertTrue(cfg.db_path.exists())
+        # The data directory (session secret, default evidence location) is
+        # still temporary, so the operator is still told.
+        self.assertIn("data_dir_unwritable", info["setup_notices"])
 
 
 class TestLoginThrottle(unittest.TestCase):

@@ -16,6 +16,8 @@ Verification is deliberately NOT granted by readiness alone.
 """
 from __future__ import annotations
 
+import threading
+
 from .. import store
 from .. import util
 from .base import Connector
@@ -37,6 +39,12 @@ _CONNECTOR_CLASSES = [
 ]
 
 _REGISTRY: dict[str, Connector] = {}
+# Guards building _REGISTRY: workers, request threads and the background sync
+# all call _build() and must never observe a half-filled registry.
+_BUILD_LOCK = threading.RLock()
+# Makes "read the tool_registry row, decide its state, write it back" one step,
+# so a sync and a job completing for the same connector cannot interleave.
+_ROW_LOCK = threading.RLock()
 
 
 def _ensure_ai_connector():
@@ -51,10 +59,11 @@ def _ensure_ai_connector():
 
 
 def _build():
-    if not _REGISTRY:
-        for cls in _CONNECTOR_CLASSES:
-            _REGISTRY[cls.name] = cls()
-    _ensure_ai_connector()
+    with _BUILD_LOCK:
+        if not _REGISTRY:
+            for cls in _CONNECTOR_CLASSES:
+                _REGISTRY[cls.name] = cls()
+        _ensure_ai_connector()
 
 
 def get_connector(name: str) -> Connector | None:
@@ -80,17 +89,11 @@ def _state_for(readiness: dict) -> str:
     return "blocked"
 
 
-def sync_registry() -> list[dict]:
-    """Refresh every connector's state from live readiness. Preserves a prior
-    'verified' only when the verified reference still matches (else 'stale')."""
-    _build()
-    out = []
-    for name, conn in _REGISTRY.items():
-        try:
-            readiness = conn.readiness()
-        except Exception as e:  # readiness must never crash the sync
-            readiness = {"installed": False, "available": False, "version": None,
-                         "detail": f"readiness error: {e}"}
+def _upsert_connector(name: str, conn: Connector, readiness: dict) -> str:
+    """Write one connector's tool_registry row from its readiness and return the
+    recorded state. Preserves a prior 'verified' only when the verified
+    reference still matches (else 'stale')."""
+    with _ROW_LOCK:
         existing = store.get_tool_registry(name)
         state = _state_for(readiness)
         verified_ref = conn.verified_ref(readiness)
@@ -111,6 +114,20 @@ def sync_registry() -> list[dict]:
             "last_verified_at": (existing or {}).get("last_verified_at"),
             "last_verified_ref": (existing or {}).get("last_verified_ref", ""),
         })
+    return state
+
+
+def sync_registry() -> list[dict]:
+    """Refresh every connector's state from live readiness."""
+    _build()
+    out = []
+    for name, conn in list(_REGISTRY.items()):
+        try:
+            readiness = conn.readiness()
+        except Exception as e:  # readiness must never crash the sync
+            readiness = {"installed": False, "available": False, "version": None,
+                         "detail": f"readiness error: {e}"}
+        state = _upsert_connector(name, conn, readiness)
         # Link the connector back to its catalog entry when the repo matches.
         repo = _repo_from_source(conn.source)
         if repo:
@@ -127,8 +144,13 @@ def record_verified(name: str) -> None:
     conn = get_connector(name)
     if conn:
         readiness = conn.readiness()
-        store.set_tool_state(name, "verified", readiness=readiness,
-                             verified_ref=conn.verified_ref(readiness))
+        with _ROW_LOCK:
+            # A job can complete before the first sync has written this
+            # connector's row; create it so the verification is not lost.
+            if store.get_tool_registry(name) is None:
+                _upsert_connector(name, conn, readiness)
+            store.set_tool_state(name, "verified", readiness=readiness,
+                                 verified_ref=conn.verified_ref(readiness))
 
 
 def _repo_from_source(source: str) -> str:
