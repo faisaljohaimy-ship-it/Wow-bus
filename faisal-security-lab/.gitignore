@@ -1,0 +1,15 @@
+# Runtime state — never committed
+var/
+*.db
+*.db-wal
+*.db-shm
+.session-secret
+# Per-run raw evidence (redacted summaries live in the DB; raw stays local)
+evidence/**/raw/
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+# OS
+.DS_Store

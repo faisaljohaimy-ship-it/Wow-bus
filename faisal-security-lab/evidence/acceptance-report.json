@@ -1,0 +1,157 @@
+{
+  "platform": "Faisal Security Lab",
+  "release_scope": "r1",
+  "gates_total": 10,
+  "gates_passed": 10,
+  "score": "10/10",
+  "note": "Acceptance completion for the declared release scope, measured by concrete evidence. Not a claim of zero vulnerabilities.",
+  "tool_coverage": {
+    "bandit": "verified",
+    "semgrep": "verified",
+    "osv_scanner": "ready",
+    "pip_audit": "verified",
+    "trivy": "blocked",
+    "tls_certificate": "ready",
+    "http_headers": "ready",
+    "gitleaks": "verified",
+    "ai_redteam": "installed"
+  },
+  "gates": [
+    {
+      "gate": 1,
+      "title": "Integrated run: authorized asset → job → real tool → saved finding → report",
+      "pass": true,
+      "evidence": {
+        "findings": 44,
+        "report_bytes": 11171,
+        "tools_run": [
+          "bandit",
+          "gitleaks",
+          "pip_audit",
+          "semgrep"
+        ]
+      }
+    },
+    {
+      "gate": 2,
+      "title": "Finding correctness: known input flags, clean input does not",
+      "pass": true,
+      "evidence": {
+        "known_connectors": [
+          "bandit",
+          "gitleaks",
+          "pip_audit",
+          "semgrep"
+        ],
+        "known_findings": 44,
+        "clean_findings": 0
+      }
+    },
+    {
+      "gate": 3,
+      "title": "Scope enforcement: out-of-scope connector/target denied; SSRF blocked",
+      "pass": true,
+      "evidence": {
+        "connector_denied": "connector_not_authorized",
+        "target_denied": "target_scope",
+        "ssrf_blocked": true
+      }
+    },
+    {
+      "gate": 4,
+      "title": "Privilege isolation: non-member cannot access another project",
+      "pass": true,
+      "evidence": {
+        "other_role": "none"
+      }
+    },
+    {
+      "gate": 5,
+      "title": "Execution/agent safety: injection can't change action; schema rejects tool-launch",
+      "pass": true,
+      "evidence": {
+        "evalset": "5/5",
+        "severity_preserved": "critical",
+        "schema_rejected_tool_field": true
+      }
+    },
+    {
+      "gate": 6,
+      "title": "Real stop: global stop halts leasing; cancel sets a propagated stop flag",
+      "pass": true,
+      "evidence": {
+        "claim_blocked_under_stop": true,
+        "stop_flag": true
+      }
+    },
+    {
+      "gate": 7,
+      "title": "Fault tolerance: lost worker → execution 'undetermined', not silently re-run",
+      "pass": true,
+      "evidence": {
+        "reclaim": {
+          "requeued": 0,
+          "undetermined": 1
+        },
+        "state": "undetermined"
+      }
+    },
+    {
+      "gate": 8,
+      "title": "Data protection: secrets/PII redacted in evidence and reports",
+      "pass": true,
+      "evidence": {
+        "evidence_redacted": true
+      }
+    },
+    {
+      "gate": 9,
+      "title": "Verified fix: fix reaches the asset and the finding is gone on re-scan before closing",
+      "pass": true,
+      "evidence": {
+        "driver": "bandit",
+        "findings_before": 9,
+        "reappeared_in_rescan": false,
+        "fix_job": "job_0f2facf1e5db4d7e9d878771",
+        "validation_verified": true,
+        "final_status": "fixed_on_asset"
+      }
+    },
+    {
+      "gate": 10,
+      "title": "Auditable delivery: every Verified tool has version+connector+evidence; blockers stated",
+      "pass": true,
+      "evidence": {
+        "verified_tools": [
+          {
+            "name": "bandit",
+            "version": "bandit 1.9.4",
+            "ref": "bandit@bandit 1.9.4|connector=BanditConnector"
+          },
+          {
+            "name": "semgrep",
+            "version": "1.185.0",
+            "ref": "semgrep@1.185.0|connector=SemgrepConnector"
+          },
+          {
+            "name": "pip_audit",
+            "version": "pip-audit 2.10.1",
+            "ref": "pip_audit@pip-audit 2.10.1|connector=PipAuditConnector"
+          },
+          {
+            "name": "gitleaks",
+            "version": "gitleaks version 8.21.2",
+            "ref": "gitleaks@gitleaks version 8.21.2|connector=GitleaksConnector"
+          }
+        ],
+        "blocked_tools": [
+          {
+            "name": "trivy",
+            "state": "blocked",
+            "reason": "'trivy' not found on PATH"
+          }
+        ]
+      }
+    }
+  ]
+}

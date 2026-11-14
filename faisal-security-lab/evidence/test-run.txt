@@ -1,0 +1,8 @@
+=== FULL TEST RUN 2026-11-14T17:54:56Z ===
+.....................................
+----------------------------------------------------------------------
+Ran 37 tests in 152.666s
+
+OK
+=== ACCEPTANCE ===
+acceptance gates: 10/10 (see evidence/acceptance-report.json)

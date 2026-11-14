@@ -1,0 +1,22 @@
+# Isolated scan worker. Carries the security-tool binaries and runs with the
+# LEAST privilege the tools need. Memory is bounded by the container's cgroup
+# (--memory / mem_limit), which is the SUPPORTED memory-isolation path (process
+# RLIMIT_AS breaks Semgrep/OCaml and is off by default).
+FROM python:3.13-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git ca-certificates curl tar && rm -rf /var/lib/apt/lists/*
+
+# Install the real tools (pinned). Trivy is optional; the build does not fail if
+# its release asset is unreachable — the connector reports 'blocked' at runtime.
+COPY scripts/install-tools.sh /tmp/install-tools.sh
+RUN bash /tmp/install-tools.sh /usr/local/bin /opt/sectools-venv || true
+
+WORKDIR /app
+COPY app ./app
+COPY data ./data
+ENV FSL_DATA_DIR=/data PATH="/usr/local/bin:${PATH}"
+VOLUME ["/data"]
+RUN useradd -m -u 10002 fslw && mkdir -p /data && chown fslw /data
+USER fslw
+CMD ["python3", "-m", "app.worker"]

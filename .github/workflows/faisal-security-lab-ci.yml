@@ -1,0 +1,49 @@
+name: faisal-security-lab CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["faisal-security-lab/**"]
+  pull_request:
+    paths: ["faisal-security-lab/**"]
+
+concurrency:
+  group: fsl-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: faisal-security-lab
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # Install the real security tools so the integration tests exercise them.
+      # Least privilege for CI: this job has no repository secrets.
+      - name: Install security tools
+        run: bash scripts/install-tools.sh "$HOME/.local/bin" "$HOME/sectools-venv" || true
+
+      - name: Add tools to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Unit + integration tests
+        run: python3 -W ignore -m unittest discover -s tests -p 'test_*.py'
+
+      - name: Acceptance gates
+        run: python3 scripts/acceptance.py
+
+      - name: Tool readiness (informational)
+        run: python3 scripts/verify.py
+
+      - name: Upload acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-report
+          path: faisal-security-lab/evidence/acceptance-report.json

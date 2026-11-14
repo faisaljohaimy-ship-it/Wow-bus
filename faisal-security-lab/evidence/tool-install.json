@@ -1,0 +1,54 @@
+{
+  "recorded_at": "2026-11-14T17:01:13+00:00",
+  "environment": "claude-code cloud container (Linux x86_64, Python 3.13, Node 22)",
+  "method": "pip into /opt/sectools-venv (symlinked to /usr/local/bin) for Python tools; pinned GitHub release binaries for Go tools",
+  "note": "This records REAL install state in this container. The running platform re-derives each tool's state live via shutil.which + --version at readiness time; this file is a point-in-time snapshot.",
+  "tools": {
+    "semgrep": {
+      "status": "installed",
+      "version": "1.185.0",
+      "category": "SAST",
+      "bin": "/usr/local/bin/semgrep"
+    },
+    "gitleaks": {
+      "status": "installed",
+      "version": "8.21.2",
+      "category": "secrets",
+      "bin": "/usr/local/bin/gitleaks"
+    },
+    "osv-scanner": {
+      "status": "installed",
+      "version": "1.9.2",
+      "category": "dependencies/SBOM",
+      "bin": "/usr/local/bin/osv-scanner"
+    },
+    "bandit": {
+      "status": "installed",
+      "version": "1.9.4",
+      "category": "SAST (python)",
+      "bin": "/usr/local/bin/bandit"
+    },
+    "pip-audit": {
+      "status": "installed",
+      "version": "2.10.1",
+      "category": "dependencies (python)",
+      "bin": "/usr/local/bin/pip-audit"
+    },
+    "trivy": {
+      "status": "blocked",
+      "version": null,
+      "category": "dependencies/containers/SBOM",
+      "reason": "GitHub release assets return HTTP 404 through this container's egress proxy and the Trivy installer cannot reach api.github.com for the latest tag. Connector is implemented; tool binary is not installable in this environment. OSV-Scanner + pip-audit cover the dependency category per spec (\"Trivy or OSV-Scanner\")."
+    },
+    "http_headers": {
+      "status": "builtin",
+      "category": "network",
+      "provider": "python-stdlib"
+    },
+    "tls_certificate": {
+      "status": "builtin",
+      "category": "network/crypto",
+      "provider": "python-stdlib"
+    }
+  }
+}
