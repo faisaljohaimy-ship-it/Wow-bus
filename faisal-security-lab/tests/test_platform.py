@@ -363,6 +363,16 @@ class TestReports(Base):
         self.assertIn("تقرير", reports.to_markdown(p["id"], "ar"))
         self.assertIn("Report", reports.to_markdown(p["id"], "en"))
 
+    def test_html_report_does_not_reflect_an_unknown_language(self):
+        from app import reports, store
+        p = store.create_project("p", self.owner.user_id)
+        payload = '"><meta http-equiv="refresh" content="0;url=https://evil.example/">'
+        page = reports.to_html(p["id"], payload)
+        self.assertNotIn(payload, page)
+        self.assertNotIn("evil.example", page)
+        self.assertIn('<html lang="ar" dir="rtl">', page)
+        self.assertIn('<html lang="en" dir="ltr">', reports.to_html(p["id"], "en"))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

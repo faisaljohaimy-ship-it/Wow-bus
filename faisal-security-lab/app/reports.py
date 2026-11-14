@@ -143,7 +143,9 @@ def to_markdown(project_id: str, lang: str = "ar") -> str:
 
 
 def to_html(project_id: str, lang: str = "ar") -> str:
-    t = _T.get(lang, _T["ar"])
+    # The language reaches the markup (<html lang>), so only known codes are used.
+    lang = lang if lang in _T else "ar"
+    t = _T[lang]
     r = build_report(project_id)
     direction = "rtl" if lang == "ar" else "ltr"
     sev = r["metrics"].get("findings_by_severity", {})
