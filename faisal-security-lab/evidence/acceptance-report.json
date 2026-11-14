@@ -37,6 +37,12 @@
       "title": "Finding correctness: known input flags, clean input does not",
       "pass": true,
       "evidence": {
+        "known_connectors": [
+          "bandit",
+          "gitleaks",
+          "pip_audit",
+          "semgrep"
+        ],
         "known_findings": 44,
         "clean_findings": 0
       }
@@ -103,9 +109,10 @@
       "title": "Verified fix: fix reaches the asset and the finding is gone on re-scan before closing",
       "pass": true,
       "evidence": {
-        "semgrep_before": 5,
+        "driver": "bandit",
+        "findings_before": 9,
         "reappeared_in_rescan": false,
-        "fix_job": "job_b3c004adc2db4f0989abf8be",
+        "fix_job": "job_0f2facf1e5db4d7e9d878771",
         "validation_verified": true,
         "final_status": "fixed_on_asset"
       }

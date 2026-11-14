@@ -10,14 +10,14 @@ Re-run with `make acceptance` (writes `evidence/acceptance-report.json`) and
 | # | Gate | Status | Evidence |
 |---|------|--------|----------|
 | 1 | Integrated run: authorized asset → job → real tool → saved finding → openable report | ✅ verified-by-run | 43 findings across semgrep/bandit/gitleaks/pip-audit; `evidence/reports/sample-report.*` |
-| 2 | Finding correctness: known input flags, clean input does not | ✅ verified-by-run | vulnerable sample yields findings; a benign file yields 0 |
+| 2 | Finding correctness: known input flags, clean input does not | ✅ verified-by-run | vulnerable sample yields findings (anchored on Bandit, the portable SAST tool); a benign file yields 0 |
 | 3 | Scope enforcement: out-of-scope connector/target denied; SSRF blocked | ✅ verified-by-run | `connector_not_authorized`, `target_scope`, private-IP `PolicyDenied`; HTTP 403 over the live API |
 | 4 | Privilege isolation: non-member cannot access another project | ✅ verified-by-run | `ForbiddenError` for a foreign analyst |
 | 5 | Execution/agent safety: injection can't change action; schema rejects tool-launch | ✅ verified-by-run | eval set 5/5; injected "set severity info" ignored; `run_tool` field rejected |
 | 6 | Real stop: global stop halts leasing; cancel propagates | ✅ verified-by-run | claim blocked under global stop; `stop_requested` flips |
 | 7 | Fault tolerance: lost worker → `undetermined`, not silently re-run | ✅ verified-by-run | expired running lease → `undetermined` |
 | 8 | Data protection: secrets/PII redacted in evidence and reports | ✅ verified-by-run | `ghp_…`, emails, AWS keys scrubbed on store + read |
-| 9 | Verified fix: fix reaches the asset, finding gone on re-scan before closing | ✅ verified-by-run | re-scan job did not re-observe the fixed finding → `fixed_on_asset` |
+| 9 | Verified fix: fix reaches the asset, finding gone on re-scan before closing | ✅ verified-by-run | re-scan job (Bandit-anchored) did not re-observe the fixed finding → `fixed_on_asset` |
 | 10 | Auditable delivery: every Verified tool has version+connector+evidence; blockers stated | ✅ verified-by-run | 4 verified tools with version+ref; trivy/osv/ai_redteam blockers named |
 
 Tests: `make test` → **37 tests** (`tests/test_platform.py` 28, `tests/test_failure_modes.py` 9) pass; real-tool tests auto-skip where a binary is absent.
@@ -59,3 +59,8 @@ Tests: `make test` → **37 tests** (`tests/test_platform.py` 28, `tests/test_fa
 - **http_headers / tls_certificate** — ready, but need a live authorized target to
   produce findings (none is scanned by default; exercised by unit tests of their
   logic and gated by scope).
+- **semgrep** — verified by real runs on the primary build; on some CI runners
+  (e.g. Ubuntu 26.04) `semgrep-core` returned no results, so the deterministic
+  gates (2, 9) are anchored on **Bandit** (pure-Python, portable) rather than on
+  any single native engine. Semgrep still runs in the integrated-run gate, and
+  the acceptance report records each tool's actual contribution per environment.

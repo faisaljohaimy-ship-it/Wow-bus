@@ -2,9 +2,14 @@ name: faisal-security-lab CI
 
 on:
   push:
+    branches: [main]
     paths: ["faisal-security-lab/**"]
   pull_request:
     paths: ["faisal-security-lab/**"]
+
+concurrency:
+  group: fsl-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
