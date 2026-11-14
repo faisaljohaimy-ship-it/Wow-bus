@@ -69,13 +69,16 @@ Off by default. Set `FSL_PUBLIC_VIEW=1` to let anyone who opens the site look
 around **without signing in**. It is strictly read-only and limited to one demo
 project:
 
-- On start (after the port is bound, in the background, once the tool registry
-  has been synced) the platform creates the project
-  **"عرض توضيحي — Public demo"**, registers the bundled `samples/vulnerable-app`
-  as its only asset, grants a lab scope limited to that directory, and runs one
-  scan per ready demo connector. Defaults: `bandit`, `gitleaks`, `pip_audit`;
-  override with `FSL_DEMO_CONNECTORS=a,b,c` (only passive source scanners are
-  accepted).
+- On start (after the port is bound, in the background) the platform creates the
+  project **"عرض توضيحي — Public demo"**, registers the bundled
+  `samples/vulnerable-app` as its only asset and grants a lab scope limited to
+  that directory. This needs no tool and comes first, so a visitor can open the
+  project while the next step is still running. Then the tool registry is synced
+  (every tool is asked for its version, which takes many seconds on a small
+  instance), and after that one scan per ready demo connector is enqueued.
+  Defaults: `bandit`, `gitleaks`, `pip_audit`; override with
+  `FSL_DEMO_CONNECTORS=a,b,c` (only passive source scanners are accepted). Until
+  the scans have finished a visitor sees the project with few or no findings.
 - A visitor with no session is a **guest**: below `reader`, no global role, reader
   of that one project. Guests can only call an explicit allowlist of GET routes
   (project, assets, scopes, jobs, findings, report, catalog, tools, connectors,
@@ -88,8 +91,9 @@ project:
   project list after sign-in; anything above reading it still needs membership.
 
 ### What a guest can and cannot read
-A guest **can** read the demo project and its metrics, its asset and scope, its
-jobs (state, timing, result counts, error code and message), its findings (rule,
+A guest **can** read the demo project and its metrics, its assets and scopes
+(what is authorized: targets, scan types, environment, dates, status), its jobs
+(state, timing, result counts, error code and message), its findings (rule,
 title, severity, file and line, description, remediation, status), the report as
 JSON, SARIF, Markdown or HTML (`lang=ar` or `lang=en`; any other value is served
 as Arabic), the tool catalog, the tool registry, the connector list and whether
@@ -103,11 +107,28 @@ A guest **cannot** read, on any route:
 - **Server paths.** The sample is shown as `samples/vulnerable-app`, not by its
   absolute location: the application directory is cut out of every string and the
   data directory reads `data`. `local_path` and the tools' binary `path` are
-  removed.
+  removed. The sample also reads `samples/vulnerable-app` when the database was
+  filled by an install at another path. One limit: a directory directly below the
+  root (`/app` and `/data` in the Docker image, both named in this repository) is
+  only cut where a path starts, not when it is glued to a preceding word, because
+  `/app/` and `/data/` are also the middle of unrelated paths and URLs.
+- **The text of an unexpected exception.** A job that ended with the error code
+  `worker_error`, and a request that failed with `internal` (HTTP 500), show that
+  code and a fixed sentence; the exception text, which can name any file on the
+  server, needs a sign-in. Errors the platform words itself (tool missing,
+  timeout, policy, a tool's failed run, a refusal) keep their message.
+- **A scope's owner contact and proof reference.** `owner_contact` and `proof`
+  are removed from every scope.
+- **An echo of the request.** A refusal does not repeat the project id a guest
+  asked for.
 
 This is applied in one place to every response a guest receives, errors and
 report files included (`app/guest_view.py`). Signed-in users get the unreduced
 responses.
+
+**Everything else on the demo project is public.** If you add an asset or a scope
+to it, visitors see the asset's identifier, label and metadata and the scope's
+targets, scan types and dates. Keep real targets in a project of their own.
 
 The connector list a guest sees comes from the stored tool registry (filled by
 the sync at startup and by an admin's `POST /api/tools/sync`): no tool is probed
@@ -134,14 +155,25 @@ empty database: the demo project is created and scanned again each time. On a
 
 - A demo scan that is queued, running or succeeded is left alone.
 - A demo scan that ended without a result (`failed`, `blocked`, `cancelled`,
-  `undetermined` — for example the process stopped mid-scan, or `pip_audit` had
-  no network on first boot) is enqueued again on the next start, at most
-  **3 jobs per connector** for one scope. After that the start log reports it as
-  `attempts_exhausted`; run it by hand from the Scan Center once the cause is fixed.
+  `undetermined` — for example `pip_audit` had no network on first boot) is
+  enqueued again on the next start, at most **3 jobs per connector** for one
+  scope. After that the start log reports it as `attempts_exhausted`; run it by
+  hand from the Scan Center once the cause is fixed.
+- A scan that was **running when the process stopped** is not retried by a quick
+  restart. It still counts as running until its lease runs out (120 seconds after
+  the worker last renewed it); a worker then marks it `undetermined`, and the
+  first start **after that** enqueues it again. Restart once more, or run the scan
+  by hand, if the demo stays incomplete after a crash.
+- Only jobs of the demo project count. The retry keys
+  (`public-demo:<scope>:<connector>[:2|:3]`) are not secret, and idempotency keys
+  are matched across all projects, so another project's job can hold one of them:
+  the demo then uses its next key, and reports `key_in_use` when none is left.
 - A connector whose tool is not ready is skipped (`not_ready`) and picked up on a
   later start; that does not use up an attempt.
 - Changing `FSL_DEMO_CONNECTORS` issues a new scope for the new list and revokes
-  the old one.
+  the old one. The same happens when the application moves to another directory
+  while the database stays: the sample is registered as a new asset at its new
+  path, and the demo scope on the earlier asset is revoked.
 
 ### Stopping the demo scans
 Revoke the demo project's scope as an admin (**Assets & Scopes → Revoke**, or
@@ -149,8 +181,10 @@ Revoke the demo project's scope as an admin (**Assets & Scopes → Revoke**, or
 `[init] public demo: the authorization scope was revoked by an operator; not re-issuing`,
 issue no new scope and enqueue nothing. The project and the findings it already
 holds stay readable. To scan again, grant a new scope on the demo asset yourself
-and run the scans from the Scan Center. (On an ephemeral disk the revocation is
-lost with the database at the next restart; switch `FSL_PUBLIC_VIEW` off instead.)
+and run the scans from the Scan Center. Guests are not shown that scope's owner
+contact or proof reference, but its targets, scan types and dates are public like
+the rest of the project. (On an ephemeral disk the revocation is lost with the
+database at the next restart; switch `FSL_PUBLIC_VIEW` off instead.)
 
 Turning the variable off again removes guest access immediately on restart, and
 signed-in non-members lose their reader access with it; the demo project itself

@@ -130,9 +130,11 @@ class GuestPrincipal(Principal):
         have = self.project_role(project_id)
         # Strict: only an exact 'reader' requirement on the public project.
         if min_role != "reader" or have != "reader":
-            raise ForbiddenError(
-                f"requires project role '{min_role}'",
-                detail={"have": have, "project_id": project_id})
+            # The requested id is not repeated to a guest. It can be any text
+            # (GET /api/metrics?project=...), and the guest view rewrites
+            # server directories in what a guest is sent: an echo would tell
+            # the visitor whether a guessed directory is the right one.
+            raise ForbiddenError(f"requires project role '{min_role}'", detail={"have": have})
 
 
 def guest_principal() -> GuestPrincipal:

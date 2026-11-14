@@ -933,7 +933,9 @@ class TestDemoSeeding(PublicViewCase):
 
     def _run_main(self, wait_for_seed: float):
         """Run server.main() with the socket and the seeding replaced by probes.
-        Returns the ordered events: 'bind', ('seed', ran_off_main_thread), 'serve'."""
+        Returns the ordered events: 'bind', then (step, ran_off_main_thread) for
+        the early pass of the seeding ('publish') and the full one ('seed'),
+        then 'serve'."""
         from app import server
         events: list = []
         seeded = threading.Event()
@@ -948,9 +950,11 @@ class TestDemoSeeding(PublicViewCase):
             events.append("bind")
             return FakeServer()
 
-        def fake_seed():
-            events.append(("seed", threading.current_thread() is not main_thread))
-            seeded.set()
+        def fake_seed(scans=True):
+            events.append(("seed" if scans else "publish",
+                           threading.current_thread() is not main_thread))
+            if scans:
+                seeded.set()
 
         with mock.patch.object(server, "build_server", fake_build), \
                 mock.patch.object(server, "seed_public_demo", fake_seed), \
@@ -962,7 +966,7 @@ class TestDemoSeeding(PublicViewCase):
 
     def test_main_seeds_in_the_background_after_the_socket_is_bound(self):
         events = self._run_main(wait_for_seed=20)
-        self.assertEqual(events, ["bind", ("seed", True), "serve"])
+        self.assertEqual(events, ["bind", ("publish", True), ("seed", True), "serve"])
 
     def test_main_does_not_seed_when_the_public_view_is_off(self):
         from app.config import reset_config_for_tests

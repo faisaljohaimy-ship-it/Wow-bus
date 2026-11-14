@@ -14,7 +14,10 @@ enqueued (and again in the worker before it runs), and each step is audited.
 
 Two things do change between starts. A demo scan that ended without a result
 (failed, blocked, cancelled, undetermined) is enqueued again, up to
-DEMO_MAX_ATTEMPTS jobs per connector and scope. And the demo defers to an
+DEMO_MAX_ATTEMPTS jobs per connector and scope. A scan that was running when
+the process stopped is not in that group yet: it stays "running" until its
+lease has expired and a worker has marked it undetermined, so the first start
+after that is the one that enqueues it again. And the demo defers to an
 operator: once somebody revokes the demo's authorization scope, no new scope is
 issued and nothing is scanned until a person authorizes it again.
 """
@@ -47,6 +50,7 @@ DEMO_MAX_ATTEMPTS = 3
 SETTLED_JOB_STATES = queue.ACTIVE_STATES + ("succeeded",)
 SKIP_ALREADY_ENQUEUED = "already_enqueued"
 SKIP_ATTEMPTS_EXHAUSTED = "attempts_exhausted"
+SKIP_KEY_IN_USE = "key_in_use"
 SKIP_SCOPE_REVOKED = "scope_revoked"
 
 # Resolved relative to the package so it works from any working directory and
@@ -133,7 +137,9 @@ def _scope_revoked_by_operator(project_id: str) -> dict | None:
 def _ensure_scope(project_id: str, asset: dict, connectors: list[str], owner_id: str) -> dict:
     """One active lab scope limited to the sample directory and the demo
     connectors. Scopes are immutable, so a changed connector list issues a new
-    demo scope and revokes the old one; scopes created by people are left alone.
+    demo scope and revokes the old one. A demo scope on an earlier demo asset
+    (the sample as an install at another path registered it) is revoked in the
+    same way. Scopes created by people are left alone.
 
     The scope in force is recorded under PUBLIC_SCOPE_KEY before the superseded
     ones are revoked. In that order an interruption at any point leaves the
@@ -141,11 +147,12 @@ def _ensure_scope(project_id: str, asset: dict, connectors: list[str], owner_id:
     targets = [asset["identifier"]]
     keep = None
     superseded = []
-    for scope in store.list_scopes(project_id, asset["id"]):
+    for scope in store.list_scopes(project_id):
         if (scope["status"] != "active" or scope["created_by"] != owner_id
                 or scope["proof"] != DEMO_PROOF):
             continue
-        matches = (scope["environment"] == "lab" and scope["allowed_targets"] == targets
+        matches = (scope["asset_id"] == asset["id"] and scope["environment"] == "lab"
+                   and scope["allowed_targets"] == targets
                    and scope["scan_types"] == connectors)
         if matches and keep is None:
             keep = scope
@@ -182,7 +189,12 @@ def _enqueue_scans(project: dict, asset: dict, scope: dict, connectors: list[str
     The idempotency keys are stable for a given scope, so a restart on a
     persistent database finds the earlier jobs instead of adding duplicates.
     A connector gets a new job only when its latest one ended without a result
-    and fewer than DEMO_MAX_ATTEMPTS jobs exist for it under this scope."""
+    and fewer than DEMO_MAX_ATTEMPTS jobs exist for it under this scope.
+
+    Only jobs of the demo project under this scope count. The keys can be
+    guessed, and the queue matches an idempotency key across all projects, so
+    a job of another project can hold one of them: that job says nothing about
+    the demo, and a key it holds is passed over."""
     db = get_db()
     enqueued: list[str] = []
     skipped: dict = {}
@@ -190,8 +202,8 @@ def _enqueue_scans(project: dict, asset: dict, scope: dict, connectors: list[str
         keys = _job_keys(scope["id"], name)
         marks = ",".join("?" for _ in keys)
         states = {row["idempotency_key"]: row["state"] for row in db.query_all(
-            f"SELECT idempotency_key, state FROM jobs WHERE idempotency_key IN ({marks})",
-            tuple(keys))}
+            "SELECT idempotency_key, state FROM jobs WHERE project_id=? AND scope_id=? "
+            f"AND idempotency_key IN ({marks})", (project["id"], scope["id"], *keys))}
         latest = max((i for i, key in enumerate(keys) if key in states), default=-1)
         if latest >= 0 and states[keys[latest]] in SETTLED_JOB_STATES:
             skipped[name] = SKIP_ALREADY_ENQUEUED
@@ -199,7 +211,6 @@ def _enqueue_scans(project: dict, asset: dict, scope: dict, connectors: list[str
         if latest + 1 >= len(keys):
             skipped[name] = SKIP_ATTEMPTS_EXHAUSTED
             continue
-        key = keys[latest + 1]
         conn = get_connector(name)
         try:
             ready = bool(conn.readiness().get("available"))
@@ -219,19 +230,33 @@ def _enqueue_scans(project: dict, asset: dict, scope: dict, connectors: list[str
                          detail={"reason": decision.reason, "code": decision.code})
             skipped[name] = f"policy:{decision.code}"
             continue
-        job = queue.enqueue(project_id=project["id"], asset_id=asset["id"],
-                            scope_id=scope["id"], connector=conn.name, params=params,
-                            created_by=owner_id, priority=DEMO_PRIORITY,
-                            idempotency_key=key)
+        job = None
+        for key in keys[latest + 1:]:
+            held = queue.enqueue(project_id=project["id"], asset_id=asset["id"],
+                                 scope_id=scope["id"], connector=conn.name, params=params,
+                                 created_by=owner_id, priority=DEMO_PRIORITY,
+                                 idempotency_key=key)
+            # For a key that is already taken the queue returns the job that
+            # holds it, whichever project that job belongs to.
+            if held["project_id"] == project["id"] and held["scope_id"] == scope["id"]:
+                job = held
+                break
+        if job is None:
+            skipped[name] = SKIP_KEY_IN_USE
+            continue
         audit.record("scan.enqueue", actor=DEMO_ACTOR, project_id=project["id"],
                      target=job["id"], detail={"connector": conn.name, "asset": asset["id"]})
         enqueued.append(job["id"])
     return enqueued, skipped
 
 
-def ensure_public_demo() -> dict:
+def ensure_public_demo(*, scans: bool = True) -> dict:
     """Create (once) and return the public demo project. No-op unless
     FSL_PUBLIC_VIEW is on. Safe to call repeatedly and from a background thread.
+
+    With scans=False it stops once the project, its asset and its scope exist
+    and the project is visible to guests: database writes only, no tool is
+    asked whether it is ready and nothing is enqueued.
 
     The returned summary never contains credentials."""
     cfg = get_config()
@@ -261,7 +286,9 @@ def ensure_public_demo() -> dict:
         scope = _ensure_scope(project["id"], asset, connectors, owner_id)
         # Only now does the project become visible to guests.
         get_db().set_setting(PUBLIC_PROJECT_KEY, project["id"])
-        enqueued, skipped = _enqueue_scans(project, asset, scope, connectors, owner_id)
+        enqueued, skipped = ([], {})
+        if scans:
+            enqueued, skipped = _enqueue_scans(project, asset, scope, connectors, owner_id)
     skipped.update(rejected)
     return {"enabled": True, "created": created, "project_id": project["id"],
             "asset_id": asset["id"], "scope_id": scope["id"], "connectors": connectors,

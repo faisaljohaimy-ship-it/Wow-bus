@@ -833,17 +833,25 @@ def build_server(host: str | None = None, port: int | None = None) -> ThreadingH
     return srv
 
 
-def seed_public_demo() -> dict | None:
+def seed_public_demo(scans: bool = True) -> dict | None:
     """Create the public demo project (no-op unless FSL_PUBLIC_VIEW is on).
 
     Runs in a background thread after the socket is bound. It must never take
-    the server down, so every failure is caught and logged in one line."""
+    the server down, so every failure is caught and logged in one line.
+
+    Startup calls it twice. scans=False, before the tools are probed, only
+    creates and publishes the project (database writes, no probe), so a visitor
+    has something to read while the probing goes on. That pass logs nothing:
+    whatever it runs into, the full pass after it runs into again and reports."""
     import sys
     try:
-        out = demo.ensure_public_demo()
+        out = demo.ensure_public_demo(scans=scans)
     except Exception as e:
-        print(f"[init] public demo setup failed: {type(e).__name__}: {e}", file=sys.stderr)
+        if scans:
+            print(f"[init] public demo setup failed: {type(e).__name__}: {e}", file=sys.stderr)
         return None
+    if not scans:
+        return out
     if out.get("notice"):
         print(f"[setup] {describe_notice(out['notice'])}", file=sys.stderr)
     elif out.get("skipped", {}).get("*") == demo.SKIP_SCOPE_REVOKED:
@@ -892,9 +900,15 @@ def main():
             print(f"[init] tool registry sync failed: {type(e).__name__}: {e}", file=sys.stderr)
 
     def _after_bind():
-        # One thread, in this order: a finished scan marks its tool "verified"
-        # by updating the tool's registry row, so the rows have to exist before
-        # the first demo scan is enqueued. Neither step raises.
+        # One thread, in this order. The demo project is published before the
+        # tools are probed, which takes many seconds on a small instance, so
+        # the visitor who woke the service is not shown an empty project list
+        # meanwhile. Its scans are enqueued after the sync: a finished scan
+        # marks its tool "verified" by updating the tool's registry row, so the
+        # rows have to exist before the first demo scan is enqueued. No step
+        # raises.
+        if cfg.public_view:
+            seed_public_demo(scans=False)
         _sync_tools()
         if cfg.public_view:
             seed_public_demo()

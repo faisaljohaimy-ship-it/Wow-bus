@@ -16,6 +16,7 @@ import dataclasses
 import io
 import json
 import os
+import tempfile
 import threading
 import unittest
 import urllib.error
@@ -29,6 +30,16 @@ ROOT = base.ROOT
 SAMPLE = base.SAMPLE
 EVIDENCE_TEXT = "EVIDENCE-BODY-MARKER line one\nEVIDENCE-BODY-MARKER line two"
 TOOL_DIR = "/opt/fsl-test-tools/bin"
+JOB_DIR = "/tmp/fsl-job-k3x9q2"
+# The text of an exception as the worker stores it for a job that died of one.
+WORKER_EXCEPTION = (f"[Errno 2] No such file or directory: '{TOOL_DIR}/pip-audit' "
+                    f"(cwd {JOB_DIR}/work)")
+# What an operator typically types into a scope.
+OPERATOR_CONTACT = "ciso.jane.doe@customer-corp.example, +966-555-0100"
+OPERATOR_PROOF = "Signed authorization letter REF-2026-0042 (J. Doe)"
+# The sample as an install at another path would have recorded it.
+EARLIER_ROOT = "/opt/earlier-install/fsl"
+EARLIER_SAMPLE = f"{EARLIER_ROOT}/samples/vulnerable-app"
 REVOKED_LINE = ("[init] public demo: the authorization scope was revoked by an operator; "
                 "not re-issuing")
 
@@ -70,6 +81,32 @@ class HardeningCase(base.PublicViewCase):
         from app import queue
         jobs = sorted(queue.list_jobs(pid), key=lambda j: (j["created_at"], j["idempotency_key"]))
         return [j for j in jobs if connector in (None, j["connector"])]
+
+    def start(self, **kw):
+        """One call of the demo seeding, as server.main makes it. Returns
+        (summary, what was logged)."""
+        from app import server
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            out = server.seed_public_demo(**kw)
+        return out, err.getvalue()
+
+    def other_project(self, email="other@test.local"):
+        """A project of another account, with a scope its owner may scan under.
+        Returns (project id, enqueue), where enqueue(key) puts a job of that
+        project into the queue under the given idempotency key."""
+        from app import queue, store
+        uid, _token = self.new_user(email)
+        p = store.create_project("somebody else's", uid)
+        a = store.create_asset(p["id"], "source", str(SAMPLE), created_by=uid,
+                               metadata={"local_path": str(SAMPLE)})
+        s = store.create_scope(p["id"], a["id"], proof="THEIRS", allowed_targets=[str(SAMPLE)],
+                               scan_types=["gitleaks"], created_by=uid)
+
+        def enqueue(key):
+            return queue.enqueue(project_id=p["id"], asset_id=a["id"], scope_id=s["id"],
+                                 connector="gitleaks", params={}, created_by=uid,
+                                 idempotency_key=key)
+        return p["id"], enqueue
 
 
 # ---------------------------------------------------------------------------
@@ -172,8 +209,37 @@ class TestGuestView(HardeningCase):
             "code": "connector_error",
             "message": f"source path not found or not a directory: {SAMPLE}; "
                        f"evidence root {self.cfg.evidence_dir}"})
+        # A job that died of an exception: its error is that exception's text,
+        # with paths that are in neither directory.
+        queue.complete(jobs["pip_audit"]["id"], "failed",
+                       error={"code": "worker_error", "message": WORKER_EXCEPTION})
+        # Paths that a search for "a directory at the start of a path" misses:
+        # after a line break or a tab (a letter in JSON text), glued to a word.
+        self.awkward = {
+            "demo:A1": f"first line\n{SAMPLE}/app.py",
+            "demo:A2": f"tab\t{SAMPLE}/app.py",
+            "demo:A3": f"SRC_{self.data_dir}/cache",
+            "demo:A4": f"-I{self.data_dir}/include",
+        }
+        self.awkward_cut = {
+            "demo:A1": "first line\nsamples/vulnerable-app/app.py",
+            "demo:A2": "tab\tsamples/vulnerable-app/app.py",
+            "demo:A3": "SRC_data/cache",
+            "demo:A4": "-Idata/include",
+        }
+        findings.ingest(jobs["bandit"], asset, [
+            RawFinding(rule_id=rule, title=f"Awkward path {rule}", severity="low",
+                       location={"file": text, "line": 1}, description=text)
+            for rule, text in self.awkward.items()])
+        # A scope a person granted on the demo asset, filled in the way
+        # operators fill it in.
+        store.create_scope(pid, out["asset_id"], owner_contact=OPERATOR_CONTACT,
+                           proof=OPERATOR_PROOF, allowed_targets=[str(SAMPLE)],
+                           scan_types=["semgrep"], created_by=self.owner_id())
         self.pid, self.aid, self.sid = pid, out["asset_id"], out["scope_id"]
         self.jid, self.fid = jobs["bandit"]["id"], raw._finding_id
+        self.failed = {"connector_error": jobs["gitleaks"]["id"],
+                       "worker_error": jobs["pip_audit"]["id"]}
         self.forbidden = {
             "application directory": self.app_dir,
             "data directory": self.data_dir,
@@ -182,6 +248,12 @@ class TestGuestView(HardeningCase):
             "local_path": "local_path",
             "tool binary path": TOOL_DIR,
             "evidence text": "EVIDENCE-BODY-MARKER",
+            "exception text": "No such file or directory",
+            "job working directory": JOB_DIR,
+            "owner_contact": "owner_contact",
+            "operator's contact": OPERATOR_CONTACT,
+            "operator's proof reference": OPERATOR_PROOF,
+            "demo scope proof": demo.DEMO_PROOF,
         }
 
     def crawl(self, token=None):
@@ -196,7 +268,8 @@ class TestGuestView(HardeningCase):
         job_ids = [j["id"] for j in json.loads(jobs_text)["jobs"]]
         finding_ids = [f["id"] for f in json.loads(findings_text)["findings"]]
         self.assertEqual(len(job_ids), 3)
-        self.assertEqual(finding_ids, [self.fid])
+        self.assertEqual(len(finding_ids), 1 + len(self.awkward))
+        self.assertIn(self.fid, finding_ids)
         reports = [f"{project}/report"]
         for fmt in server.REPORT_FORMATS:
             reports.append(f"{project}/report?format={fmt}")
@@ -249,19 +322,46 @@ class TestGuestView(HardeningCase):
 
     def test_guest_error_responses_go_through_the_same_view(self):
         from app import server
+        from app.errors import ConflictError
 
-        def boom(_project_id):
-            raise RuntimeError(f"{self.app_dir}/app: {self.data_dir}/x.db")
+        def refuse(_project_id):
+            raise ConflictError(f"{self.app_dir}/app: {self.data_dir}/x.db",
+                                detail={"where": f"{SAMPLE}/app.py", "local_path": "x"})
 
-        with mock.patch.object(server.store, "list_assets", boom):
+        with mock.patch.object(server.store, "list_assets", refuse):
             status, _, text = self.raw_get(f"/api/projects/{self.pid}/assets")
-            self.assertEqual(status, 500)
+            self.assertEqual(status, 409)
             self.assertNotIn(self.app_dir, text)
             self.assertNotIn(self.data_dir, text)
-            self.assertEqual(json.loads(text)["error"]["message"], "app: data/x.db")
+            self.assertEqual(json.loads(text)["error"],
+                             {"code": "conflict", "message": "app: data/x.db",
+                              "detail": {"where": "samples/vulnerable-app/app.py"}})
             # With a session the message is unchanged.
             _, _, text = self.raw_get(f"/api/projects/{self.pid}/assets", token=self.owner_token())
             self.assertIn(self.app_dir, text)
+
+    def test_the_text_of_an_unexpected_exception_in_a_route_is_not_shown_to_a_guest(self):
+        # The route's catch-all cuts the text to 200 characters before the
+        # guest view sees it, so a directory can arrive cut in half; and the
+        # text can name a file that is in neither directory.
+        from app import server
+        half = self.data_dir[:min(len(self.data_dir) // 2 + 2, 100)]
+        text_of_exception = f"[Errno 2] No such file or directory: '{TOOL_DIR}/semgrep' "
+        text_of_exception = text_of_exception.ljust(200 - len(half), ".") + self.data_dir
+
+        def boom(_project_id):
+            raise RuntimeError(text_of_exception)
+
+        with mock.patch.object(server.store, "list_assets", boom):
+            # With a session the text is there, ending in half a directory.
+            status, body = self.get(f"/api/projects/{self.pid}/assets", token=self.owner_token())
+            self.assertEqual((status, body["error"]["code"]), (500, "internal"))
+            self.assertIn(TOOL_DIR, body["error"]["message"])
+            self.assertTrue(body["error"]["message"].endswith(half))
+            status, _, text = self.raw_get(f"/api/projects/{self.pid}/assets")
+            self.assertEqual(status, 500)
+            self.assertEqual(json.loads(text),
+                             {"error": {"code": "internal", "message": "internal error"}})
 
     def test_guest_job_detail_has_no_evidence_text_but_a_member_gets_the_summary(self):
         from app import store
@@ -304,15 +404,112 @@ class TestGuestView(HardeningCase):
         self.assertEqual(body["finding"]["description"],
                          "read from samples/vulnerable-app/app.py; cache in data/cache")
         _, body = self.get(f"/api/projects/{self.pid}/jobs?state=failed")
-        self.assertEqual(body["jobs"][0]["error"]["message"],
+        errors = {job["id"]: job["error"] for job in body["jobs"]}
+        self.assertEqual(errors[self.failed["connector_error"]]["message"],
                          "source path not found or not a directory: samples/vulnerable-app; "
                          "evidence root data/evidence")
         for fmt in ("md", "html"):
             _, _, text = self.raw_get(f"/api/projects/{self.pid}/report?format={fmt}&lang=en")
             self.assertIn("samples/vulnerable-app/app.py:24", text, fmt)
-        _, body = self.get(f"/api/projects/{self.pid}/report?format=sarif")
-        uri = body["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
-        self.assertEqual(uri, {"uri": "samples/vulnerable-app/app.py"})
+        self.assertLessEqual(self.sarif_uris(), {"samples/vulnerable-app/app.py",
+                                                 *self.awkward_cut.values()})
+
+    def sarif_uris(self, token=None):
+        """The file locations named in the SARIF report, parsed off the wire."""
+        status, ctype, text = self.raw_get(f"/api/projects/{self.pid}/report?format=sarif",
+                                           token=token)
+        self.assertEqual((status, ctype), (200, "application/json"))
+        uris = {result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+                for run in json.loads(text)["runs"] for result in run["results"]}
+        self.assertTrue(uris)
+        return uris
+
+    def test_a_path_after_a_line_break_or_glued_to_a_word_is_cut_too(self):
+        expected = self.awkward_cut
+        _, body = self.get(f"/api/projects/{self.pid}/findings")
+        found = {f["rule_id"]: f for f in body["findings"]}
+        for rule, text in expected.items():
+            self.assertEqual(found[rule]["location"]["file"], text, rule)
+            self.assertEqual(found[rule]["description"], text, rule)
+        _, body = self.get(f"/api/projects/{self.pid}/report")
+        self.assertEqual({f["rule_id"]: f["location"]["file"] for f in body["findings"]
+                          if f["rule_id"] in expected}, expected)
+        for fmt in ("md", "html"):
+            _, _, text = self.raw_get(f"/api/projects/{self.pid}/report?format={fmt}&lang=en")
+            self.assertIn("SRC_data/cache:1", text, fmt)
+            self.assertIn("-Idata/include:1", text, fmt)
+        # With a session nothing is cut.
+        self.assertLessEqual(self.sarif_uris(self.owner_token()),
+                             {str(SAMPLE / "app.py"), *self.awkward.values()})
+
+    def test_a_worker_exception_reaches_a_guest_as_its_code_and_a_fixed_sentence(self):
+        from app import guest_view
+        jid = self.failed["worker_error"]
+        fixed = {"code": "worker_error", "message": guest_view.FREE_TEXT_ERRORS["worker_error"]}
+        _, body = self.get(f"/api/jobs/{jid}")
+        self.assertEqual(body["job"]["error"], fixed)
+        self.assertEqual(body["job"]["state"], "failed")
+        _, body = self.get(f"/api/projects/{self.pid}/jobs")
+        self.assertEqual({j["id"]: j["error"] for j in body["jobs"]}[jid], fixed)
+        # An error the application worded itself keeps its message.
+        _, body = self.get(f"/api/jobs/{self.failed['connector_error']}")
+        self.assertTrue(body["job"]["error"]["message"].startswith("source path not found"))
+        # With a session the exception text is there.
+        _, body = self.get(f"/api/jobs/{jid}", token=self.owner_token())
+        self.assertEqual(body["job"]["error"], {"code": "worker_error",
+                                                "message": WORKER_EXCEPTION})
+
+    def test_a_refusal_does_not_repeat_what_the_guest_asked_for(self):
+        # Server directories are rewritten in what a guest is sent. If the
+        # request came back in the answer, the rewriting would confirm a guess.
+        guesses = [self.app_dir, self.data_dir, "/srv/app", "/var/data", "/app", "/data"]
+        answers = set()
+        for guess in guesses:
+            query = urllib.parse.urlencode({"project": f"{guess}/PROBE"})
+            status, _, text = self.raw_get(f"/api/metrics?{query}")
+            self.assertEqual(status, 403, guess)
+            self.assertNotIn("PROBE", text, guess)
+            answers.add(text)
+        self.assertEqual(len(answers), 1, answers)
+        self.assertEqual(json.loads(answers.pop())["error"],
+                         {"code": "forbidden", "message": "requires project role 'reader'",
+                          "detail": {"have": "none"}})
+        # The same holds for every query parameter a guest route reads, and
+        # for a project id in the path.
+        project = f"/api/projects/{self.pid}"
+        for path, param in ((f"{project}/scopes", "asset_id"), (f"{project}/jobs", "state"),
+                            (f"{project}/findings", "severity"), (f"{project}/findings", "status"),
+                            (f"{project}/findings", "connector"), ("/api/catalog", "category"),
+                            (f"{project}/report", "format"), (f"{project}/report", "lang")):
+            for guess in (self.app_dir, self.data_dir):
+                query = urllib.parse.urlencode({param: f"{guess}/PROBE"})
+                status, _, text = self.raw_get(f"{path}?{query}")
+                self.assertEqual(status, 200, (path, param))
+                self.assertNotIn("PROBE", text, (path, param))
+        status, _, text = self.raw_get("/api/projects/PROBE-prj_nobody/findings")
+        self.assertEqual(status, 403)
+        self.assertNotIn("PROBE", text)
+        # A signed-in account is told which project it was refused on, as before.
+        _uid, token = self.new_user("asker@test.local")
+        status, body = self.get("/api/metrics?project=prj_nobody", token=token)
+        self.assertEqual((status, body["error"]["detail"]),
+                         (403, {"have": "none", "project_id": "prj_nobody"}))
+
+    def test_what_a_person_typed_into_a_scope_is_not_shown_to_a_guest(self):
+        _, body = self.get(f"/api/projects/{self.pid}/scopes")
+        self.assertEqual(len(body["scopes"]), 2)
+        for scope in body["scopes"]:
+            self.assertNotIn("owner_contact", scope)
+            self.assertNotIn("proof", scope)
+            # What the scope authorizes stays readable.
+            self.assertEqual(scope["allowed_targets"], ["samples/vulnerable-app"])
+            self.assertEqual(scope["status"], "active")
+        self.assertEqual(sorted(len(s["scan_types"]) for s in body["scopes"]), [1, 3])
+        # Signed in, both fields are there.
+        _, body = self.get(f"/api/projects/{self.pid}/scopes", token=self.owner_token())
+        self.assertEqual({(s["owner_contact"], s["proof"]) for s in body["scopes"]},
+                         {(OPERATOR_CONTACT, OPERATOR_PROOF),
+                          ("system:public-demo", "LAB-SELF-OWNED bundled sample")})
 
     def test_guest_tool_listings_have_no_binary_path(self):
         token = self.owner_token()
@@ -326,6 +523,160 @@ class TestGuestView(HardeningCase):
             _, body = self.get(path, token=token)
             self.assertTrue(any(row["readiness"].get("path", "").startswith(TOOL_DIR)
                                 for row in body[key]), path)
+
+
+class TestSarifForAGuest(HardeningCase):
+    """The SARIF report is the one JSON body a handler serializes itself."""
+
+    def setUp(self):
+        super().setUp()
+        from app import demo, findings, queue, store
+        from app.connectors.base import RawFinding
+        out = demo.ensure_public_demo()
+        self.pid = out["project_id"]
+        self.where = f"first line\n{SAMPLE}/app.py\tthen {self.cfg.data_dir}/x"
+        raw = RawFinding(rule_id="demo:S1", title="Location with a line break", severity="high",
+                         location={"file": self.where, "line": 3})
+        findings.ingest(queue.list_jobs(self.pid)[0], store.get_asset(out["asset_id"]), [raw])
+        self.url = f"/api/projects/{self.pid}/report?format=sarif"
+
+    def uri(self, text):
+        result = json.loads(text)["runs"][0]["results"][0]
+        return result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+
+    def test_a_path_after_a_line_break_is_cut(self):
+        status, ctype, text = self.raw_get(self.url)
+        self.assertEqual((status, ctype), (200, "application/json"))
+        self.assertNotIn(str(ROOT), text)
+        self.assertNotIn(str(self.cfg.data_dir), text)
+        self.assertEqual(self.uri(text), "first line\nsamples/vulnerable-app/app.py\tthen data/x")
+
+    def test_only_the_values_differ_from_what_a_session_gets(self):
+        from app import reports
+        _, _, guest = self.raw_get(self.url)
+        _, _, signed_in = self.raw_get(self.url, token=self.owner_token())
+        self.assertEqual(signed_in, reports.to_sarif(self.pid))
+        self.assertEqual(self.uri(signed_in), self.where)
+        expected = json.loads(signed_in)
+        result = expected["runs"][0]["results"][0]
+        result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] = self.uri(guest)
+        self.assertEqual(guest, json.dumps(expected, ensure_ascii=False, indent=2))
+
+
+class TestWorkerExceptionText(HardeningCase):
+    """A tool that is found on PATH but cannot be started: the worker stores
+    the exception, whose text names the binary."""
+    ENV = {"FSL_DEMO_CONNECTORS": "bandit"}
+
+    def test_the_binary_path_in_a_job_error_does_not_reach_a_guest(self):
+        from app import demo, guest_view
+        from app.worker import Worker
+        tools = tempfile.mkdtemp(prefix="fsl-broken-tools-")
+        launcher = os.path.join(tools, "bandit")
+        with open(launcher, "w", encoding="utf-8") as fh:
+            fh.write("#!/nonexistent/interpreter\n")
+        os.chmod(launcher, 0o755)
+        out = demo.ensure_public_demo()
+        with mock.patch.dict(os.environ, {"PATH": tools + os.pathsep + os.environ["PATH"]}):
+            self.assertTrue(Worker(worker_id="test").run_once())
+        jid = out["enqueued"][0]
+        # With a session: the job failed on the exception, and its text is kept.
+        _, body = self.get(f"/api/jobs/{jid}", token=self.owner_token())
+        self.assertEqual((body["job"]["state"], body["job"]["error"]["code"]),
+                         ("failed", "worker_error"))
+        self.assertIn(launcher, body["job"]["error"]["message"])
+        for path in (f"/api/jobs/{jid}", f"/api/projects/{out['project_id']}/jobs",
+                     f"/api/projects/{out['project_id']}/jobs?state=failed"):
+            status, _, text = self.raw_get(path)
+            self.assertEqual(status, 200, path)
+            self.assertNotIn(tools, text, path)
+            self.assertIn(guest_view.FREE_TEXT_ERRORS["worker_error"], text, path)
+
+
+class TestRelocatedInstall(HardeningCase):
+    """A persistent database that an install at another path filled."""
+
+    def setUp(self):
+        super().setUp()
+        from app import demo, queue
+
+        class Elsewhere(type(SAMPLE)):
+            def is_dir(self):
+                return True
+
+        with mock.patch.object(demo, "SAMPLE_DIR", Elsewhere(EARLIER_SAMPLE)):
+            self.before = demo.ensure_public_demo()
+        self.pid = self.before["project_id"]
+        job = self.demo_jobs(self.pid, "bandit")[0]
+        queue.complete(job["id"], "failed", error={
+            "code": "connector_error",
+            "message": f"source path not found or not a directory: {EARLIER_SAMPLE}"})
+        self.failed = job["id"]
+        base.reload_platform()                  # the same database, served from here
+
+    def test_the_earlier_path_is_not_shown_to_a_guest(self):
+        from app import server, store
+        after, log = self.start()
+        self.assertEqual(after["project_id"], self.pid)
+        self.assertNotEqual(after["asset_id"], self.before["asset_id"])
+        self.assertEqual({a["identifier"] for a in store.list_assets(self.pid)},
+                         {EARLIER_SAMPLE, str(SAMPLE)})
+        project = f"/api/projects/{self.pid}"
+        paths = [project, f"{project}/assets", f"{project}/scopes", f"{project}/jobs",
+                 f"/api/jobs/{self.failed}", f"{project}/findings"]
+        paths += [f"{project}/report?format={fmt}" for fmt in server.REPORT_FORMATS]
+        for path in paths:
+            status, _, text = self.raw_get(path)
+            self.assertEqual(status, 200, path)
+            self.assertNotIn(EARLIER_ROOT, text, path)
+            self.assertNotIn(str(ROOT), text, path)
+        _, body = self.get(f"{project}/assets")
+        self.assertEqual([a["identifier"] for a in body["assets"]], ["samples/vulnerable-app"] * 2)
+        _, body = self.get(f"{project}/scopes")
+        self.assertEqual([s["allowed_targets"] for s in body["scopes"]],
+                         [["samples/vulnerable-app"]] * 2)
+        _, body = self.get(f"/api/jobs/{self.failed}")
+        self.assertEqual(body["job"]["error"]["message"],
+                         "source path not found or not a directory: samples/vulnerable-app")
+        # With a session the stored paths are there.
+        _, _, text = self.raw_get(f"{project}/assets", token=self.owner_token())
+        self.assertIn(EARLIER_SAMPLE, text)
+        self.assertNotIn("revoked", log)
+
+    def test_the_scope_on_the_earlier_asset_is_superseded(self):
+        from app import demo, store
+        from app.db import get_db
+        after, log = self.start()
+        self.assertEqual({s["id"]: s["status"] for s in store.list_scopes(self.pid)},
+                         {self.before["scope_id"]: "revoked", after["scope_id"]: "active"})
+        self.assertEqual(store.get_scope(after["scope_id"])["allowed_targets"], [str(SAMPLE)])
+        self.assertEqual(get_db().get_setting("public_scope_id"), after["scope_id"])
+        self.assertEqual(len(after["enqueued"]), 3)
+        self.assertNotIn("revoked", log)
+        # The code replaced that scope itself: later starts do not read it as
+        # an operator's revocation, and nothing more is issued.
+        for _ in range(2):
+            base.reload_platform()
+            again, log = self.start()
+            self.assertEqual(again["scope_id"], after["scope_id"])
+            self.assertEqual(again["enqueued"], [])
+            self.assertNotIn("*", again["skipped"])
+            self.assertNotIn("revoked", log)
+        self.assertEqual(len(store.list_scopes(self.pid)), 2)
+        # A scope a person granted on the earlier asset is not the demo's to revoke.
+        mine = store.create_scope(self.pid, self.before["asset_id"], proof="OWNER-ADDED",
+                                  allowed_targets=[EARLIER_SAMPLE], scan_types=["bandit"],
+                                  created_by=self.owner_id())
+        demo.ensure_public_demo()
+        self.assertEqual(store.get_scope(mine["id"])["status"], "active")
+
+    def test_an_operators_revocation_sticks_across_the_move(self):
+        from app import store
+        store.revoke_scope(self.before["scope_id"])
+        after, log = self.start()
+        self.assertEqual(after["skipped"], {"*": "scope_revoked"})
+        self.assertIn(REVOKED_LINE, log)
+        self.assertEqual([s["status"] for s in store.list_scopes(self.pid)], ["revoked"])
 
 
 class TestGuestViewFunction(unittest.TestCase):
@@ -387,11 +738,125 @@ class TestGuestViewFunction(unittest.TestCase):
         self.assertEqual((ctype, text),
                          ("text/html; charset=utf-8", "<code>samples/app.py:3</code>"))
         sarif = json.dumps({"uri": f"{app_dir}/samples/app.py"})
-        self.assertEqual(self.view(("application/json", sarif), app_dir=app_dir),
-                         ("application/json", '{"uri": "samples/app.py"}'))
+        ctype, text = self.view(("application/json", sarif), app_dir=app_dir)
+        self.assertEqual((ctype, json.loads(text)), ("application/json", {"uri": "samples/app.py"}))
         self.assertEqual(self.view(("text/markdown; charset=utf-8", f"`{app_dir}/samples/app.py`"),
                                    app_dir=app_dir),
                          ("text/markdown; charset=utf-8", "`samples/app.py`"))
+
+    def test_json_served_as_text_is_treated_as_json(self):
+        # In JSON text a line break is the two characters \n, so the directory
+        # after it follows a letter. The values are looked at decoded.
+        body = {"runs": [{"text": "first line\n/app/samples/a.py\tand /data/x", "n": 1,
+                          "evidence": {"storage_ref": "p/j/x"},
+                          "error": {"code": "worker_error", "message": "boom in /usr/bin/t"}}]}
+        expected = {"runs": [{"text": "first line\nsamples/a.py\tand data/x", "n": 1,
+                              "evidence": {},
+                              "error": {"code": "worker_error",
+                                        "message": self.fixed_message()}}]}
+        for layout in ({"indent": 2}, {}, {"ensure_ascii": True}):
+            for ctype in ("application/json", "application/json; charset=utf-8"):
+                out_type, text = self.view((ctype, json.dumps(body, **layout)))
+                self.assertEqual((out_type, json.loads(text)), (ctype, expected))
+        # Written back the way the report module writes it.
+        _, text = self.view(("application/json", json.dumps({"a": "ü /app/x"})))
+        self.assertEqual(text, '{\n  "a": "ü x"\n}')
+        # Text that only claims to be JSON still has its directories cut.
+        self.assertEqual(self.view(("application/json", '{"broken": "/app/x" /data')),
+                         ("application/json", '{"broken": "x" data'))
+
+    def fixed_message(self):
+        from app import guest_view
+        return guest_view.FREE_TEXT_ERRORS["worker_error"]
+
+    def test_the_text_of_a_caught_exception_is_replaced(self):
+        fixed = self.fixed_message()
+        self.assertNotIn("/", fixed)
+        body = {"job": {"error": {"code": "worker_error", "transient": True,
+                                  "message": "[Errno 2] No such file: '/usr/local/bin/bandit'"}},
+                "jobs": [{"error": {"code": "timeout", "message": "bandit exceeded its budget"}},
+                         {"error": None}, {"error": "plain text /app/x"}],
+                "odd": [{"code": "worker_error"}, {"code": ["worker_error"], "message": "kept"},
+                        {"code": None, "message": "kept"}]}
+        self.assertEqual(self.view(body), {
+            "job": {"error": {"code": "worker_error", "transient": True, "message": fixed}},
+            "jobs": [{"error": {"code": "timeout", "message": "bandit exceeded its budget"}},
+                     {"error": None}, {"error": "plain text x"}],
+            "odd": [{"code": "worker_error"}, {"code": ["worker_error"], "message": "kept"},
+                    {"code": None, "message": "kept"}]})
+        # The catch-all of a route, whose text is cut to a fixed length.
+        self.assertEqual(
+            self.view({"error": {"code": "internal", "message": "cannot open /usr/lib/x/da"}}),
+            {"error": {"code": "internal", "message": "internal error"}})
+        # An error the application worded keeps its message and detail.
+        refusal = {"error": {"code": "forbidden", "message": "requires project role 'reader'",
+                             "detail": {"have": "none"}}}
+        self.assertEqual(self.view(refusal), refusal)
+
+    def test_scope_fields_a_person_fills_in_are_dropped(self):
+        body = {"scopes": [{"id": "s", "owner_contact": "jane@example.org", "proof": "REF-1",
+                            "allowed_targets": ["/app/samples/vulnerable-app"]}]}
+        self.assertEqual(self.view(body),
+                         {"scopes": [{"id": "s", "allowed_targets": ["samples/vulnerable-app"]}]})
+
+    def test_a_deep_directory_is_cut_even_when_glued_to_a_word(self):
+        deep = {"app_dir": "/srv/fsl", "data_dir": "/var/lib/fsl-data"}
+        cases = {
+            "x/srv/fsl/samples/a.py": "xsamples/a.py",
+            "SRC_/srv/fsl/samples": "SRC_samples",
+            "gcc -I/srv/fsl/include -L/srv/fsl": "gcc -Iinclude -L",
+            "cache=x/var/lib/fsl-data/cache": "cache=xdata/cache",
+            "SRC_/var/lib/fsl-data.": "SRC_data.",
+            # The word follows a slash: the directory is the tail of a longer
+            # path or of a URL, which is somebody else's.
+            "/mnt/backup/srv/fsl/x": "/mnt/backup/srv/fsl/x",
+            "https://files.example.org/srv/fsl/x": "https://files.example.org/srv/fsl/x",
+            "https://example.org/a/var/lib/fsl-data/x": "https://example.org/a/var/lib/fsl-data/x",
+            # Siblings stay siblings.
+            "x/srv/fsl-old/a": "x/srv/fsl-old/a",
+            "/srv/fsl2/a": "/srv/fsl2/a",
+            # Unglued, as before.
+            "open /srv/fsl/app/x.py": "open app/x.py",
+            "/srv/fsl": "",
+        }
+        for given, expected in cases.items():
+            self.assertEqual(self.view({"v": given}, **deep), {"v": expected}, given)
+        # In the HTML report the directory is written escaped.
+        self.assertEqual(self.view(("text/html", "<td>x/o&quot;dd/a&amp;b/samples/a.py</td>"),
+                                   app_dir='/o"dd/a&b'),
+                         ("text/html", "<td>xsamples/a.py</td>"))
+
+    def test_a_directory_directly_below_the_root_is_cut_only_where_a_path_starts(self):
+        # "/app" and "/data" are the middle of too many unrelated paths.
+        for text in ("src/app/main.py", "tests/data/fixture.json", "x/app/y", "SRC_/data/x",
+                     "-I/app/include", "https://cwe.mitre.org/data/definitions/78.html"):
+            self.assertEqual(self.view({"v": text}), {"v": text}, text)
+
+    def test_the_sample_reads_the_same_under_any_application_directory(self):
+        from app import demo, guest_view
+        self.assertEqual(guest_view.SAMPLE_REL,
+                         demo.SAMPLE_DIR.relative_to(guest_view.APP_DIR).as_posix())
+        cases = {
+            f"{EARLIER_SAMPLE}": "samples/vulnerable-app",
+            f"{EARLIER_SAMPLE}/app.py": "samples/vulnerable-app/app.py",
+            f"not a directory: {EARLIER_SAMPLE}; next": "not a directory: samples/vulnerable-app; next",
+            f"`{EARLIER_SAMPLE}/app.py:24`": "`samples/vulnerable-app/app.py:24`",
+            f"two: {EARLIER_SAMPLE} and /home/u/x/samples/vulnerable-app.":
+                "two: samples/vulnerable-app and samples/vulnerable-app.",
+            "/samples/vulnerable-app/app.py": "samples/vulnerable-app/app.py",
+            # A sibling, a relative path and a URL are something else.
+            f"{EARLIER_SAMPLE}-2/app.py": f"{EARLIER_SAMPLE}-2/app.py",
+            f"{EARLIER_ROOT}/samples/other": f"{EARLIER_ROOT}/samples/other",
+            "repo/samples/vulnerable-app/app.py": "repo/samples/vulnerable-app/app.py",
+            "https://github.com/o/r/tree/main/samples/vulnerable-app":
+                "https://github.com/o/r/tree/main/samples/vulnerable-app",
+        }
+        for given, expected in cases.items():
+            self.assertEqual(self.view({"v": [given]}), {"v": [expected]}, given)
+        self.assertEqual(self.view(("text/html", f"<code>{EARLIER_SAMPLE}/app.py:3</code>")),
+                         ("text/html", "<code>samples/vulnerable-app/app.py:3</code>"))
+        self.assertEqual(self.view(("application/json", json.dumps({"uri": EARLIER_SAMPLE})))[1],
+                         '{\n  "uri": "samples/vulnerable-app"\n}')
 
     def test_a_root_directory_is_never_used_as_a_prefix(self):
         self.assertEqual(self.view({"a": "/etc/x /app/y"}, app_dir="/", data_dir="/"),
@@ -724,6 +1189,13 @@ class TestDemoScanRetry(HardeningCase):
         self.assertEqual(job["id"], self.jobs["bandit"]["id"])
         queue.mark_running(job["id"], "worker-that-dies")
         self.assertEqual(demo.ensure_public_demo()["enqueued"], [])      # still running
+        # A restart while the lease is live changes nothing yet: the job still
+        # counts as running, and reclaiming leaves it alone.
+        base.reload_platform()
+        self.assertEqual(queue.reclaim_expired(), {"requeued": 0, "undetermined": 0})
+        out = demo.ensure_public_demo()
+        self.assertEqual((out["enqueued"], out["skipped"]["bandit"]), ([], "already_enqueued"))
+        self.assertEqual(queue.get_job(job["id"])["state"], "running")
         get_db().execute("UPDATE jobs SET lease_expires_at='2000-01-01T00:00:00+00:00' WHERE id=?",
                          (job["id"],))
         self.assertEqual(queue.reclaim_expired(), {"requeued": 0, "undetermined": 1})
@@ -733,6 +1205,89 @@ class TestDemoScanRetry(HardeningCase):
         new = queue.get_job(out["enqueued"][0])
         self.assertEqual((new["connector"], new["idempotency_key"]),
                          ("bandit", self.key("bandit", 2)))
+
+    def test_a_job_of_another_project_under_a_demo_key_does_not_count(self):
+        # The keys can be guessed, and the queue takes any key from anybody.
+        from app import demo, queue
+        self.set_job_state(self.jobs["bandit"]["id"], "failed")
+        _uid, token = self.new_user("squatter@test.local")
+        status, body = self.http("POST", "/api/projects", token=token, body={"name": "mine"})
+        self.assertEqual(status, 201)
+        mine = body["project"]["id"]
+        _, body = self.http("POST", f"/api/projects/{mine}/assets", token=token,
+                            body={"kind": "source", "identifier": str(SAMPLE),
+                                  "metadata": {"local_path": str(SAMPLE)}})
+        aid = body["asset"]["id"]
+        _, body = self.http("POST", f"/api/projects/{mine}/scopes", token=token,
+                            body={"asset_id": aid, "proof": "x", "scan_types": ["gitleaks"],
+                                  "allowed_targets": [str(SAMPLE)]})
+        status, body = self.http("POST", f"/api/projects/{mine}/scans", token=token,
+                                 body={"asset_id": aid, "scope_id": body["scope"]["id"],
+                                       "connector": "gitleaks",
+                                       "idempotency_key": self.key("bandit", 3)})
+        self.assertEqual((status, body["job"]["project_id"], body["job"]["state"]),
+                         (201, mine, "queued"))
+        theirs = body["job"]["id"]
+        # That job is not a demo scan: the demo retries its own failed one.
+        out = demo.ensure_public_demo()
+        self.assertEqual(len(out["enqueued"]), 1)
+        new = queue.get_job(out["enqueued"][0])
+        self.assertEqual((new["project_id"], new["connector"], new["idempotency_key"]),
+                         (self.pid, "bandit", self.key("bandit", 2)))
+        self.assertEqual(demo.ensure_public_demo()["skipped"]["bandit"], "already_enqueued")
+        self.assertEqual(queue.get_job(theirs)["project_id"], mine)
+        self.assertEqual(len(self.demo_jobs(self.pid, "bandit")), 2)
+
+    def test_a_failed_job_of_another_project_does_not_use_up_the_attempts(self):
+        from app import demo, queue
+        self.set_job_state(self.jobs["bandit"]["id"], "failed")
+        _theirs, enqueue = self.other_project()
+        queue.complete(enqueue(self.key("bandit", 3))["id"], "failed")
+        out = demo.ensure_public_demo()
+        self.assertNotIn("bandit", out["skipped"])
+        new = queue.get_job(out["enqueued"][0])
+        self.assertEqual((new["project_id"], new["idempotency_key"]),
+                         (self.pid, self.key("bandit", 2)))
+
+    def test_a_key_held_by_another_project_is_passed_over(self):
+        from app import audit, demo, queue
+        self.set_job_state(self.jobs["bandit"]["id"], "failed")
+        theirs, enqueue = self.other_project()
+        second = enqueue(self.key("bandit", 2))
+        out = demo.ensure_public_demo()
+        self.assertEqual(len(out["enqueued"]), 1)
+        new = queue.get_job(out["enqueued"][0])
+        self.assertNotEqual(new["id"], second["id"])
+        self.assertEqual((new["project_id"], new["scope_id"], new["idempotency_key"]),
+                         (self.pid, self.first["scope_id"], self.key("bandit", 3)))
+        self.assertEqual(queue.get_job(second["id"])["project_id"], theirs)
+        # Three keys, one of them not the demo's: after this one nothing is left.
+        self.set_job_state(new["id"], "failed")
+        again = demo.ensure_public_demo()
+        self.assertEqual((again["enqueued"], again["skipped"]["bandit"]),
+                         ([], "attempts_exhausted"))
+        self.assertEqual(len(self.demo_jobs(self.pid, "bandit")), 2)
+        enqueued = [row["target"] for row in audit.query(self.pid, limit=100)
+                    if row["action"] == "scan.enqueue"]
+        self.assertNotIn(second["id"], enqueued)
+
+    def test_with_every_remaining_key_held_elsewhere_nothing_is_reported_as_enqueued(self):
+        from app import audit, demo, queue
+        self.set_job_state(self.jobs["gitleaks"]["id"], "failed")
+        theirs, enqueue = self.other_project()
+        held = [enqueue(self.key("gitleaks", n))["id"] for n in (2, 3)]
+        before = len(queue.list_jobs(self.pid))
+        for _ in range(2):
+            out = demo.ensure_public_demo()
+            self.assertEqual(out["enqueued"], [])
+            self.assertEqual(out["skipped"]["gitleaks"], "key_in_use")
+        self.assertEqual(len(queue.list_jobs(self.pid)), before)
+        self.assertEqual([queue.get_job(jid)["project_id"] for jid in held], [theirs] * 2)
+        self.assertEqual(len(queue.list_jobs(theirs)), 2)
+        recorded = [row["target"] for row in audit.query(self.pid, limit=100)
+                    if row["action"] == "scan.enqueue"]
+        self.assertEqual(len(recorded), 3)                     # the three first scans
+        self.assertFalse(set(recorded) & set(held))
 
     def test_a_reissued_scope_starts_counting_again(self):
         from app import demo, queue
@@ -753,14 +1308,6 @@ class TestDemoScanRetry(HardeningCase):
 # A scope revoked by an operator is not issued again
 # ---------------------------------------------------------------------------
 class TestOperatorRevocationSticks(HardeningCase):
-    def start(self):
-        """One start of the demo seeding, as server.main runs it. Returns
-        (summary, what was logged)."""
-        from app import server
-        with contextlib.redirect_stderr(io.StringIO()) as err:
-            out = server.seed_public_demo()
-        return out, err.getvalue()
-
     def scopes(self, pid):
         from app import store
         return {s["id"]: s["status"] for s in store.list_scopes(pid)}
@@ -891,11 +1438,12 @@ class TestOperatorRevocationSticks(HardeningCase):
 # Startup order
 # ---------------------------------------------------------------------------
 class TestStartupOrder(HardeningCase):
-    def run_main(self, sync, wait=20.0):
-        """Run server.main() with the socket, the registry sync and the demo
-        seeding replaced by probes. Returns (ordered events, the thread that
-        called main, what was logged); the sync and seed events carry the
-        thread they ran in."""
+    def run_main(self, sync, seed=None, wait=20.0):
+        """Run server.main() with the socket and the registry sync replaced by
+        probes, and the demo seeding by `seed(scans)` (a probe that does
+        nothing when not given). Returns (ordered events, the thread that
+        called main, what was logged); the events of the background steps
+        carry the thread they ran in."""
         from app import server
         from app.config import get_config
         seeding_expected = get_config().public_view
@@ -920,9 +1468,13 @@ class TestStartupOrder(HardeningCase):
                 if not seeding_expected:
                     done.set()
 
-        def fake_seed():
-            events.append(("seed", threading.current_thread()))
-            done.set()
+        def fake_seed(scans=True):
+            events.append(("seed" if scans else "publish", threading.current_thread()))
+            try:
+                return seed(scans) if seed else None
+            finally:
+                if scans:
+                    done.set()
 
         with mock.patch.object(server, "build_server", fake_build), \
                 mock.patch.object(server, "seed_public_demo", fake_seed), \
@@ -932,13 +1484,15 @@ class TestStartupOrder(HardeningCase):
             server.main()
         return events, main_thread, err.getvalue()
 
-    def test_registry_sync_runs_before_the_demo_in_one_background_thread(self):
+    def names(self, events):
+        return [e if isinstance(e, str) else e[0] for e in events]
+
+    def test_one_background_thread_publishes_syncs_and_then_enqueues(self):
         events, main_thread, log = self.run_main(lambda: [])
-        self.assertEqual([e if isinstance(e, str) else e[0] for e in events],
-                         ["bind", "sync", "seed", "serve"])
-        sync_thread, seed_thread = events[1][1], events[2][1]
-        self.assertIs(sync_thread, seed_thread)
-        self.assertIsNot(sync_thread, main_thread)
+        self.assertEqual(self.names(events), ["bind", "publish", "sync", "seed", "serve"])
+        threads = {e[1] for e in events if not isinstance(e, str)}
+        self.assertEqual(len(threads), 1)
+        self.assertNotIn(main_thread, threads)
         self.assertIn("tool registry synced", log)
 
     def test_a_failing_registry_sync_does_not_stop_the_demo(self):
@@ -946,17 +1500,102 @@ class TestStartupOrder(HardeningCase):
             raise RuntimeError("probe exploded")
 
         events, _main, log = self.run_main(broken)
-        self.assertEqual([e if isinstance(e, str) else e[0] for e in events],
-                         ["bind", "sync", "seed", "serve"])
+        self.assertEqual(self.names(events), ["bind", "publish", "sync", "seed", "serve"])
         self.assertIn("tool registry sync failed: RuntimeError: probe exploded", log)
 
     def test_without_the_public_view_only_the_registry_is_synced(self):
         from app.config import reset_config_for_tests
         reset_config_for_tests(dataclasses.replace(self.cfg, public_view=False))
         events, main_thread, _log = self.run_main(lambda: [])
-        self.assertEqual([e if isinstance(e, str) else e[0] for e in events],
-                         ["bind", "sync", "serve"])
+        self.assertEqual(self.names(events), ["bind", "sync", "serve"])
         self.assertIsNot(events[1][1], main_thread)
+
+    def count_probes(self):
+        """Count readiness checks from here on (they are faked either way)."""
+        from app.connectors.base import Connector
+        probes = []
+
+        def counted(conn):
+            probes.append(conn.name)
+            return dict(base.FAKE_READY)
+
+        patcher = mock.patch.object(Connector, "readiness", counted)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return probes
+
+    def test_a_guest_can_read_the_project_while_the_tools_are_probed(self):
+        # The sync takes many seconds on a small instance. What a visitor gets
+        # in the meantime is looked at from inside the sync.
+        from app import queue, server
+        probes = self.count_probes()
+        seen = {}
+
+        def slow_sync():
+            seen["probes before the sync"] = list(probes)
+            status, body = self.get("/api/projects")
+            seen["projects"] = (status, [p["name"] for p in body["projects"]])
+            pid = body["projects"][0]["id"]
+            seen["assets"] = [a["identifier"] for a in
+                              self.get(f"/api/projects/{pid}/assets")[1]["assets"]]
+            seen["scopes"] = [s["status"] for s in
+                              self.get(f"/api/projects/{pid}/scopes")[1]["scopes"]]
+            seen["jobs"] = self.get(f"/api/projects/{pid}/jobs")[1]["jobs"]
+            seen["pid"] = pid
+            return []
+
+        real_seed = server.seed_public_demo
+        events, _main, log = self.run_main(slow_sync, seed=lambda scans: real_seed(scans=scans))
+        self.assertEqual(self.names(events), ["bind", "publish", "sync", "seed", "serve"])
+        self.assertEqual(seen["probes before the sync"], [])
+        self.assertEqual(seen["projects"], (200, ["عرض توضيحي — Public demo"]))
+        self.assertEqual(seen["assets"], ["samples/vulnerable-app"])
+        self.assertEqual(seen["scopes"], ["active"])
+        self.assertEqual(seen["jobs"], [])           # nothing runs before the registry rows exist
+        # After the sync the scans are there, in the same project, logged once.
+        self.assertEqual(sorted(j["connector"] for j in queue.list_jobs(seen["pid"])),
+                         ["bandit", "gitleaks", "pip_audit"])
+        self.assertEqual(log.count("[init] public demo project"), 1)
+        self.assertIn(f"[init] public demo project {seen['pid']}: 3 scan(s) enqueued", log)
+        self.assertEqual(self.table_counts()["projects"], 1)
+        self.assertEqual(self.table_counts()["scopes"], 1)
+
+    def test_the_early_pass_writes_the_project_and_nothing_else(self):
+        from app import demo, queue
+        probes = self.count_probes()
+        out, log = self.start(scans=False)
+        self.assertEqual(log, "")
+        self.assertEqual(probes, [])
+        self.assertEqual((out["enqueued"], out["skipped"]), ([], {}))
+        self.assertEqual(queue.list_jobs(out["project_id"]), [])
+        self.assertEqual(self.get("/api/projects")[1]["projects"][0]["id"], out["project_id"])
+        full, log = self.start()
+        self.assertEqual((full["project_id"], full["asset_id"], full["scope_id"], full["created"]),
+                         (out["project_id"], out["asset_id"], out["scope_id"], False))
+        self.assertEqual(len(full["enqueued"]), 3)
+        self.assertEqual(sorted(probes), ["bandit", "gitleaks", "pip_audit"])
+        self.assertEqual(len(log.strip().splitlines()), 1, log)
+        # Rejected connector names are reported by both passes.
+        from app.config import reset_config_for_tests
+        reset_config_for_tests(dataclasses.replace(self.cfg, demo_connectors=("bandit", "nmap")))
+        self.assertEqual(demo.ensure_public_demo(scans=False)["skipped"],
+                         {"nmap": "unknown_connector"})
+
+    def test_the_early_pass_leaves_reporting_to_the_full_one(self):
+        from app import demo, store
+        # A revoked scope: one line per start, from the full pass.
+        first = demo.ensure_public_demo()
+        store.revoke_scope(first["scope_id"])
+        out, log = self.start(scans=False)
+        self.assertEqual((out["skipped"], log), ({"*": "scope_revoked"}, ""))
+        out, log = self.start()
+        self.assertEqual((out["skipped"], log.strip()), ({"*": "scope_revoked"}, REVOKED_LINE))
+        # A failure: the same.
+        with mock.patch.object(demo, "ensure_public_demo", side_effect=RuntimeError("no disk")):
+            self.assertEqual(self.start(scans=False), (None, ""))
+            out, log = self.start()
+        self.assertIsNone(out)
+        self.assertEqual(log.strip(), "[init] public demo setup failed: RuntimeError: no disk")
 
     def test_a_demo_scan_finishing_after_startup_keeps_its_verified_state(self):
         # The order above exists for this: the registry row is there when the
