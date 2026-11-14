@@ -30,7 +30,12 @@ const I18N = {
     ownerlogin:"دخول المالك", backpublic:"العودة للعرض العام",
     motion_stop:"إيقاف الحركة", motion_start:"تشغيل الحركة",
     preparing:"يجري تجهيز العرض التوضيحي. حدّث الصفحة بعد لحظات.",
-    open:"فتح", download:"تنزيل", report_note:"التقارير منقّحة: القيم الحساسة محجوبة." },
+    open:"فتح", download:"تنزيل", report_note:"التقارير منقّحة: القيم الحساسة محجوبة.",
+    throttled:"محاولات دخول خاطئة كثيرة من هذا الجهاز. انتظر {m} دقيقة ثم حاول من جديد.",
+    connection:"الاتصال", yourip:"عنوانك كما يراه الخادم", ipsource:"مصدر العنوان",
+    src_header:"ترويسة منصّة الاستضافة", src_forwarded:"X-Forwarded-For", src_peer:"اتصال مباشر",
+    proxywarn:"تصل الطلبات عبر وسيط لكن الخادم غير مضبوط للوثوق به، فيظهر كل الزوّار بعنوان واحد وتُحتسب محاولات الدخول الخاطئة عليهم جميعًا. اضبط FSL_CLIENT_IP_HEADER في إعدادات الاستضافة.",
+    setupnotes:"ملاحظات الإعداد" },
   en: { app:"Cyber Defense Center", kicker:"PRIVATE DEFENSE SYSTEM",
     login:"Verified owner sign-in", email:"Email", password:"Password", signin:"Sign in",
     signout:"Sign out", dashboard:"Dashboard", assets:"Assets & Scopes", catalog:"Tool Catalog",
@@ -53,7 +58,12 @@ const I18N = {
     ownerlogin:"Owner sign-in", backpublic:"Back to the public view",
     motion_stop:"Pause motion", motion_start:"Resume motion",
     preparing:"The demo is being prepared. Refresh in a moment.",
-    open:"Open", download:"Download", report_note:"Reports are redacted: sensitive values are withheld." }
+    open:"Open", download:"Download", report_note:"Reports are redacted: sensitive values are withheld.",
+    throttled:"Too many wrong sign-in attempts from this device. Wait {m} minutes, then try again.",
+    connection:"Connection", yourip:"Your address as the server sees it", ipsource:"Address source",
+    src_header:"hosting platform header", src_forwarded:"X-Forwarded-For", src_peer:"direct connection",
+    proxywarn:"Requests arrive through a proxy the server is not set to trust, so every visitor appears under one address and wrong sign-in attempts count against all of them. Set FSL_CLIENT_IP_HEADER in the hosting settings.",
+    setupnotes:"Setup notes" }
 };
 const t = k => (I18N[S.lang][k] || k);
 
@@ -64,14 +74,20 @@ const NOTICE_TEXT = {
     owner_email_invalid: "قيمة FSL_OWNER_EMAIL في إعدادات الاستضافة ليست بريدًا صالحًا، لذلك يُستخدم البريد الافتراضي owner@faisal-security-lab.local لتسجيل الدخول.",
     owner_password_generated: "لم تُضبط كلمة مرور للمالك (FSL_OWNER_PASSWORD). أُنشئت كلمة مرور لمرة واحدة وطُبعت في سجل الخدمة (Logs).",
     data_dir_unwritable: "مجلد البيانات غير قابل للكتابة، لذلك تُحفظ البيانات مؤقتًا وتُفقد عند إعادة التشغيل.",
-    owner_bootstrap_failed: "تعذّر إعداد حساب المالك. راجع سجل الخدمة (Logs)."
+    owner_bootstrap_failed: "تعذّر إعداد حساب المالك. راجع سجل الخدمة (Logs).",
+    owner_email_ignored: "قيمة FSL_OWNER_EMAIL في إعدادات الاستضافة ليست بريدًا صالحًا فتم تجاهلها. حسابات المالك الموجودة لم تتغيّر.",
+    running_as_root: "تعذّر على الحاوية التخلي عن صلاحيات root، فالخدمة وأدوات الفحص تعمل بصلاحيات root.",
+    demo_sample_missing: "ملفات العرض التوضيحي غير موجودة في هذه النسخة، لذلك العرض العام فارغ."
   },
   en: {
     owner_password_too_short: "No owner account was created because the password in the hosting settings is shorter than {min} characters. Open the service's Environment settings, set FSL_OWNER_PASSWORD to {min} or more characters, and redeploy.",
     owner_email_invalid: "FSL_OWNER_EMAIL in the hosting settings is not a valid email, so the default owner@faisal-security-lab.local is used to sign in.",
     owner_password_generated: "No owner password is set (FSL_OWNER_PASSWORD). A one-time password was generated and printed in the service logs.",
     data_dir_unwritable: "The data directory is not writable, so data is kept in temporary storage and lost on restart.",
-    owner_bootstrap_failed: "The owner account could not be set up. Check the service logs."
+    owner_bootstrap_failed: "The owner account could not be set up. Check the service logs.",
+    owner_email_ignored: "FSL_OWNER_EMAIL in the hosting settings is not a valid email and was ignored. Existing owner accounts are unchanged.",
+    running_as_root: "The container could not drop root privileges, so the service and its scan tools run as root.",
+    demo_sample_missing: "The demo files are missing from this build, so the public view is empty."
   }
 };
 async function loadSetupNotices(){
@@ -431,7 +447,16 @@ async function scrSettings(){
   try{ stop=await api("/api/admin/stop"); }catch(e){}
   try{ users=await api("/api/users"); }catch(e){}
   const cfg=await api("/api/config");
+  let me={}; try{ me=await api("/api/me"); }catch(e){}
+  const cl=me.client;
+  const notes=(me.setup_notices||[]).map(code=>
+    notice((NOTICE_TEXT[S.lang][code]||code).replace(/\{min\}/g, cfg.min_password_length||10))).join("");
   setMain(topbar(t("settings"))
+    + (notes?`<div class="card"><h2>${esc(t("setupnotes"))}</h2>${notes}</div>`:"")
+    + (cl?`<div class="card"><h2>${esc(t("connection"))}</h2><div class="kv">
+        <div class="k">${esc(t("yourip"))}</div><div class="mono-sm">${esc(cl.address||"—")}</div>
+        <div class="k">${esc(t("ipsource"))}</div><div>${esc(t("src_"+cl.source))}</div></div>
+        ${cl.proxy_headers_ignored?notice(t("proxywarn"),"err"):""}</div>`:"")
     + h`<div class="card"><h2>${esc(t("globalstop"))}</h2>
       <div class="flex"><span class="pill ${stop.engaged?"bad":"ok"}">${stop.engaged?esc(t("engaged")):esc(t("disengaged"))}</span>
       <button class="btn ${stop.engaged?"":"danger"}" data-act="togglestop" data-engaged="${stop.engaged?0:1}">${stop.engaged?"disengage":"ENGAGE STOP"}</button></div>
@@ -513,7 +538,12 @@ document.addEventListener("submit", async e=>{
     if(f.id==="userform"){ await api("/api/users","POST",fd); renderScreen(); return; }
     if(f.id==="projform"){ const r=await api("/api/projects","POST",{name:fd.name}); S.projects.push(r.project); S.project=r.project; render(); return; }
   }catch(err){ const box=document.getElementById("loginmsg")||document.getElementById("main");
-    if(box) box.insertAdjacentHTML("afterbegin", notice(err.message+(err.code?` [${err.code}]`:""),"err")); }
+    let msg=err.message+(err.code?` [${err.code}]`:"");
+    if(f.id==="loginform" && err.status===429){
+      const secs=(err.detail&&err.detail.retry_after_seconds)||600;
+      msg=t("throttled").replace("{m}", Math.max(1, Math.ceil(secs/60)));
+    }
+    if(box){ if(f.id==="loginform") box.innerHTML=""; box.insertAdjacentHTML("afterbegin", notice(msg,"err")); } }
 });
 
 document.addEventListener("change", async e=>{
