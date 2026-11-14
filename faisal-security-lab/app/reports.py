@@ -147,8 +147,6 @@ def to_html(project_id: str, lang: str = "ar") -> str:
     r = build_report(project_id)
     direction = "rtl" if lang == "ar" else "ltr"
     sev = r["metrics"].get("findings_by_severity", {})
-    sev_colors = {"critical": "#b3123b", "high": "#d82445", "medium": "#dfb27d",
-                  "low": "#6b8", "info": "#789"}
     rows = []
     order = {s: i for i, s in enumerate(SEV_ORDER)}
     for f in sorted(r["findings"], key=lambda x: (order.get(x["severity"], 9), -x["work_priority"])):
@@ -157,7 +155,7 @@ def to_html(project_id: str, lang: str = "ar") -> str:
         if loc.get("line"):
             locs += f":{loc['line']}"
         rows.append(
-            f"<tr><td><span class='sev' style='background:{sev_colors.get(f['severity'],'#789')}'>"
+            f"<tr><td><span class='sev sev-{html.escape(f['severity'])}'>"
             f"{html.escape(f['severity'])}</span></td><td>{f['work_priority']}</td>"
             f"<td>{html.escape(f['connector'])}</td><td><code>{html.escape(locs)}</code></td>"
             f"<td>{html.escape(f['verification_status'])}</td><td>{html.escape(f['status'])}</td>"
@@ -169,15 +167,20 @@ def to_html(project_id: str, lang: str = "ar") -> str:
 <title>{html.escape(t['title'])} — {html.escape(r['project']['name'])}</title>
 <style>
 :root{{color-scheme:dark}}
-body{{font-family:Tahoma,'Segoe UI',Arial,sans-serif;background:#070608;color:#f4f0f2;margin:0;padding:24px;line-height:1.6}}
-h1{{color:#ff496a}} .dot{{color:#fa3a5d}}
-.card{{background:#130a0f;border:1px solid #48212e;border-radius:12px;padding:16px 20px;margin:16px 0}}
+body{{font-family:Tahoma,'Segoe UI',Arial,sans-serif;background:#000;color:#ff6875;margin:0;padding:20px;line-height:1.6;overflow-wrap:anywhere}}
+h1{{color:#ff6875;font-size:22px}} .dot{{color:#fff}}
+.card{{background:#f04b57;color:#080808;border:2px solid #ff6875;border-radius:14px;padding:14px 18px;margin:16px 0;overflow-x:auto}}
+.card *{{color:#080808}}
+h2{{font-size:17px;margin:0 0 10px}}
 table{{width:100%;border-collapse:collapse;font-size:14px}}
-th,td{{border-bottom:1px solid #48212e;padding:8px 10px;text-align:start}}
-th{{color:#baa5ad;font-weight:600}}
-code{{font-family:ui-monospace,Consolas,monospace;color:#dfb27d}}
-.sev{{color:#fff5f8;padding:2px 8px;border-radius:999px;font-size:12px}}
-.note{{color:#baa5ad;font-size:13px}}
+th,td{{border-bottom:1px solid #33000f66;padding:8px 9px;text-align:start;vertical-align:top}}
+th{{font-weight:700}}
+code{{font-family:ui-monospace,Consolas,monospace;font-size:12.5px}}
+.sev{{padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;border:2px solid #080808;white-space:nowrap}}
+.card .sev-critical{{background:#080808;color:#ff6875}}
+.card .sev-high{{background:#33000f;color:#ffd3d7}}
+.sev-low{{border-style:dashed}} .sev-info{{border-style:dotted}}
+.note{{font-size:13px}}
 </style></head><body>
 <h1>FAISAL<span class="dot">.AI</span> — {html.escape(t['title'])}</h1>
 <div class="card"><b>{html.escape(t['project'])}:</b> {html.escape(r['project']['name'])}<br>

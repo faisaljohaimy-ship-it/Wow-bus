@@ -2,7 +2,10 @@
 "use strict";
 const S = { token: localStorage.getItem("fsl_token") || "", user: null,
   lang: localStorage.getItem("fsl_lang") || "ar", projects: [], project: null,
-  screen: "dashboard", connectors: [], drawer: null };
+  screen: "dashboard", connectors: [], drawer: null,
+  publicView: false,   // server offers a read-only public view
+  guest: false,        // browsing that view without signing in
+  loginOpen: false };  // a guest asked for the owner sign-in form
 
 const I18N = {
   ar: { app:"مركز الدفاع السيبراني", kicker:"PRIVATE DEFENSE SYSTEM",
@@ -22,7 +25,12 @@ const I18N = {
     globalstop:"الإيقاف الشامل", engaged:"مُفعّل", disengaged:"متوقف", users:"المستخدمون",
     adduser:"إضافة مستخدم", role:"الدور", lang:"EN", none:"—", close:"إغلاق",
     noproject:"أنشئ مشروعًا أو اختر واحدًا للبدء.", confirm:"تأكيد", owner_contact:"جهة اتصال المالك",
-    criticality:"الأهمية", unauthorized:"غير مصرح — راجع النطاق.", refresh:"تحديث" },
+    criticality:"الأهمية", unauthorized:"غير مصرح — راجع النطاق.", refresh:"تحديث",
+    publicview:"عرض عام للقراءة فقط. تشغيل الفحوص وأي تعديل يتطلب دخول المالك.",
+    ownerlogin:"دخول المالك", backpublic:"العودة للعرض العام",
+    motion_stop:"إيقاف الحركة", motion_start:"تشغيل الحركة",
+    preparing:"يجري تجهيز العرض التوضيحي. حدّث الصفحة بعد لحظات.",
+    open:"فتح", download:"تنزيل", report_note:"التقارير منقّحة: القيم الحساسة محجوبة." },
   en: { app:"Cyber Defense Center", kicker:"PRIVATE DEFENSE SYSTEM",
     login:"Verified owner sign-in", email:"Email", password:"Password", signin:"Sign in",
     signout:"Sign out", dashboard:"Dashboard", assets:"Assets & Scopes", catalog:"Tool Catalog",
@@ -40,7 +48,12 @@ const I18N = {
     engaged:"ENGAGED", disengaged:"off", users:"Users", adduser:"Add user", role:"Role",
     lang:"ع", none:"—", close:"Close", noproject:"Create or pick a project to begin.",
     confirm:"Confirm", owner_contact:"Owner contact", criticality:"Criticality",
-    unauthorized:"Not authorized — check scope.", refresh:"Refresh" }
+    unauthorized:"Not authorized — check scope.", refresh:"Refresh",
+    publicview:"Public read-only view. Running scans or changing anything requires the owner to sign in.",
+    ownerlogin:"Owner sign-in", backpublic:"Back to the public view",
+    motion_stop:"Pause motion", motion_start:"Resume motion",
+    preparing:"The demo is being prepared. Refresh in a moment.",
+    open:"Open", download:"Download", report_note:"Reports are redacted: sensitive values are withheld." }
 };
 const t = k => (I18N[S.lang][k] || k);
 
@@ -86,6 +99,14 @@ async function api(path, method="GET", body=null){
     {status:res.status, code:(data.error&&data.error.code), detail:(data.error&&data.error.detail)});
   return data;
 }
+async function apiRaw(path){
+  const h = {};
+  if (S.token) h["Authorization"] = "Bearer " + S.token;
+  const res = await fetch(path, { headers:h });
+  const text = await res.text();
+  if (!res.ok) throw new Error(res.status + " " + res.statusText);
+  return { text, type: res.headers.get("Content-Type") || "text/plain" };
+}
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const h = (strings,...v)=>strings.map((s,i)=>s+(v[i]!=null?v[i]:"")).join("");
 
@@ -94,51 +115,150 @@ const root = () => document.getElementById("root");
 function setLang(l){ S.lang=l; localStorage.setItem("fsl_lang",l);
   document.documentElement.lang=l; document.documentElement.dir = l==="ar"?"rtl":"ltr"; render(); }
 
-const LOGO = `<svg viewBox="0 0 80 88" aria-hidden="true"><path d="M40 4 72 18v26c0 22-16 34-32 40C24 78 8 66 8 44V18Z" fill="none" stroke="#fa3a5d" stroke-width="5"/><path d="M28 44l9 9 16-18" fill="none" stroke="#ff496a" stroke-width="5" stroke-linecap="round"/></svg>`;
+// The owner's hooded-mask mark, ringed by two lasers that never stop circling.
+const MASK_OUTLINE = "M40 3C24 4 10 20 5 48l10 23 25 14 25-14 10-23C70 20 56 4 40 3Z";
+function MASK(size=""){
+  return `<svg class="mask ${size}" viewBox="-8 -8 96 104" aria-hidden="true" focusable="false">
+    <path class="laser two" d="${MASK_OUTLINE}" transform="translate(40 44) scale(1.16) translate(-40 -44)" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="9 41" pathLength="100"/>
+    <path d="${MASK_OUTLINE}" fill="#130a0e" stroke="#bd203e" stroke-width="1.7"/>
+    <path d="M40 14 18 38l4 25 18 15 18-15 4-25Z" fill="#e9e1e4" stroke="#8f263e" stroke-width="1.4"/>
+    <path d="m21 38 12 4-4 6-9-5m39-5-12 4 4 6 9-5" fill="#10080b"/>
+    <path d="m23 33 11 5m23-5-11 5" fill="none" stroke="#971f3b" stroke-width="3" stroke-linecap="round"/>
+    <path d="m39 41-4 15 5 3 5-3-4-15m-12 20 11 5 11-5m-16 9 5 3 5-3" fill="none" stroke="#561728" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="m25 48 6 4-5 4m29-8-6 4 5 4" fill="none" stroke="#bc8a97" stroke-width="1.4"/>
+    <path d="m17 30-6 20 8 18m44-38 6 20-8 18" fill="none" stroke="#60172b" stroke-width="1.5"/>
+    <path d="m24 42 5 2m22 0 5-2" stroke="#f22b50" stroke-width="2" stroke-linecap="round"/>
+    <path class="laser" d="${MASK_OUTLINE}" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="18 82" pathLength="100"/>
+  </svg>`;
+}
+
+// Lines for the moving code strips (decorative; they describe what the platform does).
+const CODE = [
+  "scope.check(target); verify(owner); audit.record(event); policy.allow(job);",
+  "queue.lease(job, ttl=120); worker.run(connector, sandbox); evidence.redact(raw);",
+  "findings.dedup(key); priority = severity * criticality; report.build(lang);",
+  "if (!scope.active) return DENY; ssrf.block(private_ip); session.verify(token);",
+  "semgrep.scan(src); gitleaks.detect(src); bandit.audit(src); pip_audit.check(deps);",
+  "laser.orbit(mask); shield.up(); trace.log(sha256(evidence)); gate.pass(10, 10);"
+];
+function ticker(i, cls=""){
+  const half = (CODE[i % CODE.length] + "    ").repeat(5);
+  return `<div class="codebar ${cls}" aria-hidden="true"><span>${esc(half + half)}</span></div>`;
+}
+function codeHero(){
+  return `<div class="codehero" aria-hidden="true">${ticker(0,"slow")}${ticker(4,"rev")}${ticker(2,"fast")}</div>`;
+}
+
+// Motion: on by default; follows the device's reduced-motion setting until the
+// visitor chooses, and can always be paused or resumed from the page.
+function motionPref(){ try{ return localStorage.getItem("fsl_motion") || ""; }catch(e){ return ""; } }
+function motionIsOn(){
+  const pref = motionPref();
+  if (pref) return pref === "on";
+  return !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+}
+function applyMotion(){
+  const pref = motionPref();
+  document.documentElement.classList.toggle("motion", pref === "on");
+  document.documentElement.classList.toggle("nomotion", pref === "off");
+}
+function toggleMotion(){
+  try{ localStorage.setItem("fsl_motion", motionIsOn() ? "off" : "on"); }catch(e){}
+  applyMotion(); render();
+}
+
+// Every card gets its own mask and code strip; wide tables scroll inside the card;
+// in the public view the owner-only controls are hidden.
+const OWNER_ACTS = ["revoke","scopeform","jobstop","runeval","aiplan","aireport","togglestop",
+  "ftriage","fremediate","fvalidate","fstatus","evread"].map(a => `[data-act="${a}"]`).join(",");
+let CARD_SEQ = 0;
+function decorate(){
+  document.body.classList.toggle("guest", S.guest && !S.token);
+  document.querySelectorAll(".card,.stat,.login,.drawer").forEach(el => {
+    const first = el.firstElementChild;
+    if (first && first.classList.contains("cardhead")) return;
+    const i = CARD_SEQ++;
+    el.insertAdjacentHTML("afterbegin",
+      `<div class="cardhead" aria-hidden="true">${MASK("sm")}${ticker(i, i % 2 ? "rev" : "")}</div>`);
+  });
+  document.querySelectorAll(".card table,.drawer table").forEach(tb => {
+    if (tb.parentElement.classList.contains("tablewrap")) return;
+    const wrap = document.createElement("div"); wrap.className = "tablewrap";
+    tb.parentNode.insertBefore(wrap, tb); wrap.appendChild(tb);
+  });
+  if (S.guest && !S.token) document.querySelectorAll(OWNER_ACTS).forEach(el => el.setAttribute("data-owner",""));
+}
+let decoPending = false;
+function watchDom(){
+  new MutationObserver(() => {
+    if (decoPending) return;
+    decoPending = true;
+    requestAnimationFrame(() => { decoPending = false; decorate(); });
+  }).observe(document.getElementById("root"), { childList:true, subtree:true });
+}
 
 function render(){
-  if (!S.token){ return renderLogin(); }
+  const guestView = S.guest && !S.token && !S.loginOpen;
+  if (!S.token && !guestView){ return renderLogin(); }
   document.documentElement.dir = S.lang==="ar"?"rtl":"ltr";
   document.documentElement.lang = S.lang;
-  const nav = [["dashboard","◆"],["assets","▣"],["catalog","☷"],["scans","▶"],
-    ["findings","⚑"],["ailab","✦"],["reports","▤"],["audit","☰"],["settings","⚙"]];
+  let nav = ["dashboard","assets","catalog","scans","findings","ailab","reports","audit","settings"];
+  if (guestView) nav = nav.filter(k => !["audit","settings"].includes(k));
+  if (!nav.includes(S.screen)) S.screen = "dashboard";
+  const projects = S.projects.map(p=>`<option value="${p.id}" ${S.project&&S.project.id===p.id?"selected":""}>${esc(p.name)}</option>`).join("")
+    + (guestView ? "" : `<option value="__new">+ ${esc(t("newproject"))}</option>`);
   root().innerHTML = h`
     <div class="app">
       <aside class="sidebar">
-        <div class="logo-row">${LOGO}<div><div class="brand" style="font-size:18px">FAISAL<span class="dot">.AI</span></div>
+        <div class="logo-row">${MASK()}<div><div class="brand" style="font-size:19px">FAISAL<span class="dot">.AI</span></div>
           <div class="kicker">${esc(t("kicker"))}</div></div></div>
         <div class="small muted">${esc(t("project"))}:</div>
-        <select id="projsel">${S.projects.map(p=>`<option value="${p.id}" ${S.project&&S.project.id===p.id?"selected":""}>${esc(p.name)}</option>`).join("")}
-          <option value="__new">+ ${esc(t("newproject"))}</option></select>
-        <nav class="nav">${nav.map(([k,ic])=>`<button data-act="nav" data-screen="${k}" class="${S.screen===k?"active":""}">${ic} ${esc(t(k))}</button>`).join("")}</nav>
-        <div class="sec"></div>
-        <button class="btn sm" data-act="lang">🌐 ${esc(t("lang"))}</button>
-        <button class="btn sm" data-act="logout">⎋ ${esc(t("signout"))}</button>
-        <div class="small muted" style="margin-top:12px">${esc(S.user?S.user.email:"")}<br>${esc(S.user?S.user.global_role:"")}</div>
+        <select id="projsel" aria-label="${esc(t("project"))}">${projects || `<option>${esc(t("none"))}</option>`}</select>
+        <nav class="nav">${nav.map(k=>`<button data-act="nav" data-screen="${k}" class="${S.screen===k?"active":""}">${MASK("sm")}<span>${esc(t(k))}</span></button>`).join("")}</nav>
+        <div class="side-actions">
+          <button class="btn sm" data-act="lang">🌐 ${esc(t("lang"))}</button>
+          <button class="btn sm" data-act="motion">${motionIsOn()?"⏸ "+esc(t("motion_stop")):"▶ "+esc(t("motion_start"))}</button>
+          ${guestView ? `<button class="btn sm primary" data-act="showlogin">${esc(t("ownerlogin"))}</button>`
+                      : `<button class="btn sm" data-act="logout">⎋ ${esc(t("signout"))}</button>`}
+        </div>
+        <div class="whoami">${guestView ? "" : esc(S.user?S.user.email:"") + "<br>" + esc(S.user?S.user.global_role:"")}</div>
       </aside>
       <main class="main" id="main"><div class="notice">…</div></main>
     </div>${S.drawer||""}`;
+  decorate();
   renderScreen();
 }
 
 function renderLogin(){
-  root().innerHTML = h`<div class="login">
-    <div class="logo-row">${LOGO}<h1 class="brand">FAISAL<span class="dot">.AI</span></h1></div>
+  root().innerHTML = h`<div class="loginwrap"><div class="login">
+    <div class="hero">${MASK("lg")}
+      <h1 class="brand">FAISAL<span class="dot">.AI</span></h1></div>
     <div class="sub kicker">${esc(t("kicker"))}</div>
     <div id="setupnotices"></div>
     <div id="loginmsg"></div>
     <form id="loginform">
-      <label>${esc(t("email"))}</label><input type="email" name="email" required>
-      <label>${esc(t("password"))}</label><input type="password" name="password" required>
+      <label for="lf-email">${esc(t("email"))}</label><input id="lf-email" type="email" name="email" autocomplete="username" required>
+      <label for="lf-pass">${esc(t("password"))}</label><input id="lf-pass" type="password" name="password" autocomplete="current-password" required>
       <div style="margin-top:16px" class="flex">
         <button class="btn primary" type="submit">${esc(t("signin"))}</button>
         <button class="btn sm right" type="button" data-act="lang">🌐 ${esc(t("lang"))}</button>
       </div>
-    </form></div>`;
+    </form>
+    <div class="flex" style="margin-top:12px">
+      <button class="btn sm" type="button" data-act="motion">${motionIsOn()?"⏸ "+esc(t("motion_stop")):"▶ "+esc(t("motion_start"))}</button>
+      ${S.publicView ? `<button class="btn sm" type="button" data-act="backpublic">${esc(t("backpublic"))}</button>` : ""}
+    </div></div></div>`;
+  decorate();
   loadSetupNotices();
 }
 
-function setMain(html){ const m=document.getElementById("main"); if(m) m.innerHTML=html; }
+function setMain(html){
+  const m = document.getElementById("main"); if (!m) return;
+  const guestBar = (S.guest && !S.token)
+    ? `<div class="guestbar"><span>${esc(t("publicview"))}</span><button class="btn sm primary right" data-act="showlogin">${esc(t("ownerlogin"))}</button></div>` : "";
+  m.innerHTML = codeHero() + guestBar + html;
+  decorate();
+}
 function notice(msg,cls=""){ return `<div class="notice ${cls}">${esc(msg)}</div>`; }
 
 // ---------- screens ----------
@@ -161,6 +281,8 @@ function topbar(title, extra=""){ return h`<div class="topbar"><h1>${esc(title)}
 
 async function scrDashboard(){
   const pid = S.project?S.project.id:null;
+  if (!pid && S.guest && !S.token)
+    return setMain(topbar(t("dashboard"), `<button class="btn sm" data-act="reload">↻ ${esc(t("refresh"))}</button>`) + notice(t("preparing")));
   const m = await api("/api/metrics"+(pid?`?project=${pid}`:""));
   const ai = await api("/api/ai/status");
   const sev = m.findings_by_severity||{};
@@ -284,12 +406,13 @@ async function scrReports(){
   setMain(topbar(t("reports"))
     + h`<div class="card"><h2>${esc(t("genreport"))}</h2>
       <div class="flex">
-        <a class="btn" href="/api/projects/${pid}/report?format=html&lang=ar" target="_blank">HTML (ع)</a>
-        <a class="btn" href="/api/projects/${pid}/report?format=html&lang=en" target="_blank">HTML (EN)</a>
-        <a class="btn" href="/api/projects/${pid}/report?format=md&lang=ar" target="_blank">Markdown</a>
-        <a class="btn" href="/api/projects/${pid}/report?format=sarif" target="_blank">SARIF</a>
-        <a class="btn" href="/api/projects/${pid}/report?format=json" target="_blank">JSON</a>
-      </div><p class="small muted" style="margin-top:8px">Reports are redacted. Links open with your session in a new tab.</p>
+        <button class="btn" data-act="report" data-format="html" data-lang="ar">HTML (ع)</button>
+        <button class="btn" data-act="report" data-format="html" data-lang="en">HTML (EN)</button>
+        <button class="btn" data-act="report" data-format="md" data-lang="ar">Markdown</button>
+        <button class="btn" data-act="report" data-format="sarif" data-lang="en">SARIF</button>
+        <button class="btn" data-act="report" data-format="json" data-lang="en">JSON</button>
+      </div><p class="small" style="margin-top:8px">${esc(t("report_note"))}</p>
+      <div id="reportout"></div>
       <button class="btn primary" data-act="aireport" style="margin-top:8px">AI executive summary</button><div id="repout"></div></div>`);
 }
 
@@ -375,7 +498,8 @@ document.addEventListener("submit", async e=>{
   e.preventDefault(); const f=e.target; const fd=Object.fromEntries(new FormData(f).entries());
   try{
     if(f.id==="loginform"){ const r=await api("/api/auth/login","POST",{email:fd.email,password:fd.password});
-      S.token=r.token; S.user=r.user; localStorage.setItem("fsl_token",S.token); await boot(); return; }
+      S.token=r.token; S.user=r.user; S.guest=false; S.loginOpen=false; S.project=null;
+      localStorage.setItem("fsl_token",S.token); await boot(); return; }
     if(f.id==="assetform"){ const meta=fd.local_path?{local_path:fd.local_path}:{};
       await api(`/api/projects/${S.project.id}/assets`,"POST",{kind:fd.kind,identifier:fd.identifier,criticality:fd.criticality,metadata:meta});
       renderScreen(); return; }
@@ -407,7 +531,12 @@ document.addEventListener("click", async e=>{
     if(act==="nav"){ S.screen=b.dataset.screen; S.drawer=null; render(); }
     else if(act==="lang"){ setLang(S.lang==="ar"?"en":"ar"); }
     else if(act==="logout"){ try{await api("/api/auth/logout","POST",{});}catch(_){}
-      S.token=""; S.user=null; localStorage.removeItem("fsl_token"); render(); }
+      S.token=""; S.user=null; S.project=null; S.projects=[]; localStorage.removeItem("fsl_token"); await init(); }
+    else if(act==="motion"){ toggleMotion(); }
+    else if(act==="showlogin"){ S.loginOpen=true; S.drawer=null; render(); }
+    else if(act==="backpublic"){ S.loginOpen=false; await init(); }
+    else if(act==="reload"){ await init(); }
+    else if(act==="report"){ await showReport(b.dataset.format, b.dataset.lang); }
     else if(act==="refresh"){ renderScreen(); }
     else if(act==="closedrawer"){ S.drawer=null; render(); }
     else if(act==="revoke"){ await api(`/api/scopes/${b.dataset.scope}/revoke`,"POST",{}); renderScreen(); }
@@ -455,14 +584,44 @@ function showScopeForm(assetId){
   document.getElementById("scopeformbox").scrollIntoView({behavior:"smooth"});
 }
 
+// The report is fetched with the session, then offered through a real link so a
+// phone browser opens or saves it from a direct tap.
+async function showReport(format, lang){
+  const out = document.getElementById("reportout"); if (!out) return;
+  const r = await apiRaw(`/api/projects/${S.project.id}/report?format=${encodeURIComponent(format)}&lang=${encodeURIComponent(lang)}`);
+  const ext = {html:"html", md:"md", sarif:"sarif.json", json:"json"}[format] || "txt";
+  const mime = format === "html" ? "text/html" : (format === "md" ? "text/markdown" : "application/json");
+  const url = URL.createObjectURL(new Blob([r.text], { type: mime + ";charset=utf-8" }));
+  const name = `faisal-security-lab-report.${ext}`;
+  out.innerHTML = `<div class="flex" style="margin-block:10px">
+      <a class="btn primary" href="${url}" target="_blank" rel="noopener">${esc(t("open"))}</a>
+      <a class="btn" href="${url}" download="${name}">${esc(t("download"))} ${esc(name)}</a></div>`
+    + (format === "html" ? "" : `<div class="ev">${esc(r.text.slice(0, 6000))}</div>`);
+}
+
 // ---------- boot ----------
 async function boot(){
   try{
     const me=await api("/api/me"); S.user=me.user;
     const p=await api("/api/projects"); S.projects=p.projects||[];
-    if(!S.project && S.projects.length) S.project=S.projects[0];
+    if(!S.project || !S.projects.find(x=>x.id===S.project.id)) S.project=S.projects[0]||null;
     render();
-  }catch(e){ S.token=""; localStorage.removeItem("fsl_token"); render(); }
+  }catch(e){
+    // A stale session falls back to the public view when there is one.
+    const hadToken = !!S.token;
+    S.token=""; S.user=null; localStorage.removeItem("fsl_token");
+    if (hadToken && S.publicView){ S.guest=true; return boot(); }
+    S.guest=false; render();
+  }
 }
-setLang(S.lang);
-if(S.token) boot(); else render();
+async function init(){
+  try{ const c=await api("/api/config"); S.publicView=!!c.public_view; }catch(e){ S.publicView=false; }
+  if (S.token){ S.guest=false; return boot(); }
+  if (S.publicView && !S.loginOpen){ S.guest=true; return boot(); }
+  S.guest=false; render();
+}
+applyMotion();
+document.documentElement.lang = S.lang;
+document.documentElement.dir = S.lang==="ar"?"rtl":"ltr";
+watchDom();
+init();
