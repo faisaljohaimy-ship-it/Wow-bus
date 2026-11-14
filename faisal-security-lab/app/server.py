@@ -163,13 +163,27 @@ def client_address_report(cfg, env) -> list[str]:
 _PROXY_HEADERS_REPORTED = False
 
 
-def _report_ignored_proxy_headers() -> None:
-    """Log, once per process, that a request carried proxy headers while no
-    proxy is declared."""
+def _report_ignored_proxy_headers(declared: bool) -> None:
+    """Log, once per process, that a request carried forwarding headers that
+    were not used for the client address.
+
+    `declared` says whether a proxy setting is in effect. Without one the
+    headers are ignored by design; with one, the request did not carry what
+    the setting names, which is what a wrong header name looks like.
+    """
     global _PROXY_HEADERS_REPORTED
     if _PROXY_HEADERS_REPORTED:
         return
     _PROXY_HEADERS_REPORTED = True
+    if declared:
+        print("[setup] a request carried forwarding headers but not a usable value where "
+              "FSL_CLIENT_IP_HEADER / FSL_TRUSTED_PROXY_HOPS say the client address is, so "
+              "the connecting address was taken as the client. If visitors' requests look "
+              "like this, the setting does not match the proxy in front of this service and "
+              "every visitor shares one sign-in allowance (see docs/OPERATIONS.md, 'Sign-in "
+              "protection'; Settings in the console shows the address the service sees).",
+              file=sys.stderr)
+        return
     print("[setup] a request carried a forwarding header, but neither FSL_CLIENT_IP_HEADER "
           "nor FSL_TRUSTED_PROXY_HOPS is set, so the connecting address was taken as the "
           "client. If a proxy is in front of this service, every visitor shares one sign-in "
@@ -191,6 +205,25 @@ def client_key(address: str) -> str:
         if ip.ipv4_mapped is not None:
             return str(ip.ipv4_mapped)
         return f"{ipaddress.IPv6Address(int(ip) >> 64 << 64)}/64"
+    return str(ip)
+
+
+def client_network(address: str) -> str:
+    """The wider key sign-in turns are shared out by: the IPv4 address or the
+    IPv6 /48.
+
+    A single subscriber is often given a /56 or a /48, which holds hundreds or
+    thousands of /64s. Keyed by /64, each of those would count as a separate
+    client waiting for a turn.
+    """
+    try:
+        ip = ipaddress.ip_address(str(address or ""))
+    except ValueError:
+        return str(address or "")[:64]
+    if ip.version == 6:
+        if ip.ipv4_mapped is not None:
+            return str(ip.ipv4_mapped)
+        return f"{ipaddress.IPv6Address(int(ip) >> 80 << 80)}/48"
     return str(ip)
 
 
@@ -225,13 +258,90 @@ _LOGIN_ACCOUNT_KEEP = 4 * LOGIN_ACCOUNT_PRESSURE
 # instance a few of those at once take all the CPU, and every other request,
 # the health check included, waits behind them. So hashes run
 # LOGIN_VERIFY_SLOTS at a time and an attempt waits at most
-# LOGIN_VERIFY_WAIT_SECONDS for its turn. Each client may have one attempt in
-# progress, which keeps the line no longer than the number of distinct clients:
-# one address cannot fill it and push everyone else past the wait.
+# LOGIN_VERIFY_WAIT_SECONDS for its turn.
+#
+# Turns are not handed out in order of arrival: a few dozen addresses that
+# keep resending would then fill the wait and time everyone else out. The next
+# turn goes to the waiting network (see client_network) that has had the
+# fewest turns in the current window, earliest first among equals, so someone
+# signing in for the first time goes ahead of addresses that have been at it
+# all along. A network has one attempt in progress at a time, and at most
+# LOGIN_VERIFY_LINE attempts wait: when the line is full, a newcomer takes the
+# place of a waiter that has had more turns, or is refused.
 LOGIN_VERIFY_SLOTS = 1
 LOGIN_VERIFY_WAIT_SECONDS = 10
-_LOGIN_VERIFY = threading.BoundedSemaphore(LOGIN_VERIFY_SLOTS)
+LOGIN_VERIFY_LINE = 32
+# A second attempt from a network (a double tap on Sign in, two people behind
+# one address) waits this long for the first to finish; this many may wait.
+LOGIN_SAME_NETWORK_WAIT_SECONDS = 3
+LOGIN_SAME_NETWORK_WAITERS = 2
+# Turns remembered per network. Only "who has had fewer" is asked of it.
+_LOGIN_TURNS_KEEP = 240
+_LOGIN_TURNS: dict[str, list[float]] = {}
 _LOGIN_IN_PROGRESS: set[str] = set()
+_LOGIN_QUEUED: dict[str, list[threading.Event]] = {}
+_LOGIN_BUSY_REPORTED: float | None = None
+
+
+class _Waiter:
+    __slots__ = ("rank", "seq", "state", "wake")
+
+    def __init__(self, rank: int, seq: int):
+        self.rank, self.seq = rank, seq
+        self.state = "waiting"          # then "granted" or "dropped"
+        self.wake = threading.Event()
+
+
+class _VerifyGate:
+    """Hands out turns for the password check: lowest rank first, earliest
+    arrival first among equal ranks."""
+
+    def __init__(self, slots: int, line: int):
+        self._lock = threading.Lock()
+        self._free = slots
+        self._line = line
+        self._waiting: list[_Waiter] = []
+        self._seq = 0
+
+    def acquire(self, rank: int, timeout: float) -> bool:
+        """Wait up to `timeout` seconds for a turn. False means no turn."""
+        with self._lock:
+            if self._free > 0:          # a free slot means nobody is waiting
+                self._free -= 1
+                return True
+            self._seq += 1
+            me = _Waiter(rank, self._seq)
+            if len(self._waiting) >= self._line:
+                last = max(self._waiting, key=lambda w: (w.rank, w.seq))
+                if last.rank <= rank:
+                    return False
+                self._waiting.remove(last)
+                last.state = "dropped"
+                last.wake.set()
+            self._waiting.append(me)
+        me.wake.wait(timeout)
+        with self._lock:
+            if me.state == "waiting":   # timed out; a grant racing the timeout wins
+                self._waiting.remove(me)
+                return False
+            return me.state == "granted"
+
+    def release(self) -> None:
+        with self._lock:
+            if self._waiting:
+                nxt = min(self._waiting, key=lambda w: (w.rank, w.seq))
+                self._waiting.remove(nxt)
+                nxt.state = "granted"
+                nxt.wake.set()
+            else:
+                self._free += 1
+
+    def waiting(self) -> int:
+        with self._lock:
+            return len(self._waiting)
+
+
+_LOGIN_VERIFY = _VerifyGate(LOGIN_VERIFY_SLOTS, LOGIN_VERIFY_LINE)
 
 
 class LoginTicket(NamedTuple):
@@ -249,26 +359,30 @@ def _login_keys(email: str, client: str) -> dict:
     return {"pair": f"pair:{account}|{client}", "acct": f"acct:{account}", "ip": f"ip:{client}"}
 
 
-def _login_evict(now: float) -> None:
-    """Shrink the table to 90% of its cap. The caller holds the lock.
+def _login_trim(table: dict, now: float) -> None:
+    """Shrink a table of timestamps to 90% of its cap. The caller holds the lock.
 
     Expired entries go first. If that is not enough, the keys holding the
-    fewest attempts go next, least recently used first, so a key that has
-    reached its limit outlives any number of one-off keys. The table is never
+    fewest entries go next, least recently used first, so a key that has
+    reached its limit outlives any number of one-off keys. A table is never
     emptied: that would unlock every account under attack at once.
     """
-    for key in list(_LOGIN_ATTEMPTS):
-        hits = [t for t in _LOGIN_ATTEMPTS[key] if now - t < LOGIN_WINDOW_SECONDS]
+    for key in list(table):
+        hits = [t for t in table[key] if now - t < LOGIN_WINDOW_SECONDS]
         if hits:
-            _LOGIN_ATTEMPTS[key] = hits
+            table[key] = hits
         else:
-            del _LOGIN_ATTEMPTS[key]
-    excess = len(_LOGIN_ATTEMPTS) - (_LOGIN_MAX_KEYS * 9) // 10
+            del table[key]
+    excess = len(table) - (_LOGIN_MAX_KEYS * 9) // 10
     if excess > 0:
-        coldest = heapq.nsmallest(excess, _LOGIN_ATTEMPTS.items(),
+        coldest = heapq.nsmallest(excess, table.items(),
                                   key=lambda item: (len(item[1]), item[1][-1]))
         for key, _ in coldest:
-            del _LOGIN_ATTEMPTS[key]
+            del table[key]
+
+
+def _login_evict(now: float) -> None:
+    _login_trim(_LOGIN_ATTEMPTS, now)
 
 
 def login_admit(email: str, client: str, now: float | None = None) -> LoginTicket:
@@ -378,12 +492,15 @@ def _login_audit(action: str, kind: str, email: str, req: Req) -> None:
 
 
 def reset_login_throttle_for_tests() -> None:
-    global _LOGIN_VERIFY
+    global _LOGIN_VERIFY, _LOGIN_BUSY_REPORTED
     with _LOGIN_LOCK:
         _LOGIN_ATTEMPTS.clear()
         _LOGIN_AUDIT.clear()
+        _LOGIN_TURNS.clear()
         _LOGIN_IN_PROGRESS.clear()
-        _LOGIN_VERIFY = threading.BoundedSemaphore(LOGIN_VERIFY_SLOTS)
+        _LOGIN_QUEUED.clear()
+        _LOGIN_VERIFY = _VerifyGate(LOGIN_VERIFY_SLOTS, LOGIN_VERIFY_LINE)
+        _LOGIN_BUSY_REPORTED = None
 
 
 def _login_busy() -> RateLimitError:
@@ -394,37 +511,105 @@ def _login_busy() -> RateLimitError:
                           detail={"retry_after_seconds": LOGIN_VERIFY_WAIT_SECONDS})
 
 
+def _login_turned_away() -> RateLimitError:
+    """_login_busy(), plus one log line per window so the operator can see that
+    sign-ins are being refused for lack of a turn."""
+    global _LOGIN_BUSY_REPORTED
+    now = time.monotonic()
+    last = _LOGIN_BUSY_REPORTED
+    if last is None or now - last >= LOGIN_WINDOW_SECONDS:
+        _LOGIN_BUSY_REPORTED = now
+        print("[signin] sign-in attempts are being turned away because password checks are "
+              f"busy (reported at most once every {LOGIN_WINDOW_SECONDS // 60} minutes)",
+              file=sys.stderr)
+    return _login_busy()
+
+
+def _login_turns(network: str, now: float | None = None) -> int:
+    """Turns this network has had in the current window."""
+    now = time.monotonic() if now is None else now
+    with _LOGIN_LOCK:
+        hits = [t for t in _LOGIN_TURNS.get(network, ()) if now - t < LOGIN_WINDOW_SECONDS]
+        if hits:
+            _LOGIN_TURNS[network] = hits
+        else:
+            _LOGIN_TURNS.pop(network, None)
+        return len(hits)
+
+
+def _login_turn_taken(network: str, now: float | None = None) -> None:
+    now = time.monotonic() if now is None else now
+    with _LOGIN_LOCK:
+        if network not in _LOGIN_TURNS and len(_LOGIN_TURNS) >= _LOGIN_MAX_KEYS:
+            _login_trim(_LOGIN_TURNS, now)
+        hits = _LOGIN_TURNS.setdefault(network, [])
+        hits.append(now)
+        del hits[:-_LOGIN_TURNS_KEEP]
+
+
+def _login_enter(network: str) -> None:
+    """Take this network's one place in sign-in, waiting briefly if it is taken."""
+    with _LOGIN_LOCK:
+        if network not in _LOGIN_IN_PROGRESS:
+            _LOGIN_IN_PROGRESS.add(network)
+            return
+        queue = _LOGIN_QUEUED.get(network, [])
+        if len(queue) >= LOGIN_SAME_NETWORK_WAITERS:
+            raise _login_turned_away()
+        mine = threading.Event()
+        queue.append(mine)
+        _LOGIN_QUEUED[network] = queue
+    mine.wait(LOGIN_SAME_NETWORK_WAIT_SECONDS)
+    with _LOGIN_LOCK:
+        if mine.is_set():               # the attempt before this one handed its place over
+            return
+        queue = _LOGIN_QUEUED[network]
+        queue.remove(mine)
+        if not queue:
+            del _LOGIN_QUEUED[network]
+    raise _login_turned_away()
+
+
+def _login_leave(network: str) -> None:
+    with _LOGIN_LOCK:
+        queue = _LOGIN_QUEUED.get(network)
+        if queue:
+            # The place goes straight to the next attempt from this network.
+            queue.pop(0).set()
+            if not queue:
+                del _LOGIN_QUEUED[network]
+        else:
+            _LOGIN_IN_PROGRESS.discard(network)
+
+
 @route("POST", r"/api/auth/login", auth_required=False)
 def login(req: Req):
     email = str(req.body.get("email", ""))
     client = client_key(req.client_ip)
-    # A client's next attempt is refused, before it is counted, for as long
-    # as its previous one is still waiting for or running its password check.
-    with _LOGIN_LOCK:
-        if client in _LOGIN_IN_PROGRESS:
-            raise _login_busy()
-        _LOGIN_IN_PROGRESS.add(client)
+    network = client_network(req.client_ip)
+    # Refused or made to wait here, an attempt has not been counted yet.
+    _login_enter(network)
     try:
-        return _login_attempt(email, client, req)
+        return _login_attempt(email, client, network, req)
     finally:
-        with _LOGIN_LOCK:
-            _LOGIN_IN_PROGRESS.discard(client)
+        _login_leave(network)
 
 
-def _login_attempt(email: str, client: str, req: Req):
+def _login_attempt(email: str, client: str, network: str, req: Req):
     try:
         ticket = login_admit(email, client)
     except RateLimitError:
         _login_audit("auth.login_throttled", "throttled", email, req)
         raise
-    verify = _LOGIN_VERIFY
+    gate = _LOGIN_VERIFY
     try:
-        if not verify.acquire(timeout=LOGIN_VERIFY_WAIT_SECONDS):
-            raise _login_busy()
+        if not gate.acquire(_login_turns(network), LOGIN_VERIFY_WAIT_SECONDS):
+            raise _login_turned_away()
         try:
+            _login_turn_taken(network)
             out = auth.login(email, str(req.body.get("password", "")))
         finally:
-            verify.release()
+            gate.release()
     except AuthError:
         # The admitted attempt stays counted: it is the record of this failure.
         _login_audit("auth.login_failed", "failed", email, req)
@@ -434,6 +619,9 @@ def _login_attempt(email: str, client: str, req: Req):
         login_release(ticket)
         raise
     login_succeeded(ticket)
+    # A correct password is not a guess: this network waits like a newcomer again.
+    with _LOGIN_LOCK:
+        _LOGIN_TURNS.pop(network, None)
     audit.record("auth.login", actor=out["user"]["email"], detail={"ok": True})
     return 200, out
 
@@ -892,8 +1080,7 @@ class Handler(BaseHTTPRequestHandler):
                                            for h in _PROXY_HEADERS)
         if ignored:
             cfg = get_config()
-            if not (cfg.client_ip_header or cfg.trusted_proxy_hops):
-                _report_ignored_proxy_headers()
+            _report_ignored_proxy_headers(bool(cfg.client_ip_header or cfg.trusted_proxy_hops))
         return address, source, ignored
 
     def _token(self):
@@ -989,11 +1176,16 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
 
 
+class Server(ThreadingHTTPServer):
+    daemon_threads = True
+    # The default backlog of 5 resets connections that arrive in the same
+    # instant, a genuine request among them.
+    request_queue_size = 128
+
+
 def build_server(host: str | None = None, port: int | None = None) -> ThreadingHTTPServer:
     cfg = get_config()
-    srv = ThreadingHTTPServer((host or cfg.bind_host, port or cfg.bind_port), Handler)
-    srv.daemon_threads = True
-    return srv
+    return Server((host or cfg.bind_host, port or cfg.bind_port), Handler)
 
 
 def main():

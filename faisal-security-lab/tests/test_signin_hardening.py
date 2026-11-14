@@ -370,10 +370,37 @@ class TestClientAddress(SignInCase):
         self.assertIn("FSL_CLIENT_IP_HEADER", log)
         self.assertIn("FSL_TRUSTED_PROXY_HOPS", log)
         self.assertNotIn("198.51.100", log)      # nothing a client sent is echoed
-        # With a proxy declared the operator has made the choice; nothing is logged.
-        self.assertEqual(
-            log_of_two_forwarded_requests({"FSL_CLIENT_IP_HEADER": "CF-Connecting-IP"}), "")
-        self.assertEqual(log_of_two_forwarded_requests({"FSL_TRUSTED_PROXY_HOPS": "3"}), "")
+
+    def test_proxy_setting_that_does_not_match_the_requests_is_logged_once(self):
+        from app import server
+        marker = "but not a usable value where"
+
+        def log_of_requests(env, headers):
+            boot(env)
+            srv = self.live_server()
+            log = io.StringIO()
+            with mock.patch.object(server, "_PROXY_HEADERS_REPORTED", False), \
+                    mock.patch("sys.stderr", log):
+                for _ in range(3):
+                    status, _ = srv.request("GET", "/api/health", headers=headers)
+                    self.assertEqual(status, 200)
+            return log.getvalue()
+
+        # The named header never arrives, another forwarding header does.
+        for env in ({"FSL_CLIENT_IP_HEADER": "X-Real-IP"}, {"FSL_TRUSTED_PROXY_HOPS": "3"}):
+            with self.subTest(env=env):
+                log = log_of_requests(env, [("X-Forwarded-For", "198.51.100.4")])
+                self.assertEqual(log.count(marker), 1, log)
+                self.assertTrue(log.startswith("[setup] "), log)
+                self.assertNotIn("198.51.100", log)
+        # A setting that matches what arrives logs nothing, with or without
+        # other forwarding headers beside it.
+        self.assertEqual(log_of_requests(
+            {"FSL_CLIENT_IP_HEADER": "CF-Connecting-IP"},
+            [("CF-Connecting-IP", "198.51.100.4"), ("X-Forwarded-For", "198.51.100.4, 10.0.0.1")]),
+            "")
+        # A request with no forwarding header at all (a local probe) is not a sign of anything.
+        self.assertEqual(log_of_requests({"FSL_CLIENT_IP_HEADER": "CF-Connecting-IP"}, []), "")
 
     def test_client_key_is_the_ipv4_address_or_the_ipv6_slash_64(self):
         from app import server
@@ -382,6 +409,16 @@ class TestClientAddress(SignInCase):
         self.assertEqual(server.client_key("2001:db8:1:2::5"), "2001:db8:1:2::/64")
         self.assertEqual(server.client_key("2001:db8:1:2:aaaa:bbbb:cccc:dddd"), "2001:db8:1:2::/64")
         self.assertNotEqual(server.client_key("2001:db8:1:3::5"), server.client_key("2001:db8:1:2::5"))
+
+    def test_client_network_is_the_ipv4_address_or_the_ipv6_slash_48(self):
+        from app import server
+        self.assertEqual(server.client_network("203.0.113.7"), "203.0.113.7")
+        self.assertEqual(server.client_network("::ffff:203.0.113.7"), "203.0.113.7")
+        self.assertEqual(server.client_network("2001:db8:1:2::5"), "2001:db8:1::/48")
+        self.assertEqual(server.client_network("2001:db8:1:ffff:a:b:c:d"), "2001:db8:1::/48")
+        self.assertNotEqual(server.client_network("2001:db8:2::5"),
+                            server.client_network("2001:db8:1::5"))
+        self.assertEqual(server.client_network("not an address"), "not an address")
 
     def test_ipv6_clients_in_one_slash_64_share_the_limit(self):
         from app import server, util
@@ -561,7 +598,7 @@ class TestThrottle(SignInCase):
         self.assertEqual(server.LOGIN_VERIFY_WAIT_SECONDS, 10)
         self.assertEqual(server._login_busy().detail, {"retry_after_seconds": 10})
 
-    def test_second_attempt_from_a_client_in_progress_is_refused_uncounted(self):
+    def test_second_attempt_from_a_network_in_progress_waits_then_is_refused_uncounted(self):
         from app import server, util
         from app.errors import AuthError, RateLimitError
         boot()
@@ -582,15 +619,21 @@ class TestThrottle(SignInCase):
             except AuthError:
                 first.append("denied")
 
-        with mock.patch.object(util, "verify_password", stuck_verify):
+        with mock.patch.object(util, "verify_password", stuck_verify), \
+                mock.patch.object(server, "LOGIN_SAME_NETWORK_WAIT_SECONDS", 0.2):
             holder = threading.Thread(target=occupy)
             holder.start()
             self.assertTrue(entered.wait(30))
             started = time.monotonic()
-            # Same client (same /64), another account: refused at once.
+            # Same network (another /64 of the same /48), another account: it
+            # waits for the first attempt, which does not finish in time.
             with self.assertRaises(RateLimitError) as busy:
-                server.login(login_req(email="other@test.local", ip="2001:db8:1:2::2"))
-            self.assertLess(time.monotonic() - started, 5)
+                server.login(login_req(email="other@test.local", ip="2001:db8:1:99::2"))
+            waited = time.monotonic() - started
+            self.assertTrue(0.15 <= waited < 5, waited)
+            self.assertEqual(server._LOGIN_QUEUED, {})
+            self.assertEqual(attempt_counts("other@test.local", "2001:db8:1:99::2"),
+                             {"pair": 0, "acct": 0, "ip": 0})
             self.assertEqual(attempt_counts("other@test.local", "2001:db8:1:2::2"),
                              {"pair": 0, "acct": 0, "ip": 1})      # ip: the first attempt
             finish.set()
@@ -600,10 +643,257 @@ class TestThrottle(SignInCase):
         self.assertTrue(busy.exception.detail["retry_after_seconds"] > 0)
         self.assertEqual((first, len(calls)), (["denied"], 1))
         self.assertEqual(len(anonymous_rows()), 1)                  # the first attempt only
-        # Once the first attempt is over the client may try again.
+        # Once the first attempt is over the network may try again.
+        self.assertEqual(server._LOGIN_IN_PROGRESS, set())
         with mock.patch.object(util, "verify_password", return_value=False):
             with self.assertRaises(AuthError):
                 server.login(login_req(email="other@test.local", ip="2001:db8:1:2::2"))
+
+    def test_double_tap_from_one_address_signs_in_twice(self):
+        from app import server, util
+        boot()
+        real_verify = util.verify_password
+        entered, finish = threading.Event(), threading.Event()
+        calls = []
+
+        def held_verify(password, encoded):
+            calls.append(password)
+            if len(calls) == 1:
+                entered.set()
+                finish.wait(30)
+            return real_verify(password, encoded)
+
+        results = []
+
+        def sign_in():
+            results.append(server.login(login_req(password=PASSWORD, ip="203.0.113.9"))[0])
+
+        with mock.patch.object(util, "verify_password", held_verify):
+            first = threading.Thread(target=sign_in)
+            first.start()
+            self.assertTrue(entered.wait(30))
+            second = threading.Thread(target=sign_in)
+            second.start()
+            # The second request is parked behind the first, not refused.
+            deadline = time.monotonic() + 10
+            while not server._LOGIN_QUEUED and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual({k: len(v) for k, v in server._LOGIN_QUEUED.items()},
+                             {"203.0.113.9": 1})
+            finish.set()
+            first.join(30)
+            second.join(30)
+        self.assertEqual(results, [200, 200])
+        self.assertEqual((server._LOGIN_IN_PROGRESS, server._LOGIN_QUEUED), (set(), {}))
+
+    def test_only_a_few_attempts_from_one_network_may_wait(self):
+        from app import server, util
+        from app.errors import AuthError, RateLimitError
+        boot()
+        entered, finish = threading.Event(), threading.Event()
+
+        def stuck_verify(password, encoded):
+            entered.set()
+            finish.wait(30)
+            return False
+
+        outcomes = []
+
+        def attempt():
+            try:
+                server.login(login_req(ip="203.0.113.9"))
+            except AuthError:
+                outcomes.append("denied")
+            except RateLimitError:
+                outcomes.append("busy")
+
+        with mock.patch.object(util, "verify_password", stuck_verify):
+            threads = [threading.Thread(target=attempt)]
+            threads[0].start()
+            self.assertTrue(entered.wait(30))
+            for _ in range(server.LOGIN_SAME_NETWORK_WAITERS):
+                threads.append(threading.Thread(target=attempt))
+                threads[-1].start()
+            deadline = time.monotonic() + 10
+            while (len(server._LOGIN_QUEUED.get("203.0.113.9", ()))
+                   < server.LOGIN_SAME_NETWORK_WAITERS and time.monotonic() < deadline):
+                time.sleep(0.01)
+            started = time.monotonic()
+            # One more than may wait: refused at once, nothing counted.
+            with self.assertRaises(RateLimitError):
+                server.login(login_req(ip="203.0.113.9"))
+            self.assertLess(time.monotonic() - started, 1)
+            finish.set()
+            for t in threads:
+                t.join(30)
+        self.assertEqual(sorted(outcomes), ["denied"] * (1 + server.LOGIN_SAME_NETWORK_WAITERS))
+        self.assertEqual((server._LOGIN_IN_PROGRESS, server._LOGIN_QUEUED), (set(), {}))
+
+    def test_gate_serves_fewest_turns_first_then_earliest(self):
+        from app import server
+        gate = server._VerifyGate(1, 8)
+        self.assertTrue(gate.acquire(0, 0.1))            # the slot is taken
+        order, threads = [], []
+
+        def wait_for_turn(name, rank):
+            if gate.acquire(rank, 30):
+                order.append(name)
+                gate.release()
+
+        for name, rank in (("had-5", 5), ("had-2-first", 2), ("had-0", 0), ("had-2-second", 2)):
+            t = threading.Thread(target=wait_for_turn, args=(name, rank))
+            t.start()
+            threads.append(t)
+            deadline = time.monotonic() + 10
+            while gate.waiting() < len(threads) and time.monotonic() < deadline:
+                time.sleep(0.005)
+        gate.release()
+        for t in threads:
+            t.join(30)
+        self.assertEqual(order, ["had-0", "had-2-first", "had-2-second", "had-5"])
+        self.assertEqual(gate.waiting(), 0)
+        self.assertTrue(gate.acquire(9, 0.1))            # free again afterwards
+
+    def test_full_line_gives_way_only_to_a_client_with_fewer_turns(self):
+        from app import server
+        gate = server._VerifyGate(1, 2)
+        self.assertTrue(gate.acquire(0, 0.1))
+        results, threads = {}, []
+
+        def wait_for_turn(name, rank):
+            results[name] = gate.acquire(rank, 30)
+            if results[name]:
+                gate.release()
+
+        for name, rank in (("had-3", 3), ("had-7", 7)):
+            t = threading.Thread(target=wait_for_turn, args=(name, rank))
+            t.start()
+            threads.append(t)
+            deadline = time.monotonic() + 10
+            while gate.waiting() < len(threads) and time.monotonic() < deadline:
+                time.sleep(0.005)
+        # As many turns as the worst waiter, arriving later: refused at once.
+        started = time.monotonic()
+        self.assertFalse(gate.acquire(7, 30))
+        self.assertLess(time.monotonic() - started, 1)
+        self.assertEqual(gate.waiting(), 2)
+        # Fewer turns: takes the place of the waiter that has had the most.
+        newcomer = threading.Thread(target=wait_for_turn, args=("had-0", 0))
+        newcomer.start()
+        threads[1].join(30)
+        self.assertIs(results["had-7"], False)
+        self.assertEqual(gate.waiting(), 2)
+        gate.release()
+        newcomer.join(30)
+        threads[0].join(30)
+        self.assertEqual((results["had-0"], results["had-3"]), (True, True))
+        self.assertEqual(gate.waiting(), 0)
+
+    def test_gate_wait_times_out_and_leaves_the_line(self):
+        from app import server
+        gate = server._VerifyGate(1, 8)
+        self.assertTrue(gate.acquire(0, 0.1))
+        started = time.monotonic()
+        self.assertFalse(gate.acquire(0, 0.2))
+        self.assertTrue(0.15 <= time.monotonic() - started < 5)
+        self.assertEqual(gate.waiting(), 0)
+        gate.release()
+        self.assertTrue(gate.acquire(0, 0.1))
+
+    def test_first_time_client_goes_ahead_of_clients_that_keep_trying(self):
+        from app import server, util
+        from app.errors import AuthError
+        boot()
+        real_verify = util.verify_password
+        entered, finish = threading.Event(), threading.Event()
+        order = []
+        state = {"held": False}
+
+        def recording_verify(password, encoded):
+            if not state["held"]:
+                state["held"] = True
+                entered.set()
+                finish.wait(30)
+                return False
+            order.append(password)
+            return real_verify(password, encoded)
+
+        # Six addresses have each had two turns already.
+        with mock.patch.object(util, "verify_password", return_value=False):
+            for i in range(6):
+                for _ in range(2):
+                    with self.assertRaises(AuthError):
+                        server.login(login_req(email=f"u{i}@test.local", ip=f"198.51.100.{i + 1}"))
+        self.assertEqual(server._login_turns("198.51.100.1"), 2)
+        owner_result = []
+
+        def flooder(i):
+            try:
+                server.login(login_req(email=f"u{i}@test.local", password=f"guess-{i}",
+                                       ip=f"198.51.100.{i + 1}"))
+            except AuthError:
+                pass
+
+        def owner():
+            owner_result.append(server.login(login_req(password=PASSWORD, ip="203.0.113.50"))[0])
+
+        with mock.patch.object(util, "verify_password", recording_verify):
+            holder = threading.Thread(target=flooder, args=(0,))
+            holder.start()
+            self.assertTrue(entered.wait(30))
+            threads = []
+            for i in range(1, 6):
+                threads.append(threading.Thread(target=flooder, args=(i,)))
+                threads[-1].start()
+                deadline = time.monotonic() + 10
+                while server._LOGIN_VERIFY.waiting() < i and time.monotonic() < deadline:
+                    time.sleep(0.005)
+            # The owner arrives last, from an address that has had no turn.
+            threads.append(threading.Thread(target=owner))
+            threads[-1].start()
+            deadline = time.monotonic() + 10
+            while server._LOGIN_VERIFY.waiting() < 6 and time.monotonic() < deadline:
+                time.sleep(0.005)
+            finish.set()
+            holder.join(30)
+            for t in threads:
+                t.join(30)
+        self.assertEqual(owner_result, [200])
+        self.assertEqual(order[0], PASSWORD, order)
+        self.assertEqual(len(order), 6)
+        # A correct password clears the network's turns; failures stay counted.
+        self.assertEqual(server._login_turns("203.0.113.50"), 0)
+        self.assertEqual(server._login_turns("198.51.100.2"), 3)
+
+    def test_turn_history_is_bounded(self):
+        from app import server
+        now = 1_000_000.0
+        for i in range(server._LOGIN_TURNS_KEEP + 50):
+            server._login_turn_taken("198.51.100.1", now + i * 0.001)
+        self.assertEqual(server._login_turns("198.51.100.1", now + 1), server._LOGIN_TURNS_KEEP)
+        with mock.patch.object(server, "_LOGIN_MAX_KEYS", 50):
+            server._login_turn_taken("198.51.100.1", now + 2)
+            for i in range(200):
+                server._login_turn_taken(f"203.0.113.{i}", now + 3)
+            self.assertLessEqual(len(server._LOGIN_TURNS), 50)
+            # The network with the long history outlives the one-off ones.
+            self.assertGreater(server._login_turns("198.51.100.1", now + 4), 0)
+        # Old turns stop counting once the window has passed.
+        self.assertEqual(
+            server._login_turns("198.51.100.1", now + 10 + server.LOGIN_WINDOW_SECONDS), 0)
+
+    def test_busy_refusals_are_logged_once_per_window(self):
+        from app import server
+        log = io.StringIO()
+        with mock.patch("sys.stderr", log):
+            for _ in range(5):
+                self.assertEqual(server._login_turned_away().status, 429)
+        self.assertEqual(log.getvalue().count("[signin] "), 1, log.getvalue())
+
+    def test_server_listens_with_a_deep_backlog(self):
+        from app import server
+        self.assertGreaterEqual(server.Server.request_queue_size, 128)
+        self.assertTrue(server.Server.daemon_threads)
 
     def test_no_account_wide_lockout(self):
         from app import server, util
