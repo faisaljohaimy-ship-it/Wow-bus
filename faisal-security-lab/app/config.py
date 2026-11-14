@@ -41,6 +41,24 @@ def _env_bool(name: str, default: bool) -> bool:
     return v.strip().lower() in ("1", "true", "yes", "on")
 
 
+# Connectors the public demo project scans by default: static analysis of the
+# bundled sample only, light enough for a 512 MB / 0.1 CPU instance.
+DEFAULT_DEMO_CONNECTORS = ("bandit", "gitleaks", "pip_audit")
+
+
+def _env_list(name: str, default: tuple) -> tuple:
+    """Comma-separated list; blank or unset falls back to the default."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return tuple(default)
+    seen: list[str] = []
+    for part in raw.split(","):
+        item = part.strip().lower()
+        if item and item not in seen:
+            seen.append(item)
+    return tuple(seen) or tuple(default)
+
+
 def _usable_dir(path: Path) -> bool:
     """True when the directory exists (or can be created) and is writable."""
     try:
@@ -157,6 +175,12 @@ class Config:
     # number of proxies that each append one entry to X-Forwarded-For.
     client_ip_header: str = ""
     trusted_proxy_hops: int = 0
+    # Optional PUBLIC READ-ONLY VIEW (FSL_PUBLIC_VIEW=1). Off by default. When
+    # on, a visitor without a session may read ONE designated demo project
+    # through an explicit allowlist of GET routes; every action still needs a
+    # sign-in. See app/auth.py (GuestPrincipal) and app/demo.py.
+    public_view: bool = False
+    demo_connectors: tuple = DEFAULT_DEMO_CONNECTORS
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -222,6 +246,8 @@ class Config:
             data_dir_fallback=data_dir_fallback,
             client_ip_header=_env_header_name("FSL_CLIENT_IP_HEADER"),
             trusted_proxy_hops=max(0, min(10, _env_int("FSL_TRUSTED_PROXY_HOPS", 0))),
+            public_view=_env_bool("FSL_PUBLIC_VIEW", False),
+            demo_connectors=_env_list("FSL_DEMO_CONNECTORS", DEFAULT_DEMO_CONNECTORS),
         )
 
     @staticmethod
@@ -247,6 +273,7 @@ class Config:
             "environment": self.environment,
             "allow_active_in_prod": self.allow_active_in_prod,
             "owner_email": self.owner_email,
+            "public_view": self.public_view,
             "ai": {"provider": self.ai.provider, "model": self.ai.model,
                    "available": self.ai.available},
             "limits": asdict(self.limits),

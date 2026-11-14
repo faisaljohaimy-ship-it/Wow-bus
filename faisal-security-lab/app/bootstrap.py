@@ -46,6 +46,10 @@ _NOTICE_LOG = {
     "running_as_root":
         "the container could not drop root privileges; the service and its scan "
         "tools are running as root.",
+    # Recorded by app/demo.py after startup (not by init_platform).
+    "demo_sample_missing":
+        "FSL_PUBLIC_VIEW is on but the bundled samples/vulnerable-app directory "
+        "is missing, so no public demo project was created.",
 }
 
 

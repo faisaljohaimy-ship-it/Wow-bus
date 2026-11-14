@@ -6,7 +6,13 @@ Roles (ascending privilege): reader < analyst < admin < owner.
   registry, flipping the global stop switch.
 - Project role gates project data. A platform owner/admin has admin rights on
   every project; otherwise the project_members row (or project ownership)
-  decides. Everything is enforced server-side.
+  decides. Everything is enforced server-side. One addition while the public
+  read-only view is on: every signed-in account is at least a reader of the
+  public demo project.
+- "guest" is NOT a role a user can hold. It names the unauthenticated visitor
+  of the optional public read-only view (FSL_PUBLIC_VIEW=1): it ranks below
+  reader, fails every global check, and reads exactly one designated demo
+  project. See GuestPrincipal.
 """
 from __future__ import annotations
 
@@ -17,7 +23,7 @@ from dataclasses import dataclass
 from . import util
 from .config import get_config
 from .db import get_db
-from .errors import AuthError, ForbiddenError, ValidationError
+from .errors import AuthError, ConflictError, ForbiddenError, ValidationError
 
 ROLE_RANK = {"reader": 1, "analyst": 2, "admin": 3, "owner": 4}
 
@@ -43,7 +49,13 @@ class Principal:
         row = db.query_one(
             "SELECT role FROM project_members WHERE project_id=? AND user_id=?",
             (project_id, self.user_id))
-        return row["role"] if row else "none"
+        role = row["role"] if row else "none"
+        # While the public view is on, a signed-in account never sees less than
+        # an anonymous visitor: it is at least a reader of the public demo
+        # project. Anything above reader still comes from membership only.
+        if rank(role) < rank("reader") and project_id and project_id == public_project_id():
+            return "reader"
+        return role
 
     def require_global(self, min_role: str) -> None:
         if rank(self.global_role) < rank(min_role):
@@ -57,12 +69,88 @@ class Principal:
                 f"requires project role '{min_role}'",
                 detail={"have": have, "project_id": project_id})
 
+    @property
+    def guest(self) -> bool:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Public read-only view: the guest principal
+# ---------------------------------------------------------------------------
+GUEST_ID = "guest"
+GUEST_ROLE = "guest"            # deliberately absent from ROLE_RANK (rank 0)
+PUBLIC_PROJECT_KEY = "public_project_id"   # settings key written by app/demo.py
+
+
+def public_project_id() -> str:
+    """Id of the one project a guest (and every signed-in account) may read,
+    or "" when there is none.
+
+    Empty whenever the public view is switched off, so turning the flag off
+    revokes guest access even if a demo project was created earlier. The stored
+    id is honoured only while it names a project owned by the reserved,
+    inactive system account, so a guest can never be pointed at anybody's real
+    project; if that invariant is ever broken the answer is "" (fail closed)."""
+    if not get_config().public_view:
+        return ""
+    db = get_db()
+    pid = db.get_setting(PUBLIC_PROJECT_KEY, "")
+    if not pid:
+        return ""
+    row = db.query_one(
+        "SELECT p.id FROM projects p JOIN users u ON u.id=p.owner_id "
+        "WHERE p.id=? AND u.email=? AND u.active=0", (pid, SYSTEM_DEMO_EMAIL))
+    return row["id"] if row else ""
+
+
+@dataclass
+class GuestPrincipal(Principal):
+    """The unauthenticated visitor of the public read-only view.
+
+    It is never backed by a user row or a session. Its only right is the
+    'reader' role on the public demo project; it holds no global role, so every
+    require_global check fails, and it can never satisfy more than 'reader' on
+    any project. Which routes may resolve a guest at all is a separate, explicit
+    allowlist in app/server.py (guest_ok=True on GET routes)."""
+    user_id: str = GUEST_ID
+    email: str = GUEST_ID
+    global_role: str = GUEST_ROLE
+
+    @property
+    def guest(self) -> bool:
+        return True
+
+    def project_role(self, project_id: str) -> str:
+        public = public_project_id()
+        return "reader" if public and project_id == public else "none"
+
+    def require_global(self, min_role: str) -> None:
+        raise ForbiddenError("sign-in required", detail={"have": GUEST_ROLE})
+
+    def require_project(self, project_id: str, min_role: str) -> None:
+        have = self.project_role(project_id)
+        # Strict: only an exact 'reader' requirement on the public project.
+        if min_role != "reader" or have != "reader":
+            # The requested id is not repeated to a guest. It can be any text
+            # (GET /api/metrics?project=...), and the guest view rewrites
+            # server directories in what a guest is sent: an echo would tell
+            # the visitor whether a guessed directory is the right one.
+            raise ForbiddenError(f"requires project role '{min_role}'", detail={"have": have})
+
+
+def guest_principal() -> GuestPrincipal:
+    return GuestPrincipal()
+
 
 # ---------------------------------------------------------------------------
 # User management
 # ---------------------------------------------------------------------------
 MIN_PASSWORD_LENGTH = 10
 DEFAULT_OWNER_EMAIL = "owner@faisal-security-lab.local"
+# Reserved, non-loginable account that owns the public demo project. It cannot
+# be created through create_user (nor used as the owner sign-in) and is only
+# ever inserted inactive, by ensure_system_user.
+SYSTEM_DEMO_EMAIL = "public-demo@system.invalid"
 
 
 # The address syntax a browser <input type="email"> accepts (WHATWG HTML), so
@@ -85,6 +173,8 @@ def create_user(email: str, password: str, *, display_name: str = "",
         raise ValidationError(f"password must be at least {MIN_PASSWORD_LENGTH} characters")
     if global_role not in ROLE_RANK:
         raise ValidationError("invalid role")
+    if email == SYSTEM_DEMO_EMAIL:
+        raise ValidationError("this email is reserved for a system account")
     db = get_db()
     if db.query_one("SELECT id FROM users WHERE email=?", (email,)):
         raise ValidationError("email already registered")
@@ -95,6 +185,32 @@ def create_user(email: str, password: str, *, display_name: str = "",
         (uid, email, display_name or email.split("@")[0],
          util.hash_password(password), global_role, util.now_iso()))
     return {"id": uid, "email": email, "global_role": global_role}
+
+
+def ensure_system_user(email: str = SYSTEM_DEMO_EMAIL,
+                       display_name: str = "Public demo (system)") -> str:
+    """Return the id of a NON-LOGINABLE system account, creating it if missing.
+
+    The account is inactive (login and session resolution both require
+    active=1) and its password is random and discarded here, never returned or
+    logged. It exists only so system-owned rows (the public demo project) have
+    a valid owner. Idempotent.
+
+    An existing row under the reserved address that is ACTIVE is not something
+    this code created; it is refused rather than reused or modified, so a
+    loginable account can never end up owning the public project."""
+    db = get_db()
+    row = db.query_one("SELECT id, active FROM users WHERE email=?", (email,))
+    if row:
+        if row["active"] != 0:
+            raise ConflictError("the reserved system account is active; refusing to use it")
+        return row["id"]
+    uid = util.new_id("usr")
+    db.execute(
+        "INSERT INTO users(id,email,display_name,password_hash,global_role,active,created_at) "
+        "VALUES(?,?,?,?,?,0,?)",
+        (uid, email, display_name, util.hash_password(util.token()), "reader", util.now_iso()))
+    return uid
 
 
 def bootstrap_owner() -> dict:
@@ -116,7 +232,9 @@ def bootstrap_owner() -> dict:
     notices: list[str] = []
 
     email = cfg.owner_email
-    if not valid_email(email):
+    # The reserved system address can never be a sign-in, so it is not a usable
+    # owner email either.
+    if not valid_email(email) or email == SYSTEM_DEMO_EMAIL:
         # The default address is only for a system nobody can sign in to yet.
         # Once an owner exists at another address, a mistyped value must not
         # add a second owner under a well-known address. An owner at the

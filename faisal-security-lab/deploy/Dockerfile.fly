@@ -13,6 +13,9 @@ RUN bash scripts/install-tools.sh /usr/local/bin /opt/sectools-venv || true
 COPY app ./app
 COPY web ./web
 COPY data ./data
+# The bundled, intentionally vulnerable sample is the authorized lab target the
+# optional public demo project scans (FSL_PUBLIC_VIEW=1; see app/demo.py).
+COPY samples ./samples
 
 ENV FSL_BIND_HOST=0.0.0.0 \
     FSL_PORT=8080 \
