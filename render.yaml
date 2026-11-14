@@ -1,0 +1,19 @@
+# Render.com Blueprint — one-click, no-terminal deploy of Faisal Security Lab.
+# Use the "Deploy to Render" button:
+#   https://render.com/deploy?repo=https://github.com/faisaljohaimy-ship-it/Wow-bus
+# Render reads this file, builds the Docker image in faisal-security-lab/, and
+# prompts you only for the owner password.
+services:
+  - type: web
+    name: faisal-security-lab
+    runtime: docker
+    rootDir: faisal-security-lab
+    dockerfilePath: deploy/Dockerfile.fly
+    plan: free
+    region: oregon
+    healthCheckPath: /api/health
+    envVars:
+      - key: FSL_OWNER_EMAIL
+        value: owner@faisal-security-lab.local
+      - key: FSL_OWNER_PASSWORD
+        sync: false   # Render asks you to type this when you deploy
