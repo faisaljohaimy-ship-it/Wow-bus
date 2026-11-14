@@ -99,6 +99,9 @@ Only set these when the service **cannot be reached except through that
 proxy**. If it can be reached directly, a client can forge the header and
 choose its own address for every attempt.
 
+The bundled `render.yaml` and `fly.toml` set `FSL_CLIENT_IP_HEADER` to their
+platform's header. Any other host starts with the default until you set one.
+
 To check the setting, sign in and open `/api/me`:
 
 ```bash
@@ -138,7 +141,9 @@ Startup problems are logged as `[setup]` lines and published as codes. The
 sign-in page (`/api/config`) shows only the codes a visitor may need. Codes
 about the host itself, currently `running_as_root` (the container could not
 drop root privileges), appear in the logs and in `setup_notices` of `/api/me`
-for owners and admins only.
+for owners and admins only. The table of codes and the ways to stop a
+container from running as root (`--user 10001`, `FSL_REQUIRE_NONROOT=1`) are
+in [DEPLOY.md](DEPLOY.md).
 
 ## Backup & restore
 

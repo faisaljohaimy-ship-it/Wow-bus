@@ -902,8 +902,9 @@ def main():
     print(f"[init] catalog={info['catalog_seeded']} ai_available={info['ai_available']}",
           file=sys.stderr)
 
-    # The connector registry is filled lazily and without a lock. Fill it here,
-    # before any thread exists, so the workers and the tool sync only read it.
+    # The connector registry is built on first use, under a lock. Build it
+    # here, before any thread exists, so no worker, request or tool sync has to
+    # wait for it.
     connector_names()
 
     # In-process worker(s) for standalone mode (disable with FSL_NO_WORKER=1 to

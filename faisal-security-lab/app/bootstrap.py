@@ -40,8 +40,9 @@ _NOTICE_LOG = {
     "owner_bootstrap_failed":
         "owner account bootstrap failed unexpectedly; see the error above.",
     "data_dir_unwritable":
-        "the data directory is not writable; using temporary storage "
-        "(data is lost on restart).",
+        "the data directory, or the location set in FSL_DB_PATH or "
+        "FSL_EVIDENCE_DIR, is not writable; temporary storage is used in its "
+        "place (what is kept there is lost on restart).",
     "running_as_root":
         "the container could not drop root privileges; the service and its scan "
         "tools are running as root.",

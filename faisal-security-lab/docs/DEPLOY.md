@@ -57,6 +57,7 @@ problem, and the sign-in page explains what to change:
 |---|---|---|
 | `owner_password_too_short` | `FSL_OWNER_PASSWORD` is under 10 characters; **no owner account exists** | set a longer value, redeploy |
 | `owner_email_invalid` | `FSL_OWNER_EMAIL` is not an email | sign in with `owner@faisal-security-lab.local`, or fix the value |
+| `owner_email_ignored` | `FSL_OWNER_EMAIL` is not an email and an owner account already exists; nothing was created or changed | sign in with the existing owner address, or fix the value |
 | `owner_password_generated` | no password was set | read the one-time password in the service logs |
 | `data_dir_unwritable` | the data directory (or an explicit `FSL_DB_PATH` / `FSL_EVIDENCE_DIR`) cannot be written | that location is temporary; fix the mount/ownership |
 
@@ -75,7 +76,9 @@ user `fsl` (uid/gid 10001) before the server starts.
   user, as `--cap-drop ALL` does) the entrypoint logs
   `could not drop privileges; continuing as the current user`, sets
   `FSL_PRIVDROP_FAILED=1`, and the server keeps running as the user the host
-  started it with and reports that as a setup notice.
+  started it with. When that user is root it reports the notice
+  `running_as_root`: in the logs and, for a signed-in owner or admin, in
+  `setup_notices` of `/api/me`. The sign-in page does not show it.
 - **`FSL_REQUIRE_NONROOT=1`** turns that case into a hard stop: the container
   prints an error and exits with status 1 instead of running as root.
 - **`--user 10001`** is the way to combine dropped capabilities with a non-root
@@ -100,6 +103,9 @@ and not on every boot.
 By default the server identifies a client by the socket peer address and ignores forwarding headers. Behind a platform proxy set FSL_CLIENT_IP_HEADER to the single-value header the platform sets (CF-Connecting-IP on Render, Fly-Client-IP on Fly.io), or set FSL_TRUSTED_PROXY_HOPS to the number of trusted proxies that append to X-Forwarded-For. A wrong value makes sign-in limits shared between visitors; a signed-in owner can see the detected address and its source in Settings.
 
 `render.yaml` and `fly.toml` already set `FSL_CLIENT_IP_HEADER` for their platform.
+The detected address and its source are also returned as `client` by `/api/me`;
+[OPERATIONS.md](OPERATIONS.md) ("Sign-in protection") shows how to read it and
+lists the sign-in limits.
 
 ## Enabling the AI layer later
 Set `FSL_AI_PROVIDER` + `FSL_AI_BASE_URL` + `FSL_AI_MODEL` + `FSL_AI_API_KEY` (any
