@@ -1,0 +1,27 @@
+# Single-image deploy (API + UI + in-process worker + security tools) for Fly.io
+# or any container host. Listens on 0.0.0.0:8080.
+FROM python:3.13-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git ca-certificates curl tar && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY scripts/install-tools.sh ./scripts/install-tools.sh
+# Install the real security tools (pinned). Trivy is optional and tolerated.
+RUN bash scripts/install-tools.sh /usr/local/bin /opt/sectools-venv || true
+
+COPY app ./app
+COPY web ./web
+COPY data ./data
+
+ENV FSL_BIND_HOST=0.0.0.0 \
+    FSL_PORT=8080 \
+    FSL_DATA_DIR=/data \
+    PATH="/usr/local/bin:${PATH}"
+EXPOSE 8080
+VOLUME ["/data"]
+
+RUN useradd -m -u 10001 fsl && mkdir -p /data && chown fsl /data
+USER fsl
+# In-process workers are enabled (FSL_NO_WORKER is unset).
+CMD ["python3", "-m", "app.server"]
