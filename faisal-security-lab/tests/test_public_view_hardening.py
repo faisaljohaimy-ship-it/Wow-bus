@@ -939,12 +939,21 @@ class TestGuestConnectorListing(HardeningCase):
                 self.assertEqual(self.get("/api/connectors")[0], 200)
             self.assertEqual(live.call_count, 0)
             self.assertEqual(self.probes, [])
-            # A signed-in caller still gets a live probe on every request.
+            # A signed-in caller is answered from the registry too: opening a
+            # screen must not run every tool's version command.
             token = self.owner_token()
             for _ in range(2):
-                self.assertEqual(self.get("/api/connectors", token=token)[0], 200)
-            self.assertEqual(live.call_count, 2)
-        self.assertGreater(len(self.probes), 5)
+                status, body = self.get("/api/connectors", token=token)
+                self.assertEqual(status, 200)
+                self.assertGreater(len(body["connectors"]), 5)
+            self.assertEqual((live.call_count, self.probes), (0, []))
+            # A fresh probe is there when asked for.
+            self.assertEqual(self.get("/api/connectors?live=1", token=token)[0], 200)
+            self.assertEqual(live.call_count, 1)
+            # The flag does nothing for a guest.
+            self.probes.clear()
+            self.assertEqual(self.get("/api/connectors?live=1")[0], 200)
+            self.assertEqual((live.call_count, self.probes), (1, []))
         for name in ("GUEST_CONNECTORS_TTL", "_CONNECTORS_CACHE", "_CONNECTORS_LOCK"):
             self.assertFalse(hasattr(server, name), name)
 
@@ -953,7 +962,7 @@ class TestGuestConnectorListing(HardeningCase):
         from app.connectors import connector_names, sync_registry
         sync_registry()
         store.set_tool_state("bandit", "verified", verified_ref="bandit@test")
-        _, live = self.get("/api/connectors", token=self.owner_token())
+        _, live = self.get("/api/connectors?live=1", token=self.owner_token())
         _, guest = self.get("/api/connectors")
         live = {c["name"]: c for c in live["connectors"]}
         guest = {c["name"]: c for c in guest["connectors"]}
@@ -967,6 +976,19 @@ class TestGuestConnectorListing(HardeningCase):
             self.assertNotIn("path", entry["readiness"])
         self.assertEqual(guest["bandit"]["state"], "verified")
         self.assertEqual(guest["gitleaks"]["state"], "ready")
+
+    def test_a_signed_in_caller_is_not_made_to_wait_for_the_first_sync(self):
+        from app.connectors import connector_names
+        token = self.owner_token()
+        status, body = self.get("/api/connectors", token=token)
+        self.assertEqual(status, 200)
+        self.assertEqual(self.probes, [])                         # nothing was run
+        self.assertEqual(sorted(c["name"] for c in body["connectors"]), connector_names())
+        for entry in body["connectors"]:
+            self.assertEqual(entry["state"], "checking")
+            self.assertEqual(entry["readiness"],
+                             {"available": False, "detail": "tools are still being checked"})
+            self.assertIn("capabilities", entry)
 
     def test_a_registry_row_without_a_connector_is_still_listed(self):
         from app import store

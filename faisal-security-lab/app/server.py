@@ -893,9 +893,11 @@ def tools_sync(req: Req):
     return 200, {"synced": out}
 
 
-# Readiness is probed live for signed-in callers (it runs each tool's version
-# command). A guest is answered from the stored tool registry instead, so
-# anonymous traffic never starts a process on the server.
+# Probing readiness runs every tool's version command, which takes seconds on a
+# laptop and minutes on a small instance. The listing is therefore read from
+# the stored tool registry (filled by the startup sync and by an admin's
+# POST /api/tools/sync). A signed-in caller can ask for a fresh probe with
+# ?live=1; a guest never starts a process on the server.
 def _connectors_live() -> list:
     out = []
     for c in all_connectors():
@@ -924,11 +926,23 @@ def _connectors_from_registry() -> list:
     return out
 
 
+def _connectors_pending() -> list:
+    """The listing for a signed-in caller before the first registry sync has
+    finished: what the code knows about each connector, nothing probed."""
+    return [{"name": c.name, "category": c.category, "source": c.source,
+             "license": c.license, "connector_type": c.connector_type,
+             "capabilities": c.capabilities(),
+             "readiness": {"available": False, "detail": "tools are still being checked"},
+             "state": "checking"} for c in all_connectors()]
+
+
 @route("GET", r"/api/connectors", guest_ok=True)
 def connectors(req: Req):
     if req.principal.guest:
         return 200, {"connectors": _connectors_from_registry()}
-    return 200, {"connectors": _connectors_live()}
+    if req.q("live") == "1":
+        return 200, {"connectors": _connectors_live()}
+    return 200, {"connectors": _connectors_from_registry() or _connectors_pending()}
 
 
 # ===========================================================================

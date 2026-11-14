@@ -33,6 +33,7 @@ const I18N = {
     open:"فتح", download:"تنزيل", report_note:"التقارير منقّحة: القيم الحساسة محجوبة.",
     throttled:"محاولات دخول خاطئة كثيرة من هذا الجهاز. انتظر {m} دقيقة ثم حاول من جديد.",
     signinbusy:"تسجيل الدخول مشغول الآن. انتظر بضع ثوانٍ ثم حاول من جديد.",
+    ftitle:"العنوان",
     connection:"الاتصال", yourip:"عنوانك كما يراه الخادم", ipsource:"مصدر العنوان",
     src_header:"ترويسة منصّة الاستضافة", src_forwarded:"X-Forwarded-For", src_peer:"اتصال مباشر",
     proxywarn:"تصل الطلبات عبر وسيط لكن الخادم غير مضبوط للوثوق به، فيظهر كل الزوّار بعنوان واحد وتُحتسب محاولات الدخول الخاطئة عليهم جميعًا. اضبط FSL_CLIENT_IP_HEADER في إعدادات الاستضافة.",
@@ -62,6 +63,7 @@ const I18N = {
     open:"Open", download:"Download", report_note:"Reports are redacted: sensitive values are withheld.",
     throttled:"Too many wrong sign-in attempts from this device. Wait {m} minutes, then try again.",
     signinbusy:"Sign-in is busy right now. Wait a few seconds, then try again.",
+    ftitle:"Title",
     connection:"Connection", yourip:"Your address as the server sees it", ipsource:"Address source",
     src_header:"hosting platform header", src_forwarded:"X-Forwarded-For", src_peer:"direct connection",
     proxywarn:"Requests arrive through a proxy the server is not set to trust, so every visitor appears under one address and wrong sign-in attempts count against all of them. Set FSL_CLIENT_IP_HEADER in the hosting settings.",
@@ -204,6 +206,15 @@ function decorate(){
     if (tb.parentElement.classList.contains("tablewrap")) return;
     const wrap = document.createElement("div"); wrap.className = "tablewrap";
     tb.parentNode.insertBefore(wrap, tb); wrap.appendChild(tb);
+  });
+  // Name every cell after its column, so a phone can show a row as a list.
+  document.querySelectorAll(".tablewrap > table").forEach(tb => {
+    const heads = [...tb.querySelectorAll("thead th")].map(th => th.textContent.trim());
+    if (!heads.length) return;
+    tb.classList.add("stack");
+    tb.querySelectorAll("tbody > tr").forEach(tr => [...tr.children].forEach((td, i) => {
+      if (!td.hasAttribute("data-label") && !td.hasAttribute("colspan")) td.setAttribute("data-label", heads[i] || "");
+    }));
   });
   if (S.guest && !S.token) document.querySelectorAll(OWNER_ACTS).forEach(el => el.setAttribute("data-owner",""));
 }
@@ -387,7 +398,7 @@ async function scrScans(){
     + h`<div class="card"><h2>${esc(t("run"))}</h2>
       <form id="scanform" class="row">
         <div><label>${esc(t("scope"))}</label><select name="scope_id">${activeScopes.map(s=>`<option value="${s.id}" data-asset="${s.asset_id}" data-types='${JSON.stringify(s.scan_types)}'>${esc(s.asset_id)} · ${esc(s.environment)}</option>`).join("")}</select></div>
-        <div><label>${esc(t("connector"))}</label><select name="connector" id="connsel">${conn.connectors.map(c=>`<option value="${c.name}">${c.name} ${c.readiness.available?"":"(blocked)"}</option>`).join("")}</select></div>
+        <div><label>${esc(t("connector"))}</label><select name="connector" id="connsel">${conn.connectors.map(c=>`<option value="${c.name}">${c.name} ${c.readiness.available?"":(c.state==="checking"?"(…)":"(blocked)")}</option>`).join("")}</select></div>
         <div><button class="btn primary">${esc(t("run"))}</button></div>
       </form><div class="small muted" style="margin-top:6px">${esc(t("unauthorized"))}</div></div>
     <div class="card"><h2>${esc(t("jobs"))}</h2><table><thead><tr><th>${esc(t("connector"))}</th><th>${esc(t("status"))}</th><th>phase</th><th>progress</th><th>${esc(t("tool"))}</th><th></th></tr></thead>
@@ -403,7 +414,7 @@ async function scrFindings(){
   const pid=S.project.id;
   const f=await api(`/api/projects/${pid}/findings`);
   setMain(topbar(t("findings"), `<button class="btn sm" data-act="refresh">↻ ${esc(t("refresh"))}</button>`)
-    + h`<div class="card"><table><thead><tr><th>${esc(t("severity"))}</th><th>${esc(t("priority"))}</th><th>${esc(t("tool"))}</th><th>${esc(t("location"))}</th><th>${esc(t("verification"))}</th><th>${esc(t("status"))}</th><th>Title</th></tr></thead>
+    + h`<div class="card"><table><thead><tr><th>${esc(t("severity"))}</th><th>${esc(t("priority"))}</th><th>${esc(t("tool"))}</th><th>${esc(t("location"))}</th><th>${esc(t("verification"))}</th><th>${esc(t("status"))}</th><th>${esc(t("ftitle"))}</th></tr></thead>
       <tbody>${f.findings.map(x=>{const loc=x.location||{};const L=(loc.file||loc.url||loc.host||loc.package||"")+(loc.line?":"+loc.line:"");
         return `<tr data-act="finding" data-fid="${x.id}" style="cursor:pointer"><td><span class="badge sev-${x.severity}">${x.severity}</span></td>
         <td class="mono">${x.work_priority}</td><td class="small">${esc(x.connector)}</td><td class="mono-sm">${esc(L)}</td>

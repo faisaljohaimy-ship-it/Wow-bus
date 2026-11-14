@@ -30,7 +30,7 @@ rollout; the registry records version + last-verified reference per tool.
 
 ```bash
 curl -s localhost:8787/api/health
-curl -s -H "Authorization: Bearer $TOK" localhost:8787/api/connectors   # readiness per connector
+curl -s -H "Authorization: Bearer $TOK" localhost:8787/api/connectors   # readiness per connector, from the last sync (?live=1 probes now)
 curl -s -H "Authorization: Bearer $TOK" localhost:8787/api/tools         # registry states
 ```
 

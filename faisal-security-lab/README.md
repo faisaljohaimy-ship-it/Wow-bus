@@ -51,7 +51,7 @@ by default and strictly read-only; guests are never sent evidence text or server
 paths — see [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ```bash
-make test                   # 279 unit + integration tests (real tools where present)
+make test                   # 280 unit + integration tests (real tools where present)
 make acceptance             # the 10 release-acceptance gates → evidence/acceptance-report.json
 ```
 

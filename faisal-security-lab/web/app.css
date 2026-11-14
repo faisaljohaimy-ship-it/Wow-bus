@@ -125,7 +125,13 @@ select#projsel{width:100%;background:#000;border:1px solid var(--text);color:var
 /* tables inside cards scroll sideways on a phone instead of breaking the page */
 .tablewrap{overflow-x:auto;margin-inline:-6px;padding-inline:6px}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
-th,td{border-block-end:1px solid #33000f55;padding:9px 8px;text-align:start;vertical-align:top}
+th,td{border-block-end:1px solid #33000f55;padding:9px 8px;text-align:start;vertical-align:top;
+  overflow-wrap:break-word}
+/* The page breaks long words anywhere, which lets a table column shrink to one
+   letter. In a table a column is at least as wide as its longest word, and the
+   table scrolls inside its card if that does not fit. */
+th{white-space:nowrap}
+td.mono-sm{overflow-wrap:anywhere;min-width:9rem}
 th{font-weight:750;font-size:12px;letter-spacing:.3px}
 tr[data-act]{cursor:pointer}
 tr[data-act]:hover td{background:#ff7a8355}
@@ -140,7 +146,7 @@ tr[data-act]:hover td{background:#ff7a8355}
 .card .pill,.drawer .pill,.stat .pill,.login .pill{border-color:var(--stroke)}
 
 label{display:block;font-size:12.5px;font-weight:700;margin:10px 0 4px}
-input[type=text],input[type=email],input[type=password],input[type=number],select,textarea{
+input:not([type]),input[type=text],input[type=email],input[type=password],input[type=number],select,textarea{
   width:100%;background:var(--card2);border:1px solid var(--stroke);color:var(--ink);
   padding:9px 10px;border-radius:8px;font-size:15px;min-height:44px;caret-color:var(--ink)}
 input::placeholder,textarea::placeholder{color:#3a1118;opacity:1}
@@ -215,6 +221,17 @@ body.guest form,body.guest [data-owner]{display:none !important}
   .grid.cols-4{grid-template-columns:repeat(2,minmax(0,1fr))}
   .grid.cols-3,.grid.cols-2{grid-template-columns:1fr}
   .kv{grid-template-columns:1fr}
+}
+/* On a phone a table with headings is shown as a list: one block per row,
+   each value after its heading (set as data-label by the script). */
+@media (max-width:640px){
+  table.stack,table.stack tbody,table.stack tr,table.stack td{display:block;width:100%}
+  table.stack thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  table.stack tr{border-block-end:2px solid #33000f66;padding-block:8px}
+  table.stack tr:last-child{border-block-end:0}
+  table.stack td{border:0;padding:3px 0;min-width:0;overflow-wrap:anywhere}
+  table.stack td[data-label]:not([data-label=""])::before{content:attr(data-label) ": ";font-weight:700;
+    font-family:Tahoma,'Segoe UI',Arial,sans-serif;font-size:13.5px}
 }
 @media (prefers-reduced-motion:reduce){
   html:not(.motion) .mask .laser,html:not(.motion) .codebar>span{animation-play-state:paused}
