@@ -1,0 +1,531 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "bandit",
+          "informationUri": "",
+          "version": "bandit 1.9.4",
+          "rules": [
+            {
+              "id": "bandit:B602",
+              "shortDescription": {
+                "text": "subprocess_popen_with_shell_equals_true"
+              },
+              "properties": {
+                "cwe": "CWE-78"
+              }
+            },
+            {
+              "id": "bandit:B501",
+              "shortDescription": {
+                "text": "request_with_no_cert_validation"
+              },
+              "properties": {
+                "cwe": "CWE-295"
+              }
+            },
+            {
+              "id": "bandit:B324",
+              "shortDescription": {
+                "text": "hashlib"
+              },
+              "properties": {
+                "cwe": "CWE-327"
+              }
+            },
+            {
+              "id": "bandit:B506",
+              "shortDescription": {
+                "text": "yaml_load"
+              },
+              "properties": {
+                "cwe": "CWE-20"
+              }
+            },
+            {
+              "id": "bandit:B307",
+              "shortDescription": {
+                "text": "blacklist"
+              },
+              "properties": {
+                "cwe": "CWE-78"
+              }
+            },
+            {
+              "id": "bandit:B113",
+              "shortDescription": {
+                "text": "request_without_timeout"
+              },
+              "properties": {
+                "cwe": "CWE-400"
+              }
+            },
+            {
+              "id": "bandit:B404",
+              "shortDescription": {
+                "text": "blacklist"
+              },
+              "properties": {
+                "cwe": "CWE-78"
+              }
+            },
+            {
+              "id": "bandit:B105",
+              "shortDescription": {
+                "text": "hardcoded_password_string"
+              },
+              "properties": {
+                "cwe": "CWE-259"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "bandit:B602",
+          "level": "error",
+          "message": {
+            "text": "subprocess_popen_with_shell_equals_true"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app.py"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "severity": "high",
+            "workPriority": 82,
+            "verification": "needs_verification"
+          }
+        },
+        {
+          "ruleId": "bandit:B501",
+          "level": "error",
+          "message": {
+            "text": "request_with_no_cert_validation"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app.py"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "severity": "high",
+            "workPriority": 82,
+            "verification": "needs_verification"
+          }
+        },
+        {
+          "ruleId": "bandit:B324",
+          "level": "error",
+          "message": {
+            "text": "hashlib"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app.py"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "severity": "high",
+            "workPriority": 82,
+            "verification": "needs_verification"
+          }
+        },
+        {
+          "ruleId": "bandit:B506",
+          "level": "warning",
+          "message": {
+            "text": "yaml_load"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app.py"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "severity": "medium",
+            "workPriority": 55,
+            "verification": "needs_verification"
+          }
+        },
+        {
+          "ruleId": "bandit:B307",
+          "level": "warning",
+          "message": {
+            "text": "blacklist"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app.py"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "severity": "medium",
+            "workPriority": 55,
+            "verification": "needs_verification"
+          }
+        },
+        {
+          "ruleId": "bandit:B113",
+          "level": "warning",
+          "message": {
+            "text": "request_without_timeout"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app.py"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "severity": "medium",
+            "workPriority": 40,
+            "verification": "needs_verification"
+          }
+        },
+        {
+          "ruleId": "bandit:B404",
+          "level": "note",
+          "message": {
+            "text": "blacklist"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app.py"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "severity": "low",
+            "workPriority": 27,
+            "verification": "needs_verification"
+          }
+        },
+        {
+          "ruleId": "bandit:B105",
+          "level": "note",
+          "message": {
+            "text": "hardcoded_password_string"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app.py"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "severity": "low",
+            "workPriority": 22,
+            "verification": "needs_verification"
+          }
+        },
+        {
+          "ruleId": "bandit:B105",
+          "level": "note",
+          "message": {
+            "text": "hardcoded_password_string"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app.py"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "severity": "low",
+            "workPriority": 22,
+            "verification": "needs_verification"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "gitleaks",
+          "informationUri": "",
+          "version": "gitleaks version 8.21.2",
+          "rules": [
+            {
+              "id": "gitleaks:github-pat",
+              "shortDescription": {
+                "text": "Potential secret=«redacted» a GitHub Personal Access Token, potentially leading to unauthorized repository access and se"
+              },
+              "properties": {
+                "cwe": "CWE-798"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "gitleaks:github-pat",
+          "level": "error",
+          "message": {
+            "text": "Potential secret=«redacted» a GitHub Personal Access Token, potentially leading to unauthorized repository access and sensitive content exposure."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app.py"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "severity": "high",
+            "workPriority": 77,
+            "verification": "needs_verification"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "semgrep",
+          "informationUri": "",
+          "version": "1.185.0",
+          "rules": [
+            {
+              "id": "python-requests-verify-false",
+              "shortDescription": {
+                "text": "Disabling TLS verification (verify=False) allows machine-in-the-middle attacks. Keep certificate verification enabled."
+              },
+              "properties": {
+                "cwe": "CWE-295: Improper Certificate Validation"
+              }
+            },
+            {
+              "id": "python-subprocess-shell-true",
+              "shortDescription": {
+                "text": "subprocess call with shell=True can lead to OS command injection when any argument is attacker-influenced. Pass an argum"
+              },
+              "properties": {
+                "cwe": "CWE-78: Improper Neutralization of Special Elements used in an OS Command"
+              }
+            },
+            {
+              "id": "python-dangerous-eval-exec",
+              "shortDescription": {
+                "text": "Use of eval()/exec() on dynamic input allows arbitrary code execution. Avoid eval/exec; parse data explicitly."
+              },
+              "properties": {
+                "cwe": "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+              }
+            },
+            {
+              "id": "python-yaml-unsafe-load",
+              "shortDescription": {
+                "text": "yaml.load without SafeLoader can instantiate arbitrary Python objects. Use yaml.safe_load()."
+              },
+              "properties": {
+                "cwe": "CWE-502: Deserialization of Untrusted Data"
+              }
+            },
+            {
+              "id": "python-weak-hash-md5",
+              "shortDescription": {
+                "text": "MD5 is cryptographically broken. Use SHA-256 or better for security purposes (not for passwords — use a KDF)."
+              },
+              "properties": {
+                "cwe": "CWE-327: Use of a Broken or Risky Cryptographic Algorithm"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "python-requests-verify-false",
+          "level": "error",
+          "message": {
+            "text": "Disabling TLS verification (verify=False) allows machine-in-the-middle attacks. Keep certificate verification enabled."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app.py"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "severity": "high",
+            "workPriority": 77,
+            "verification": "needs_verification"
+          }
+        },
+        {
+          "ruleId": "python-subprocess-shell-true",
+          "level": "error",
+          "message": {
+            "text": "subprocess call with shell=True can lead to OS command injection when any argument is attacker-influenced. Pass an argument list and shell=False."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app.py"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "severity": "high",
+            "workPriority": 77,
+            "verification": "needs_verification"
+          }
+        },
+        {
+          "ruleId": "python-dangerous-eval-exec",
+          "level": "error",
+          "message": {
+            "text": "Use of eval()/exec() on dynamic input allows arbitrary code execution. Avoid eval/exec; parse data explicitly."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app.py"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "severity": "high",
+            "workPriority": 77,
+            "verification": "needs_verification"
+          }
+        },
+        {
+          "ruleId": "python-yaml-unsafe-load",
+          "level": "warning",
+          "message": {
+            "text": "yaml.load without SafeLoader can instantiate arbitrary Python objects. Use yaml.safe_load()."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app.py"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "severity": "medium",
+            "workPriority": 50,
+            "verification": "needs_verification"
+          }
+        },
+        {
+          "ruleId": "python-weak-hash-md5",
+          "level": "warning",
+          "message": {
+            "text": "MD5 is cryptographically broken. Use SHA-256 or better for security purposes (not for passwords — use a KDF)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app.py"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "severity": "medium",
+            "workPriority": 50,
+            "verification": "needs_verification"
+          }
+        }
+      ]
+    }
+  ]
+}

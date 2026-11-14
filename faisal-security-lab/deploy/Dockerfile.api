@@ -1,0 +1,13 @@
+# API + UI host. No security-tool binaries here — the API never runs scans.
+FROM python:3.13-slim
+WORKDIR /app
+COPY app ./app
+COPY web ./web
+COPY data ./data
+ENV FSL_BIND_HOST=0.0.0.0 FSL_PORT=8787 FSL_NO_WORKER=1 FSL_DATA_DIR=/data
+VOLUME ["/data"]
+EXPOSE 8787
+# Runs as non-root.
+RUN useradd -m -u 10001 fsl && mkdir -p /data && chown fsl /data
+USER fsl
+CMD ["python3", "-m", "app.server"]
