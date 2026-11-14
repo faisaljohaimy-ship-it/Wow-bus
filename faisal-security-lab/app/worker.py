@@ -293,7 +293,12 @@ def main():  # `python -m app.worker`
     import sys
     from .config import get_config
     from .db import get_db
-    get_config()
+    if get_config().data_dir_fallback:
+        # Temporary storage is private to this process: its database is empty
+        # and no API ever writes jobs to it, so polling it can never do work.
+        print("[worker] data directory is not writable; a standalone worker needs "
+              "the same data directory as the API. Exiting.", file=sys.stderr)
+        sys.exit(1)
     get_db()
     w = Worker()
     print(f"[worker] {w.worker_id} started; polling queue. Ctrl-C to stop.", file=sys.stderr)

@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import secrets
 import tempfile
+import threading
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
@@ -41,6 +42,28 @@ def _usable_dir(path: Path) -> bool:
         return True
     except OSError:
         return False
+
+
+# Temporary storage root used in place of a location that is not usable. It is
+# created once per process so every Config.from_env() call resolves to the same
+# directory (and therefore the same database and session secret).
+_FALLBACK_DIR: Path | None = None
+_FALLBACK_LOCK = threading.Lock()
+
+
+def _fallback_dir() -> Path:
+    global _FALLBACK_DIR
+    with _FALLBACK_LOCK:
+        if _FALLBACK_DIR is None:
+            _FALLBACK_DIR = Path(tempfile.mkdtemp(prefix="fsl-data-")).resolve()
+        return _FALLBACK_DIR
+
+
+def reset_fallback_dir_for_tests() -> None:
+    """Forget the cached temporary storage root; the next fallback makes a new one."""
+    global _FALLBACK_DIR
+    with _FALLBACK_LOCK:
+        _FALLBACK_DIR = None
 
 
 @dataclass(frozen=True)
@@ -100,8 +123,9 @@ class Config:
     seed_catalog_path: Path
     limits: Limits = field(default_factory=Limits)
     ai: AIConfig = field(default_factory=AIConfig)
-    # True when the configured data directory was not writable (for example a
-    # root-owned disk mounted for a non-root process) and temporary storage is
+    # True when the data directory, the database location or the evidence
+    # directory was not writable (for example a root-owned disk mounted for a
+    # non-root process) and a location under temporary storage is
     # used instead. The service stays up and reports it rather than crashing.
     data_dir_fallback: bool = False
 
@@ -110,18 +134,20 @@ class Config:
         data_dir = Path(_env("FSL_DATA_DIR", str(Path(__file__).resolve().parent.parent / "var"))).resolve()
         data_dir_fallback = False
         if not _usable_dir(data_dir):
-            data_dir = Path(tempfile.mkdtemp(prefix="fsl-data-"))
+            data_dir = _fallback_dir()
             data_dir_fallback = True
-        if data_dir_fallback:
-            # Explicit paths most likely point into the same unwritable place.
-            evidence_dir = data_dir / "evidence"
-            db_path = data_dir / "faisal-security-lab.db"
-        else:
-            evidence_dir = Path(_env("FSL_EVIDENCE_DIR", str(data_dir / "evidence"))).resolve()
-            db_path = Path(_env("FSL_DB_PATH", str(data_dir / "faisal-security-lab.db"))).resolve()
+        # Each location is checked on its own: an explicit FSL_EVIDENCE_DIR or
+        # FSL_DB_PATH that is usable is kept even when the data directory is
+        # not, and only an unusable one moves to temporary storage.
+        evidence_dir = Path(_env("FSL_EVIDENCE_DIR", str(data_dir / "evidence"))).resolve()
         if not _usable_dir(evidence_dir):
-            evidence_dir = data_dir / "evidence"
+            evidence_dir = _fallback_dir() / "evidence"
             evidence_dir.mkdir(parents=True, exist_ok=True)
+            data_dir_fallback = True
+        db_path = Path(_env("FSL_DB_PATH", str(data_dir / "faisal-security-lab.db"))).resolve()
+        if not _usable_dir(db_path.parent):
+            db_path = _fallback_dir() / "faisal-security-lab.db"
+            data_dir_fallback = True
         try:
             evidence_dir.chmod(0o700)
         except OSError:

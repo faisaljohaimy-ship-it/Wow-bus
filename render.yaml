@@ -27,3 +27,5 @@ services:
         sync: false   # Render asks you to type this when you deploy (10+ characters)
       - key: FSL_WORKER_CONCURRENCY
         value: "1"    # one scan at a time fits the free plan's memory
+      - key: FSL_CLIENT_IP_HEADER
+        value: CF-Connecting-IP   # Render traffic arrives through Cloudflare, which sets this to the visitor's address
