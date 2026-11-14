@@ -35,6 +35,14 @@ Two deployable roles share one SQLite database (WAL):
    bearer token, stored hashed). Client-supplied identity headers are ignored.
    Every route re-derives the principal and checks RBAC. Request bodies are size
    capped; responses carry a strict CSP and other security headers.
+   *Optional public read-only view (`FSL_PUBLIC_VIEW=1`, off by default):* a
+   request with **no** `Authorization` header may resolve a `GuestPrincipal`, but
+   only on GET routes registered with `guest_ok=True` (`app/server.py`). The guest
+   has no global role and is `reader` of exactly one project — the demo project
+   owned by a reserved, non-loginable system account (`app/demo.py`) — so the same
+   `require_project` checks that isolate tenants confine it. Any presented
+   credential, valid or not, is validated as before. Guests are rate limited per
+   client address.
 2. **API ↔ queue.** A job is only enqueued after `policy.evaluate_job` passes with
    the caller's principal. The policy engine is the single authorization chokepoint.
 3. **Queue ↔ worker.** The worker re-evaluates policy at execution time with no

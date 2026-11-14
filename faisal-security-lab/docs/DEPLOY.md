@@ -59,9 +59,40 @@ problem, and the sign-in page explains what to change:
 | `owner_email_invalid` | `FSL_OWNER_EMAIL` is not an email | sign in with `owner@faisal-security-lab.local`, or fix the value |
 | `owner_password_generated` | no password was set | read the one-time password in the service logs |
 | `data_dir_unwritable` | the data directory cannot be written | data is temporary; fix the mount/ownership |
+| `demo_sample_missing` | `FSL_PUBLIC_VIEW` is on but `samples/vulnerable-app` is not in the image | rebuild with `deploy/Dockerfile.fly` (it copies `samples/`) |
 
 The single-image container starts as root only to make a host-mounted `/data`
 writable (a Fly volume is root-owned), then drops to an unprivileged user.
+
+## Optional: public read-only view
+Off by default. Set `FSL_PUBLIC_VIEW=1` to let anyone who opens the site look
+around **without signing in**. It is strictly read-only and limited to one demo
+project:
+
+- On start (after the port is bound, in the background) the platform creates the
+  project **"عرض توضيحي — Public demo"**, registers the bundled
+  `samples/vulnerable-app` as its only asset, grants a lab scope limited to that
+  directory, and runs one scan per ready demo connector. Defaults: `bandit`,
+  `gitleaks`, `pip_audit`; override with `FSL_DEMO_CONNECTORS=a,b,c` (only passive
+  source scanners are accepted). Restarting on a persistent disk reuses the same
+  project and does not scan again.
+- A visitor with no session is a **guest**: below `reader`, no global role, reader
+  of that one project. Guests can only call an explicit allowlist of GET routes
+  (project, assets, scopes, jobs, findings, report, catalog, tools, connectors,
+  AI status, and metrics for that project). Every POST, plus users, audit, the
+  stop switch, evidence text and platform-wide metrics, still returns 401/403.
+- A request that carries a bad or expired token gets 401, never guest data.
+- Guest traffic is rate limited per client address (240 requests/minute, HTTP 429).
+- The project is owned by a system account that cannot sign in. Signing in is
+  unchanged, and real projects are never visible to guests.
+
+Turning the variable off again removes guest access immediately on restart; the
+demo project itself stays in the database for signed-in admins.
+
+The demo is built for the single-image deploy (`deploy/Dockerfile.fly`), where the
+sample and the scanners live next to the API. In the split `deploy/compose.yaml`
+setup the API image carries neither, so the notice `demo_sample_missing` is shown
+and no demo project is created.
 
 ## Enabling the AI layer later
 Set `FSL_AI_PROVIDER` + `FSL_AI_BASE_URL` + `FSL_AI_MODEL` + `FSL_AI_API_KEY` (any

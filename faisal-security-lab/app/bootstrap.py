@@ -32,6 +32,10 @@ _NOTICE_LOG = {
     "data_dir_unwritable":
         "the data directory is not writable; using temporary storage "
         "(data is lost on restart).",
+    # Recorded by app/demo.py after startup (not by init_platform).
+    "demo_sample_missing":
+        "FSL_PUBLIC_VIEW is on but the bundled samples/vulnerable-app directory "
+        "is missing, so no public demo project was created.",
 }
 
 

@@ -8,6 +8,12 @@ Security posture:
   * Every state-changing route re-derives the principal and checks RBAC +
     (for scans) the policy engine, so a direct API call cannot bypass the UI.
   * Response security headers, request-size caps, and a simple per-IP rate limit.
+  * Optional public read-only view (FSL_PUBLIC_VIEW=1, off by default): a
+    request with no Authorization header may resolve a guest principal, but only
+    on GET routes explicitly registered with guest_ok=True. The guest has no
+    global role and is a reader of one demo project, so the per-project checks
+    in each handler confine it; every POST and every other route still needs a
+    session. A request that carries a bad or expired token is always 401.
 """
 from __future__ import annotations
 
@@ -19,7 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 
-from . import audit, auth, evidence, findings as F, metrics, policy, queue, reports, store, util
+from . import audit, auth, demo, evidence, findings as F, metrics, policy, queue, reports, store, util
 from .ai import agents, evalset
 from .bootstrap import SETUP_NOTICES, describe_notice, init_platform
 from .config import get_config
@@ -34,11 +40,22 @@ _RATE: dict = {}
 _RATE_LOCK = threading.Lock()
 
 
-def route(method: str, pattern: str, *, auth_required: bool = True, min_global: str | None = None):
+def route(method: str, pattern: str, *, auth_required: bool = True, min_global: str | None = None,
+          guest_ok: bool = False):
+    """Register a handler.
+
+    guest_ok=True puts a route on the public read-only allowlist: with
+    FSL_PUBLIC_VIEW on, a request without credentials reaches it as the guest
+    principal instead of getting 401. It is only accepted on authenticated GET
+    routes without a global-role requirement; anything else is a programming
+    error caught at import time."""
+    if guest_ok and (method != "GET" or not auth_required or min_global):
+        raise ValueError(f"guest_ok is only valid on plain authenticated GET routes: "
+                         f"{method} {pattern}")
     rx = re.compile("^" + pattern + "$")
 
     def deco(fn):
-        _ROUTES.append((method, rx, fn, auth_required, min_global))
+        _ROUTES.append((method, rx, fn, auth_required, min_global, guest_ok))
         return fn
     return deco
 
@@ -111,6 +128,41 @@ def login_record_success(email: str, ip: str) -> None:
         _LOGIN_FAILS.pop(_login_keys(email, ip)["pair"], None)
 
 
+# --- guest (public read-only view) throttling --------------------------------
+# Every request served to a guest is counted per client address in a fixed
+# one-minute window; beyond the limit the answer is HTTP 429. In-memory, per API
+# process. The client address comes from Handler._client_ip (same logic as the
+# sign-in throttle). The table is bounded: once it holds GUEST_MAX_CLIENTS
+# clients in the current window, new clients are refused until it rolls over,
+# which also caps total guest load when addresses are sprayed.
+GUEST_WINDOW_SECONDS = 60
+GUEST_LIMIT_PER_MINUTE = 240
+GUEST_MAX_CLIENTS = 4096
+_GUEST_HITS: dict[str, list] = {}       # client -> [window_start, count]
+_GUEST_LOCK = threading.Lock()
+
+
+def guest_rate_check(client: str, now: float | None = None) -> None:
+    """Count one guest request for this client; raise RateLimitError if over."""
+    now = time.time() if now is None else now
+    client = (client or "unknown")[:64]
+    with _GUEST_LOCK:
+        entry = _GUEST_HITS.get(client)
+        if entry is not None and now - entry[0] >= GUEST_WINDOW_SECONDS:
+            entry = None
+        if entry is None:
+            if len(_GUEST_HITS) >= GUEST_MAX_CLIENTS:
+                for key in [k for k, v in _GUEST_HITS.items()
+                            if now - v[0] >= GUEST_WINDOW_SECONDS]:
+                    _GUEST_HITS.pop(key, None)
+                if len(_GUEST_HITS) >= GUEST_MAX_CLIENTS:
+                    raise RateLimitError("too many visitors right now; try again in a minute")
+            entry = _GUEST_HITS[client] = [now, 0]
+        if entry[1] >= GUEST_LIMIT_PER_MINUTE:
+            raise RateLimitError("rate limit exceeded; slow down or sign in")
+        entry[1] += 1
+
+
 @route("POST", r"/api/auth/login", auth_required=False)
 def login(req: Req):
     email = str(req.body.get("email", ""))
@@ -137,10 +189,13 @@ def logout(req: Req):
     return 200, {"ok": True}
 
 
-@route("GET", r"/api/me")
+@route("GET", r"/api/me", guest_ok=True)
 def me(req: Req):
-    return 200, {"user": {"id": req.principal.user_id, "email": req.principal.email,
-                          "global_role": req.principal.global_role}}
+    user = {"id": req.principal.user_id, "email": req.principal.email,
+            "global_role": req.principal.global_role}
+    if req.principal.guest:
+        user["guest"] = True
+    return 200, {"user": user}
 
 
 @route("GET", r"/api/health", auth_required=False)
@@ -155,7 +210,8 @@ def config_public(req: Req):
     # sign-in page turns them into an explanation of what the operator must fix.
     return 200, {"environment": cfg.environment, "ai_available": cfg.ai.available,
                  "brand": "FAISAL.AI", "setup_notices": list(SETUP_NOTICES),
-                 "min_password_length": auth.MIN_PASSWORD_LENGTH}
+                 "min_password_length": auth.MIN_PASSWORD_LENGTH,
+                 "public_view": cfg.public_view}
 
 
 # ===========================================================================
@@ -179,8 +235,16 @@ def users_create(req: Req):
 # ===========================================================================
 # Projects / assets / scopes
 # ===========================================================================
-@route("GET", r"/api/projects")
+@route("GET", r"/api/projects", guest_ok=True)
 def projects_list(req: Req):
+    if req.principal.guest:
+        # A guest sees the public demo project and nothing else (an empty list
+        # until it exists). Never falls through to the membership query.
+        pid = auth.public_project_id()
+        try:
+            return 200, {"projects": [store.get_project(pid)] if pid else []}
+        except NotFoundError:
+            return 200, {"projects": []}
     return 200, {"projects": store.list_projects_for(req.principal.user_id, req.principal.global_role)}
 
 
@@ -192,7 +256,7 @@ def projects_create(req: Req):
     return 201, {"project": p}
 
 
-@route("GET", r"/api/projects/(?P<pid>[\w-]+)")
+@route("GET", r"/api/projects/(?P<pid>[\w-]+)", guest_ok=True)
 def project_get(req: Req):
     pid = req.params["pid"]
     req.principal.require_project(pid, "reader")
@@ -210,7 +274,7 @@ def project_add_member(req: Req):
     return 200, {"ok": True}
 
 
-@route("GET", r"/api/projects/(?P<pid>[\w-]+)/assets")
+@route("GET", r"/api/projects/(?P<pid>[\w-]+)/assets", guest_ok=True)
 def assets_list(req: Req):
     pid = req.params["pid"]
     req.principal.require_project(pid, "reader")
@@ -231,7 +295,7 @@ def assets_create(req: Req):
     return 201, {"asset": a}
 
 
-@route("GET", r"/api/projects/(?P<pid>[\w-]+)/scopes")
+@route("GET", r"/api/projects/(?P<pid>[\w-]+)/scopes", guest_ok=True)
 def scopes_list(req: Req):
     pid = req.params["pid"]
     req.principal.require_project(pid, "reader")
@@ -271,13 +335,13 @@ def scope_revoke(req: Req):
 # ===========================================================================
 # Catalog + tool registry + connectors
 # ===========================================================================
-@route("GET", r"/api/catalog")
+@route("GET", r"/api/catalog", guest_ok=True)
 def catalog(req: Req):
     return 200, {"categories": store.catalog_categories(),
                  "tools": store.list_catalog(req.q("category"))}
 
 
-@route("GET", r"/api/tools")
+@route("GET", r"/api/tools", guest_ok=True)
 def tools(req: Req):
     return 200, {"tools": store.list_tool_registry()}
 
@@ -289,8 +353,16 @@ def tools_sync(req: Req):
     return 200, {"synced": out}
 
 
-@route("GET", r"/api/connectors")
-def connectors(req: Req):
+# Readiness is probed live (it runs each tool's version command). Signed-in
+# callers always get a fresh probe. Guests get a result at most
+# GUEST_CONNECTORS_TTL seconds old, so anonymous traffic cannot be used to
+# spawn tool processes on demand.
+GUEST_CONNECTORS_TTL = 60
+_CONNECTORS_CACHE: dict = {"at": None, "data": None}
+_CONNECTORS_LOCK = threading.Lock()
+
+
+def _connectors_live() -> list:
     out = []
     for c in all_connectors():
         try:
@@ -300,7 +372,19 @@ def connectors(req: Req):
         out.append({"name": c.name, "category": c.category, "source": c.source,
                     "license": c.license, "connector_type": c.connector_type,
                     "capabilities": c.capabilities(), "readiness": r})
-    return 200, {"connectors": out}
+    return out
+
+
+@route("GET", r"/api/connectors", guest_ok=True)
+def connectors(req: Req):
+    if not req.principal.guest:
+        return 200, {"connectors": _connectors_live()}
+    with _CONNECTORS_LOCK:
+        at = _CONNECTORS_CACHE["at"]
+        if at is None or time.monotonic() - at >= GUEST_CONNECTORS_TTL:
+            _CONNECTORS_CACHE["data"] = _connectors_live()
+            _CONNECTORS_CACHE["at"] = time.monotonic()
+        return 200, {"connectors": _CONNECTORS_CACHE["data"]}
 
 
 # ===========================================================================
@@ -337,14 +421,14 @@ def scan_enqueue(req: Req):
     return 201, {"job": job}
 
 
-@route("GET", r"/api/projects/(?P<pid>[\w-]+)/jobs")
+@route("GET", r"/api/projects/(?P<pid>[\w-]+)/jobs", guest_ok=True)
 def jobs_list(req: Req):
     pid = req.params["pid"]
     req.principal.require_project(pid, "reader")
     return 200, {"jobs": queue.list_jobs(pid, state=req.q("state"))}
 
 
-@route("GET", r"/api/jobs/(?P<jid>[\w-]+)")
+@route("GET", r"/api/jobs/(?P<jid>[\w-]+)", guest_ok=True)
 def job_get(req: Req):
     job = queue.get_job(req.params["jid"])
     req.principal.require_project(job["project_id"], "reader")
@@ -363,7 +447,7 @@ def job_stop(req: Req):
 # ===========================================================================
 # Findings
 # ===========================================================================
-@route("GET", r"/api/projects/(?P<pid>[\w-]+)/findings")
+@route("GET", r"/api/projects/(?P<pid>[\w-]+)/findings", guest_ok=True)
 def findings_list(req: Req):
     pid = req.params["pid"]
     req.principal.require_project(pid, "reader")
@@ -371,7 +455,7 @@ def findings_list(req: Req):
                                              status=req.q("status"), connector=req.q("connector"))}
 
 
-@route("GET", r"/api/findings/(?P<fid>[\w-]+)")
+@route("GET", r"/api/findings/(?P<fid>[\w-]+)", guest_ok=True)
 def finding_get(req: Req):
     f = F.get_finding(req.params["fid"])
     req.principal.require_project(f["project_id"], "reader")
@@ -434,7 +518,7 @@ def evidence_read(req: Req):
 # ===========================================================================
 # Reports
 # ===========================================================================
-@route("GET", r"/api/projects/(?P<pid>[\w-]+)/report")
+@route("GET", r"/api/projects/(?P<pid>[\w-]+)/report", guest_ok=True)
 def report(req: Req):
     pid = req.params["pid"]
     req.principal.require_project(pid, "reader")
@@ -452,7 +536,7 @@ def report(req: Req):
 # ===========================================================================
 # AI
 # ===========================================================================
-@route("GET", r"/api/ai/status")
+@route("GET", r"/api/ai/status", guest_ok=True)
 def ai_status(req: Req):
     cfg = get_config()
     return 200, {"available": cfg.ai.available, "provider": cfg.ai.provider,
@@ -510,8 +594,10 @@ def admin_stop_set(req: Req):
     return 200, {"engaged": engaged}
 
 
-@route("GET", r"/api/metrics")
+@route("GET", r"/api/metrics", guest_ok=True)
 def metrics_global(req: Req):
+    # Guest-readable only with ?project=<the public project>: platform-wide
+    # metrics need a global role, which a guest never has.
     pid = req.q("project")
     if pid:
         req.principal.require_project(pid, "reader")
@@ -582,6 +668,20 @@ class Handler(BaseHTTPRequestHandler):
             return auth_h[7:].strip()
         return None
 
+    def _guest_allowed(self, method: str, guest_ok: bool) -> bool:
+        """True when this request is served as the read-only guest.
+
+        All four must hold: the public view is switched on, the route is on the
+        guest allowlist, the method is GET, and the request carries no
+        Authorization header at all. Presenting any credential (even a
+        malformed, unknown or expired one) opts out, so it is validated and
+        rejected with 401 like before rather than silently downgraded."""
+        if not guest_ok or method != "GET":
+            return False
+        if (self.headers.get("Authorization") or "").strip():
+            return False
+        return get_config().public_view
+
     def _read_body(self):
         length = int(self.headers.get("Content-Length", 0) or 0)
         if length <= 0:
@@ -605,7 +705,7 @@ class Handler(BaseHTTPRequestHandler):
         if method == "GET" and not path.startswith("/api/"):
             return self._serve_static(path)
 
-        for m, rx, fn, auth_required, min_global in _ROUTES:
+        for m, rx, fn, auth_required, min_global, guest_ok in _ROUTES:
             if m != method:
                 continue
             match = rx.match(path)
@@ -615,12 +715,17 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._read_body() if method in ("POST", "PUT", "PATCH") else {}
                 principal = None
                 tok = self._token()
+                client_ip = self._client_ip()
                 if auth_required or min_global:
-                    principal = auth.principal_from_token(tok)
-                    if min_global:
-                        principal.require_global(min_global)
+                    if self._guest_allowed(method, guest_ok):
+                        guest_rate_check(client_ip)
+                        principal = auth.guest_principal()
+                    else:
+                        principal = auth.principal_from_token(tok)
+                        if min_global:
+                            principal.require_global(min_global)
                 req = Req(principal, match.groupdict(), query, body, token=tok,
-                          client_ip=self._client_ip())
+                          client_ip=client_ip)
                 status, obj = fn(req)
                 return self._send_json(status, obj)
             except AppError as e:
@@ -669,9 +774,31 @@ class Handler(BaseHTTPRequestHandler):
 
 def build_server(host: str | None = None, port: int | None = None) -> ThreadingHTTPServer:
     cfg = get_config()
-    srv = ThreadingHTTPServer((host or cfg.bind_host, port or cfg.bind_port), Handler)
+    # `port is None` (not falsiness): an explicit 0 asks the OS for a free port.
+    srv = ThreadingHTTPServer(
+        (host or cfg.bind_host, cfg.bind_port if port is None else port), Handler)
     srv.daemon_threads = True
     return srv
+
+
+def seed_public_demo() -> dict | None:
+    """Create the public demo project (no-op unless FSL_PUBLIC_VIEW is on).
+
+    Runs in a background thread after the socket is bound. It must never take
+    the server down, so every failure is caught and logged in one line."""
+    import sys
+    try:
+        out = demo.ensure_public_demo()
+    except Exception as e:
+        print(f"[init] public demo setup failed: {type(e).__name__}: {e}", file=sys.stderr)
+        return None
+    if out.get("notice"):
+        print(f"[setup] {describe_notice(out['notice'])}", file=sys.stderr)
+    elif out.get("enabled"):
+        print(f"[init] public demo project {out['project_id']}: "
+              f"{len(out['enqueued'])} scan(s) enqueued, skipped={out['skipped']}",
+              file=sys.stderr)
+    return out
 
 
 def main():
@@ -710,6 +837,12 @@ def main():
             print(f"[init] tool registry sync failed: {type(e).__name__}: {e}", file=sys.stderr)
 
     threading.Thread(target=_sync_tools, daemon=True).start()
+    if cfg.public_view:
+        # After the bind, in the background: startup stays fast and a problem
+        # with the demo can never stop the service from answering.
+        print("[init] public read-only view is ON: visitors can read the demo project "
+              "without signing in; every action still requires a sign-in", file=sys.stderr)
+        threading.Thread(target=seed_public_demo, daemon=True).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
