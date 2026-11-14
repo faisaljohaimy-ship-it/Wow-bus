@@ -64,14 +64,25 @@ A 429 response says how long to wait (`error.detail.retry_after_seconds`). A
 successful sign-in is not counted and resets that client's count for the account.
 Unknown and known emails are treated identically.
 
-Password checks are slow on purpose, so they run one at a time, and one client
-address can have only one sign-in in progress. A sign-in that arrives while that
-client's previous one is still running, or that cannot get its turn within 10
-seconds, gets HTTP 429 "sign-in is busy" instead of queueing without limit; it is
-not counted as an attempt and not written to the audit log. This keeps a burst of
-sign-ins from using all the CPU of a small instance and starving the health check.
-While many addresses keep sending sign-ins, a genuine one can still get the busy
-answer and has to be repeated; everything else keeps responding.
+Password checks are slow on purpose, so they run one at a time, and an attempt
+waits at most 10 seconds for its turn. Turns are not given out in order of
+arrival. The next one goes to the waiting network (an IPv4 address or an IPv6
+/48) that has had the fewest turns in the last 10 minutes, earliest first among
+equals, so someone signing in for the first time goes ahead of addresses that
+keep trying. A correct password clears a network's count. At most 32 attempts
+wait; when the line is full, a newcomer with fewer turns takes the place of the
+waiter with the most, and any other newcomer is refused.
+
+A network has one sign-in in progress at a time. A second one (a double tap on
+Sign in, two people behind one address) waits up to 3 seconds for the first; at
+most two wait. An attempt that gets no turn receives HTTP 429 "sign-in is busy".
+It is not counted as an attempt and not written to the audit log; the service
+log gets one `[signin]` line per 10 minutes while this is happening. This keeps a
+burst of sign-ins from using all the CPU of a small instance and starving the
+health check, and keeps a flood of addresses from holding a genuine sign-in back.
+What it cannot stop is a flood that brings a fresh network for every attempt
+(thousands of them): that is a volumetric attack and belongs to the platform's
+edge protection.
 
 **There is no account-wide lock, on purpose.** With a single owner account, a
 lock that triggers on failures from anyone would let anybody who knows the

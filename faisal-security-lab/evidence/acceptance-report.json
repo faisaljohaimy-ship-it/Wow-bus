@@ -23,7 +23,7 @@
       "pass": true,
       "evidence": {
         "findings": 43,
-        "report_bytes": 10966,
+        "report_bytes": 10534,
         "tools_run": [
           "bandit",
           "gitleaks",
@@ -112,7 +112,7 @@
         "driver": "bandit",
         "findings_before": 9,
         "reappeared_in_rescan": false,
-        "fix_job": "job_2fc8ea13f71d4710b48c6327",
+        "fix_job": "job_a2c847a0567a40139d844592",
         "validation_verified": true,
         "final_status": "fixed_on_asset"
       }

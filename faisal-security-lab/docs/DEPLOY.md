@@ -175,7 +175,13 @@ A guest **cannot** read, on any route:
   filled by an install at another path. One limit: a directory directly below the
   root (`/app` and `/data` in the Docker image, both named in this repository) is
   only cut where a path starts, not when it is glued to a preceding word, because
-  `/app/` and `/data/` are also the middle of unrelated paths and URLs.
+  `/app/` and `/data/` are also the middle of unrelated paths and URLs. A deeper
+  directory (`/srv/fsl`) is cut when glued to a word as well; the price is that a
+  relative path whose middle happens to equal that directory (`lib/srv/fsl/x`)
+  is shown shortened. An earlier install's sample path with a space or a quote
+  in it is cut when it is a whole value (an asset identifier, a scope target),
+  not when it sits inside a sentence. A tool `version` that contains a path
+  separator (the output of a failed version command) reads `unknown`.
 - **The text of an unexpected exception.** A job that ended with the error code
   `worker_error`, and a request that failed with `internal` (HTTP 500), show that
   code and a fixed sentence; the exception text, which can name any file on the
@@ -204,10 +210,12 @@ Both are per API process, in fixed one-minute windows, and answer HTTP 429:
 
 | Limit | Value | Message |
 |---|---|---|
-| per client address | 240 requests/minute | `rate limit exceeded; slow down or sign in` |
+| per client (IPv4 address or IPv6 /64) | 240 requests/minute | `rate limit exceeded; slow down or sign in` |
 | all guests together | 1200 requests/minute | `the public view is busy; try again in a minute` |
 
-Signed-in requests are never counted. The per-client table holds 4096 addresses;
+Signed-in requests are never counted. A guest is counted under the same client
+address as a sign-in, so the proxy settings below apply here too: behind an
+undeclared proxy all visitors share the 240. The per-client table holds 4096 clients;
 when it is full the oldest entries are forgotten instead of new visitors being
 refused, and the global limit bounds the total regardless of how many addresses
 the requests come from.
@@ -228,10 +236,13 @@ empty database: the demo project is created and scanned again each time. On a
   the worker last renewed it); a worker then marks it `undetermined`, and the
   first start **after that** enqueues it again. Restart once more, or run the scan
   by hand, if the demo stays incomplete after a crash.
-- Only jobs of the demo project count. The retry keys
-  (`public-demo:<scope>:<connector>[:2|:3]`) are not secret, and idempotency keys
-  are matched across all projects, so another project's job can hold one of them:
-  the demo then uses its next key, and reports `key_in_use` when none is left.
+- Only jobs of the demo project count. Idempotency keys are matched across all
+  projects, so the demo's keys (`public-demo:<scope>:<connector>[:2|:3]:<tag>`)
+  end in a tag derived from the server's secret key: a key cannot be worked out
+  and taken by a job in another project before the demo uses it. Should a key be
+  held by another project's job all the same, the demo uses its next key and
+  reports `key_in_use` when none is left. The tags change with the secret key, so
+  after a changed `FSL_SECRET_KEY` on a kept database each demo scan runs once more.
 - A connector whose tool is not ready is skipped (`not_ready`) and picked up on a
   later start; that does not use up an attempt.
 - Changing `FSL_DEMO_CONNECTORS` issues a new scope for the new list and revokes

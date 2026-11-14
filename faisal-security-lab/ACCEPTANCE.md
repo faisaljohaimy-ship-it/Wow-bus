@@ -20,7 +20,7 @@ Re-run with `make acceptance` (writes `evidence/acceptance-report.json`) and
 | 9 | Verified fix: fix reaches the asset, finding gone on re-scan before closing | ✅ verified-by-run | re-scan job (Bandit-anchored) did not re-observe the fixed finding → `fixed_on_asset` |
 | 10 | Auditable delivery: every Verified tool has version+connector+evidence; blockers stated | ✅ verified-by-run | 4 verified tools with version+ref; trivy/osv/ai_redteam blockers named |
 
-Tests: `make test` → **186 tests** (`tests/test_platform.py` 28, `tests/test_failure_modes.py` 9, `tests/test_setup_robustness.py` 14, `tests/test_public_view.py` 55, `tests/test_public_view_hardening.py` 80) pass; real-tool tests auto-skip where a binary is absent.
+Tests: `make test` → **279 tests** (`tests/test_platform.py` 29, `tests/test_failure_modes.py` 9, `tests/test_setup_robustness.py` 15, `tests/test_signin_hardening.py` 57, `tests/test_platform_hardening.py` 22, `tests/test_deploy_seams.py` 8, `tests/test_public_view.py` 56, `tests/test_public_view_hardening.py` 83) pass; real-tool tests auto-skip where a binary is absent, and one entrypoint test is skipped when the suite runs as root.
 
 ## Requirement → implementation → verification
 

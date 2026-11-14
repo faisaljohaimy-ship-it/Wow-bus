@@ -75,7 +75,9 @@ Two deployable roles share one SQLite database (WAL):
      published (database only, so visitors can read the project at once), the
      tool registry is synced, and then the demo scans are enqueued, so a tool's
      registry row exists before a demo scan can mark it verified. Demo jobs
-     carry idempotency keys `public-demo:<scope>:<connector>[:2|:3]`: a job that
+     carry idempotency keys `public-demo:<scope>:<connector>[:2|:3]:<tag>`
+     (the tag is a keyed digest under the server secret, so the keys cannot be
+     guessed from what a guest reads): a job that
      is queued, leased, running or succeeded is final for that start (a scan
      interrupted by a restart stays `running` until its lease expires), any
      other end state gets the next key, at most three jobs per connector and
