@@ -8,19 +8,41 @@ This software is licensed under either of
 
 at your option.
 
-Name and logo
--------------
+What the licences cover
+-----------------------
+The licences cover the security platform: everything in the directory
+faisal-security-lab/ (where this file is) and the platform's own files at the
+repository root, which are:
+
+  render.yaml
+  .gitleaksignore
+  SECURITY.md
+  CONTRIBUTING.md
+  CODE_OF_CONDUCT.md
+  .github/workflows/faisal-security-lab-ci.yml
+  .github/pull_request_template.md
+  the files under .github/ISSUE_TEMPLATE/
+
+Nothing else in the repository is covered: the Neexios site (the rest of the
+repository root and src/) is not covered by these licences.
+
+Text that some of these files quote from other sources keeps its own licence;
+see THIRD-PARTY-NOTICES.md.
+
+Name and logo (a notice, not a licence condition)
+-------------------------------------------------
 The name "FAISAL.AI" and the hooded-mask logo identify the original project.
-Neither licence gives a right to use them. A fork, a modified version or a
-hosted copy must use a different name and logo and must not suggest that it is
+The licences cover the code and the documents; they do not grant trademark
+rights in the name or the logo. If you publish a fork, a modified version or a
+hosted copy, please use your own name and logo, or say clearly that it is not
 run or endorsed by the original project.
 
-Intended use
-------------
-This is a defensive security testing platform. Use it only on systems you own
-or have written permission to test. Testing systems without permission can be
-a crime, and you are responsible for what you scan. The software comes with no
-warranty; see the licences.
+Responsible use (not a licence condition)
+-----------------------------------------
+This is a defensive security testing platform, meant for systems you own or
+have written permission to test. Testing systems without permission can be a
+crime where you live; what you scan is your responsibility. The software comes
+with no warranty; see the licences.
 
 What is not included
 --------------------

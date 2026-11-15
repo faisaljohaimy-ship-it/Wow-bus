@@ -11,12 +11,15 @@ distributed under the Python Software Foundation License, version 2).
 
 The platform does not include any scanner. It starts the tools below as
 separate programs when they are installed, and reads their output.
-`scripts/install-tools.sh` downloads them from the sources shown, at the
-versions shown. Each tool stays under its own licence.
+`scripts/install-tools.sh` installs them at the versions shown: Semgrep, Bandit
+and pip-audit with pip from PyPI, and Gitleaks, OSV-Scanner and Trivy as
+binaries from the release pages of their GitHub repositories. Trivy is
+optional. The "Source" column names each project's own repository. Each tool
+stays under its own licence.
 
 | Tool | Version installed by the script | Source | Licence |
 |---|---|---|---|
-| Semgrep (engine) | 1.185.0 | <https://github.com/semgrep/semgrep> | LGPL-2.1 |
+| Semgrep (engine) | 1.185.0 | <https://github.com/semgrep/semgrep> | LGPL-2.1-or-later |
 | Bandit | 1.9.4 | <https://github.com/PyCQA/bandit> | Apache-2.0 |
 | pip-audit | 2.10.1 | <https://github.com/pypa/pip-audit> | Apache-2.0 |
 | Gitleaks | 8.21.2 | <https://github.com/gitleaks/gitleaks> | MIT |
@@ -24,7 +27,9 @@ versions shown. Each tool stays under its own licence.
 | Trivy | 0.58.1 | <https://github.com/aquasecurity/trivy> | Apache-2.0 |
 
 The licences in this table were read from each project's repository on
-2026-11-15. Check them again before you rely on them.
+2026-11-15, except Semgrep's, which is the label in the metadata of the pinned
+package (`License-Expression: LGPL-2.1-or-later`). Check them again before you
+rely on them.
 
 Running these tools as separate programs places no condition on the licence of
 this platform. Distributing them is different: if you build and share a
@@ -54,8 +59,21 @@ not covered by this project's licences.
 
 ## Tool catalog
 
-`data/tool-catalog.seed.json` is a reference list of security tools: names,
-repository addresses, categories and short descriptions written for this
-project. The names are trademarks of their owners. Listing a tool does not
-mean that this project is affiliated with it, endorses it or runs it; the
-platform runs only the tools in the table above.
+`data/tool-catalog.seed.json` is a reference list of 76 security tools. Every
+entry has the tool's name, the path of its repository on GitHub
+(`owner/name`), `year`, `archived`, and a category and a short description in
+Arabic that were written for this project. The platform reads these six fields
+and no others.
+
+43 entries also carry notes from a check of the project's repository, made on
+the date in `metadataChecked` (2026-11-13 or 2026-11-14): on 42 of them a
+licence label, and on some the address of the GitHub API record the notes were
+read from (`metadataSource`), the date of the last push and the latest
+release. The label names a licence on 34 entries and is `NOASSERTION` (no
+licence was identified) on 8; the other 34 entries have no label. So the file
+does not show that every listed project is open source. Read a project's own
+licence before you use it.
+
+The names are trademarks of their owners. Listing a tool does not mean that
+this project is affiliated with it, endorses it or runs it; the platform runs
+only the tools in the table above.

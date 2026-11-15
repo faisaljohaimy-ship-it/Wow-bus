@@ -129,9 +129,10 @@ JID=$(curl -s -X POST $B/api/projects/$PID/scans -H "$AUTH" -H "$JSON" \
 # repeat until "state" is no longer queued, leased or running (a few seconds)
 curl -s -H "$AUTH" $B/api/jobs/$JID
 
-# then read the findings and a report
+# then read the findings and a report (var/ is not tracked by git)
 curl -s -H "$AUTH" $B/api/projects/$PID/findings
-curl -s -H "$AUTH" "$B/api/projects/$PID/report?format=html&lang=en" -o report.html
+mkdir -p var
+curl -s -H "$AUTH" "$B/api/projects/$PID/report?format=html&lang=en" -o var/report.html
 ```
 
 The scan request answers HTTP 201 with the job, `{"job": {"id": "job_…",

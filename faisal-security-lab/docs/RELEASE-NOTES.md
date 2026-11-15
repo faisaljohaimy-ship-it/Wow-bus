@@ -4,6 +4,11 @@ This file says what version 2.0.0 contains, how it was verified in terms you
 can repeat, what was not verified, and its known limits. Passing the checks
 below is not a claim that the system is free of vulnerabilities.
 
+Two terms used below: the release scope `r1` is the list of features this
+version says it contains ([specs/spec.md](../specs/spec.md)), and the reference
+build is the machine the recorded results come from, a Linux x86_64 container
+with Python 3.13 and the scanners installed.
+
 ## What the release contains
 
 - **One service.** A JSON API and a web console in Arabic (right-to-left) and
@@ -54,8 +59,13 @@ below is not a claim that the system is free of vulnerabilities.
 - **Deployment files.** A single image, a Compose file with the API and the
   worker in separate containers, `fly.toml`, and a Render Blueprint
   (`render.yaml` at the repository root).
-- **A tool catalog.** 76 open-source security projects with Arabic
-  descriptions, as a reference list. Six of them have a connector.
+- **A tool catalog.** 76 security projects with Arabic descriptions and a link
+  to each project's repository, as a reference list. Six of them have a
+  connector. The list does not say that every project in it is open source;
+  see [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
+- **Licence.** The platform is licensed under either Apache-2.0 or MIT, at
+  your option. What the licences cover is listed in the
+  [README](../README.md#licensing) and in `NOTICE`.
 
 ## How it was verified, and how to repeat it
 
@@ -136,8 +146,9 @@ Each item says how you can check it yourself.
 ## Known limits
 
 - **What the scope check does not cover** is listed in
-  [SCOPE.md](SCOPE.md#known-limits): the proof is a declaration, and `allowed_ports` and
-  `rate_limits` are stored but not enforced.
+  [SCOPE.md](SCOPE.md#known-limits): the proof is a declaration, `allowed_ports`
+  and `rate_limits` are stored but not enforced, and a hard link inside a
+  source directory is read like any other file.
 - **pip-audit can run package build code.** It resolves the packages named in
   requirement files. Scan requirement files you trust, or run the worker in a
   container.

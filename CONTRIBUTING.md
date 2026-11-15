@@ -18,11 +18,13 @@ Python dependencies.
 ```bash
 cd faisal-security-lab
 make test          # the whole test suite
-make acceptance    # the ten acceptance gates; writes var/acceptance-report.json
+make acceptance    # the ten acceptance gates (needs the scanners); writes var/acceptance-report.json
 make serve         # the server and console on http://127.0.0.1:8787
 ```
 
 Tests that need a scanner skip themselves when the scanner is not installed.
+`make acceptance` does not: it needs the scanners, and without them four of the
+ten gates fail (1, 2, 9 and 10) and the command ends with an error.
 `make install-tools` installs the scanners; the README says what it needs.
 
 ## What a change has to keep
@@ -46,7 +48,8 @@ Tests that need a scanner skip themselves when the scanner is not installed.
 - **Both languages.** A text added to the console is added in Arabic and in
   English.
 - **Tests.** A fix comes with a test that fails without it. `make test` and
-  `make acceptance` pass before you open the pull request.
+  `make acceptance` pass, with the scanners installed, before you open the pull
+  request.
 
 ## Pull requests
 

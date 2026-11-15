@@ -19,7 +19,7 @@ fields marked with *; the others are set through the API.
 | `proof` * | reference to the authorization (a ticket, a signed letter, `LAB-SELF-OWNED` for your own lab). Required, free text |
 | `owner_contact` * | who authorized it |
 | `environment` * | `lab`, `staging` or `prod` |
-| `allowed_targets` * | the hosts, URLs, paths or repositories the scope covers, separated by commas in the console. A pattern matches itself; a host name also matches URLs on that host; `*.example.org` matches `example.org` and every host below it; `/path/*` matches `/path` and everything below it. **Leave it empty and the scope covers the asset's own identifier only.** For a source scan the directory that is read has to be the place an entry names, or below it |
+| `allowed_targets` * | the hosts, URLs, paths or repositories the scope covers, separated by commas in the console. A pattern matches itself; a host name also matches URLs on that host; `*.example.org` matches `example.org` and every host below it; `/path/*` matches `/path` and everything below it. **To cover a directory and what is below it, write `/path/*`. `/path` alone matches only `/path`:** an entry that names the parent directory of an asset without `/*` does not cover the asset, and its scans are refused. **Leave it empty and the scope covers the asset's own identifier only.** A source scan also compares the directory it reads; see "Source directories" below |
 | `denied_targets` | explicit exclusions; checked first |
 | `scan_types` * | the connector names allowed on this asset. A scope with none allows no scan |
 | `valid_from` / `valid_until` | validity dates (ISO date and time, UTC) |
@@ -42,10 +42,11 @@ between). It checks, in this order:
 6. on a scope whose environment is `prod`, the connector does not send traffic
    to the target, unless `FSL_ALLOW_ACTIVE_IN_PROD=1` (this concerns
    `http_headers`, `tls_certificate` and `ai_redteam`);
-7. no target is in `denied_targets`, and, when `allowed_targets` is not empty,
-   every target is in it. The targets compared are the asset's identifier and
-   the `target`, `url`, `host`, `repo_path` and `image` parameters of the
-   request.
+7. no target is in `denied_targets`, and every target matches an entry of
+   `allowed_targets` (when that list is empty: the asset's identifier). The
+   targets compared are the asset's identifier and the `target`, `url`, `host`,
+   `repo_path` and `image` parameters of the request. For a source scan the
+   directory that is read is compared as well; see "Source directories" below.
 
 A refused request gets HTTP 403 with the code `policy_denied`; a job refused at
 start ends in the state `blocked`. Both are written to the audit log.
@@ -67,11 +68,19 @@ redirect is recorded but not followed.
   scopes.
 - **Source directories.** A source scan reads the directory given by the scan
   request's `source_path`, else the asset's `local_path`, else the asset's
-  identifier. That directory is compared with the scope as a real path (after
-  `..` and symbolic links are resolved): it has to be a directory that an
-  allowed target names, or below one, and not inside a denied one. The check
-  runs when the scan is requested and again in the worker on the path it is
-  about to copy. Symbolic links inside the directory are not copied.
+  identifier. Two comparisons are made. First the asset's identifier has to
+  match an allowed target as written, like any other target: `/srv/code/*`
+  matches an asset registered as `/srv/code/app`, and `/srv/code` alone does
+  not. This comparison is on the text, so write the identifier and the entries
+  the same way, as full paths. Then the directory that is read is compared with
+  the scope as a real path (after `..` and symbolic links are resolved): it has
+  to be the directory that an allowed target names (with or without `/*`), or
+  below it, and not inside a denied one. The check runs when the scan is
+  requested and again in the worker. The worker opens the directory once and
+  reads it through that handle, so the directory that was checked is the one
+  that is read; a directory that is swapped for a symbolic link after the check
+  is refused. Symbolic links inside the directory are not copied. A hard link
+  is read like any other file; see "Known limits".
 - **Withdrawal.** Revoking a scope tells its queued and running jobs to stop
   and refuses any further scan on it.
 - **What is shipped.** This version has connectors that read source
@@ -96,6 +105,10 @@ who gets an account and where the worker runs.
   true.
 - **A `source` asset is a directory on the machine where the worker runs**, not
   on the machine of the person who registers it.
+- **A hard link inside a source directory is read like any other file.** Only
+  symbolic links are skipped. A hard link to a file outside the directory is
+  therefore read as part of it. Use as a source directory one whose content you
+  control.
 - **`allowed_ports` and `rate_limits` are not enforced.**
 - **A repository clone is checked once.** The host name of a repository address
   is resolved and checked before `git clone` starts. git then resolves the name
