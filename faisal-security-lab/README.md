@@ -219,6 +219,31 @@ version scans source directories and repositories (static analysis, secrets,
 dependencies) and has one header check, one TLS certificate check and one
 AI-provider probe. No connector pulls or scans a container image.
 
+## The Agent — teams, lab and simulation
+
+The **Agent** screen presents the platform as a master agent commanding two
+groups of agents — an **offensive group** (reconnaissance, exploitation,
+cipher-breaking, lateral movement) and a **defensive group** (detection,
+hardening, response) — and is styled as a terminal: a keyword command bar opens
+each section (type `sim`, `teams`, `lab`, `recon` or `help`).
+
+- **Simulation (محاكاة).** A deterministic attack/defence game on an in-memory
+  **virtual network**: the red groups advance turn by turn while the blue groups
+  detect, isolate and patch, with a scoreboard and an operation log. It is
+  make-believe — it never touches a real host, port or network, and the
+  "attack on networks" happens only against built-in virtual targets.
+- **Crypto lab.** Built-in cipher and hash challenges solved by a standard-library
+  engine (encoding chains, Caesar, Vigenère, single/repeating-key XOR,
+  substitution, weak-hash cracking), on bundled material only.
+- **Teams board.** The Discovery / Red / Blue lens over the same scope-gated
+  scanning pipeline — a view, not a new power: every real scan still runs only
+  inside an authorization you grant.
+
+These run on built-in, safe material, so the console exposes them read-only in
+the public view (`/api/sim`, `/api/lab`, `/api/teams`). They are a training
+range and a demonstration, kept entirely separate from the authorized scanning
+of real assets described above.
+
 ## Connectors
 
 | Connector | What it does | What you will see |
