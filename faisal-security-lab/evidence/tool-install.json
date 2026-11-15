@@ -1,8 +1,8 @@
 {
   "recorded_at": "2026-11-14T17:01:13+00:00",
-  "environment": "claude-code cloud container (Linux x86_64, Python 3.13, Node 22)",
+  "environment": "reference build: Linux x86_64 container, Python 3.13",
   "method": "pip into /opt/sectools-venv (symlinked to /usr/local/bin) for Python tools; pinned GitHub release binaries for Go tools",
-  "note": "This records REAL install state in this container. The running platform re-derives each tool's state live via shutil.which + --version at readiness time; this file is a point-in-time snapshot.",
+  "note": "Install state on the reference build at the time in recorded_at. It describes that machine only. The running platform works out each tool's state itself (it looks the program up on PATH and asks it for its version); run 'make verify' for the states on your machine.",
   "tools": {
     "semgrep": {
       "status": "installed",
@@ -38,7 +38,7 @@
       "status": "blocked",
       "version": null,
       "category": "dependencies/containers/SBOM",
-      "reason": "GitHub release assets return HTTP 404 through this container's egress proxy and the Trivy installer cannot reach api.github.com for the latest tag. Connector is implemented; tool binary is not installable in this environment. OSV-Scanner + pip-audit cover the dependency category per spec (\"Trivy or OSV-Scanner\")."
+      "reason": "The Trivy release archive could not be downloaded on the reference build, so the binary was not installed there. The connector is implemented and was not run. pip-audit and OSV-Scanner cover dependency scanning."
     },
     "http_headers": {
       "status": "builtin",

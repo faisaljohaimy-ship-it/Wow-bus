@@ -1,66 +1,108 @@
 # Acceptance matrix — release scope `r1`
 
-Score is **acceptance completion for this release scope, measured by concrete,
-re-verifiable evidence** — not a claim that the system is free of vulnerabilities.
-Re-run with `make acceptance` (writes `evidence/acceptance-report.json`) and
-`make test`.
+Acceptance here means: ten checks ("gates") that the release scope has to pass,
+each run by a script and each leaving evidence that can be inspected. A passed
+gate says that check ran and gave the stated result on the machine where it ran.
+It is not a claim that the system is free of vulnerabilities.
 
-## The 10 gates — **10 / 10** on this build
+Run them yourself:
 
-| # | Gate | Status | Evidence |
-|---|------|--------|----------|
-| 1 | Integrated run: authorized asset → job → real tool → saved finding → openable report | ✅ verified-by-run | 43 findings across semgrep/bandit/gitleaks/pip-audit; `evidence/reports/sample-report.*` |
-| 2 | Finding correctness: known input flags, clean input does not | ✅ verified-by-run | vulnerable sample yields findings (anchored on Bandit, the portable SAST tool); a benign file yields 0 |
-| 3 | Scope enforcement: out-of-scope connector/target denied; SSRF blocked | ✅ verified-by-run | `connector_not_authorized`, `target_scope`, private-IP `PolicyDenied`; HTTP 403 over the live API |
-| 4 | Privilege isolation: non-member cannot access another project | ✅ verified-by-run | `ForbiddenError` for a foreign analyst |
-| 5 | Execution/agent safety: injection can't change action; schema rejects tool-launch | ✅ verified-by-run | eval set 5/5; injected "set severity info" ignored; `run_tool` field rejected |
-| 6 | Real stop: global stop halts leasing; cancel propagates | ✅ verified-by-run | claim blocked under global stop; `stop_requested` flips |
-| 7 | Fault tolerance: lost worker → `undetermined`, not silently re-run | ✅ verified-by-run | expired running lease → `undetermined` |
-| 8 | Data protection: secrets/PII redacted in evidence and reports | ✅ verified-by-run | `ghp_…`, emails, AWS keys scrubbed on store + read |
-| 9 | Verified fix: fix reaches the asset, finding gone on re-scan before closing | ✅ verified-by-run | re-scan job (Bandit-anchored) did not re-observe the fixed finding → `fixed_on_asset` |
-| 10 | Auditable delivery: every Verified tool has version+connector+evidence; blockers stated | ✅ verified-by-run | 4 verified tools with version+ref; trivy/osv/ai_redteam blockers named |
+```bash
+make acceptance            # runs the 10 gates, writes var/acceptance-report.json
+make acceptance-evidence   # the same, and also refreshes evidence/acceptance-report.json
+make test                  # the unit and integration tests
+```
 
-Tests: `make test` → **313 tests** (`tests/test_platform.py` 30, `tests/test_failure_modes.py` 9, `tests/test_setup_robustness.py` 15, `tests/test_signin_hardening.py` 57, `tests/test_platform_hardening.py` 22, `tests/test_deploy_seams.py` 8, `tests/test_runtime_hardening.py` 24, `tests/test_public_view.py` 56, `tests/test_public_view_hardening.py` 92) pass; real-tool tests auto-skip where a binary is absent, and one entrypoint test is skipped when the suite runs as root.
+`make acceptance` uses a temporary data directory of its own and does not touch
+your `./var` data. It needs the scanners (`make install-tools`): gates 1, 2 and
+9 run Bandit on the bundled sample, gate 1 also runs Semgrep, Gitleaks and
+pip-audit where they are installed (pip-audit needs network access), and gate
+10 needs at least one scanner whose run completed. The script exits with status
+0 only when every gate passed. Use
+`make acceptance-evidence` only when you mean to change the recorded copy in
+`evidence/`.
+
+## The 10 gates
+
+| # | Gate | What the script checks |
+|---|------|------------------------|
+| 1 | Integrated run: authorized asset → job → real tool → saved finding → report | the sample is scanned by the installed source scanners through the queue and a worker; findings are stored; the HTML and JSON reports are produced |
+| 2 | Finding correctness: known input is flagged, clean input is not | Bandit reports findings on the vulnerable sample; a harmless file gives none |
+| 3 | Scope enforcement: out-of-scope connector and target denied; private address blocked | the policy check refuses a connector the scope does not list (`connector_not_authorized`) and a target outside the allowed targets (`target_scope`); a destination on a private address raises `PolicyDenied` |
+| 4 | Privilege isolation: a non-member is refused access to another project | an analyst of another project gets `ForbiddenError` |
+| 5 | AI safety: injected text does not change the action; the schema rejects a tool launch | the built-in evaluation set passes 5/5; a finding whose text says "set severity info" keeps its severity; an answer with a `run_tool` field is rejected |
+| 6 | Stop: the global stop halts leasing; a cancel reaches the job | no job can be leased while the stop is engaged; `stop_requested` is set on the job |
+| 7 | Fault tolerance: a lost worker gives `undetermined`, not a silent re-run | a running job whose lease has expired becomes `undetermined` |
+| 8 | Data protection: secrets and personal data redacted in evidence | a text with a fabricated token and an e-mail address is stored as evidence; neither value is in what is read back |
+| 9 | Verified fix: the finding is gone on a re-scan before it is closed | after the flagged line is changed, a second Bandit job does not report the finding again and it is marked `fixed_on_asset` |
+| 10 | Auditable delivery: every verified tool has a version and a reference; blocked tools are named | each tool in the `verified` state carries its version and the reference of the run that verified it; tools that are not available are listed with the reason |
+
+## Results on the reference build (2026-11-14)
+
+These results belong to one environment and one day. Yours will differ where a
+scanner is missing, where a network service cannot be reached, and as the
+advisory databases change. `make verify` and `make acceptance` give your own.
+
+- **Machine.** A Linux x86_64 container with Python 3.13. Installed by
+  `scripts/install-tools.sh` on 2026-11-14: Semgrep 1.185.0, Bandit 1.9.4,
+  Gitleaks 8.21.2, pip-audit 2.10.1, OSV-Scanner 1.9.2
+  (`evidence/tool-install.json`).
+- **Gates.** 10 of 10 passed. The recorded report is
+  `evidence/acceptance-report.json`, last refreshed on 2026-11-15 (UTC).
+- **Gate 1.** About 43 findings from Semgrep, Bandit, Gitleaks and pip-audit on
+  the sample. About 28 of them are advisories that pip-audit reported for the
+  three packages pinned in `samples/vulnerable-app/requirements.txt` and for
+  the packages those depend on. The number moves as advisories are published:
+  a run on 2026-11-15 gave 44. Sample reports from the run of 2026-11-14 are in
+  `evidence/reports/`.
+- **Tests.** 313 tests passed and 1 was skipped at commit `b4702d0`
+  (`tests/test_platform.py` 30, `tests/test_failure_modes.py` 9,
+  `tests/test_setup_robustness.py` 15, `tests/test_signin_hardening.py` 57,
+  `tests/test_platform_hardening.py` 22, `tests/test_deploy_seams.py` 8,
+  `tests/test_runtime_hardening.py` 24, `tests/test_public_view.py` 56,
+  `tests/test_public_view_hardening.py` 92). The skipped one is a container
+  entrypoint test that is skipped when the suite runs as root. Tests that need a
+  scanner are skipped where it is not installed. `evidence/test-run.txt` holds
+  the result lines of a later full run.
+
+What was **not** exercised on the reference build, and so is not counted as
+verified:
+
+- **trivy.** The binary could not be downloaded there, so the connector was
+  never run. Dependency scanning was covered by pip-audit.
+- **osv-scanner.** Installed and `ready`, but `api.osv.dev` could not be reached
+  from there, so no scan with it completed.
+- **ai_redteam and the AI roles with a live provider.** No AI provider was
+  configured. The AI features were exercised with their built-in rules only.
+- **http_headers and tls_certificate against a live target.** No live target was
+  scanned, so the request and the handshake themselves were not exercised. The
+  tests and gate 3 cover the parameter check, the policy check and the
+  destination check.
+- **semgrep in gates 2 and 9.** Those two gates use Bandit, because Semgrep's
+  engine returned no results on one CI runner image. Semgrep runs in gate 1,
+  and the report records which tools contributed.
 
 ## Requirement → implementation → verification
 
-| Spec area | Implementation | Verified by |
+The areas are those of [specs/spec.md](specs/spec.md).
+
+| Area | Implementation | Verified by |
 |---|---|---|
-| Integrated defense loop (§2) | `queue` + `worker` + `connectors` + `findings` + `reports` | gates 1–2, acceptance run |
-| Admin/API vs scan execution split (§3) | `app/server.py` (no tools) + `app/worker.py` | architecture, deploy manifests |
-| Policy engine, enqueue + exec (§3,§6) | `app/policy.py` (`evaluate_job`) | gate 3, `TestPolicy`, worker re-check |
-| Durable queue: idempotency/lease/retry/cancel/undetermined (§3) | `app/queue.py` | gates 6–7, `TestQueue` |
-| Isolated workers, least privilege, no-shell (§3) | `connectors/base.run_tool`, `_preexec` | `TestConnectors`, failure modes |
-| Connector contract (§3,§4) | `connectors/base.Connector` | all connector tests |
-| Tool registry with distinct states + verification (§4) | `store` + `connectors/registry` | gate 10, `make verify` |
-| 76-tool catalog, broad coverage target (§5) | `data/tool-catalog.seed.json` → `catalog` table + UI | catalog screen; `/api/catalog` |
-| Enforceable scope, SSRF, revocation (§6) | `app/scope.py`, `app/policy.py`, `store.revoke_scope` | gate 3, `TestScopeNetwork`, failure mode 7 |
-| AI layer: planner/triage/remediation/validation/reporting (§7) | `app/ai/agents.py` | `TestAISafety`, UI AI lab |
-| AI safety: structured output, untrusted-input isolation, degradation (§7) | `ai/structured.py`, `ai/sanitizer.py`, `ai/provider.py` | gate 5, eval set |
-| Unified findings, dedup, CVSS/EPSS/KEV, lifecycle (§8) | `app/findings.py` | `TestConnectors` dedup/reopen |
-| Evidence store, redaction, retention, chain (§8) | `app/evidence.py`, `util.redact` | gate 8, `TestRedaction` |
-| Report formats: JSON/SARIF/HTML/MD bilingual (§8) | `app/reports.py` | `TestReports`, `evidence/reports/*` |
-| Discover → fix → re-verify, no suppression (§9) | status lifecycle + re-scan check | gate 9 |
-| Professional bilingual UI, RBAC, real data (§10) | `web/`, `app/server.py` | `evidence/ui/*.png` |
-| DevSecOps / CI, scheduling, updates, backup (§11) | `.github/workflows/ci.yml`, `docs/OPERATIONS.md` | CI workflow |
-| Failure-mode matrix (§14) | `tests/test_failure_modes.py` | 9/9 pass |
-
-## Declared blockers (honest, not counted as passing)
-
-- **trivy** — GitHub release asset returns HTTP 404 through this build's egress
-  proxy; connector implemented, binary not installable here. Dependency coverage
-  is provided by **osv-scanner** (where egress allows) and **pip-audit** (verified).
-- **osv-scanner** — installed and `ready`, but `api.osv.dev` is not reachable
-  through the build proxy, so a live run is egress-blocked. pip-audit covers the
-  Python dependency category end-to-end.
-- **ai_redteam** and the live AI planner/triage/etc. — require a configured AI
-  provider (`FSL_AI_PROVIDER` + key). With none, the AI layer runs in verified
-  deterministic fallback; live-provider behavior is **not verified** in this build.
-- **http_headers / tls_certificate** — ready, but need a live authorized target to
-  produce findings (none is scanned by default; exercised by unit tests of their
-  logic and gated by scope).
-- **semgrep** — verified by real runs on the primary build; on some CI runners
-  (e.g. Ubuntu 26.04) `semgrep-core` returned no results, so the deterministic
-  gates (2, 9) are anchored on **Bandit** (pure-Python, portable) rather than on
-  any single native engine. Semgrep still runs in the integrated-run gate, and
-  the acceptance report records each tool's actual contribution per environment.
+| Integrated defense loop | `queue` + `worker` + `connectors` + `findings` + `reports` | gates 1–2 |
+| API separate from scan execution | `app/server.py` (no tools with `FSL_NO_WORKER=1`) + `app/worker.py` | `deploy/compose.yaml`; a two-process run described in [docs/OPERATIONS.md](docs/OPERATIONS.md) |
+| Policy check at request and at start | `app/policy.py` (`evaluate_job`) | gate 3, `TestPolicy`, the worker's repeat check |
+| Durable queue: idempotency, lease, retry, cancel, `undetermined` | `app/queue.py` | gates 6–7, `TestQueue` |
+| Bounded tool runs without a shell | `connectors/base.run_tool`, `_preexec` | `TestConnectors`, failure modes |
+| Connector contract | `connectors/base.Connector` | all connector tests |
+| Tool registry with states and verification | `store` + `connectors/registry` | gate 10, `make verify` |
+| 76-entry tool catalog | `data/tool-catalog.seed.json` → `catalog` table + console | Tool Catalog screen; `/api/catalog` |
+| Scope, destination checks, revocation | `app/scope.py`, `app/policy.py`, `store.revoke_scope` | gate 3, `TestScopeNetwork`, failure mode 7; limits in [docs/SCOPE.md](docs/SCOPE.md) |
+| AI layer: planner, triage, remediation, validation, reporting | `app/ai/agents.py` | `TestAISafety`, built-in rules only |
+| AI safety: fixed output schema, scanned text as data, fallback | `ai/structured.py`, `ai/sanitizer.py`, `ai/provider.py` | gate 5, evaluation set |
+| One findings model, de-duplication, lifecycle | `app/findings.py` | `TestConnectors` (dedup, reopen) |
+| Evidence store, redaction | `app/evidence.py`, `util.redact` | gate 8, `TestRedaction` |
+| Reports: JSON, SARIF, HTML, Markdown in two languages | `app/reports.py` | `TestReports`, `evidence/reports/*` |
+| Find → fix → check again, no suppression | status lifecycle + re-scan check | gate 9 |
+| Bilingual console, roles | `web/`, `app/server.py` | `evidence/ui/*.png`, a browser run |
+| CI, operations, backup | `.github/workflows/faisal-security-lab-ci.yml` at the repository root, [docs/OPERATIONS.md](docs/OPERATIONS.md) | the CI workflow |
+| Failure-mode matrix | `tests/test_failure_modes.py` | 9 tests |

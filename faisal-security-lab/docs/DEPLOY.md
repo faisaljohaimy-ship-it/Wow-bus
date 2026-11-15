@@ -1,23 +1,30 @@
-# Public deployment — getting a permanent link
+# Deployment
 
-The platform is a container that listens on one HTTP port and keeps its state in a
-mounted volume. Deploy it anywhere with open outbound network. (The Claude cloud
-sandbox used to build it has a restrictive egress allowlist that blocks Fly.io and
-tunnel providers, so a public URL must be created from an environment with open
-network — your machine or a cloud shell.)
+The platform runs as a container that listens on one HTTP port and keeps its
+state in a mounted volume. This guide covers a public deployment; for a local
+run see the quick start in the [README](../README.md).
 
-## Option A — Fly.io (free-tier friendly)
+Before you put an instance on the internet: it is a tool for testing systems you
+own or are authorized to test (see "Responsible use" in the
+[README](../README.md)), anyone who can reach it can try to sign in, and the
+owner password is the only thing between them and the scan controls. Use a long
+random password and serve the site over HTTPS.
+
+## Option A — Fly.io
 ```bash
 cd faisal-security-lab
 fly apps create <your-app-name>            # or: fly launch --no-deploy --copy-config
 fly volumes create fsl_data --size 1 --region iad
 fly secrets set FSL_OWNER_EMAIL=you@example.com FSL_OWNER_PASSWORD='<strong-password>'
-# Optional — enable the real AI layer (any OpenAI-compatible provider):
-# fly secrets set FSL_AI_PROVIDER=openai-compatible FSL_AI_BASE_URL=https://openrouter.ai/api/v1 \
-#                 FSL_AI_MODEL=meta-llama/llama-3.3-70b-instruct:free FSL_AI_API_KEY='<your-key>'
+# Optional: an AI provider (see "Enabling the AI layer later")
+# fly secrets set FSL_AI_PROVIDER=openai-compatible FSL_AI_BASE_URL=https://<provider-host>/v1 \
+#                 FSL_AI_MODEL='<model-name>' FSL_AI_API_KEY='<your-key>'
 fly deploy
 ```
 → opens at `https://<your-app-name>.fly.dev`
+
+`fly.toml` names the app `faisal-security-lab`; pass your own name as shown, since
+app names are unique on Fly.io.
 
 ## Option B — Docker / Docker Compose (your VM or server)
 ```bash
@@ -32,7 +39,36 @@ Behind that proxy, set `FSL_TRUSTED_PROXY_HOPS=1` (one nginx or Caddy that adds 
 client address to `X-Forwarded-For`) and publish the port to the proxy only
 (`-p 127.0.0.1:8080:8080`); otherwise every visitor shares one sign-in allowance.
 See "Client address behind a proxy" below.
-The split API + isolated-worker setup is in `deploy/compose.yaml`.
+
+### Docker Compose: API and worker in separate containers
+`deploy/compose.yaml` runs the API (no scan tools) and one worker (the scan
+tools, a memory limit, no capabilities) on one shared data volume.
+
+```bash
+cd faisal-security-lab
+export FSL_OWNER_PASSWORD='<strong-password>'
+docker compose -f deploy/compose.yaml up --build -d
+```
+→ opens at `http://127.0.0.1:8787` on the Docker host.
+
+- **Port.** The port is published on `127.0.0.1` only. To reach the console from
+  another machine, put a TLS reverse proxy on the host in front of it and add
+  `FSL_TRUSTED_PROXY_HOPS: "1"` to the environment of the `api` service in the
+  compose file, or use an SSH tunnel.
+- **Password.** The owner password is `FSL_OWNER_PASSWORD` from the environment
+  of the shell that runs `docker compose`. If it is not set there, the API
+  generates one and prints it once at the first start:
+  `docker compose -f deploy/compose.yaml logs api` shows it in a line that
+  starts with `[init]`. The sign-in address is `FSL_OWNER_EMAIL`, or
+  `owner@faisal-security-lab.local` when that is not set.
+- **What the worker can read.** A scan runs in the worker container, which sees
+  its own files and the data volume, not the host's directories. To scan a
+  directory, mount it read-only into the `worker` service (for example
+  `/srv/myapp:/scan/myapp:ro`), make it readable for uid 10001, and register the
+  asset as `/scan/myapp`. An asset that is a repository address is fetched by
+  the worker itself and needs no mount.
+- **More workers.** One worker container runs one job at a time. Start more
+  with `docker compose -f deploy/compose.yaml up -d --scale worker=3`.
 
 ## Option C — Render / Railway
 Point the service at this repo subdirectory `faisal-security-lab`, Dockerfile
@@ -49,23 +85,39 @@ leave **Blueprint Path** empty (it defaults to `render.yaml` at the repo root), 
 has no persistent disk, so findings reset when the instance restarts or wakes from
 sleep; the owner account is re-created from the environment on every start.
 
+Two things to know before you press the button:
+
+- **This Blueprint switches the public read-only view on** (`FSL_PUBLIC_VIEW=1`):
+  anyone with the link can read the bundled demo project without signing in
+  (what a guest can read is listed under "Optional: public read-only view"
+  below). To switch it off, set `FSL_PUBLIC_VIEW` to `0` in the service's
+  **Environment** settings in Render and redeploy. A later Blueprint sync may
+  put the value from `render.yaml` back; removing the entry from `render.yaml`
+  in your own fork is the lasting way.
+- **The link deploys the repository it names**, `faisaljohaimy-ship-it/Wow-bus`.
+  To deploy a fork, with your changes and your `render.yaml`, put your fork's
+  address after `repo=`.
+
 ## First login
-On first boot an owner account is created from `FSL_OWNER_EMAIL` and
-`FSL_OWNER_PASSWORD` (**at least 10 characters**). There is **no email bridge** —
-authentication is a server-side password + signed session, so there is no lock-out
-like the original app's owner-verification gate. Repeated failed sign-ins are
-throttled (HTTP 429) for a few minutes.
+On the first start an owner account is created from `FSL_OWNER_EMAIL` and
+`FSL_OWNER_PASSWORD` (**at least 10 characters**). If no password is set, the
+service prints a generated password, shown once, in its log. It is not a
+one-time password: it stays the owner's password. There is no e-mail step and no
+password reset by e-mail: sign-in is a password checked on the server, which
+then issues a session token. Repeated failed sign-ins are throttled (HTTP 429)
+for a few minutes.
 
 ## If the values are wrong, the site still starts
-A mistyped value never stops the service. It starts, logs one `[setup]` line per
-problem, and the sign-in page explains what to change:
+A mistyped value in the settings below does not stop the service. It starts,
+logs one `[setup]` line per problem, and the sign-in page explains what to
+change:
 
 | Notice | Meaning | Fix |
 |---|---|---|
 | `owner_password_too_short` | `FSL_OWNER_PASSWORD` is under 10 characters; **no owner account exists** | set a longer value, redeploy |
 | `owner_email_invalid` | `FSL_OWNER_EMAIL` is not an email | sign in with `owner@faisal-security-lab.local`, or fix the value |
 | `owner_email_ignored` | `FSL_OWNER_EMAIL` is not an email and an owner account at another address already exists; nothing was created or changed | sign in with that owner address, or fix the value |
-| `owner_password_generated` | no password was set | read the one-time password in the service logs |
+| `owner_password_generated` | no password was set | read the generated password, shown once, in the service logs |
 | `data_dir_unwritable` | the data directory (or an explicit `FSL_DB_PATH` / `FSL_EVIDENCE_DIR`) cannot be written | that location is temporary; fix the mount/ownership |
 | `public_view_unrecognized` | `FSL_PUBLIC_VIEW` is set to something other than a yes or no value; the public view is off | set it to `1` (or `0`), redeploy |
 | `demo_sample_missing` | `FSL_PUBLIC_VIEW` is on but `samples/vulnerable-app` is not in the image | rebuild with `deploy/Dockerfile.fly` (it copies `samples/`) |
@@ -120,8 +172,9 @@ files restored into the data directory must be given to uid 10001 by hand
 By default the server identifies a client by the socket peer address and ignores forwarding headers. Behind a platform proxy set FSL_CLIENT_IP_HEADER to the single-value header the platform sets (CF-Connecting-IP on Render, Fly-Client-IP on Fly.io), or set FSL_TRUSTED_PROXY_HOPS to the number of trusted proxies that append to X-Forwarded-For. A wrong value makes sign-in limits shared between visitors; a signed-in owner can see the detected address and its source in Settings.
 
 `render.yaml` and `fly.toml` already set `FSL_CLIENT_IP_HEADER` for their platform.
-A service that was created by hand, or before that line was added to the file, does
-not have it: check that the variable is listed in the host's environment settings.
+A service that was created by hand, or from a copy of the file without that line,
+does not have it: check that the variable is listed in the host's environment
+settings.
 The service log says which source is in use (`[init] client address: ...`) and
 prints one `[setup]` line if a setting was given but unusable, or if a request
 arrives with a forwarding header while neither setting is set.
@@ -130,9 +183,9 @@ The detected address and its source are also returned as `client` by `/api/me`;
 lists the sign-in limits.
 
 ## Optional: public read-only view
-Off by default. Set `FSL_PUBLIC_VIEW=1` to let anyone who opens the site look
-around **without signing in**. It is strictly read-only and limited to one demo
-project:
+Off by default (the Render Blueprint in Option D switches it on). Set
+`FSL_PUBLIC_VIEW=1` to let anyone who opens the site look around **without
+signing in**. It is read-only and limited to one demo project:
 
 - On start (after the port is bound, in the background) the platform creates the
   project **"عرض توضيحي — Public demo"**, registers the bundled
@@ -218,11 +271,10 @@ one-minute windows; all three answer HTTP 429.
 
 The numbers are sized for the smallest host (a tenth of a CPU), where the
 heaviest guest route, the JSON report, costs about 15 ms of CPU, so about seven
-requests a second use the whole instance. Measured there on this version with a
-flood of 20 guest requests a second from six addresses: the health check answered
-in 0.3 s at worst and an owner sign-in in 1.5 s (before the third limit existed,
-both took over 20 s and timed out). On a larger host raise the ceiling with
-`FSL_GUEST_REQUESTS_PER_MINUTE`.
+requests a second use the whole instance. Measured on the reference build,
+limited to a tenth of a CPU, with a flood of 20 guest requests a second from six
+addresses: the health check answered in 0.3 s at worst and an owner sign-in in
+1.5 s. On a larger host raise the ceiling with `FSL_GUEST_REQUESTS_PER_MINUTE`.
 
 The last 40% of the ceiling is kept for clients that have made fewer than 12
 requests in the current minute, so a few busy addresses cannot use the whole
@@ -293,6 +345,11 @@ setup the API image carries neither, so the notice `demo_sample_missing` is show
 and no demo project is created.
 
 ## Enabling the AI layer later
-Set `FSL_AI_PROVIDER` + `FSL_AI_BASE_URL` + `FSL_AI_MODEL` + `FSL_AI_API_KEY` (any
-OpenAI-compatible or Anthropic endpoint; free tiers work) and restart. Without them
-the AI layer runs in deterministic fallback — the platform stays fully functional.
+Set `FSL_AI_PROVIDER` (`openai-compatible` or `anthropic`), `FSL_AI_MODEL` and
+`FSL_AI_API_KEY`, and `FSL_AI_BASE_URL` when the provider is not the default
+one for that kind, then restart. Without them the AI features use built-in
+rules and every other part of the platform works as before. With a provider
+set, finding text is sent to it when someone uses an AI action; the
+[README](../README.md#what-leaves-your-machine) lists what is sent. Calls to a
+live provider were not part of this release's verification
+([RELEASE-NOTES.md](RELEASE-NOTES.md#not-verified-in-this-release)).
