@@ -360,3 +360,26 @@ body.guest form,body.guest [data-owner]{display:none !important}
   html:not(.motion) .glitch::before,html:not(.motion) .glitch::after,
   html:not(.motion) .flicker{animation:none}
 }
+
+/* ---- Boot sequence, content transitions, scanline sweep ---- */
+.boot{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;justify-content:center;
+  gap:3px;padding:16px 18px;background:rgba(2,6,3,.82);font-family:ui-monospace,Consolas,monospace;
+  font-size:13px;color:#7dffa0;transition:opacity .5s;direction:ltr;text-align:left}
+.boot.gone{opacity:0}
+.boot .brow{white-space:nowrap;overflow:hidden;text-shadow:0 0 6px rgba(70,255,120,.5)}
+.boot .brow:last-child{color:#ff5566;font-weight:700;letter-spacing:2px}
+/* a faint light bar sweeping down the hero */
+.agent-hero::after{content:"";position:absolute;left:0;right:0;height:38%;z-index:1;pointer-events:none;
+  background:linear-gradient(to bottom,rgba(120,255,160,0),rgba(120,255,160,.06),rgba(120,255,160,0));
+  animation:sweep 5.5s linear infinite}
+@keyframes sweep{0%{transform:translateY(-120%)}100%{transform:translateY(300%)}}
+/* content slides/fades in when a section renders */
+.agent-body{animation:riseIn .32s ease-out}
+@keyframes riseIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+/* a "working" pulse for the run button while a simulation computes */
+.pulsing{animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,45,68,.5)}50%{box-shadow:0 0 0 8px rgba(255,45,68,0)}}
+.nomotion .agent-hero::after,.nomotion .agent-body{animation:none}
+@media (prefers-reduced-motion:reduce){
+  html:not(.motion) .agent-hero::after,html:not(.motion) .agent-body{animation:none}
+}

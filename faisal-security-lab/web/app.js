@@ -1037,28 +1037,65 @@ function startMatrix(){
   const rect = cv.getBoundingClientRect();
   cv.width = Math.max(1, Math.floor(rect.width * dpr));
   cv.height = Math.max(1, Math.floor(rect.height * dpr));
-  const glyphs = "01<>/\\{}[]()=+*#$%&;:アカサタナヒ0123456789ABCDEF".split("");
-  const fs = Math.max(12, 14 * dpr);
-  const cols = Math.max(6, Math.floor(cv.width / fs));
-  const drops = new Array(cols).fill(0).map(() => (Math.random() * cv.height / fs) | 0);
+  const glyphs = "01<>/\\{}[]()=+*#$%&;:アカサタナヒミラ0123456789ABCDEF".split("");
+  const fs = Math.max(11, 13 * dpr);
+  const cols = Math.max(8, Math.floor(cv.width / fs));
+  const drops = new Array(cols).fill(0).map(() => -((Math.random() * 40) | 0));
+  const speed = new Array(cols).fill(0).map(() => 0.6 + Math.random() * 0.8);  // organic, varied fall
   let last = 0;
+  ctx.textBaseline = "top";
   function frame(ts){
     if(!document.getElementById("matrixrain")){ stopMatrix(); return; }   // left the screen
-    if(ts - last >= 55){                                                   // ~18fps, light on a phone
+    if(ts - last >= 50){
       last = ts;
-      ctx.fillStyle = "rgba(0,0,0,0.14)"; ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.fillStyle = "rgba(2,7,3,0.10)"; ctx.fillRect(0, 0, cv.width, cv.height);  // soft fade = long trails
       ctx.font = fs + "px ui-monospace,Consolas,monospace";
       for(let i = 0; i < cols; i++){
         const ch = glyphs[(Math.random() * glyphs.length) | 0];
-        ctx.fillStyle = Math.random() < 0.12 ? "#ff3b4d" : "#2ecc5a";
-        ctx.fillText(ch, i * fs, drops[i] * fs);
-        if(drops[i] * fs > cv.height && Math.random() > 0.975) drops[i] = 0;
-        drops[i]++;
+        const y = drops[i] * fs;
+        const r = Math.random();
+        ctx.fillStyle = r < 0.05 ? "#ff4d5e" : (r < 0.30 ? "#c9ffd4" : "#2ecc5a");  // bright heads + red sparks
+        if(y >= 0) ctx.fillText(ch, i * fs, y);
+        if(y > cv.height && Math.random() > 0.965) { drops[i] = -2; }
+        drops[i] += speed[i];
       }
     }
     _matrixRAF = requestAnimationFrame(frame);
   }
   _matrixRAF = requestAnimationFrame(frame);
+}
+
+// A one-time "boot" sequence: a few lines type out over the hero, then fade.
+let _agentBooted = false;
+function bootSequence(){
+  if(_agentBooted || !motionIsOn()) return;
+  _agentBooted = true;
+  const hero = document.querySelector(".agent-hero"); if(!hero) return;
+  const box = document.createElement("div"); box.className = "boot";
+  hero.appendChild(box);
+  const lines = [
+    "> initializing agent core …",
+    "> offensive modules [recon·exploit·crypto·network] … OK",
+    "> defensive modules [detect·harden·respond] … OK",
+    "> arming simulation engine … OK",
+    "> AGENT ONLINE.",
+  ];
+  let li = 0;
+  function typeLine(){
+    if(li >= lines.length || !document.body.contains(box)){
+      setTimeout(() => { box.classList.add("gone"); setTimeout(() => box.remove(), 500); }, 450);
+      return;
+    }
+    const row = document.createElement("div"); row.className = "brow"; box.appendChild(row);
+    const text = lines[li++]; let ci = 0;
+    (function typeChar(){
+      if(!document.body.contains(box)) return;
+      row.textContent = text.slice(0, ++ci);
+      if(ci < text.length) setTimeout(typeChar, 11);
+      else setTimeout(typeLine, 55);
+    })();
+  }
+  typeLine();
 }
 function scrambleText(el, finalText, dur=900){
   if(!el) return;
@@ -1088,6 +1125,7 @@ async function scrAgent(ctx){
   if(ctx.seq!==RENDER_SEQ) return;
   setMain(ctx, topbar(t("agent")) + agentHeader() + `<div class="agent-body">${body}</div>`);
   startMatrix();
+  bootSequence();
   const ht=document.getElementById("herotitle"); if(ht) scrambleText(ht, L("الوكيل","AGENT"), 850);
   const cb=document.getElementById("cmdbar"); if(cb) cb.focus();
 }
