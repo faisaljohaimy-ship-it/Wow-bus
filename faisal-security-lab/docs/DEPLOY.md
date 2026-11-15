@@ -224,6 +224,10 @@ in 0.3 s at worst and an owner sign-in in 1.5 s (before the third limit existed,
 both took over 20 s and timed out). On a larger host raise the ceiling with
 `FSL_GUEST_REQUESTS_PER_MINUTE`.
 
+The last 40% of the ceiling is kept for clients that have made fewer than 12
+requests in the current minute, so a few busy addresses cannot use the whole
+ceiling up and close the view for someone who has just arrived.
+
 Among the guests that wait, the client that has asked for the least in the
 current minute is served first, so one visitor opening a page is not held behind
 an address that keeps asking. Signed-in requests are never counted and never

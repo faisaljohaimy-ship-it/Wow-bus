@@ -19,6 +19,7 @@ Security posture:
 """
 from __future__ import annotations
 
+import datetime
 import heapq
 import ipaddress
 import json
@@ -39,7 +40,7 @@ from .ai import agents, evalset
 from .bootstrap import ADMIN_NOTICES, SETUP_NOTICES, describe_notice, init_platform
 from .config import get_config
 from .connectors import all_connectors, connector_names, get_connector, sync_registry
-from .errors import (AppError, AuthError, ForbiddenError, NotFoundError, RateLimitError,
+from .errors import (AppError, AuthError, ConflictError, ForbiddenError, NotFoundError, RateLimitError,
                      ValidationError)
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -628,6 +629,10 @@ GUEST_WINDOW_SECONDS = 60
 # host can raise the ceiling with FSL_GUEST_REQUESTS_PER_MINUTE.
 GUEST_LIMIT_PER_MINUTE = 90
 GUEST_GLOBAL_LIMIT_PER_MINUTE = 240
+# Once this share of the ceiling is used, only clients with fewer than
+# GUEST_NEWCOMER_REQUESTS requests in the window are still admitted.
+GUEST_OPEN_SHARE = 0.6
+GUEST_NEWCOMER_REQUESTS = 12
 GUEST_MAX_CLIENTS = 4096
 # A limit per minute does not stop a burst, and a thread per connection lets a
 # burst pile up until nothing is answered, long after the burst is over. So
@@ -682,6 +687,12 @@ def guest_rate_check(client: str, now: float | None = None) -> int:
             entry = _GUEST_HITS[client] = [now, 0]
         if entry[1] >= GUEST_LIMIT_PER_MINUTE:
             raise RateLimitError("rate limit exceeded; slow down or sign in")
+        if (entry[1] >= GUEST_NEWCOMER_REQUESTS
+                and _GUEST_GLOBAL[1] >= int(ceiling * GUEST_OPEN_SHARE)):
+            # The last part of the ceiling is kept for clients that have asked
+            # for little this minute, so a few busy addresses cannot use it all
+            # up and close the view for someone who has just arrived.
+            raise _guest_busy()
         entry[1] += 1
         _GUEST_GLOBAL[1] += 1
         return entry[1]
@@ -865,6 +876,41 @@ def scopes_list(req: Req):
     return 200, {"scopes": store.list_scopes(pid, req.q("asset_id"))}
 
 
+def _scope_list(value, name: str, *, numbers: bool = False) -> list:
+    """A list of short strings (or port numbers), as the policy engine reads it."""
+    if value is None:
+        return []
+    kinds = (str, int) if numbers else (str,)
+    if (not isinstance(value, list) or len(value) > 200
+            or any(isinstance(item, bool) or not isinstance(item, kinds)
+                   or len(str(item)) > 2048 for item in value)):
+        raise ValidationError(f"{name} must be a list of " + ("ports" if numbers else "strings"))
+    return value
+
+
+def _scope_map(value, name: str) -> dict:
+    if value is None:
+        return {}
+    if not isinstance(value, dict) or len(json.dumps(value)) > 4096:
+        raise ValidationError(f"{name} must be an object")
+    return value
+
+
+def _scope_time(value, name: str) -> str | None:
+    """An ISO date-time, stored in UTC in the form the policy engine compares."""
+    if value is None or value == "":
+        return None
+    try:
+        if not isinstance(value, str):
+            raise ValueError
+        moment = datetime.datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        raise ValidationError(f"{name} must be an ISO date and time") from None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=datetime.timezone.utc)
+    return moment.astimezone(datetime.timezone.utc).replace(microsecond=0).isoformat()
+
+
 @route("POST", r"/api/projects/(?P<pid>[\w-]+)/scopes")
 def scopes_create(req: Req):
     pid = req.params["pid"]
@@ -877,14 +923,24 @@ def scopes_create(req: Req):
     if (not isinstance(scan_types, list) or len(scan_types) > len(known)
             or any(not isinstance(name, str) or name not in known for name in scan_types)):
         raise ValidationError("scan_types must be a list of connector names")
+    # The policy engine reads the other fields as lists, dates and maps; a
+    # value of another shape would fail there, at scan time.
+    window = _scope_map(b.get("window"), "window")
+    for hour in ("start_hour_utc", "end_hour_utc"):
+        if window.get(hour) is not None and (isinstance(window[hour], bool)
+                                             or not isinstance(window[hour], int)
+                                             or not 0 <= window[hour] <= 23):
+            raise ValidationError(f"window.{hour} must be an hour from 0 to 23")
     s = store.create_scope(pid, b["asset_id"], owner_contact=b.get("owner_contact", ""),
                            proof=b.get("proof", ""), environment=b.get("environment", "lab"),
-                           allowed_targets=b.get("allowed_targets", []),
-                           denied_targets=b.get("denied_targets", []),
-                           allowed_ports=b.get("allowed_ports", []),
+                           allowed_targets=_scope_list(b.get("allowed_targets"), "allowed_targets"),
+                           denied_targets=_scope_list(b.get("denied_targets"), "denied_targets"),
+                           allowed_ports=_scope_list(b.get("allowed_ports"), "allowed_ports",
+                                                     numbers=True),
                            scan_types=scan_types,
-                           valid_from=b.get("valid_from"), valid_until=b.get("valid_until"),
-                           window=b.get("window", {}), rate_limits=b.get("rate_limits", {}),
+                           valid_from=_scope_time(b.get("valid_from"), "valid_from"),
+                           valid_until=_scope_time(b.get("valid_until"), "valid_until"),
+                           window=window, rate_limits=_scope_map(b.get("rate_limits"), "rate_limits"),
                            created_by=req.principal.user_id)
     audit.record("scope.create", actor=req.principal.email, project_id=pid, target=s["id"],
                  detail={"environment": s["environment"], "scan_types": s["scan_types"],
@@ -972,7 +1028,11 @@ def connectors(req: Req):
         return 200, {"connectors": _connectors_from_registry()}
     if req.q("live") == "1":
         return 200, {"connectors": _connectors_live()}
-    return 200, {"connectors": _connectors_from_registry() or _connectors_pending()}
+    # While the first sync is still running, a connector without a registry
+    # row yet is listed as "checking" rather than left out.
+    rows = {entry["name"]: entry for entry in _connectors_from_registry()}
+    listing = [rows.pop(entry["name"], entry) for entry in _connectors_pending()]
+    return 200, {"connectors": listing + list(rows.values())}
 
 
 # ===========================================================================
@@ -1004,6 +1064,10 @@ def scan_enqueue(req: Req):
                         connector=conn.name, params=params, created_by=req.principal.user_id,
                         priority=int(b.get("priority", 5)),
                         idempotency_key=b.get("idempotency_key"))
+    if job["project_id"] != pid:
+        # The queue matches an idempotency key across projects. A key that a
+        # job of another project holds is refused; that job is not handed out.
+        raise ConflictError("idempotency key is already in use")
     audit.record("scan.enqueue", actor=req.principal.email, project_id=pid, target=job["id"],
                  detail={"connector": conn.name, "asset": asset["id"]})
     return 201, {"job": job}
@@ -1231,10 +1295,18 @@ def _rate_check(key: str, limit_per_min: int | None = None):
         bucket.append(now)
 
 
+# Limits on what is accepted before the sender is known.
+MAX_TARGET_BYTES = 2048             # request path and query string together
+MAX_QUERY_FIELDS = 32
+MAX_ANONYMOUS_BODY_BYTES = 16 * 1024
+MAX_DISCARDED_BODY_BYTES = 64 * 1024  # an unwanted body up to this size is read and dropped
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "faisal-security-lab/2.0"
     protocol_version = "HTTP/1.1"
     _head_only = False
+    _body_pending = False
 
     def log_message(self, fmt, *args):  # quiet by default
         pass
@@ -1256,13 +1328,19 @@ class Handler(BaseHTTPRequestHandler):
         else:
             ctype = "application/json; charset=utf-8"
             data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(data)))
-        self._security_headers()
-        self.end_headers()
-        if not self._head_only:
-            self.wfile.write(data)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            if self.close_connection:
+                self.send_header("Connection", "close")
+            self._security_headers()
+            self.end_headers()
+            if not self._head_only:
+                self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            # The client went away before the answer; nothing to report.
+            self.close_connection = True
 
     def _client(self) -> tuple[str, str, bool]:
         """(address, source, proxy_headers_ignored) for this request."""
@@ -1299,15 +1377,23 @@ class Handler(BaseHTTPRequestHandler):
             return False
         if self._credentials():
             return False
+        if self.headers.defects:
+            # The header parser stopped at a line it could not read; a
+            # credential may be behind it, so this is not treated as "none".
+            return False
         return get_config().public_view
 
-    def _read_body(self):
-        length = int(self.headers.get("Content-Length", 0) or 0)
+    def _read_body(self, limit: int | None = None):
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+        except ValueError:
+            raise ValidationError("invalid Content-Length")
         if length <= 0:
             return {}
-        if length > get_config().limits.max_request_bytes:
+        if length > (limit or get_config().limits.max_request_bytes):
             raise ValidationError("request body too large")
         raw = self.rfile.read(length)
+        self._body_pending = False
         if not raw:
             return {}
         try:
@@ -1315,15 +1401,40 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             raise ValidationError("invalid JSON body")
 
+    def _discard_body(self) -> None:
+        """Deal with a request body that was not read (the caller was refused
+        before it was wanted). Left in place it would be taken for the next
+        request on this connection. A small one is read and thrown away,
+        unparsed; past that the connection is closed after the answer."""
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+        except ValueError:
+            length = -1
+        if 0 <= length <= MAX_DISCARDED_BODY_BYTES:
+            try:
+                self.rfile.read(length)
+            except OSError:
+                self.close_connection = True
+        else:
+            self.close_connection = True
+        self._body_pending = False
+
     def _dispatch(self, method):
+        # Splitting and parsing a request target costs CPU before anything is
+        # known about the sender, and it grows with the length. No route of
+        # this API needs more than a short path and a few parameters.
+        if len(self.path) > MAX_TARGET_BYTES:
+            self.close_connection = True
+            return self._send_json(414, {"error": {"code": "uri_too_long",
+                                                   "message": "request target too long"}})
         parsed = urlsplit(self.path)
         path = parsed.path
-        query = parse_qs(parsed.query)
 
         # Static UI for non-/api GET.
         if method == "GET" and not path.startswith("/api/"):
             return self._serve_static(path)
 
+        has_body = method in ("POST", "PUT", "PATCH")
         for m, rx, fn, auth_required, min_global, guest_ok in _ROUTES:
             if m != method:
                 continue
@@ -1332,42 +1443,55 @@ class Handler(BaseHTTPRequestHandler):
                 continue
             principal = None
             gate, guest_slot = None, False
+            self._body_pending = has_body
             try:
-                body = self._read_body() if method in ("POST", "PUT", "PATCH") else {}
-                tok = self._token()
-                address, source, ignored = self._client()
-                if auth_required or min_global:
-                    if self._guest_allowed(method, guest_ok):
-                        # Guests are limited by the same client key as sign-in
-                        # (IPv4 address or IPv6 /64).
-                        asked = guest_rate_check(client_key(address))
-                        principal = auth.guest_principal()
-                        gate = _GUEST_WORK
-                        guest_slot = gate.acquire(asked, GUEST_WAIT_SECONDS)
-                        if not guest_slot:
-                            raise _guest_busy()
-                    else:
-                        principal = auth.principal_from_token(tok)
-                        if min_global:
-                            principal.require_global(min_global)
-                req = Req(principal, match.groupdict(), query, body, token=tok,
-                          client_ip=address, client_source=source,
-                          proxy_headers_ignored=ignored)
-                status, obj = fn(req)
-            except AppError as e:
-                status, obj = e.status, e.public()
-            except Exception as e:  # unexpected
-                status, obj = 500, {"error": {"code": "internal", "message": str(e)[:200]}}
-            try:
+                try:
+                    try:
+                        query = parse_qs(parsed.query, max_num_fields=MAX_QUERY_FIELDS)
+                    except ValueError:
+                        raise ValidationError("too many query parameters")
+                    tok = self._token()
+                    address, source, ignored = self._client()
+                    if auth_required or min_global:
+                        if self._guest_allowed(method, guest_ok):
+                            # Guests are limited by the same client key as
+                            # sign-in (IPv4 address or IPv6 /64).
+                            asked = guest_rate_check(client_key(address))
+                            principal = auth.guest_principal()
+                            gate = _GUEST_WORK
+                            guest_slot = gate.acquire(asked, GUEST_WAIT_SECONDS)
+                            if not guest_slot:
+                                raise _guest_busy()
+                        else:
+                            principal = auth.principal_from_token(tok)
+                            if min_global:
+                                principal.require_global(min_global)
+                    # The body is read once the caller is known. A caller who
+                    # has not signed in (the sign-in route itself) may send a
+                    # small one only.
+                    body = {}
+                    if has_body:
+                        body = self._read_body(None if principal is not None
+                                               else MAX_ANONYMOUS_BODY_BYTES)
+                    req = Req(principal, match.groupdict(), query, body, token=tok,
+                              client_ip=address, client_source=source,
+                              proxy_headers_ignored=ignored)
+                    status, obj = fn(req)
+                except AppError as e:
+                    status, obj = e.status, e.public()
+                except Exception as e:  # unexpected
+                    status, obj = 500, {"error": {"code": "internal", "message": str(e)[:200]}}
                 if principal is not None and principal.guest:
                     # The one place the guest view is applied: results and errors
                     # of every guest_ok route, JSON and report text alike.
                     obj = guest_view.apply(obj)
             finally:
-                # Released before the response is written: a slow reader must
-                # not hold a place.
+                # Whatever happened above, the place is given back, and before
+                # the response is written: a slow reader must not hold one.
                 if guest_slot:
                     gate.release()
+            if self._body_pending:
+                self._discard_body()
             return self._send_json(status, obj)
         return self._send_json(404, {"error": {"code": "not_found", "message": "no such route"}})
 
@@ -1400,13 +1524,16 @@ class Handler(BaseHTTPRequestHandler):
                  ".css": "text/css; charset=utf-8", ".json": "application/json",
                  ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon"}.get(ext, "text/plain")
         data = target.read_bytes()
-        self.send_response(200)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(data)))
-        self._security_headers()
-        self.end_headers()
-        if not self._head_only:
-            self.wfile.write(data)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self._security_headers()
+            self.end_headers()
+            if not self._head_only:
+                self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
 
 
 class Server(ThreadingHTTPServer):

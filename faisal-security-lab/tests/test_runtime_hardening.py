@@ -2,12 +2,16 @@
 stop on SIGTERM, the worker count and a mistyped FSL_PUBLIC_VIEW."""
 from __future__ import annotations
 
+import http.client
+import json
 import os
 import signal
+import socket
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -180,6 +184,332 @@ class TestStopSignal(unittest.TestCase):
                 proc.kill()
                 proc.wait(10)
             proc.stderr.close()
+
+
+# ---------------------------------------------------------------------------
+# What is accepted before the sender is known, over real HTTP
+# ---------------------------------------------------------------------------
+class LiveCase(EnvCase):
+    ENV: dict = {}
+
+    def setUp(self):
+        super().setUp()
+        from app import server
+        self.cfg, _info = boot(dict(self.ENV))
+        server.reset_login_throttle_for_tests()
+        server._GUEST_HITS.clear()
+        server._GUEST_GLOBAL[:] = [0.0, 0]
+        self.srv = server.build_server("127.0.0.1", 0)
+        self.port = self.srv.server_address[1]
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.addCleanup(self._stop)
+
+    def _stop(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+
+    def call(self, method, path, *, token=None, body=None, raw_body=None, headers=()):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=20)
+        try:
+            conn.putrequest(method, path)
+            data = raw_body
+            if body is not None:
+                data = json.dumps(body).encode("utf-8")
+            if data is not None:
+                conn.putheader("Content-Type", "application/json")
+                conn.putheader("Content-Length", str(len(data)))
+            if token:
+                conn.putheader("Authorization", f"Bearer {token}")
+            for name, value in headers:
+                conn.putheader(name, value)
+            conn.endheaders(data)
+            resp = conn.getresponse()
+            raw = resp.read()
+            try:
+                parsed = json.loads(raw.decode("utf-8"))
+            except ValueError:
+                parsed = raw.decode("utf-8", "replace")
+            return resp.status, parsed, resp.getheader("Connection")
+        finally:
+            conn.close()
+
+    def owner_token(self):
+        from app import auth
+        return auth.login("owner@test.local", "correct-horse-battery")["token"]
+
+
+class TestRequestTarget(LiveCase):
+    def test_a_long_request_target_is_refused_before_it_is_parsed(self):
+        from app import server
+        self.assertEqual(server.MAX_TARGET_BYTES, 2048)
+        long_query = "a=1&" * 15000                    # 60 KB
+        with mock.patch.object(server, "parse_qs", wraps=server.parse_qs) as parse, \
+                mock.patch.object(server, "urlsplit", wraps=server.urlsplit) as split:
+            for path in ("/api/health?" + long_query, "/?" + long_query,
+                         "/api/projects?" + long_query, "/app.js?" + long_query,
+                         "/api/" + "x" * 3000):
+                status, body, _ = self.call("GET", path)
+                self.assertEqual((status, body["error"]["code"]), (414, "uri_too_long"), path[:30])
+            self.assertEqual((parse.call_count, split.call_count), (0, 0))
+        # Exactly at the limit is served; one more is not.
+        base = "/api/health?x="
+        status, body, _ = self.call("GET", base + "y" * (server.MAX_TARGET_BYTES - len(base)))
+        self.assertEqual((status, body["ok"]), (200, True))
+        self.assertEqual(self.call("GET", base + "y" * (server.MAX_TARGET_BYTES - len(base) + 1))[0], 414)
+
+    def test_too_many_parameters_are_refused(self):
+        from app import server
+        many = "&".join(f"k{i}=1" for i in range(server.MAX_QUERY_FIELDS + 1))
+        status, body, _ = self.call("GET", "/api/health?" + many)
+        self.assertEqual((status, body["error"]["code"]), (400, "validation_error"))
+        few = "&".join(f"k{i}=1" for i in range(server.MAX_QUERY_FIELDS))
+        self.assertEqual(self.call("GET", "/api/health?" + few)[0], 200)
+
+    def test_the_query_is_not_parsed_for_a_static_file_or_an_unknown_route(self):
+        from app import server
+        with mock.patch.object(server, "parse_qs", wraps=server.parse_qs) as parse:
+            self.assertEqual(self.call("GET", "/?a=1&b=2")[0], 200)
+            self.assertEqual(self.call("GET", "/api/nope?a=1&b=2")[0], 404)
+            self.assertEqual(parse.call_count, 0)
+            self.assertEqual(self.call("GET", "/api/health?a=1")[0], 200)
+            self.assertEqual(parse.call_count, 1)
+
+
+class TestRequestBody(LiveCase):
+    def test_a_body_is_not_read_from_someone_who_is_not_signed_in(self):
+        from app import server
+        big = b'{"x": "' + b"a" * (1024 * 1024) + b'"}'
+        real_read = server.Handler._read_body
+        with mock.patch.object(server.Handler, "_read_body", autospec=True,
+                               side_effect=real_read) as read_body:
+            status, body, connection = self.call("POST", "/api/projects", raw_body=big)
+            self.assertEqual((status, body["error"]["code"]), (401, "unauthenticated"))
+            self.assertEqual(connection, "close")       # the unread body must not become a request
+            status, body, connection = self.call("POST", "/api/projects", raw_body=big,
+                                                 token="not-a-session")
+            self.assertEqual((status, connection), (401, "close"))
+            # A small unwanted body is thrown away unparsed and the connection is kept.
+            status, body, connection = self.call("POST", "/api/projects", raw_body=b'{"name": "x"}')
+            self.assertEqual((status, connection), (401, None))
+            self.assertEqual(read_body.call_count, 0)
+        # The next request on a kept connection is read correctly.
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=20)
+        try:
+            conn.request("POST", "/api/projects", body=b'{"name": "GET /api/health HTTP/1.1"}',
+                         headers={"Content-Type": "application/json"})
+            first = conn.getresponse()
+            first.read()
+            conn.request("GET", "/api/health")
+            second = conn.getresponse()
+            self.assertEqual((first.status, second.status), (401, 200))
+            self.assertTrue(json.loads(second.read())["ok"])
+        finally:
+            conn.close()
+        # Signed in, the same body is read (and judged on its content).
+        status, body, _ = self.call("POST", "/api/projects", raw_body=big, token=self.owner_token())
+        self.assertEqual((status, body["error"]["code"]), (400, "validation_error"))
+
+    def test_the_sign_in_route_takes_a_small_body_only(self):
+        from app import server
+        self.assertEqual(server.MAX_ANONYMOUS_BODY_BYTES, 16 * 1024)
+        padded = {"email": "owner@test.local", "password": "correct-horse-battery",
+                  "pad": "x" * (server.MAX_ANONYMOUS_BODY_BYTES + 1)}
+        status, body, connection = self.call("POST", "/api/auth/login", body=padded)
+        self.assertEqual((status, body["error"]["code"]), (400, "validation_error"))
+        self.assertIn("too large", body["error"]["message"])
+        # Far too large: not even read to be thrown away; the connection is closed.
+        huge = dict(padded, pad="x" * (server.MAX_DISCARDED_BODY_BYTES + 1))
+        status, body, connection = self.call("POST", "/api/auth/login", body=huge)
+        self.assertEqual((status, connection), (400, "close"))
+        # Neither attempt was counted as a sign-in attempt.
+        self.assertEqual(server._LOGIN_ATTEMPTS, {})
+        ok = {"email": "owner@test.local", "password": "correct-horse-battery"}
+        status, body, _ = self.call("POST", "/api/auth/login", body=ok)
+        self.assertEqual(status, 200)
+        self.assertTrue(body["token"])
+
+    def test_a_content_length_that_is_not_a_number_is_a_bad_request(self):
+        status, body, _ = self.call("POST", "/api/auth/login",
+                                    headers=[("Content-Length", "many")])
+        self.assertEqual((status, body["error"]["code"]), (400, "validation_error"))
+
+
+class TestGuestGatePlaces(LiveCase):
+    ENV = {"FSL_PUBLIC_VIEW": "1"}
+
+    def test_a_place_is_given_back_whatever_a_route_raises(self):
+        from app import server
+        gate = server._FairGate(2, 4)
+
+        def explode(req):
+            raise SystemExit(3)
+
+        routes = [(m, rx, explode if rx.pattern.endswith("/api/projects$") else fn, a, g, ok)
+                  for m, rx, fn, a, g, ok in server._ROUTES]
+        with mock.patch.object(server, "_GUEST_WORK", gate), \
+                mock.patch.object(server, "_ROUTES", routes), \
+                mock.patch("sys.stderr"):
+            for _ in range(4):
+                with self.assertRaises((http.client.HTTPException, OSError)):
+                    self.call("GET", "/api/projects")
+        self.assertEqual((gate._free, gate.waiting()), (2, 0))
+
+    def test_a_header_block_the_parser_gave_up_on_is_not_a_guest(self):
+        token = self.owner_token()
+        sock = socket.create_connection(("127.0.0.1", self.port), timeout=10)
+        try:
+            # A line without a colon in front of the credential: the standard
+            # parser stops there and never sees the Authorization line.
+            sock.sendall(b"GET /api/me HTTP/1.1\r\nHost: x\r\nthis is not a header\r\n"
+                         + f"Authorization: Bearer {token}\r\n".encode() + b"Connection: close\r\n\r\n")
+            sock.settimeout(3)
+            answer = b""
+            try:
+                while b"\r\n\r\n" not in answer or not answer.rstrip().endswith(b"}"):
+                    chunk = sock.recv(65536)
+                    if not chunk:
+                        break
+                    answer += chunk
+            except socket.timeout:
+                pass
+        finally:
+            sock.close()
+        self.assertTrue(answer.startswith(b"HTTP/1.1 401 "), answer[:80])
+        self.assertNotIn(b'"guest"', answer)
+        # A well-formed request without a credential is still a guest.
+        status, body, _ = self.call("GET", "/api/me")
+        self.assertEqual((status, body["user"].get("guest")), (200, True))
+
+    def test_part_of_the_ceiling_is_kept_for_clients_that_asked_for_little(self):
+        from app import server
+        from app.errors import RateLimitError
+        now = 7_000_000.0
+        self.assertEqual((server.GUEST_OPEN_SHARE, server.GUEST_NEWCOMER_REQUESTS), (0.6, 12))
+        with mock.patch.object(server, "GUEST_GLOBAL_LIMIT_PER_MINUTE", 100):
+            # Three busy addresses use the open share of the ceiling (60 of 100).
+            for i in range(60):
+                server.guest_rate_check(f"10.9.0.{i % 3}", now)
+            # They are held back from here on ...
+            with self.assertRaises(RateLimitError) as busy:
+                server.guest_rate_check("10.9.0.0", now + 1)
+            self.assertIn("busy", busy.exception.message)
+            # ... while someone who has just arrived is still served, up to
+            # the point where they are no newcomer either.
+            for _ in range(server.GUEST_NEWCOMER_REQUESTS):
+                server.guest_rate_check("10.9.9.9", now + 2)
+            with self.assertRaises(RateLimitError):
+                server.guest_rate_check("10.9.9.9", now + 3)
+            # The ceiling itself still holds for everyone.
+            for i in range(100 - 60 - server.GUEST_NEWCOMER_REQUESTS):
+                server.guest_rate_check(f"10.8.0.{i}", now + 4)
+            with self.assertRaises(RateLimitError):
+                server.guest_rate_check("10.7.0.1", now + 5)
+
+
+class TestStoredValues(LiveCase):
+    def setUp(self):
+        super().setUp()
+        from app import store
+        self.token = self.owner_token()
+        status, body, _ = self.call("POST", "/api/projects", token=self.token, body={"name": "p"})
+        self.pid = body["project"]["id"]
+        status, body, _ = self.call("POST", f"/api/projects/{self.pid}/assets", token=self.token,
+                                    body={"kind": "source", "identifier": "/srv/code",
+                                          "criticality": "low", "metadata": {}})
+        self.aid = body["asset"]["id"]
+
+    def scope(self, **fields):
+        body = {"asset_id": self.aid, "proof": "x", "environment": "lab", "scan_types": ["bandit"]}
+        body.update(fields)
+        return self.call("POST", f"/api/projects/{self.pid}/scopes", token=self.token, body=body)
+
+    def test_scope_fields_have_the_shape_the_policy_engine_reads(self):
+        bad = ({"allowed_targets": "all"}, {"allowed_targets": [1, 2]}, {"denied_targets": {"a": 1}},
+               {"allowed_targets": ["x" * 3000]}, {"allowed_ports": ["80", None]},
+               {"allowed_ports": [True]}, {"window": [1, 2]}, {"window": {"start_hour_utc": 24}},
+               {"window": {"end_hour_utc": "9"}}, {"rate_limits": "fast"},
+               {"valid_until": "next week"}, {"valid_from": 20260101})
+        for fields in bad:
+            status, body, _ = self.scope(**fields)
+            self.assertEqual((status, body["error"]["code"]), (400, "validation_error"), fields)
+        status, body, _ = self.scope(allowed_targets=["/srv/code", "https://example.org"],
+                                     denied_targets=[], allowed_ports=[443, "8000-8100"],
+                                     window={"start_hour_utc": 22, "end_hour_utc": 4},
+                                     rate_limits={"per_minute": 5},
+                                     valid_from="2026-01-01T03:00:00+03:00",
+                                     valid_until="2031-06-01T00:00:00Z")
+        self.assertEqual(status, 201, body)
+        scope = body["scope"]
+        # Times are stored in UTC in the form the engine compares with.
+        self.assertEqual(scope["valid_from"], "2026-01-01T00:00:00+00:00")
+        self.assertEqual(scope["valid_until"], "2031-06-01T00:00:00+00:00")
+        self.assertEqual(scope["allowed_ports"], [443, "8000-8100"])
+        # Nothing given: the defaults, as before.
+        status, body, _ = self.scope()
+        self.assertEqual(status, 201)
+        self.assertEqual((body["scope"]["allowed_targets"], body["scope"]["window"],
+                          body["scope"]["valid_until"]), ([], {}, None))
+
+    def test_an_idempotency_key_of_another_project_is_refused(self):
+        from app import queue
+        status, body, _ = self.scope(allowed_targets=["/srv/code"])
+        sid = body["scope"]["id"]
+        from app import store
+        owner = store.get_project(self.pid)["owner_id"]
+        elsewhere = store.create_project("another", owner)
+        asset = store.create_asset(elsewhere["id"], "source", "/srv/other", created_by=owner)
+        scope = store.create_scope(elsewhere["id"], asset["id"], proof="x",
+                                   allowed_targets=["/srv/other"], scan_types=["bandit"],
+                                   created_by=owner)
+        other = queue.enqueue(project_id=elsewhere["id"], asset_id=asset["id"],
+                              scope_id=scope["id"], connector="bandit", params={},
+                              created_by=owner, idempotency_key="shared-key-1")
+        before = len(queue.list_jobs(self.pid))
+        status, body, _ = self.call("POST", f"/api/projects/{self.pid}/scans", token=self.token,
+                                    body={"asset_id": self.aid, "scope_id": sid,
+                                          "connector": "bandit", "idempotency_key": "shared-key-1"})
+        self.assertEqual((status, body["error"]["code"]), (409, "conflict"))
+        self.assertNotIn(other["id"], json.dumps(body))
+        self.assertEqual(len(queue.list_jobs(self.pid)), before)
+
+    def test_severity_and_confidence_are_stored_as_fixed_words(self):
+        from app import findings, store
+        from app.connectors.base import RawFinding
+        from app import queue
+        asset = store.get_asset(self.aid)
+        _status, body, _ = self.scope(allowed_targets=["/srv/code"])
+        job = queue.enqueue(project_id=self.pid, asset_id=self.aid, scope_id=body["scope"]["id"],
+                            connector="bandit", params={}, created_by=store.get_project(self.pid)["owner_id"])
+        raws = [RawFinding(rule_id="r1", title="a", severity="critical overlay", confidence="sure"),
+                RawFinding(rule_id="r2", title="b", severity="high", confidence="high")]
+        findings.ingest(job, asset, raws)
+        stored = {f["rule_id"]: (f["severity"], f["confidence"])
+                  for f in findings.list_findings(self.pid)}
+        self.assertEqual(stored, {"r1": ("info", "low"), "r2": ("high", "high")})
+
+    def test_connectors_without_a_registry_row_are_listed_as_checking(self):
+        from app import store
+        from app.connectors import connector_names
+        status, body, _ = self.call("GET", "/api/connectors", token=self.token)
+        self.assertEqual({c["state"] for c in body["connectors"]}, {"checking"})
+        # The sync has reached one tool so far.
+        store.upsert_tool_registry("bandit", {"category": "SAST", "state": "ready",
+                                              "readiness": {"available": True, "version": "1.9.4"}})
+        status, body, _ = self.call("GET", "/api/connectors", token=self.token)
+        listed = {c["name"]: c for c in body["connectors"]}
+        self.assertEqual(sorted(listed), connector_names())
+        self.assertEqual(listed["bandit"]["state"], "ready")
+        self.assertEqual({c["state"] for name, c in listed.items() if name != "bandit"},
+                         {"checking"})
+
+
+class TestProbeOutput(EnvCase):
+    def test_output_that_is_not_text_does_not_break_the_probe(self):
+        from app.connectors.base import Connector
+        directory = Path(tempfile.mkdtemp(prefix="fsl-probe-"))
+        tool = fake_tool(directory, "latin", "printf 'tool 1.0 \\351\\n'\n")
+        version = Connector()._probe_version(tool)
+        self.assertTrue(version.startswith("tool 1.0"), version)
 
 
 if __name__ == "__main__":

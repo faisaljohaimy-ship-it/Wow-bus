@@ -20,7 +20,7 @@ a hard structured-output safety contract, and a bilingual RTL/LTR operator conso
   evidence → report, through the standalone server with in-process workers.
 - **Policy enforcement over the live API:** an out-of-scope connector returns
   HTTP 403 `policy_denied`; SSRF to a private address is blocked.
-- **Tests:** 298 (`make test`) pass — RBAC/isolation, policy/scope/SSRF, queue
+- **Tests:** 312 (`make test`) pass — RBAC/isolation, policy/scope/SSRF, queue
   idempotency + crash-safety, connectors (known vs clean), dedup/reopen,
   redaction, AI safety, reports — plus the 9-row failure-mode matrix.
 - **Acceptance:** 10/10 gates (`make acceptance` → `evidence/acceptance-report.json`).
@@ -64,7 +64,13 @@ console escapes every value it writes, single quotes included); form fields
 without a type attribute escaping the theme; and several smaller points
 (sign-in errors in Arabic, a late screen load overwriting the current screen,
 a credential on a second header line, private ids looking different from
-missing ones to a guest).
+missing ones to a guest). A second independent check of those fixes found one
+more way to tire a small instance without touching any limit (a request with
+a very long address cost CPU before anything was known about the sender); the
+request target is now capped at 2 KB before it is parsed, the query is parsed
+only for a matched route, and a request body is read only after the caller is
+known. Measured at a tenth of a CPU under 20 such requests a second: health
+check immediate, owner sign-in 0.5 s (before: both timed out at 30 s).
 
 ## What tests proved
 Authorization cannot be bypassed via the API (enqueue-time policy) or after
@@ -108,7 +114,7 @@ reaches the asset is confirmed by a re-scan before the finding is closed.
 ```bash
 cd faisal-security-lab
 make install-tools && make verify     # honest tool states
-make test                             # 298 tests
+make test                             # 312 tests
 make acceptance                       # 10 gates → evidence/acceptance-report.json
 make serve                            # open the console at http://127.0.0.1:8787
 ```

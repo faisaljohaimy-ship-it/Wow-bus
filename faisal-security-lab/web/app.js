@@ -31,7 +31,7 @@ const I18N = {
     motion_stop:"إيقاف الحركة", motion_start:"تشغيل الحركة",
     preparing:"يجري تجهيز العرض التوضيحي. حدّث الصفحة بعد لحظات.",
     open:"فتح", download:"تنزيل", report_note:"التقارير منقّحة: القيم الحساسة محجوبة.",
-    throttled:"محاولات دخول خاطئة كثيرة من هذا الجهاز. انتظر {m} دقيقة ثم حاول من جديد.",
+    throttled:"محاولات دخول خاطئة كثيرة من هذا الجهاز. انتظر {wait} ثم حاول من جديد.",
     signinbusy:"تسجيل الدخول مشغول الآن. انتظر بضع ثوانٍ ثم حاول من جديد.",
     badlogin:"البريد أو كلمة المرور غير صحيحة.",
     unavailable:"الخدمة مشغولة الآن أو الاتصال ضعيف. انتظر قليلًا ثم حاول من جديد.", retry:"إعادة المحاولة",
@@ -63,7 +63,7 @@ const I18N = {
     motion_stop:"Pause motion", motion_start:"Resume motion",
     preparing:"The demo is being prepared. Refresh in a moment.",
     open:"Open", download:"Download", report_note:"Reports are redacted: sensitive values are withheld.",
-    throttled:"Too many wrong sign-in attempts from this device. Wait {m} minutes, then try again.",
+    throttled:"Too many wrong sign-in attempts from this device. Wait {wait}, then try again.",
     signinbusy:"Sign-in is busy right now. Wait a few seconds, then try again.",
     badlogin:"The email or the password is not correct.",
     unavailable:"The service is busy or the connection is weak. Wait a moment, then try again.", retry:"Try again",
@@ -114,12 +114,21 @@ async function loadSetupNotices(){
   }catch(e){ /* the sign-in form still works without the notices */ }
 }
 
+// "3 minutes" in the current language, with the noun the number takes.
+function minutesText(n){
+  if (S.lang !== "ar") return n === 1 ? "1 minute" : `${n} minutes`;
+  if (n === 1) return "دقيقة واحدة";
+  if (n === 2) return "دقيقتين";
+  return n <= 10 ? `${n} دقائق` : `${n} دقيقة`;
+}
+
 // ---- api ----
 async function api(path, method="GET", body=null){
   const h = { "Content-Type":"application/json" };
   if (S.token) h["Authorization"] = "Bearer " + S.token;
-  const res = await fetch(path, { method, headers:h, body: body?JSON.stringify(body):null });
-  const text = await res.text();
+  let res, text;
+  try{ res = await fetch(path, { method, headers:h, body: body?JSON.stringify(body):null }); text = await res.text(); }
+  catch(e){ throw Object.assign(new Error("network error"), {status:0}); }   // offline, or the connection was cut
   let data; try { data = text?JSON.parse(text):{}; } catch(e){ data = {raw:text}; }
   if (!res.ok) throw Object.assign(new Error((data.error&&data.error.message)||res.statusText),
     {status:res.status, code:(data.error&&data.error.code), detail:(data.error&&data.error.detail)});
@@ -134,6 +143,9 @@ async function apiRaw(path){
   return { text, type: res.headers.get("Content-Type") || "text/plain" };
 }
 const esc = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+// A class name built from data is one token of letters, digits, _ and -: a value
+// with a space in it would otherwise add classes of its own choosing.
+const tok = v => String(v==null?"":v).replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
 // A link target taken from data is used only when it is an http(s) address.
 const safeUrl = u => /^https?:\/\//i.test(String(u||"")) ? String(u) : "#";
 const h = (strings,...v)=>strings.map((s,i)=>s+(v[i]!=null?v[i]:"")).join("");
@@ -319,7 +331,12 @@ async function renderScreen(){
     if (S.screen==="reports") return await scrReports(ctx);
     if (S.screen==="audit") return await scrAudit(ctx);
     if (S.screen==="settings") return await scrSettings(ctx);
-  }catch(e){ setMain(ctx, notice(e.message + (e.code?` [${e.code}]`:""), "err")); }
+  }catch(e){
+    if (e.status===429 || e.status>=500 || e.status===0)
+      return setMain(ctx, notice(t("unavailable"), "err")
+        + `<button class="btn primary" type="button" data-act="refresh">↻ ${esc(t("retry"))}</button>`);
+    setMain(ctx, notice(e.message + (e.code?` [${e.code}]`:""), "err"));
+  }
 }
 function topbar(title, extra=""){ return h`<div class="topbar"><h1>${esc(title)}</h1><div class="spacer"></div>${extra}</div>`; }
 
@@ -354,7 +371,7 @@ function sevBars(sev){ const order=["critical","high","medium","low","info"];
     <div class="progress"><span style="width:${Number((sev[s]||0)/max*100)||0}%"></span></div></div>`).join("");
 }
 function kvTable(obj){ const k=Object.keys(obj); if(!k.length) return `<div class="muted small">${esc(t("none"))}</div>`;
-  return `<table>${k.map(x=>`<tr><td>${esc(x)}</td><td class="mono right"><span class="state state-${esc(x)}">${esc(obj[x])}</span></td></tr>`).join("")}</table>`; }
+  return `<table>${k.map(x=>`<tr><td>${esc(x)}</td><td class="mono right"><span class="state state-${tok(x)}">${esc(obj[x])}</span></td></tr>`).join("")}</table>`; }
 
 async function scrAssets(ctx){
   const pid=S.project.id;
@@ -393,7 +410,7 @@ async function scrCatalog(ctx){
     + h`<div class="card"><h2>${esc(t("connector"))} / ${esc(t("toolstate"))}</h2>
       <table><thead><tr><th>${esc(t("tool"))}</th><th>category</th><th>version</th><th>state</th><th>source</th></tr></thead>
       <tbody>${tools.tools.map(x=>`<tr><td class="mono">${esc(x.name)}</td><td class="small">${esc(x.category)}</td>
-        <td class="small">${esc(x.version||"—")}</td><td class="state state-${esc(x.state)}">${esc(x.state)}</td>
+        <td class="small">${esc(x.version||"—")}</td><td class="state state-${tok(x.state)}">${esc(x.state)}</td>
         <td class="small"><a href="${esc(safeUrl(x.source))}" target="_blank" rel="noopener">${esc((x.source||"").replace("https://github.com/",""))}</a></td></tr>`).join("")}</tbody></table>
       <div class="small muted" style="margin-top:8px">states: catalog→installed→ready→verified; blocked/stale/disabled are distinct.</div></div>
     ${cat.categories.map(c=>`<div class="card"><h2>${esc(c.category)} <span class="muted small">(${esc(c.n)})</span></h2>
@@ -416,7 +433,7 @@ async function scrScans(ctx){
         <div><button class="btn primary">${esc(t("run"))}</button></div>
       </form><div class="small muted" style="margin-top:6px">${esc(t("unauthorized"))}</div></div>
     <div class="card"><h2>${esc(t("jobs"))}</h2><table><thead><tr><th>${esc(t("connector"))}</th><th>${esc(t("status"))}</th><th>phase</th><th>progress</th><th>${esc(t("tool"))}</th><th></th></tr></thead>
-      <tbody>${jobs.jobs.map(j=>`<tr><td class="mono">${esc(j.connector)}</td><td class="state state-${esc(j.state)}">${esc(j.state)}</td>
+      <tbody>${jobs.jobs.map(j=>`<tr><td class="mono">${esc(j.connector)}</td><td class="state state-${tok(j.state)}">${esc(j.state)}</td>
         <td class="small">${esc(j.phase)}</td><td style="width:120px"><div class="progress"><span style="width:${Math.round((Number(j.progress)||0)*100)}%"></span></div></td>
         <td class="small">${esc((j.result_summary&&j.result_summary.tool_version)||"")}</td>
         <td class="flex"><button class="btn sm" data-act="job" data-job="${esc(j.id)}">↳</button>${["queued","leased","running"].includes(j.state)?`<button class="btn sm danger" data-act="jobstop" data-job="${esc(j.id)}">${esc(t("stop"))}</button>`:""}</td></tr>`).join("")||`<tr><td colspan=6 class="muted">${esc(t("none"))}</td></tr>`}</tbody></table></div>`);
@@ -430,7 +447,7 @@ async function scrFindings(ctx){
   setMain(ctx, topbar(t("findings"), `<button class="btn sm" data-act="refresh">↻ ${esc(t("refresh"))}</button>`)
     + h`<div class="card"><table><thead><tr><th>${esc(t("severity"))}</th><th>${esc(t("priority"))}</th><th>${esc(t("tool"))}</th><th>${esc(t("location"))}</th><th>${esc(t("verification"))}</th><th>${esc(t("status"))}</th><th>${esc(t("ftitle"))}</th></tr></thead>
       <tbody>${f.findings.map(x=>{const loc=x.location||{};const L=(loc.file||loc.url||loc.host||loc.package||"")+(loc.line?":"+loc.line:"");
-        return `<tr data-act="finding" data-fid="${esc(x.id)}" style="cursor:pointer"><td><span class="badge sev-${esc(x.severity)}">${esc(x.severity)}</span></td>
+        return `<tr data-act="finding" data-fid="${esc(x.id)}" style="cursor:pointer"><td><span class="badge sev-${tok(x.severity)}">${esc(x.severity)}</span></td>
         <td class="mono">${esc(x.work_priority)}</td><td class="small">${esc(x.connector)}</td><td class="mono-sm">${esc(L)}</td>
         <td class="small">${esc(x.verification_status)}</td><td class="small">${esc(x.status)}</td><td>${esc(x.title)}</td></tr>`;}).join("")||`<tr><td colspan=7 class="muted">${esc(t("none"))}</td></tr>`}</tbody></table></div>`);
 }
@@ -502,10 +519,12 @@ async function scrSettings(ctx){
 
 // ---------- finding / job drawer ----------
 async function openFinding(fid){
+  const asked = RENDER_SEQ;
   const d=await api(`/api/findings/${fid}`); const f=d.finding; const loc=f.location||{};
+  if (asked !== RENDER_SEQ) return;       // the user went elsewhere before the answer
   S.drawer = h`<div class="overlay" data-act="closedrawer"></div><div class="drawer">
     <div class="flex"><h2>${esc(f.title)}</h2><button class="btn sm right" data-act="closedrawer">${esc(t("close"))}</button></div>
-    <span class="badge sev-${esc(f.severity)}">${esc(f.severity)}</span> <span class="pill">${esc(f.connector)}</span> <span class="pill">prio ${esc(f.work_priority)}</span>
+    <span class="badge sev-${tok(f.severity)}">${esc(f.severity)}</span> <span class="pill">${esc(f.connector)}</span> <span class="pill">prio ${esc(f.work_priority)}</span>
     <div class="kv"><div class="k">rule</div><div class="mono-sm">${esc(f.rule_id)}</div>
       <div class="k">${esc(t("location"))}</div><div class="mono-sm">${esc(JSON.stringify(loc))}</div>
       <div class="k">cve/cwe</div><div>${esc(f.cve||"—")} / ${esc(f.cwe||"—")}</div>
@@ -530,10 +549,12 @@ async function openFinding(fid){
   render();
 }
 async function openJob(jid){
+  const asked = RENDER_SEQ;
   const d=await api(`/api/jobs/${jid}`); const j=d.job;
+  if (asked !== RENDER_SEQ) return;
   S.drawer = h`<div class="overlay" data-act="closedrawer"></div><div class="drawer">
     <div class="flex"><h2>${esc(j.connector)} job</h2><button class="btn sm right" data-act="closedrawer">${esc(t("close"))}</button></div>
-    <span class="state state-${esc(j.state)}">${esc(j.state)}</span>
+    <span class="state state-${tok(j.state)}">${esc(j.state)}</span>
     <div class="kv"><div class="k">phase</div><div>${esc(j.phase)}</div>
       <div class="k">attempts</div><div>${esc(j.attempts)}/${esc(j.max_attempts)}</div>
       <div class="k">created</div><div class="small">${esc(j.created_at)}</div>
@@ -563,7 +584,8 @@ document.addEventListener("submit", async e=>{
     if(f.id==="scopeform"){ const types=[...f.querySelectorAll('input[name=st]:checked')].map(x=>x.value);
       await api(`/api/projects/${S.project.id}/scopes`,"POST",{asset_id:fd.asset_id,proof:fd.proof,environment:fd.environment,
         allowed_targets:fd.allowed_targets?fd.allowed_targets.split(",").map(s=>s.trim()):[],scan_types:types,owner_contact:fd.owner_contact});
-      S.screen="assets"; renderScreen(); return; }
+      if (S.screen==="assets") renderScreen();   // the user may have moved on meanwhile
+      return; }
     if(f.id==="scanform"){ const sel=f.querySelector('[name=scope_id]').selectedOptions[0];
       await api(`/api/projects/${S.project.id}/scans`,"POST",{asset_id:sel.dataset.asset,scope_id:fd.scope_id,connector:fd.connector,
         idempotency_key:`${fd.scope_id}:${fd.connector}:${Date.now()}`}); renderScreen(); return; }
@@ -576,7 +598,7 @@ document.addEventListener("submit", async e=>{
       const secs=(err.detail&&err.detail.retry_after_seconds)||600;
       // A short wait means the password check had no free turn; a long one
       // means too many wrong attempts from this device.
-      msg = secs<=30 ? t("signinbusy") : t("throttled").replace("{m}", Math.max(1, Math.ceil(secs/60)));
+      msg = secs<=30 ? t("signinbusy") : t("throttled").replace("{wait}", minutesText(Math.max(1, Math.ceil(secs/60))));
     }
     if(box){ if(f.id==="loginform") box.innerHTML=""; box.insertAdjacentHTML("afterbegin", notice(msg,"err")); } }
   finally{ delete f.dataset.busy; if(sendBtn) sendBtn.disabled=false; }
@@ -584,7 +606,7 @@ document.addEventListener("submit", async e=>{
 
 document.addEventListener("change", async e=>{
   if(e.target.id==="projsel"){ const v=e.target.value;
-    if(v==="__new"){ setMain(h`<div class="card"><h2>${esc(t("newproject"))}</h2>
+    if(v==="__new"){ setMain({ seq: ++RENDER_SEQ }, h`<div class="card"><h2>${esc(t("newproject"))}</h2>
       <form id="projform" class="row"><div style="flex:2"><label>${esc(t("name"))}</label><input name="name" required></div>
       <div><button class="btn primary">${esc(t("create"))}</button></div></form></div>`); return; }
     S.project=S.projects.find(p=>p.id===v); renderScreen(); }
@@ -696,7 +718,8 @@ function renderUnavailable(){
   decorate();
 }
 async function init(){
-  try{ const c=await api("/api/config"); S.publicView=!!c.public_view; }catch(e){ S.publicView=false; }
+  try{ const c=await api("/api/config"); S.publicView=!!c.public_view; }
+  catch(e){ return renderUnavailable(); }      // its button calls init() again
   if (S.token){ S.guest=false; return boot(); }
   if (S.publicView && !S.loginOpen){ S.guest=true; return boot(); }
   S.guest=false; render();

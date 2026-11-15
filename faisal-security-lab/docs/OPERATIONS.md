@@ -96,6 +96,26 @@ real defence.
 
 An IPv6 client is counted by its /64 network, not its single address.
 
+### What is accepted before the sender is known
+
+A request costs CPU before the service knows who sent it, so that part is kept
+small and fixed:
+
+- the request target (path and query string together) may be at most 2048
+  bytes; a longer one gets HTTP 414 before it is parsed, static files and the
+  health check included;
+- a query string may carry at most 32 parameters (HTTP 400 beyond that), and it
+  is parsed only when the path matches a route;
+- a request body is read only after the caller has been identified. Without a
+  session, only the sign-in route takes a body, of at most 16 KB. An unwanted
+  body of up to 64 KB is read and thrown away unparsed; beyond that the answer
+  carries `Connection: close`.
+
+What remains is the cost of answering at all (about 2.5 ms of CPU for the
+smallest request on a tenth of a CPU, so several dozen requests a second of any
+kind use the whole instance). That is a volumetric attack and belongs to the
+platform's edge.
+
 ### Which address is "the client"
 
 By default the client is whoever opened the TCP connection, and headers such as

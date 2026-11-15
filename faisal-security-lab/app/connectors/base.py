@@ -131,7 +131,8 @@ class Connector:
             try:
                 proc = subprocess.Popen([path, flag], stdout=subprocess.PIPE,
                                         stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
-                                        text=True, env=env, start_new_session=True)
+                                        text=True, encoding="utf-8", errors="replace",
+                                        env=env, start_new_session=True)
             except (subprocess.SubprocessError, OSError):
                 continue
             try:

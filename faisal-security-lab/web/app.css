@@ -93,7 +93,7 @@ html.nomotion .mask .laser,html.nomotion .codebar>span{animation-play-state:paus
 .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;
   border:1px solid var(--text);font-size:12px;color:var(--text)}
 select#projsel{width:100%;background:#000;border:1px solid var(--text);color:var(--text);
-  padding:9px 10px;border-radius:8px;font-size:13.5px;min-height:44px}
+  padding:9px 10px;border-radius:8px;font-size:16px;min-height:44px}
 .muted{color:var(--dim)}
 .small{font-size:12px}
 
