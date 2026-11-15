@@ -59,7 +59,9 @@ class GitleaksConnector(Connector):
             line = leak.get("StartLine")
             findings.append(RawFinding(
                 rule_id=f"gitleaks:{rule}",
-                title=f"Potential secret: {leak.get('Description', rule)}",
+                # A dash, not "secret: ...": the redaction applied to stored
+                # titles reads "secret:" plus a word as a key and its value.
+                title=f"Potential secret — {leak.get('Description', rule)}",
                 severity="high", confidence="medium",
                 location={"file": rel, "line": line},
                 description=("A credential-shaped string was detected. The value is "
