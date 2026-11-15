@@ -166,6 +166,41 @@ class TestScopeWithoutAllowedTargets(ScopeCase):
                 scope_mod.check_targets(empty, web, {"target": other})
 
 
+class TestSlashAtTheEndOfARelativeSourcePath(ScopeCase):
+    """A source asset may be named by a relative path. A slash at its end, in
+    the identifier or in the allowed target, names the same directory."""
+
+    NAME = "samples/vulnerable-app"
+    CASES = {
+        "identifier with the slash, no allowed targets": (NAME + "/", []),
+        "identifier and allowed target both with the slash": (NAME + "/", [NAME + "/"]),
+        "identifier without the slash, allowed target with it": (NAME, [NAME + "/"]),
+        "identifier with the slash, allowed target without it": (NAME + "/", [NAME]),
+    }
+
+    def test_the_directory_and_what_is_below_it_are_accepted(self):
+        for label, (identifier, allowed) in self.CASES.items():
+            with self.subTest(label):
+                asset = self.asset(identifier=identifier)
+                scope = self.scope(asset, allowed_targets=allowed)
+                self.assertEqual(self.request(asset, scope)[0], 201)
+                for inside in (self.NAME, self.NAME + "/", self.NAME + "/pkg"):
+                    self.assertEqual(self.request(asset, scope, {"source_path": inside})[0], 201)
+
+    def test_a_directory_outside_it_is_still_refused(self):
+        from app import queue
+        for label, (identifier, allowed) in self.CASES.items():
+            asset = self.asset(identifier=identifier)
+            scope = self.scope(asset, allowed_targets=allowed)
+            for outside in ("/etc", "samples", "samples/other", self.NAME + "-old",
+                            self.NAME + "/../other", str(self.elsewhere)):
+                with self.subTest(label, source_path=outside):
+                    with self.assertRaises(ForbiddenError) as denied:
+                        self.request(asset, scope, {"source_path": outside})
+                    self.assertEqual(denied.exception.code, "policy_denied")
+        self.assertEqual(queue.list_jobs(self.pid), [])
+
+
 class TestSourceDirectoryInTheWorker(ScopeCase):
     def test_a_job_whose_directory_changed_after_the_request_is_blocked(self):
         from app import queue
@@ -201,6 +236,215 @@ class TestSourceDirectoryInTheWorker(ScopeCase):
         self.assertTrue((staged / "pkg" / "app.py").is_file())
         # A link inside the tree is not followed while copying.
         self.assertFalse((staged / "link-out" / "secret.py").exists())
+
+    def test_a_blocked_job_is_recorded_with_what_was_refused(self):
+        import json
+        from app import audit
+        from app.db import get_db
+        from app.worker import Worker
+        asset = self.asset()
+        scope = self.scope(asset)
+        jid = self.request(asset, scope)[1]["job"]["id"]
+        get_db().execute("UPDATE jobs SET params=? WHERE id=?",
+                         (json.dumps({"source_path": str(self.elsewhere)}), jid))
+        Worker(worker_id="t").run_once()
+        blocked = [row for row in audit.query(self.pid) if row["action"] == "job.blocked"]
+        self.assertEqual(len(blocked), 1)
+        self.assertEqual(blocked[0]["detail"],
+                         {"reason": "source directory is outside the authorized scope",
+                          "code": "target_scope", "target": str(self.elsewhere),
+                          "allowed": [str(self.code)]})
+
+
+class TestStagingReadsTheDirectoryThatWasChecked(ScopeCase):
+    """The worker opens the checked directory once and reads it through that
+    open directory, so a change made after the check cannot redirect it."""
+
+    def setUp(self):
+        super().setUp()
+        from app.worker import Worker
+        self.worker = Worker(worker_id="t")
+        self.staged = Path(tempfile.mkdtemp(prefix="fsl-stage-"))
+        self.asset_row = self.asset()
+        self.scope_row = self.scope(self.asset_row)
+
+    def stage(self, source_path=None):
+        params = {} if source_path is None else {"source_path": str(source_path)}
+        self.worker._stage_source({"params": params}, self.asset_row, self.scope_row, self.staged)
+
+    def staged_files(self):
+        return sorted(p.relative_to(self.staged).as_posix()
+                      for p in self.staged.rglob("*") if not p.is_dir())
+
+    def changed_after_the_check(self, change):
+        """Run the real scope check, then change the tree before it is read."""
+        from app import scope as scope_mod
+        real_check = scope_mod.check_source_dir
+
+        def check_then_change(scope, asset, directory):
+            result = real_check(scope, asset, directory)
+            change()
+            return result
+        return mock.patch.object(scope_mod, "check_source_dir", check_then_change)
+
+    def link_code_to_elsewhere(self):
+        self.code.rename(self.root / "code-moved")
+        os.symlink(self.elsewhere, self.code)
+
+    def test_a_link_put_in_place_of_the_directory_after_the_check_is_refused(self):
+        with self.changed_after_the_check(self.link_code_to_elsewhere):
+            with self.assertRaises(PolicyDenied):
+                self.stage()
+        self.assertEqual(list(self.staged.iterdir()), [])       # nothing from elsewhere
+
+    def test_a_link_put_in_place_of_a_directory_above_it_is_refused(self):
+        # The scan reads code/pkg. After the check "code" becomes a link to a
+        # tree that has a pkg of its own.
+        (self.elsewhere / "pkg").mkdir()
+        (self.elsewhere / "pkg" / "secret.py").write_text("PASSWORD = 'outside'\n")
+        with self.changed_after_the_check(self.link_code_to_elsewhere):
+            with self.assertRaises(PolicyDenied):
+                self.stage(self.code / "pkg")
+        self.assertEqual(list(self.staged.iterdir()), [])
+
+    def test_the_job_of_a_directory_swapped_before_it_is_read_ends_blocked(self):
+        from app import queue
+        from app.connectors import get_connector
+        bandit = type(get_connector("bandit"))
+        jid = self.request(self.asset_row, self.scope_row)[1]["job"]["id"]
+        checks = []
+
+        def swap_after_the_workers_own_check():
+            checks.append("check")
+            if len(checks) == 2:                # the first is the policy check
+                self.link_code_to_elsewhere()
+        ran = []
+        ready = {"installed": True, "available": True, "version": "0", "detail": "stand-in"}
+        with self.changed_after_the_check(swap_after_the_workers_own_check), \
+                mock.patch.object(bandit, "readiness", lambda self: ready), \
+                mock.patch.object(bandit, "execute", lambda self, ctx: ran.append(ctx)):
+            self.worker.run_once()
+        job = queue.get_job(jid)
+        self.assertEqual(job["state"], "blocked")
+        self.assertEqual(job["error"], {"code": "policy_denied",
+                                        "message": "source directory changed after it was checked"})
+        self.assertEqual((len(checks), ran), (2, []))       # no tool was started
+
+    def test_another_directory_put_in_its_place_while_it_is_opened_is_refused(self):
+        from app import worker as worker_mod
+        real_open = worker_mod._open_real_dir
+
+        def open_then_replace(real):
+            fd = real_open(real)
+            self.code.rename(self.root / "code-moved")
+            self.elsewhere.rename(self.code)
+            return fd
+        with mock.patch.object(worker_mod, "_open_real_dir", open_then_replace):
+            with self.assertRaises(PolicyDenied):
+                self.stage()
+        self.assertEqual(list(self.staged.iterdir()), [])
+
+    def test_a_linked_file_and_a_linked_directory_are_not_copied(self):
+        os.symlink(self.elsewhere / "secret.py", self.code / "pkg" / "linked-secret.py")
+        os.symlink(self.code / "pkg" / "app.py", self.code / "linked-app.py")
+        os.symlink(self.code / "pkg", self.code / "linked-pkg")
+        self.stage()
+        self.assertEqual(self.staged_files(), ["pkg/app.py"])
+        for name in ("link-out", "linked-pkg"):                 # link-out is made by setUp
+            self.assertFalse((self.staged / name).exists())
+
+    def test_an_ordinary_tree_is_copied_with_the_same_layout(self):
+        files = {"README.md": b"# sample\n", "pkg/app.py": b"print('inside')\n",
+                 "pkg/sub/deep/mod.py": b"VALUE = 1\n", "pkg/data.bin": bytes(range(256)) * 40,
+                 "pkg/empty.txt": b"", "has space/ملف.txt": "نص".encode("utf-8")}
+        ignored = (".git/config", "node_modules/x/index.js", "pkg/__pycache__/app.pyc",
+                   "pkg/sub/.venv/pyvenv.cfg", "build/out.js")
+        for name, data in {**files, **{name: b"ignored" for name in ignored}}.items():
+            path = self.code / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        (self.code / "empty-dir").mkdir()
+        os.chmod(self.code / "README.md", 0o640)
+        os.utime(self.code / "README.md", (1_600_000_000, 1_600_000_000))
+        self.stage()
+        self.assertEqual(self.staged_files(), sorted(files))
+        for name, data in files.items():
+            with self.subTest(file=name):
+                self.assertEqual((self.staged / name).read_bytes(), data)
+        self.assertTrue((self.staged / "empty-dir").is_dir())
+        for name in (".git", "node_modules", "build", "pkg/__pycache__", "pkg/sub/.venv"):
+            with self.subTest(ignored=name):
+                self.assertFalse((self.staged / name).exists())
+        copied = (self.staged / "README.md").stat()
+        self.assertEqual((copied.st_mode & 0o777, int(copied.st_mtime)), (0o640, 1_600_000_000))
+        # A directory below the authorized one is staged the same way.
+        below = Path(tempfile.mkdtemp(prefix="fsl-stage-"))
+        self.worker._stage_source({"params": {"source_path": str(self.code / "pkg" / "sub")}},
+                                  self.asset_row, self.scope_row, below)
+        self.assertEqual([p.relative_to(below).as_posix() for p in below.rglob("*.py")],
+                         ["deep/mod.py"])
+
+    def test_a_hard_linked_file_is_copied_like_any_other_file(self):
+        # Package managers make hard links inside a tree; they are ordinary files.
+        os.link(self.code / "pkg" / "app.py", self.code / "pkg" / "same.py")
+        self.stage()
+        self.assertEqual(self.staged_files(), ["pkg/app.py", "pkg/same.py"])
+
+    def test_what_cannot_be_read_is_left_out(self):
+        os.mkfifo(self.code / "pkg" / "pipe")                   # opening it must not wait
+        locked = self.code / "pkg" / "locked.py"
+        locked.write_text("x = 1\n")
+        locked.chmod(0)
+        self.stage()
+        expected = ["pkg/app.py"]
+        if os.access(locked, os.R_OK):                          # root reads it anyway
+            expected.append("pkg/locked.py")
+        self.assertEqual(self.staged_files(), expected)
+
+    def test_the_size_limit_still_applies(self):
+        from app import worker as worker_mod
+        from app.errors import ConnectorError
+        (self.code / "big.txt").write_text("x" * 64)
+        with mock.patch.object(worker_mod, "_MAX_SOURCE_BYTES", 32):
+            with self.assertRaises(ConnectorError) as stopped:
+                self.stage()
+        self.assertIn("size limit", stopped.exception.message)
+
+    def test_a_missing_directory_or_a_file_is_reported_and_not_read(self):
+        from app.errors import ConnectorError
+        for not_a_directory in (self.code / "absent", self.code / "pkg" / "app.py"):
+            with self.subTest(source_path=not_a_directory.name):
+                with self.assertRaises(ConnectorError) as failed:
+                    self.stage(not_a_directory)
+                self.assertIn("not found or not a directory", failed.exception.message)
+        self.assertEqual(list(self.staged.iterdir()), [])
+
+    def test_a_directory_the_worker_may_not_open_is_reported_as_such(self):
+        from app import worker as worker_mod
+        from app.errors import ConnectorError
+        denied = PermissionError(13, "Permission denied")
+        with mock.patch.object(worker_mod, "_open_real_dir", side_effect=denied):
+            with self.assertRaises(ConnectorError) as failed:
+                self.stage()
+        self.assertEqual(failed.exception.message, f"source directory cannot be read: {self.code}")
+        self.assertEqual(list(self.staged.iterdir()), [])
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root may open any directory")
+    def test_a_directory_without_read_permission_is_not_scanned_as_if_it_were_empty(self):
+        from app.errors import ConnectorError
+        self.code.chmod(0o300)                  # may be entered, may not be listed
+        self.addCleanup(self.code.chmod, 0o700)
+        with self.assertRaises(ConnectorError) as failed:
+            self.stage()
+        self.assertIn("cannot be read", failed.exception.message)
+        # One level down the same thing is skipped, as before, and the rest is copied.
+        self.code.chmod(0o700)
+        (self.code / "closed").mkdir()
+        (self.code / "closed" / "hidden.py").write_text("x = 1\n")
+        (self.code / "closed").chmod(0o300)
+        self.addCleanup((self.code / "closed").chmod, 0o700)
+        self.stage()
+        self.assertEqual(self.staged_files(), ["pkg/app.py"])
 
 
 class TestInternalAssets(ScopeCase):

@@ -168,6 +168,28 @@ class TestGeneratedPasswordInTheStartUpLog(unittest.TestCase):
                                     "generated": False, "password": None, "notices": []}}
         self.assertNotIn("password", server_start_log(info))
 
+    def test_first_start_names_the_sign_in_address_when_the_password_was_set(self):
+        from app.bootstrap import init_platform
+        # The result of a real first start with FSL_OWNER_PASSWORD set.
+        _, first = boot({"FSL_OWNER_EMAIL": "owner@test.local",
+                         "FSL_OWNER_PASSWORD": "first-password-1"})
+        self.assertTrue(first["owner_bootstrap"]["created"])
+        log = server_start_log(first)
+        self.assertIn("[init] owner created: owner@test.local", log.splitlines())
+        # The address only: a password that was set by the operator is never printed.
+        self.assertNotIn("first-password-1", log)
+        self.assertNotIn("password", log)
+        # A later start creates nothing and says nothing about the owner.
+        again = init_platform(sync_tools=False)
+        self.assertNotIn("owner created", server_start_log(again))
+
+    def test_no_owner_line_when_no_owner_was_created(self):
+        _, info = boot({"FSL_OWNER_EMAIL": "owner@test.local", "FSL_OWNER_PASSWORD": "tiny"})
+        self.assertFalse(info["owner_bootstrap"]["created"])
+        log = server_start_log(info)
+        self.assertNotIn("owner created", log)
+        self.assertNotIn("tiny", log)
+
 
 class TestOwnerIsCreatedOnlyByAStartThatShowsThePassword(unittest.TestCase):
     """A command that only inspects the installation must not create the owner:
