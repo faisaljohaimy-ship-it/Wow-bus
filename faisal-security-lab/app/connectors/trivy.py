@@ -1,10 +1,9 @@
 """Trivy connector (filesystem / SBOM / dependency scanning).
 
-Implemented for completeness. In this build environment the Trivy binary could
-not be installed (its GitHub release assets 404 through the egress proxy), so
-readiness() reports it as not installed and the tool-registry state resolves to
-'blocked'. The connector is correct and will activate the moment a `trivy`
-binary is on PATH — it is never reported as verified until a real run proves it.
+Optional. It is used when a `trivy` binary is on PATH; scripts/install-tools.sh
+tries to install one. Without the binary, readiness() reports the tool as not
+installed and its tool-registry state is 'blocked'. It is not reported as
+verified until a real run has succeeded.
 """
 from __future__ import annotations
 
@@ -32,8 +31,8 @@ class TrivyConnector(Connector):
         import shutil
         if not shutil.which("trivy"):
             raise ToolUnavailable(
-                "trivy is not installed in this environment "
-                "(blocked: release assets unreachable via egress proxy)")
+                "trivy is not installed: no 'trivy' command on PATH "
+                "(scripts/install-tools.sh installs it)")
         out_file = ctx.workdir / "trivy.json"
         argv = ["trivy", "filesystem", "--quiet", "--format", "json",
                 "--output", str(out_file), "--scanners", "vuln,secret,misconfig",

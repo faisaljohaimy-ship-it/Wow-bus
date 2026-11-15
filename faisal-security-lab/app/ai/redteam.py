@@ -14,6 +14,7 @@ from __future__ import annotations
 from ..config import get_config
 from ..errors import ToolUnavailable
 from ..connectors.base import Connector, ConnectorResult, EvidenceArtifact, ExecContext, RawFinding
+from ..version import PROJECT_LICENSE
 from .provider import get_provider
 from .sanitizer import INSTRUCTION_PREAMBLE
 
@@ -40,7 +41,7 @@ class AiRedTeamConnector(Connector):
     name = "ai_redteam"
     category = "أمن النماذج والوكلاء"
     source = "faisal-security-lab (probe battery; promptfoo/PyRIT-style)"
-    license = "MIT"
+    license = PROJECT_LICENSE       # the probes are this project's own code
     connector_type = "api"
     binary = None
     egress = ["<configured model endpoint>"]
