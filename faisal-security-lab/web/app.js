@@ -4,6 +4,7 @@ const S = { token: localStorage.getItem("fsl_token") || "", user: null,
   lang: localStorage.getItem("fsl_lang") || "ar", projects: [], project: null,
   screen: "dashboard", connectors: [], drawer: null,
   publicView: false,   // server offers a read-only public view
+  configKnown: false,  // the server has answered whether it does
   guest: false,        // browsing that view without signing in
   loginOpen: false };  // a guest asked for the owner sign-in form
 
@@ -25,7 +26,12 @@ const I18N = {
     globalstop:"الإيقاف الشامل", engaged:"مُفعّل", disengaged:"متوقف", users:"المستخدمون",
     adduser:"إضافة مستخدم", role:"الدور", lang:"EN", none:"—", close:"إغلاق",
     noproject:"أنشئ مشروعًا أو اختر واحدًا للبدء.", confirm:"تأكيد", owner_contact:"جهة اتصال المالك",
-    criticality:"الأهمية", unauthorized:"غير مصرح — راجع النطاق.", refresh:"تحديث",
+    criticality:"الأهمية", refresh:"تحديث",
+    noprojects:"لا يوجد مشروع بعد",
+    firstproject:"ابدأ بإنشاء مشروعك الأول. الأصول والتفويضات والفحوص والنتائج كلها تتبع مشروعًا.",
+    scanhint:"يُرفض أي نوع فحص لا يذكره التفويض.",
+    refused:"المرفوض", authallows:"المسموح في التفويض",
+    dirhint:"الهدف المسموح المكتوب بصيغة {entry} يغطي ذلك المجلد وكل ما تحته.",
     publicview:"عرض عام للقراءة فقط. تشغيل الفحوص وأي تعديل يتطلب دخول المالك.",
     ownerlogin:"دخول المالك", backpublic:"العودة للعرض العام",
     motion_stop:"إيقاف الحركة", motion_start:"تشغيل الحركة",
@@ -59,7 +65,12 @@ const I18N = {
     engaged:"ENGAGED", disengaged:"off", users:"Users", adduser:"Add user", role:"Role",
     lang:"ع", none:"—", close:"Close", noproject:"Create or pick a project to begin.",
     confirm:"Confirm", owner_contact:"Owner contact", criticality:"Criticality",
-    unauthorized:"Not authorized — check scope.", refresh:"Refresh",
+    refresh:"Refresh",
+    noprojects:"No project yet",
+    firstproject:"Start by creating your first project. Assets, authorizations, scans and findings all belong to a project.",
+    scanhint:"A scan type the authorization does not list is refused.",
+    refused:"Refused", authallows:"The authorization allows",
+    dirhint:"An allowed target written as {entry} covers that directory and what is below it.",
     publicview:"Public read-only view. Running scans or changing anything requires the owner to sign in.",
     ownerlogin:"Owner sign-in", backpublic:"Back to the public view",
     motion_stop:"Pause motion", motion_start:"Resume motion",
@@ -126,6 +137,32 @@ function minutesText(n){
   return n <= 10 ? `${n} دقائق` : `${n} دقيقة`;
 }
 
+// Why the server refused a scan, by the code of the refusal (app/policy.py).
+const POLICY_TEXT = {
+  ar: {
+    global_stop: "الإيقاف الشامل مُفعّل، فلا يبدأ أي فحص. يستطيع المالك أو المدير إلغاءه من الإعدادات.",
+    role: "دورك في هذا المشروع لا يسمح بتشغيل الفحوص.",
+    project_isolation: "هذا الأصل لا يتبع هذا المشروع.",
+    scope_mismatch: "هذا التفويض لم يُمنح لهذا الأصل في هذا المشروع.",
+    scope_inactive: "هذا التفويض لم يعد نشطًا. أضف تفويضًا جديدًا للأصل.",
+    connector_not_authorized: "نوع الفحص هذا غير مذكور في التفويض. اختر نوعًا يذكره، أو أضف تفويضًا يذكر هذا النوع.",
+    window: "التفويض لا يغطي هذا الوقت: لم يبدأ سريانه بعد، أو انتهى، أو أن هذه الساعة خارج ساعات التشغيل المسموحة.",
+    prod_active_blocked: "نوع الفحص هذا يرسل طلبات إلى الهدف، وهذا متوقف في التفويضات التي بيئتها prod. يستطيع من يشغّل الخادم السماح به بضبط FSL_ALLOW_ACTIVE_IN_PROD=1.",
+    target_scope: "التفويض لا يغطي هدف هذا الفحص. أضف تفويضًا تغطي أهدافه المسموحة هذا الهدف."
+  },
+  en: {
+    global_stop: "The global stop is on, so no scan starts. An owner or an admin can switch it off under Settings.",
+    role: "Your role in this project does not allow running scans.",
+    project_isolation: "This asset does not belong to this project.",
+    scope_mismatch: "This authorization was not given for this asset in this project.",
+    scope_inactive: "This authorization is no longer active. Add a new authorization for the asset.",
+    connector_not_authorized: "This scan type is not in the authorization. Choose one it lists, or add an authorization that lists this one.",
+    window: "The authorization does not cover this time: it is not valid yet, it has expired, or this hour is outside its allowed run hours.",
+    prod_active_blocked: "This scan type sends traffic to the target, and that is switched off for authorizations whose environment is prod. Whoever runs the server can allow it by setting FSL_ALLOW_ACTIVE_IN_PROD=1.",
+    target_scope: "The authorization does not cover the target of this scan. Add an authorization whose allowed targets cover it."
+  }
+};
+
 // ---- api ----
 async function api(path, method="GET", body=null){
   const h = { "Content-Type":"application/json" };
@@ -153,6 +190,15 @@ const tok = v => String(v==null?"":v).replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
 // A link target taken from data is used only when it is an http(s) address.
 const safeUrl = u => /^https?:\/\//i.test(String(u||"")) ? String(u) : "#";
 const h = (strings,...v)=>strings.map((s,i)=>s+(v[i]!=null?v[i]:"")).join("");
+// A path or a name inside a sentence or a table: escaped, and kept left to
+// right so that it reads the same in the Arabic console.
+const ltr = v => `<bdi dir="ltr">${esc(v)}</bdi>`;
+// A long identifier cut in the middle: its start and its end stay readable.
+function midCut(v, max=30){
+  const s = String(v==null?"":v);
+  if (s.length <= max) return s;
+  return s.slice(0, Math.ceil((max-1)/2)) + "…" + s.slice(s.length - Math.floor((max-1)/2));
+}
 
 // ---- shell / render ----
 const root = () => document.getElementById("root");
@@ -259,7 +305,10 @@ function render(){
   let nav = ["dashboard","assets","catalog","scans","findings","ailab","reports","audit","settings"];
   if (guestView) nav = nav.filter(k => !["audit","settings"].includes(k));
   if (!nav.includes(S.screen)) S.screen = "dashboard";
-  const projects = S.projects.map(p=>`<option value="${esc(p.id)}" ${S.project&&S.project.id===p.id?"selected":""}>${esc(p.name)}</option>`).join("")
+  // With no project the list starts with a placeholder. "+ New project" as the
+  // only entry would already be selected, and choosing it again does nothing.
+  const projects = ((guestView || S.projects.length) ? "" : `<option value="" disabled selected>${esc(t("noprojects"))}</option>`)
+    + S.projects.map(p=>`<option value="${esc(p.id)}" ${S.project&&S.project.id===p.id?"selected":""}>${esc(p.name)}</option>`).join("")
     + (guestView ? "" : `<option value="__new">+ ${esc(t("newproject"))}</option>`);
   root().innerHTML = h`
     <div class="app">
@@ -316,6 +365,30 @@ function setMain(ctx, html){
   decorate();
 }
 function notice(msg,cls=""){ return `<div class="notice ${cls}">${esc(msg)}</div>`; }
+// An error from the server as a notice. A scan the policy refused is explained
+// in the console language: why, then what was refused and what the
+// authorization allows when the server names them. Any other error, and a
+// refusal code without a text here, shows the server's own message.
+function errorNotice(err){
+  const d = (err.code==="policy_denied" && err.detail && typeof err.detail==="object") ? err.detail : {};
+  const code = typeof d.policy_code==="string" ? d.policy_code : "";
+  const why = Object.prototype.hasOwnProperty.call(POLICY_TEXT[S.lang], code) ? POLICY_TEXT[S.lang][code] : "";
+  if (!why) return notice(err.message+(err.code?` [${err.code}]`:""),"err");
+  // Two refusals may name what was refused and what is allowed: a target, or
+  // a scan type (the server calls it a connector).
+  const field = code==="target_scope" ? "target" : (code==="connector_not_authorized" ? "connector" : "");
+  const refused = (field && typeof d[field]==="string") ? d[field] : "";
+  const allowed = (field && Array.isArray(d.allowed)) ? d.allowed.filter(x => typeof x==="string" && x) : null;
+  const lines = [];
+  if (refused) lines.push(`${esc(t("refused"))}: ${ltr(refused)}`);
+  if (allowed && allowed.length)
+    lines.push(`${esc(t("authallows"))}: ${allowed.slice(0,12).map(ltr).join(S.lang==="ar"?"، ":", ")}${allowed.length>12?" …":""}`);
+  else if (allowed && field==="connector") lines.push(`${esc(t("authallows"))}: ${esc(t("noscantypes"))}`);
+  // A directory target: say how one entry covers a directory (see app/scope.py).
+  if (field==="target" && /^(\/|~|\.\.?\/)/.test(refused) && !refused.includes("://"))
+    lines.push(esc(t("dirhint")).replace("{entry}", ltr("/path/*")));
+  return `<div class="notice err">${esc(why)}${lines.map(l=>`<div class="more">${l}</div>`).join("")}</div>`;
+}
 
 // ---------- screens ----------
 // Every screen render gets a number. A screen that is still waiting for the
@@ -324,6 +397,9 @@ let RENDER_SEQ = 0;
 async function renderScreen(){
   const ctx = { seq: ++RENDER_SEQ };
   try{
+    // Signed in and no project yet: the screens that need one offer to create it.
+    if (!S.project && S.token && ["dashboard","assets","scans","findings","reports"].includes(S.screen))
+      return setMain(ctx, topbar(t(S.screen)) + projectForm(t("firstproject")));
     if (S.screen==="dashboard") return await scrDashboard(ctx);
     if (!S.project && ["assets","scans","findings","reports"].includes(S.screen))
       return setMain(ctx, notice(t("noproject")));
@@ -339,10 +415,17 @@ async function renderScreen(){
     if (e.status===429 || e.status>=500 || e.status===0)
       return setMain(ctx, notice(t("unavailable"), "err")
         + `<button class="btn primary" type="button" data-act="refresh">↻ ${esc(t("retry"))}</button>`);
-    setMain(ctx, notice(e.message + (e.code?` [${e.code}]`:""), "err"));
+    setMain(ctx, errorNotice(e));
   }
 }
 function topbar(title, extra=""){ return h`<div class="topbar"><h1>${esc(title)}</h1><div class="spacer"></div>${extra}</div>`; }
+// The "New project" form. It is opened from the project list, and it is what a
+// signed-in user sees while there is no project.
+function projectForm(intro=""){
+  return h`<div class="card"><h2>${esc(t("newproject"))}</h2>${intro?`<p class="small">${esc(intro)}</p>`:""}
+    <form id="projform" class="row"><div style="flex:2"><label for="pf-name">${esc(t("name"))}</label><input id="pf-name" name="name" required></div>
+    <div><button class="btn primary">${esc(t("create"))}</button></div></form></div>`;
+}
 
 async function scrDashboard(ctx){
   const pid = S.project?S.project.id:null;
@@ -376,12 +459,19 @@ function sevBars(sev){ const order=["critical","high","medium","low","info"];
 }
 function kvTable(obj){ const k=Object.keys(obj); if(!k.length) return `<div class="muted small">${esc(t("none"))}</div>`;
   return `<table>${k.map(x=>`<tr><td>${esc(x)}</td><td class="mono right"><span class="state state-${tok(x)}">${esc(obj[x])}</span></td></tr>`).join("")}</table>`; }
+// Looks up what an asset is by its id: its identifier, or the id itself for
+// an asset that is not in the list.
+function assetIdentifiers(assets){
+  const byId = new Map((assets||[]).map(a => [a.id, a.identifier]));
+  return id => byId.get(id) || id;
+}
 
 async function scrAssets(ctx){
   const pid=S.project.id;
   const [a,sc,conn] = await Promise.all([api(`/api/projects/${pid}/assets`),
     api(`/api/projects/${pid}/scopes`), api(`/api/connectors`)]);
   S.connectors = conn.connectors;
+  const ident = assetIdentifiers(a.assets);
   const connOpts = conn.connectors.map(c=>`<label class="small"><input type="checkbox" name="st" value="${esc(c.name)}"> ${esc(c.name)}</label>`).join(" ");
   setMain(ctx, topbar(t("assets"))
     + h`<div class="card"><h2>${esc(t("addasset"))}</h2>
@@ -397,11 +487,11 @@ async function scrAssets(ctx){
         <div><button class="btn primary">${esc(t("create"))}</button></div>
       </form></div>
     <div class="card"><h2>${esc(t("assets"))}</h2><table><thead><tr><th>${esc(t("kind"))}</th><th>${esc(t("identifier"))}</th><th>${esc(t("criticality"))}</th><th></th></tr></thead>
-      <tbody>${a.assets.map(x=>`<tr><td>${esc(x.kind)}</td><td class="mono-sm">${esc(x.identifier)}</td><td>${esc(x.criticality)}</td>
-        <td><button class="btn sm" data-act="scopeform" data-asset="${esc(x.id)}">+ ${esc(t("addscope"))}</button></td></tr>`).join("")||`<tr><td colspan=4 class="muted">${esc(t("none"))}</td></tr>`}</tbody></table></div>
+      <tbody>${a.assets.map(x=>`<tr><td>${esc(x.kind)}</td><td class="mono-sm">${ltr(x.identifier)}</td><td>${esc(x.criticality)}</td>
+        <td><button class="btn sm" data-act="scopeform" data-asset="${esc(x.id)}" data-ident="${esc(x.identifier)}">+ ${esc(t("addscope"))}</button></td></tr>`).join("")||`<tr><td colspan=4 class="muted">${esc(t("none"))}</td></tr>`}</tbody></table></div>
     <div id="scopeformbox"></div>
     <div class="card"><h2>${esc(t("scope"))}</h2><table><thead><tr><th>${esc(t("asset"))}</th><th>${esc(t("environment"))}</th><th>${esc(t("scantypes"))}</th><th>${esc(t("status"))}</th><th></th></tr></thead>
-      <tbody>${sc.scopes.map(x=>`<tr><td class="mono-sm">${esc(x.asset_id)}</td><td>${esc(x.environment)}</td>
+      <tbody>${sc.scopes.map(x=>`<tr><td class="mono-sm">${ltr(ident(x.asset_id))}<div class="assetid">${esc(x.asset_id)}</div></td><td>${esc(x.environment)}</td>
         <td class="small">${esc((x.scan_types||[]).join(", "))}</td><td class="state state-${x.status==="active"?"ready":"blocked"}">${esc(x.status)}</td>
         <td>${x.status==="active"?`<button class="btn sm danger" data-act="revoke" data-scope="${esc(x.id)}">${esc(t("revoke"))}</button>`:""}</td></tr>`).join("")||`<tr><td colspan=5 class="muted">${esc(t("none"))}</td></tr>`}</tbody></table></div>
     <div id="_connopts" class="hidden">${connOpts}</div>`);
@@ -426,20 +516,27 @@ async function scrCatalog(ctx){
 
 async function scrScans(ctx){
   const pid=S.project.id;
-  const [sc,conn,jobs]=await Promise.all([api(`/api/projects/${pid}/scopes`),
-    api(`/api/connectors`),api(`/api/projects/${pid}/jobs`)]);
+  // The form is for signed-in users, so only they need the assets (for the labels).
+  const guestView = S.guest && !S.token;
+  const [sc,conn,jobs,as]=await Promise.all([api(`/api/projects/${pid}/scopes`),
+    api(`/api/connectors`),api(`/api/projects/${pid}/jobs`),
+    guestView ? {assets:[]} : api(`/api/projects/${pid}/assets`)]);
   const activeScopes=sc.scopes.filter(s=>s.status==="active");
   S.connectors = conn.connectors;
-  // The scan types are part of the label: two authorizations on one asset
-  // differ only in what they allow.
-  const scopeLabel = s => `${s.asset_id} · ${s.environment} · ${(s.scan_types||[]).join(", ") || t("noscantypes")}`;
+  const ident = assetIdentifiers(as.assets);
+  // The scan types come first: two authorizations on one asset differ only in
+  // what they allow, and a phone shows only the start of the closed list. The
+  // asset is named by its identifier, cut in the middle when it is long.
+  const scopeLabel = s => `${(s.scan_types||[]).join(", ") || t("noscantypes")} · ${midCut(ident(s.asset_id))} · ${s.environment}`;
+  // dir="ltr": the label is scan types and a path, and a list that runs right
+  // to left would cut off its start, not its end.
   setMain(ctx, topbar(t("scans"), `<button class="btn sm" data-act="refresh">↻ ${esc(t("refresh"))}</button>`)
     + h`<div class="card"><h2>${esc(t("run"))}</h2>
       <form id="scanform" class="row">
-        <div style="flex:3 1 320px"><label>${esc(t("scope"))}</label><select name="scope_id">${activeScopes.map(s=>`<option value="${esc(s.id)}" data-asset="${esc(s.asset_id)}" data-types="${esc(JSON.stringify(s.scan_types||[]))}">${esc(scopeLabel(s))}</option>`).join("")}</select></div>
+        <div style="flex:3 1 320px"><label>${esc(t("scope"))}</label><select name="scope_id" dir="ltr">${activeScopes.map(s=>`<option value="${esc(s.id)}" title="${esc(ident(s.asset_id))}" data-asset="${esc(s.asset_id)}" data-types="${esc(JSON.stringify(s.scan_types||[]))}">${esc(scopeLabel(s))}</option>`).join("")}</select></div>
         <div><label>${esc(t("connector"))}</label><select name="connector" id="connsel"></select></div>
         <div><button class="btn primary">${esc(t("run"))}</button></div>
-      </form><div class="small muted" style="margin-top:6px">${esc(t("unauthorized"))}</div></div>
+      </form><div class="hint">${esc(t("scanhint"))}</div></div>
     <div class="card"><h2>${esc(t("jobs"))}</h2><table><thead><tr><th>${esc(t("connector"))}</th><th>${esc(t("status"))}</th><th>phase</th><th>progress</th><th>${esc(t("tool"))}</th><th></th></tr></thead>
       <tbody>${jobs.jobs.map(j=>`<tr><td class="mono">${esc(j.connector)}</td><td class="state state-${tok(j.state)}">${esc(j.state)}</td>
         <td class="small">${esc(j.phase)}</td><td style="width:120px"><div class="progress"><span style="width:${Math.round((Number(j.progress)||0)*100)}%"></span></div></td>
@@ -621,25 +718,27 @@ document.addEventListener("submit", async e=>{
       await api(`/api/projects/${S.project.id}/scans`,"POST",{asset_id:sel.dataset.asset,scope_id:fd.scope_id,connector:fd.connector,
         idempotency_key:`${fd.scope_id}:${fd.connector}:${Date.now()}`}); renderScreen(); return; }
     if(f.id==="userform"){ await api("/api/users","POST",fd); renderScreen(); return; }
-    if(f.id==="projform"){ const r=await api("/api/projects","POST",{name:fd.name}); S.projects.push(r.project); S.project=r.project; render(); return; }
+    if(f.id==="projform"){ const first=!S.projects.length;
+      const r=await api("/api/projects","POST",{name:fd.name}); S.projects.push(r.project); S.project=r.project;
+      if(first) S.screen="dashboard";       // the first project opens on its dashboard
+      render(); return; }
   }catch(err){ const box=document.getElementById("loginmsg")||document.getElementById("main");
-    let msg=err.message+(err.code?` [${err.code}]`:"");
-    if(f.id==="loginform" && err.status===401){ msg = t("badlogin"); }
+    let html=errorNotice(err);
+    if(f.id==="loginform" && err.status===401){ html = notice(t("badlogin"),"err"); }
     if(f.id==="loginform" && err.status===429){
       const secs=(err.detail&&err.detail.retry_after_seconds)||600;
       // A short wait means the password check had no free turn; a long one
       // means too many wrong attempts from this device.
-      msg = secs<=30 ? t("signinbusy") : t("throttled").replace("{wait}", minutesText(Math.max(1, Math.ceil(secs/60))));
+      html = notice(secs<=30 ? t("signinbusy") : t("throttled").replace("{wait}", minutesText(Math.max(1, Math.ceil(secs/60)))),"err");
     }
-    if(box){ if(f.id==="loginform") box.innerHTML=""; box.insertAdjacentHTML("afterbegin", notice(msg,"err")); } }
+    if(box){ if(f.id==="loginform") box.innerHTML=""; box.insertAdjacentHTML("afterbegin", html);
+      box.firstElementChild.scrollIntoView({block:"nearest"}); } }   // the form may be far below the notice
   finally{ delete f.dataset.busy; if(sendBtn) sendBtn.disabled=false; }
 });
 
 document.addEventListener("change", async e=>{
   if(e.target.id==="projsel"){ const v=e.target.value;
-    if(v==="__new"){ setMain({ seq: ++RENDER_SEQ }, h`<div class="card"><h2>${esc(t("newproject"))}</h2>
-      <form id="projform" class="row"><div style="flex:2"><label>${esc(t("name"))}</label><input name="name" required></div>
-      <div><button class="btn primary">${esc(t("create"))}</button></div></form></div>`); return; }
+    if(v==="__new"){ setMain({ seq: ++RENDER_SEQ }, projectForm(S.projects.length ? "" : t("firstproject"))); return; }
     S.project=S.projects.find(p=>p.id===v); renderScreen(); }
   else if(e.target.name==="scope_id" && e.target.closest("#scanform")){ fillConnectorSelect(); }
   else if(e.target.name==="st" && e.target.closest("#scopeform")){
@@ -662,7 +761,7 @@ document.addEventListener("click", async e=>{
     else if(act==="refresh"){ renderScreen(); }
     else if(act==="closedrawer"){ S.drawer=null; render(); }
     else if(act==="revoke"){ await api(`/api/scopes/${b.dataset.scope}/revoke`,"POST",{}); renderScreen(); }
-    else if(act==="scopeform"){ showScopeForm(b.dataset.asset); }
+    else if(act==="scopeform"){ showScopeForm(b.dataset.asset, b.dataset.ident); }
     else if(act==="jobstop"){ await api(`/api/jobs/${b.dataset.job}/stop`,"POST",{}); renderScreen(); }
     else if(act==="job"){ await openJob(b.dataset.job); }
     else if(act==="finding"){ await openFinding(b.dataset.fid); }
@@ -686,16 +785,16 @@ document.addEventListener("click", async e=>{
     else if(act==="evread"){ const r=await api(`/api/evidence/${b.dataset.eid}`);
       const o=document.getElementById("evout"); if(o) o.innerHTML=`<div class="ev">${esc(r.text)}</div>`; }
   }catch(err){ const m=document.getElementById("main");
-    if(m) m.insertAdjacentHTML("afterbegin", notice(err.message+(err.code?` [${err.code}]`:""),"err")); }
+    if(m) m.insertAdjacentHTML("afterbegin", errorNotice(err)); }
 });
 
 function aiBox(title,body){ const o=document.getElementById("aiout");
   if(o) o.innerHTML=`<h2 style="margin-top:14px">${esc(title)}</h2><div class="ev">${esc(body)}</div>`; }
 
-function showScopeForm(assetId){
+function showScopeForm(assetId, identifier){
   const opts=document.getElementById("_connopts");
   const connOpts = opts?opts.innerHTML:"";
-  document.getElementById("scopeformbox").innerHTML = h`<div class="card"><h2>${esc(t("addscope"))} — <span class="mono-sm">${esc(assetId)}</span></h2>
+  document.getElementById("scopeformbox").innerHTML = h`<div class="card"><h2>${esc(t("addscope"))} — <span class="mono-sm">${ltr(identifier||assetId)}</span></h2>
     <form id="scopeform"><input type="hidden" name="asset_id" value="${esc(assetId)}">
       <div class="row"><div><label>${esc(t("environment"))}</label><select name="environment"><option>lab</option><option>staging</option><option>prod</option></select></div>
         <div style="flex:2"><label>${esc(t("proof"))}</label><input name="proof" required placeholder="e.g. LAB-SELF-OWNED / ticket ref"></div>
@@ -743,17 +842,21 @@ async function boot(){
   }
 }
 function renderUnavailable(){
+  // Without a session the owner can still reach the sign-in form from here,
+  // when the public view is on or the server has not said whether it is.
+  const signin = !S.token && (S.publicView || !S.configKnown);
   root().innerHTML = h`<div class="loginwrap"><div class="login">
     <div class="hero">${MASK("lg")}<h1 class="brand">FAISAL<span class="dot">.AI</span></h1></div>
     <div class="sub kicker">${esc(t("kicker"))}</div>
     ${notice(t("unavailable"), "err")}
     <div class="flex" style="margin-top:12px">
       <button class="btn primary" type="button" data-act="reload">↻ ${esc(t("retry"))}</button>
+      ${signin ? `<button class="btn sm" type="button" data-act="showlogin">${esc(t("ownerlogin"))}</button>` : ""}
     </div></div></div>`;
   decorate();
 }
 async function init(){
-  try{ const c=await api("/api/config"); S.publicView=!!c.public_view; }
+  try{ const c=await api("/api/config"); S.publicView=!!c.public_view; S.configKnown=true; }
   catch(e){ return renderUnavailable(); }      // its button calls init() again
   if (S.token){ S.guest=false; return boot(); }
   if (S.publicView && !S.loginOpen){ S.guest=true; return boot(); }
