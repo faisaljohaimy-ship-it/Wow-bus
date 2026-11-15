@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import tempfile
 import threading
 import time
 from pathlib import Path
 
-from . import audit, evidence, findings as findings_mod, queue, store, util
+from . import audit, evidence, findings as findings_mod, queue, scope as scope_mod, store, util
 from .config import get_config
 from .connectors import get_connector
 from .connectors.base import ExecContext, run_tool
@@ -26,6 +27,51 @@ from .policy import evaluate_job
 _IGNORE = {".git", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache",
            ".pytest_cache", "dist", "build", ".next", ".terraform"}
 _MAX_SOURCE_BYTES = 200 * 1024 * 1024
+
+
+def _open_real_dir(real: str) -> int:
+    """Open the directory at `real`, an absolute real path that has passed the
+    scope check, and return a descriptor to read it by. Raises OSError.
+
+    The path is walked from the root one name at a time and no symbolic link
+    is followed at any step. A link put in place of the directory, or of a
+    directory above it, after the check makes the open fail, so the directory
+    that is read is the one at the path that was checked.
+    """
+    # O_PATH (Linux) only passes through a directory; it needs no permission
+    # to list it, as walking a path does not.
+    step = os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_PATH", os.O_RDONLY)
+    fd = os.open(os.sep, step)
+    try:
+        for name in Path(real).parts[1:]:
+            below = os.open(name, step, dir_fd=fd)
+            os.close(fd)
+            fd = below
+        return os.open(".", os.O_RDONLY | os.O_DIRECTORY, dir_fd=fd)
+    finally:
+        os.close(fd)
+
+
+def _is_dir_at(fd: int, real: str) -> bool:
+    """True when the open directory `fd` is the directory that stands at the
+    path `real` now (and that path is not a symbolic link)."""
+    try:
+        return os.path.samestat(os.fstat(fd), os.lstat(real))
+    except OSError:
+        return False
+
+
+def _changed_since_check(real: str) -> PolicyDenied:
+    return PolicyDenied("source directory changed after it was checked", detail={"target": real})
+
+
+def _copy_open_file(fd: int, info: os.stat_result, target: Path) -> None:
+    """Write the contents of the open regular file `fd` to `target` and give
+    the copy the file's permission bits and times."""
+    with open(fd, "rb", closefd=False) as source, open(target, "wb") as out:
+        shutil.copyfileobj(source, out)
+    os.chmod(target, stat.S_IMODE(info.st_mode))
+    os.utime(target, ns=(info.st_atime_ns, info.st_mtime_ns))
 
 
 class Worker:
@@ -78,7 +124,8 @@ class Worker:
                                error={"code": decision.code, "message": decision.reason})
                 audit.record("job.blocked", actor=self.worker_id, project_id=project["id"],
                              target=jid, outcome="denied",
-                             detail={"reason": decision.reason, "code": decision.code})
+                             detail={"reason": decision.reason, "code": decision.code,
+                                     **decision.detail})
                 return
 
             # 2. Readiness: the tool must actually be available.
@@ -240,45 +287,67 @@ class Worker:
         """Stage read-only source into input_dir. Supports a local path (lab) or
         a shallow git clone of a scope-authorized URL."""
         params = job["params"]
-        src = params.get("source_path") or asset.get("metadata", {}).get("local_path")
-        if not src and asset.get("kind") in ("repo", "source"):
-            ident = asset["identifier"]
-            if ident.startswith(("http://", "https://", "git@")) or ident.endswith(".git"):
+        src = scope_mod.local_source_for(asset, params)
+        if not src:
+            ident = asset.get("identifier", "")
+            if asset.get("kind") in ("repo", "source") and ident:
                 self._git_clone(ident, scope, asset, input_dir)
                 return
-            src = ident
-        if not src:
             raise ConnectorError("no source available to scan "
                                  "(set asset.metadata.local_path or params.source_path)")
-        src_path = Path(src).resolve()
-        if not src_path.exists() or not src_path.is_dir():
-            raise ConnectorError(f"source path not found or not a directory: {src}")
-        self._copy_bounded(src_path, input_dir)
+        # The policy check has already compared this directory with the scope.
+        # It is compared once more here, and the real path that passed is the
+        # one that is opened and read.
+        real = scope_mod.check_source_dir(scope, asset, src)
+        try:
+            top = _open_real_dir(real)
+        except OSError as e:
+            if os.path.realpath(real) != real:
+                # A symbolic link now stands where the checked directory, or
+                # a directory above it, was.
+                raise _changed_since_check(real) from None
+            if isinstance(e, PermissionError):
+                # Said plainly: a scan of nothing would read as a clean result.
+                raise ConnectorError(f"source directory cannot be read: {src}") from None
+            raise ConnectorError(f"source path not found or not a directory: {src}") from None
+        try:
+            if not _is_dir_at(top, real):
+                raise _changed_since_check(real)
+            self._copy_bounded(top, input_dir)
+        finally:
+            os.close(top)
 
-    def _copy_bounded(self, src: Path, dst: Path):
+    def _copy_bounded(self, top: int, dst: Path):
+        """Copy the tree under the open directory `top` into dst.
+
+        The walk goes from descriptor to descriptor, never back through a
+        path, so once the directory is open nothing put in its place can be
+        read. Symbolic links are not followed, to a directory or to a file.
+        Only regular files are copied; what cannot be read is left out.
+        """
         total = 0
-        for root, dirs, files in os.walk(src):
+        for root, dirs, files, dirfd in os.fwalk(".", dir_fd=top, follow_symlinks=False):
             dirs[:] = [d for d in dirs if d not in _IGNORE]
-            rel = Path(root).relative_to(src)
-            (dst / rel).mkdir(parents=True, exist_ok=True)
+            (dst / root).mkdir(parents=True, exist_ok=True)
             for f in files:
-                sp = Path(root) / f
                 try:
-                    if sp.is_symlink():
-                        continue
-                    size = sp.stat().st_size
+                    fd = os.open(f, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dirfd)
+                except OSError:
+                    continue            # a symbolic link, or not readable
+                try:
+                    info = os.fstat(fd)
+                    if not stat.S_ISREG(info.st_mode):
+                        continue        # a pipe, a socket, a device
+                    total += info.st_size
+                    if total > _MAX_SOURCE_BYTES:
+                        raise ConnectorError("source exceeds the staging size limit")
+                    _copy_open_file(fd, info, dst / root / f)
                 except OSError:
                     continue
-                total += size
-                if total > _MAX_SOURCE_BYTES:
-                    raise ConnectorError("source exceeds the staging size limit")
-                try:
-                    shutil.copy2(sp, dst / rel / f)
-                except OSError:
-                    continue
+                finally:
+                    os.close(fd)
 
     def _git_clone(self, url: str, scope, asset, input_dir: Path):
-        from . import scope as scope_mod
         # Clone is a network fetch; confirm the host is not internal unless allowed.
         scope_mod.validated_destination(url, allow_private=bool(asset.get("metadata", {}).get("internal")))
         run = run_tool(["git", "clone", "--depth", "1", "--no-tags", "--single-branch",

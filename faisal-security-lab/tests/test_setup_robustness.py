@@ -7,11 +7,16 @@ and report a stable notice code that the sign-in page explains.
 """
 from __future__ import annotations
 
+import io
 import os
+import sqlite3
+import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -74,13 +79,27 @@ class TestOwnerBootstrap(unittest.TestCase):
         self.assertEqual(info["setup_notices"], [])
         self.assertTrue(auth.login("owner@test.local", "spaced-password-1")["token"])
 
-    def test_unset_password_generates_one_time_password(self):
+    def test_unset_password_generates_a_password_that_keeps_working(self):
         from app import auth
+        from app.bootstrap import init_platform
         _, info = boot({"FSL_OWNER_EMAIL": "owner@test.local"})
         self.assertIn("owner_password_generated", info["setup_notices"])
         pw = info["owner_bootstrap"]["password"]
         self.assertGreaterEqual(len(pw), auth.MIN_PASSWORD_LENGTH)
         self.assertTrue(auth.login("owner@test.local", pw)["token"])
+        # It is the owner's password, not a single-use one: only the start
+        # that created it reports it, and it still signs in afterwards.
+        again = init_platform(sync_tools=False)
+        self.assertIsNone(again["owner_bootstrap"]["password"])
+        self.assertNotIn("owner_password_generated", again["setup_notices"])
+        self.assertTrue(auth.login("owner@test.local", pw)["token"])
+
+    def test_generated_password_notice_says_shown_once(self):
+        from app import bootstrap
+        text = bootstrap.describe_notice("owner_password_generated")
+        self.assertIn("generated", text)
+        self.assertIn("shown once", text)
+        self.assertNotIn("one-time", text.lower())
 
     def test_existing_owner_is_left_alone(self):
         from app.bootstrap import init_platform
@@ -98,6 +117,126 @@ class TestOwnerBootstrap(unittest.TestCase):
         self.assertEqual(body["setup_notices"], ["owner_password_too_short"])
         self.assertNotIn("tiny", str(body))
         self.assertTrue(bootstrap.describe_notice("owner_password_too_short"))
+
+
+def server_start_log(info: dict) -> str:
+    """What server.main() writes to its log for the given start-up result,
+    without binding a port or starting a thread."""
+    from app import server
+
+    class StoppedServer:
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def shutdown(self):
+            pass
+
+    class NoThread:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+    log = io.StringIO()
+    with mock.patch.object(server, "connector_names", return_value=[]), \
+            mock.patch.object(server, "threading", types.SimpleNamespace(Thread=NoThread)), \
+            mock.patch.object(server, "build_server", return_value=StoppedServer()), \
+            mock.patch.object(server, "init_platform", return_value=info), \
+            mock.patch("sys.stderr", log):
+        server.main()
+    return log.getvalue()
+
+
+class TestGeneratedPasswordInTheStartUpLog(unittest.TestCase):
+    def test_server_prints_the_address_and_the_password_on_one_init_line_each(self):
+        boot({"FSL_OWNER_EMAIL": "owner@test.local", "FSL_OWNER_PASSWORD": "first-password-1"})
+        info = {"setup_notices": ["owner_password_generated"], "catalog_seeded": 0,
+                "ai_available": False,
+                "owner_bootstrap": {"email": "owner@test.local", "created": True,
+                                    "generated": True, "password": "PRINTED-1",
+                                    "notices": ["owner_password_generated"]}}
+        lines = server_start_log(info).splitlines()
+        self.assertIn("[init] owner created: owner@test.local", lines)
+        self.assertIn("[init] generated owner password, shown once: PRINTED-1", lines)
+        self.assertEqual([line for line in lines if "one-time" in line.lower()], [])
+
+    def test_server_prints_no_password_line_when_none_was_generated(self):
+        boot({"FSL_OWNER_EMAIL": "owner@test.local", "FSL_OWNER_PASSWORD": "first-password-1"})
+        info = {"setup_notices": [], "catalog_seeded": 0, "ai_available": False,
+                "owner_bootstrap": {"email": "owner@test.local", "created": True,
+                                    "generated": False, "password": None, "notices": []}}
+        self.assertNotIn("password", server_start_log(info))
+
+    def test_first_start_names_the_sign_in_address_when_the_password_was_set(self):
+        from app.bootstrap import init_platform
+        # The result of a real first start with FSL_OWNER_PASSWORD set.
+        _, first = boot({"FSL_OWNER_EMAIL": "owner@test.local",
+                         "FSL_OWNER_PASSWORD": "first-password-1"})
+        self.assertTrue(first["owner_bootstrap"]["created"])
+        log = server_start_log(first)
+        self.assertIn("[init] owner created: owner@test.local", log.splitlines())
+        # The address only: a password that was set by the operator is never printed.
+        self.assertNotIn("first-password-1", log)
+        self.assertNotIn("password", log)
+        # A later start creates nothing and says nothing about the owner.
+        again = init_platform(sync_tools=False)
+        self.assertNotIn("owner created", server_start_log(again))
+
+    def test_no_owner_line_when_no_owner_was_created(self):
+        _, info = boot({"FSL_OWNER_EMAIL": "owner@test.local", "FSL_OWNER_PASSWORD": "tiny"})
+        self.assertFalse(info["owner_bootstrap"]["created"])
+        log = server_start_log(info)
+        self.assertNotIn("owner created", log)
+        self.assertNotIn("tiny", log)
+
+
+class TestOwnerIsCreatedOnlyByAStartThatShowsThePassword(unittest.TestCase):
+    """A command that only inspects the installation must not create the owner:
+    a generated password is shown by whoever creates the account, and such a
+    command does not show it."""
+
+    def test_create_owner_false_creates_nothing_and_reports_nothing(self):
+        from app import auth
+        from app.bootstrap import init_platform
+        boot({"FSL_OWNER_EMAIL": "owner@test.local", "FSL_OWNER_PASSWORD": "tiny"})
+        self.assertEqual(auth.list_users(), [])
+        info = init_platform(sync_tools=False, create_owner=False)
+        skipped = info["owner_bootstrap"]
+        self.assertEqual((skipped["created"], skipped["generated"], skipped["password"],
+                          skipped["notices"]), (False, False, None, []))
+        # Not even the notice about the too-short password: nothing was tried.
+        self.assertEqual(info["setup_notices"], [])
+        self.assertEqual(auth.list_users(), [])
+
+    def test_verify_script_on_an_empty_data_directory_leaves_the_owner_to_the_server(self):
+        from app import auth
+        data = Path(tempfile.mkdtemp(prefix="fsl-verify-")).resolve()
+        # Run as a newcomer would run it: no FSL_* setting except the data
+        # directory, which keeps the run away from ./var.
+        env = {k: v for k, v in os.environ.items() if not k.startswith("FSL_") and k != "PORT"}
+        env["FSL_DATA_DIR"] = str(data)
+        proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "verify.py")],
+                              cwd=str(ROOT), env=env, capture_output=True, text=True, timeout=300)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("http_headers", proc.stdout)          # the registry was printed
+        db = sqlite3.connect(str(data / "faisal-security-lab.db"))
+        try:
+            users = db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(users, 0)
+
+        # The first start on that directory, with nothing set, still creates
+        # the owner and hands back the generated password for the log.
+        _, info = boot({"FSL_DATA_DIR": str(data)})
+        created = info["owner_bootstrap"]
+        self.assertTrue(created["created"])
+        self.assertTrue(created["generated"])
+        self.assertEqual(created["email"], auth.DEFAULT_OWNER_EMAIL)
+        self.assertGreaterEqual(len(created["password"]), auth.MIN_PASSWORD_LENGTH)
+        self.assertIn("owner_password_generated", info["setup_notices"])
+        self.assertTrue(auth.login(auth.DEFAULT_OWNER_EMAIL, created["password"])["token"])
 
 
 class TestDataDirFallback(unittest.TestCase):

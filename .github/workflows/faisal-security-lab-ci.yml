@@ -1,11 +1,26 @@
 name: faisal-security-lab CI
 
+# The extra paths are files outside faisal-security-lab/ that the tests read.
 on:
   push:
     branches: [main]
-    paths: ["faisal-security-lab/**"]
+    paths:
+      - "faisal-security-lab/**"
+      - ".github/workflows/faisal-security-lab-ci.yml"
+      - "render.yaml"
+      - ".gitignore"
+      - ".gitleaksignore"
   pull_request:
-    paths: ["faisal-security-lab/**"]
+    paths:
+      - "faisal-security-lab/**"
+      - ".github/workflows/faisal-security-lab-ci.yml"
+      - "render.yaml"
+      - ".gitignore"
+      - ".gitleaksignore"
+
+# The job only reads the repository: it uses no secrets and writes nothing back.
+permissions:
+  contents: read
 
 concurrency:
   group: fsl-ci-${{ github.ref }}
@@ -32,8 +47,19 @@ jobs:
       - name: Add tools to PATH
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      # A tool that could not be installed does not stop the job at this step,
+      # but the run then covers less. Say so on the run page.
+      - name: Warn about missing tools
+        run: |
+          for tool in bandit gitleaks pip-audit semgrep; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              echo "::warning title=Security tool missing::$tool is not on PATH, so this run covers less: tests that run it are skipped and acceptance gates that depend on it fail."
+            fi
+          done
+
+      # The command the README and CONTRIBUTING tell people to run.
       - name: Unit + integration tests
-        run: python3 -W ignore -m unittest discover -s tests -p 'test_*.py'
+        run: make test
 
       - name: Acceptance gates
         run: python3 scripts/acceptance.py
@@ -41,9 +67,9 @@ jobs:
       - name: Tool readiness (informational)
         run: python3 scripts/verify.py
 
-      - name: Upload acceptance evidence
+      - name: Upload acceptance report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: acceptance-report
-          path: faisal-security-lab/evidence/acceptance-report.json
+          path: faisal-security-lab/var/acceptance-report.json

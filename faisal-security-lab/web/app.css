@@ -181,6 +181,19 @@ textarea{min-height:70px;resize:vertical}
 .card .notice.err,.login .notice.err,.drawer .notice.err,
 .card .notice.err *,.login .notice.err *,.drawer .notice.err *{background:var(--ink);color:var(--text);border-color:var(--ink)}
 .card .notice.ok,.drawer .notice.ok{border-width:2px}
+/* further lines of a notice: what was refused, what is allowed */
+.notice .more{font-weight:400;margin-block-start:4px}
+/* a side note under a form: it explains, it does not report a result */
+.hint{font-size:12.5px;margin-block-start:10px;padding-inline-start:9px;
+  border-inline-start:3px solid var(--stroke)}
+/* the id of an asset, under its identifier */
+.assetid{font-size:11px;margin-block-start:2px}
+/* a state is one word with its mark: keep the two on one line */
+td.state{white-space:nowrap}
+/* A list whose entries are written left to right (scan types, a path). In the
+   Arabic console it stays on the right while it fits; when it does not fit,
+   its start is what remains visible. */
+html[dir=rtl] select[dir=ltr]{text-align:right}
 
 .progress{height:8px;background:#33000f33;border-radius:999px;overflow:hidden;min-width:60px}
 .progress>span{display:block;height:100%;background:var(--ink)}

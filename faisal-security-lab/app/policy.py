@@ -9,14 +9,15 @@ stored asset + validated params and matched against the stored scope.
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from . import scope as scope_mod
+from . import scope as scope_mod, util
 from .auth import Principal, rank
 from .db import get_db
 from .errors import PolicyDenied
 
 GLOBAL_STOP_KEY = "global_stop"
+_DETAIL_TEXT_LIMIT = 500
 
 
 @dataclass
@@ -24,11 +25,31 @@ class Decision:
     allow: bool
     reason: str = ""
     code: str = "ok"
+    # What a refusal names so the caller can see what to change: the refused
+    # target or connector and what the scope allows. Already redacted.
+    detail: dict = field(default_factory=dict)
+
+    def public_detail(self) -> dict:
+        """The detail of the error a refusal is answered with."""
+        return {"policy_code": self.code, **self.detail}
 
     def raise_if_denied(self):
         if not self.allow:
-            raise PolicyDenied(self.reason or "denied by policy", detail={"policy_code": self.code})
+            raise PolicyDenied(self.reason or "denied by policy", detail=self.public_detail())
         return self
+
+
+def _shown(value) -> str:
+    """Text a caller supplied, made safe to store and to send back: valid
+    text, of bounded length, with secrets redacted like everything else that
+    is shown."""
+    text = str(value).encode("utf-8", "replace").decode("utf-8")
+    return util.redact(util.clamp(text, _DETAIL_TEXT_LIMIT))
+
+
+def _target_detail(scope: dict, asset: dict, target) -> dict:
+    return {"target": _shown(target),
+            "allowed": [_shown(entry) for entry in scope_mod.allowed_entries(scope, asset)]}
 
 
 def global_stop_engaged() -> bool:
@@ -70,7 +91,9 @@ def evaluate_job(*, principal: Principal | None, project: dict, asset: dict, sco
     if connector.name not in scan_types:
         return Decision(False,
                         f"connector '{connector.name}' is not in the authorized scan types",
-                        "connector_not_authorized")
+                        "connector_not_authorized",
+                        {"connector": connector.name,
+                         "allowed": [_shown(name) for name in scan_types]})
 
     # 4. Validity + run window.
     try:
@@ -90,6 +113,13 @@ def evaluate_job(*, principal: Principal | None, project: dict, asset: dict, sco
     try:
         scope_mod.check_targets(scope, asset, params)
     except PolicyDenied as e:
-        return Decision(False, e.message, "target_scope")
+        return Decision(False, e.message, "target_scope",
+                        _target_detail(scope, asset, e.detail.get("target", "")))
+    except (ValueError, OSError):
+        # A target that cannot be read as an address or a path at all. It is
+        # refused like any other target outside the scope, not answered with
+        # a server error.
+        return Decision(False, "target is not a valid address or path", "target_scope",
+                        _target_detail(scope, asset, ""))
 
     return Decision(True, "authorized", "ok")

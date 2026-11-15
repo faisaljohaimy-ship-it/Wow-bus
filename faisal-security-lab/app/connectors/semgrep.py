@@ -22,7 +22,7 @@ class SemgrepConnector(Connector):
     name = "semgrep"
     category = "SAST"
     source = "https://github.com/semgrep/semgrep"
-    license = "LGPL-2.1"
+    license = "LGPL-2.1-or-later"
     binary = "semgrep"
 
     def capabilities(self) -> dict:

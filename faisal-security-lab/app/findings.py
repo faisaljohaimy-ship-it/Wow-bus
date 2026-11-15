@@ -93,7 +93,7 @@ def ingest(job: dict, asset: dict, raw_findings: list, *, source_flag: str = "re
                 "occurrences,reopened,source_flag,created_at,updated_at) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,0,?,?,?)",
                 (fid, job["project_id"], asset["id"], job["id"], job["connector"],
-                 tool_version, raw.rule_id[:200], raw.title[:300],
+                 tool_version, raw.rule_id[:200], util.redact(raw.title)[:300],
                  json.dumps(raw.location, ensure_ascii=False), raw.severity, raw.confidence,
                  "needs_verification", "open", wp, raw.cve, raw.cwe,
                  json.dumps(raw.cvss or {}), "{}", "{}", raw.remediation[:2000],

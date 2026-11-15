@@ -1,8 +1,53 @@
+> **This repository holds two separate projects | يحتوي هذا المستودع على مشروعين منفصلين**
+>
+> - **Faisal Security Lab** — an open-source, self-hosted platform for defensive
+>   security testing. It runs real scanners (Semgrep, Bandit, Gitleaks,
+>   pip-audit, OSV-Scanner) only inside an authorization scope you grant, and
+>   produces findings and reports in Arabic and English. Start here:
+>   [`faisal-security-lab/README.md`](faisal-security-lab/README.md).
+>   **Use it only on systems you own or have written permission to test.
+>   Scanning other people's systems can be illegal; you are responsible for what
+>   you scan.**
+>
+>   منصة مفتوحة المصدر للفحص الأمني الدفاعي. ابدأ من هنا:
+>   [`faisal-security-lab/README.md`](faisal-security-lab/README.md).
+>   **استخدمها فقط على الأنظمة التي تملكها أو التي لديك إذن مكتوب بفحصها. فحص
+>   أنظمة الآخرين دون إذن قد يكون مخالفًا للقانون، وأنت المسؤول عمّا تفحصه.**
+> - **Neexios** — the bus-booking site described below (repository root and
+>   `src/`).
+>
+>   موقع حجز رحلات الباصات الموصوف أدناه (جذر المستودع والمجلد `src/`).
+>
+> **Licence.** Faisal Security Lab is licensed under either Apache-2.0 or MIT,
+> at your option
+> ([`LICENSE-APACHE`](faisal-security-lab/LICENSE-APACHE),
+> [`LICENSE-MIT`](faisal-security-lab/LICENSE-MIT)). The licences cover the
+> security platform: everything in `faisal-security-lab/` and the platform's own
+> files at the repository root, which are `render.yaml`, `.gitleaksignore`,
+> `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`,
+> `.github/workflows/faisal-security-lab-ci.yml`,
+> `.github/pull_request_template.md` and the files under
+> `.github/ISSUE_TEMPLATE/`. Nothing else in the repository is covered: the
+> Neexios site (the rest of the repository root and `src/`) is not covered by
+> these licences.
+>
+> **الترخيص.** منصة Faisal Security Lab مرخَّصة بأحد الترخيصين Apache-2.0 أو MIT،
+> والخيار لك
+> ([`LICENSE-APACHE`](faisal-security-lab/LICENSE-APACHE)،
+> [`LICENSE-MIT`](faisal-security-lab/LICENSE-MIT)). يشمل الترخيصان منصة الأمن:
+> كل ما في المجلد `faisal-security-lab/` وملفات المنصة نفسها الموجودة في جذر
+> المستودع، وهي: `render.yaml`، `.gitleaksignore`، `SECURITY.md`،
+> `CONTRIBUTING.md`، `CODE_OF_CONDUCT.md`،
+> `.github/workflows/faisal-security-lab-ci.yml`،
+> `.github/pull_request_template.md`، والملفات الموجودة داخل
+> `.github/ISSUE_TEMPLATE/`. لا يشمل الترخيصان أي شيء آخر في المستودع: موقع
+> Neexios (بقية جذر المستودع والمجلد `src/`) غير مشمول بهذين الترخيصين.
+
 # Neexios — neexios.com
 
 منصة ذكية لحجز رحلات الباصات | A smart bus booking platform.
 
-هذا المستودع يحتوي جزأين | This repository contains two parts:
+يتكوّن موقع Neexios من جزأين | The Neexios site has two parts:
 
 1. **موقع Neexios الثابت (في جذر المستودع)** — الموقع الرئيسي ولوحة التحكم والمساعدة الصوتية أريا، بتقنيات ويب خالصة بدون أدوات بناء
 2. **تطبيق TanStack Start (في `src/`)** — هيكل تطبيق React (TanStack Router + Query + Tailwind)

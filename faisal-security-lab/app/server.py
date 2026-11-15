@@ -859,10 +859,19 @@ def assets_list(req: Req):
 def assets_create(req: Req):
     pid = req.params["pid"]
     req.principal.require_project(pid, "analyst")
+    metadata = req.body.get("metadata")
+    if metadata is None:
+        metadata = {}           # "metadata": null means the same as leaving it out
+    if not isinstance(metadata, dict):
+        raise ValidationError("metadata must be an object")
+    if metadata.get("internal"):
+        # An asset marked internal may be reached on private addresses. That
+        # lifts a guard, so it takes the role that grants authorization.
+        req.principal.require_project(pid, "admin")
     a = store.create_asset(pid, req.body.get("kind", ""), req.body.get("identifier", ""),
                            label=req.body.get("label", ""),
                            criticality=req.body.get("criticality", "medium"),
-                           metadata=req.body.get("metadata", {}),
+                           metadata=metadata,
                            created_by=req.principal.user_id)
     audit.record("asset.create", actor=req.principal.email, project_id=pid, target=a["id"],
                  detail={"kind": a["kind"]})
@@ -1055,11 +1064,14 @@ def scan_enqueue(req: Req):
     decision = policy.evaluate_job(principal=req.principal, project=project, asset=asset,
                                    scope=scope, connector=conn, params=params)
     if not decision.allow:
+        # The refusal names what was refused and what the scope allows, in the
+        # answer and in the audit record alike.
         audit.record("scan.denied", actor=req.principal.email, project_id=pid,
                      target=b.get("connector"), outcome="denied",
-                     detail={"reason": decision.reason, "code": decision.code})
+                     detail={"reason": decision.reason, "code": decision.code,
+                             **decision.detail})
         raise ForbiddenError(decision.reason, code="policy_denied",
-                             detail={"policy_code": decision.code})
+                             detail=decision.public_detail())
     job = queue.enqueue(project_id=pid, asset_id=asset["id"], scope_id=scope["id"],
                         connector=conn.name, params=params, created_by=req.principal.user_id,
                         priority=int(b.get("priority", 5)),
@@ -1612,9 +1624,13 @@ def main():
     for code in info["setup_notices"]:
         print(f"[setup] {describe_notice(code)}", file=sys.stderr)
     boot = info["owner_bootstrap"]
-    if boot.get("generated"):
+    # The start that creates the owner names the sign-in address. A password
+    # is printed only when it was generated here, never one that was set.
+    if boot.get("created"):
         print(f"[init] owner created: {boot['email']}", file=sys.stderr)
-        print(f"[init] ONE-TIME owner password: {boot['password']}", file=sys.stderr)
+    if boot.get("generated"):
+        print(f"[init] generated owner password, shown once: {boot['password']}",
+              file=sys.stderr)
     print(f"[init] catalog={info['catalog_seeded']} ai_available={info['ai_available']}",
           file=sys.stderr)
     for line in client_address_report(cfg, os.environ):

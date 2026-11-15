@@ -13,6 +13,7 @@ import ssl
 
 from .. import scope as scope_mod
 from ..errors import ConfigError, ConnectorError
+from ..version import PROJECT_LICENSE
 from .base import Connector, ConnectorResult, EvidenceArtifact, ExecContext, RawFinding
 
 SECURITY_HEADERS = {
@@ -29,7 +30,7 @@ class HttpHeadersConnector(Connector):
     name = "http_headers"
     category = "network/web"
     source = "python-standard-library"
-    license = "PSF"
+    license = PROJECT_LICENSE       # this project's own code; it runs no external tool
     connector_type = "network"
     egress = ["<scope-authorized target host>"]
 

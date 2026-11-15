@@ -7,8 +7,10 @@ Providers:
   * anthropic — the Anthropic Messages API.
 
 The API key is read from the environment at call time and NEVER stored on an
-object, logged, or echoed. All calls go through the environment's HTTPS proxy
-with its CA bundle, enforce a timeout, and request JSON only.
+object, logged, or echoed. Calls use the proxy settings of the environment
+(HTTPS_PROXY and the like), verify certificates against SSL_CERT_FILE when it
+is set and against the default trust store otherwise, enforce a timeout, and
+request JSON only.
 """
 from __future__ import annotations
 
@@ -33,12 +35,23 @@ class AIResult:
     meta: dict = field(default_factory=dict)
 
 
+def _ca_file() -> str | None:
+    """The CA bundle named by SSL_CERT_FILE, or None for the default trust store."""
+    path = os.environ.get("SSL_CERT_FILE", "").strip()
+    return path if path and os.path.isfile(path) else None
+
+
 def _ssl_ctx() -> ssl.SSLContext:
-    ca = os.environ.get("SSL_CERT_FILE") or "/root/.ccr/ca-bundle.crt"
-    try:
-        return ssl.create_default_context(cafile=ca if os.path.exists(ca) else None)
-    except Exception:
-        return ssl.create_default_context()
+    """TLS settings for provider calls. Certificates are verified against the
+    file named by SSL_CERT_FILE when that is set and present, and against the
+    default trust store otherwise."""
+    ca = _ca_file()
+    if ca:
+        try:
+            return ssl.create_default_context(cafile=ca)
+        except (OSError, ssl.SSLError):
+            pass    # unreadable, or not a certificate file
+    return ssl.create_default_context()
 
 
 class Provider:
