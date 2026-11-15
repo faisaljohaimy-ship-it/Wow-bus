@@ -14,12 +14,18 @@ COPY app ./app
 COPY web ./web
 COPY data ./data
 # The bundled, intentionally vulnerable sample is the authorized lab target the
-# optional public demo project scans (FSL_PUBLIC_VIEW=1; see app/demo.py).
+# public demo project scans (see app/demo.py).
 COPY samples ./samples
 
+# This single-image demo ships with the PUBLIC READ-ONLY VIEW on, so the site
+# opens to visitors without a sign-in screen: a guest can read the bundled demo
+# project and use the Agent, simulation and crypto lab, while every action
+# (creating assets/scopes, running real scans, settings) still requires the
+# owner sign-in. To require sign-in for everything, set FSL_PUBLIC_VIEW=0.
 ENV FSL_BIND_HOST=0.0.0.0 \
     FSL_PORT=8080 \
     FSL_DATA_DIR=/data \
+    FSL_PUBLIC_VIEW=1 \
     PATH="/usr/local/bin:${PATH}"
 EXPOSE 8080
 

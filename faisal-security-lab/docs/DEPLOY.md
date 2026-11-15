@@ -183,9 +183,13 @@ The detected address and its source are also returned as `client` by `/api/me`;
 lists the sign-in limits.
 
 ## Optional: public read-only view
-Off by default (the Render Blueprint in Option D switches it on). Set
-`FSL_PUBLIC_VIEW=1` to let anyone who opens the site look around **without
-signing in**. It is read-only and limited to one demo project:
+**On by default in the `deploy/Dockerfile.fly` image** (used by Option C and the
+Option D Blueprint), so the hosted demo opens **without a sign-in screen**. The
+code itself keeps it off by default; set `FSL_PUBLIC_VIEW=0` in the service's
+environment to require a sign-in for everything, or `FSL_PUBLIC_VIEW=1` to turn
+it on where it is off. It is read-only and limited to one demo project (every
+action — creating assets or scopes, running real scans, settings — still needs
+the owner sign-in):
 
 - On start (after the port is bound, in the background) the platform creates the
   project **"عرض توضيحي — Public demo"**, registers the bundled
