@@ -1,3 +1,22 @@
+> **This repository holds two separate projects | يحتوي هذا المستودع على مشروعين منفصلين**
+>
+> - **Faisal Security Lab** — an open-source, self-hosted platform for defensive
+>   security testing. It runs real scanners (Semgrep, Bandit, Gitleaks,
+>   pip-audit, OSV-Scanner) only inside an authorization scope you grant, and
+>   produces findings and reports in Arabic and English. Start here:
+>   [`faisal-security-lab/README.md`](faisal-security-lab/README.md).
+>   **Use it only on systems you own or have written permission to test.
+>   Scanning other people's systems can be illegal; you are responsible for what
+>   you scan.**
+>
+>   منصة مفتوحة المصدر للفحص الأمني الدفاعي. **استخدمها فقط على الأنظمة التي
+>   تملكها أو التي لديك إذن مكتوب بفحصها. فحص أنظمة الآخرين دون إذن قد يكون
+>   مخالفًا للقانون، وأنت المسؤول عمّا تفحصه.**
+> - **Neexios** — the bus-booking site described below (repository root and
+>   `src/`).
+>
+> Licence: the licence in `faisal-security-lab/LICENSE` applies to that directory only; the Neexios site is not covered by it.
+
 # Neexios — neexios.com
 
 منصة ذكية لحجز رحلات الباصات | A smart bus booking platform.
