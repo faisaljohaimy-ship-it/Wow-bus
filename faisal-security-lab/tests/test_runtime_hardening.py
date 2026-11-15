@@ -186,6 +186,72 @@ class TestStopSignal(unittest.TestCase):
             proc.stderr.close()
 
 
+class TestPublicViewDefaultsOnForTheServer(unittest.TestCase):
+    """The running server opens the public read-only view by default, so the
+    hosted site shows the interface with no sign-in screen. The config/library
+    default stays off; only `app.server` main() flips it on, and FSL_PUBLIC_VIEW=0
+    still turns it off."""
+
+    @staticmethod
+    def _free_port():
+        import socket
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+        s.close()
+        return port
+
+    def _config_of_a_fresh_server(self, public_env):
+        port = self._free_port()
+        data = tempfile.mkdtemp(prefix="fsl-pubdef-")
+        env = {k: v for k, v in os.environ.items() if not k.startswith("FSL_")}
+        env.update({"FSL_DATA_DIR": data, "FSL_BIND_HOST": "127.0.0.1", "FSL_PORT": str(port),
+                    "FSL_OWNER_EMAIL": "owner@test.local",
+                    "FSL_OWNER_PASSWORD": "correct-horse-battery", "FSL_NO_WORKER": "1",
+                    "PYTHONUNBUFFERED": "1"})
+        env.pop("PORT", None)
+        if public_env is not None:
+            env["FSL_PUBLIC_VIEW"] = public_env
+        proc = subprocess.Popen([sys.executable, "-m", "app.server"], cwd=str(APP_ROOT), env=env,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        try:
+            ready, deadline = False, time.monotonic() + 60
+            while time.monotonic() < deadline:
+                line = proc.stderr.readline()
+                if not line:
+                    break
+                if line.startswith("[serve] http://"):
+                    ready = True
+                    break
+            self.assertTrue(ready, "server did not start")
+            body = None
+            for _ in range(20):                      # small accept window after bind
+                try:
+                    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+                    conn.request("GET", "/api/config")
+                    body = json.loads(conn.getresponse().read())
+                    conn.close()
+                    break
+                except OSError:
+                    time.sleep(0.25)
+            self.assertIsNotNone(body, "could not reach /api/config")
+            return body
+        finally:
+            proc.send_signal(signal.SIGTERM)
+            try:
+                proc.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(10)
+            proc.stderr.close()
+
+    def test_defaults_on_when_unset(self):
+        self.assertIs(self._config_of_a_fresh_server(None)["public_view"], True)
+
+    def test_off_when_explicitly_disabled(self):
+        self.assertIs(self._config_of_a_fresh_server("0")["public_view"], False)
+
+
 # ---------------------------------------------------------------------------
 # What is accepted before the sender is known, over real HTTP
 # ---------------------------------------------------------------------------
