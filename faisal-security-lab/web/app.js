@@ -47,7 +47,8 @@ const I18N = {
     proxywarn:"تصل الطلبات عبر وسيط لكن الخادم غير مضبوط للوثوق به، فيظهر كل الزوّار بعنوان واحد وتُحتسب محاولات الدخول الخاطئة عليهم جميعًا. اضبط FSL_CLIENT_IP_HEADER في إعدادات الاستضافة.",
     setupnotes:"ملاحظات الإعداد",
     needscantype:"اختر نوع فحص واحدًا على الأقل. التفويض بلا أنواع فحص لا يشغّل أي فحص.",
-    noscantypes:"بلا أنواع فحص", inscope:"مسموح في هذا التفويض", notinscope:"خارج هذا التفويض (يُرفض)" },
+    noscantypes:"بلا أنواع فحص", inscope:"مسموح في هذا التفويض", notinscope:"خارج هذا التفويض (يُرفض)",
+    agent:"الوكيل" },
   en: { app:"Cyber Defense Center", kicker:"DEFENSIVE SECURITY LAB",
     login:"Verified owner sign-in", email:"Email", password:"Password", signin:"Sign in",
     signout:"Sign out", dashboard:"Dashboard", assets:"Assets & Scopes", catalog:"Tool Catalog",
@@ -86,9 +87,12 @@ const I18N = {
     proxywarn:"Requests arrive through a proxy the server is not set to trust, so every visitor appears under one address and wrong sign-in attempts count against all of them. Set FSL_CLIENT_IP_HEADER in the hosting settings.",
     setupnotes:"Setup notes",
     needscantype:"Tick at least one scan type. An authorization without scan types cannot run any scan.",
-    noscantypes:"no scan types", inscope:"Allowed by this authorization", notinscope:"Not in this authorization (refused)" }
+    noscantypes:"no scan types", inscope:"Allowed by this authorization", notinscope:"Not in this authorization (refused)",
+    agent:"Agent" }
 };
 const t = k => (I18N[S.lang][k] || k);
+// A short bilingual literal for screen-local text (keeps the big tables lean).
+const L = (ar, en) => (S.lang === "ar" ? ar : en);
 
 // Startup problems reported by the server as stable codes (see /api/config).
 const NOTICE_TEXT = {
@@ -302,7 +306,7 @@ function render(){
   if (!S.token && !guestView){ return renderLogin(); }
   document.documentElement.dir = S.lang==="ar"?"rtl":"ltr";
   document.documentElement.lang = S.lang;
-  let nav = ["dashboard","assets","catalog","scans","findings","ailab","reports","audit","settings"];
+  let nav = ["dashboard","agent","assets","catalog","scans","findings","ailab","reports","audit","settings"];
   if (guestView) nav = nav.filter(k => !["audit","settings"].includes(k));
   if (!nav.includes(S.screen)) S.screen = "dashboard";
   // With no project the list starts with a placeholder. "+ New project" as the
@@ -401,6 +405,7 @@ async function renderScreen(){
     if (!S.project && S.token && ["dashboard","assets","scans","findings","reports"].includes(S.screen))
       return setMain(ctx, topbar(t(S.screen)) + projectForm(t("firstproject")));
     if (S.screen==="dashboard") return await scrDashboard(ctx);
+    if (S.screen==="agent") return await scrAgent(ctx);
     if (!S.project && ["assets","scans","findings","reports"].includes(S.screen))
       return setMain(ctx, notice(t("noproject")));
     if (S.screen==="assets") return await scrAssets(ctx);
@@ -862,6 +867,202 @@ async function init(){
   if (S.publicView && !S.loginOpen){ S.guest=true; return boot(); }
   S.guest=false; render();
 }
+// ===========================================================================
+// The Agent screen — a master agent commanding offensive and defensive agent
+// groups, a keyword command bar for the sections, and a full attack/defence
+// simulation. Everything here runs on built-in make-believe material only.
+// ===========================================================================
+const AGENT_GROUPS = {
+  offense: [
+    { k:"recon",   icon:"⌖", ar:"الاستطلاع", en:"Recon",
+      dar:"مسح الشبكة واكتشاف الخدمات والثغرات", den:"map the network, find services and vulnerabilities" },
+    { k:"exploit", icon:"⚡", ar:"الاستغلال", en:"Exploit",
+      dar:"استغلال الثغرات والسيطرة على الأجهزة", den:"exploit vulnerabilities and take hosts" },
+    { k:"crypto",  icon:"🔓", ar:"فكّ الشيفرات", en:"Crypto",
+      dar:"كسر البصمات والشيفرات لاستخراج بيانات الدخول", den:"crack hashes and ciphers to recover credentials" },
+    { k:"network", icon:"⇄", ar:"هجوم الشبكة", en:"Network",
+      dar:"التنقّل الجانبي بإعادة استخدام بيانات الدخول", den:"lateral movement by credential reuse" },
+  ],
+  defense: [
+    { k:"detection", icon:"◎", ar:"الكشف", en:"Detection",
+      dar:"رصد الضجيج ورفع التنبيهات", den:"spot the noise and raise alerts" },
+    { k:"hardening", icon:"🛡", ar:"التحصين", en:"Hardening",
+      dar:"ترقيع الثغرات وإغلاق المنافذ", den:"patch vulnerabilities, close ports" },
+    { k:"response",  icon:"⛒", ar:"الاستجابة", en:"Response",
+      dar:"عزل الأجهزة المخترقة وتدوير بيانات الدخول", den:"isolate compromised hosts, rotate credentials" },
+  ],
+};
+// The "word as a key": a typed keyword opens a section.
+const CMD_MAP = { sim:"sim", simulate:"sim", run:"sim", attack:"sim", hack:"sim",
+  teams:"teams", team:"teams", purple:"teams", blue:"teams", red:"teams",
+  lab:"lab", ctf:"lab", crypto:"lab", cipher:"lab", decrypt:"lab",
+  recon:"groups", exploit:"groups", network:"groups", net:"groups", agents:"groups",
+  defense:"groups", defence:"groups", help:"help", "?":"help" };
+const GROUP_TEXT = k => (AGENT_GROUPS.offense.concat(AGENT_GROUPS.defense)
+  .find(g => g.k === k) || {});
+
+function agentHeader(){
+  const chips = [["sim", L("المحاكاة","Simulation")], ["groups", L("الفرق","Groups")],
+    ["teams", L("لوحة الفرق","Teams")], ["lab", L("مختبر الشيفرات","Crypto lab")],
+    ["help", L("مساعدة","Help")]]
+    .map(([v,lab])=>`<button class="chip ${S.agentView===v?"on":""}" data-agent="view" data-view="${v}">${esc(lab)}</button>`).join("");
+  const col = (title, arr, cls) => `<div class="grp-col ${cls}"><h3>${esc(title)}</h3>`
+    + arr.map(g=>`<div class="grp"><span class="gi">${g.icon}</span><div><b>${esc(L(g.ar,g.en))}</b>`
+      + `<div class="small muted">${esc(L(g.dar,g.den))}</div></div></div>`).join("") + `</div>`;
+  return `<div class="term" aria-label="command">
+      <span class="prompt">agent@faisal</span><span class="muted">:~$</span>
+      <input id="cmdbar" autocomplete="off" spellcheck="false"
+        placeholder="${esc(L("اكتب كلمة مفتاحًا: sim · teams · lab · recon · help","type a keyword: sim · teams · lab · recon · help"))}">
+    </div>
+    <div class="cmdchips">${chips}</div>
+    <p class="small muted" style="margin:6px 2px">${esc(L(
+      "وكيل رئيسي يقود فريقين من الوكلاء — هجوميًا ودفاعيًا — داخل محاكاة كاملة على شبكة افتراضية. لا أهداف حقيقية.",
+      "A master agent commanding two groups of agents — offensive and defensive — inside a full simulation on a virtual network. No real targets."))}</p>
+    <div class="agent-groups">
+      ${col("⚔ "+L("الفريق الهجومي","Offensive group"), AGENT_GROUPS.offense, "offense")}
+      ${col("🛡 "+L("الفريق الدفاعي","Defensive group"), AGENT_GROUPS.defense, "defense")}
+    </div>`;
+}
+
+async function simView(){
+  if(!S.scenarios){ try{ S.scenarios=(await api("/api/sim/scenarios")).scenarios||[]; }catch(e){ S.scenarios=[]; } }
+  const opts = S.scenarios.map(s=>`<option value="${esc(s.id)}" ${S.simScenario===s.id?"selected":""}>${esc(L(s.name_ar,s.name_en))}</option>`).join("");
+  const det = S.simDetect==null?50:S.simDetect;
+  const form = `<div class="card term-card"><h2>${esc(L("تشغيل المحاكاة","Run the simulation"))}</h2>
+    <div class="row">
+      <div><label>${esc(L("السيناريو","Scenario"))}</label><select id="simscenario">${opts}</select></div>
+      <div><label>${esc(L("البذرة","Seed"))}</label><input id="simseed" type="number" value="${esc(S.simSeed==null?1:S.simSeed)}" min="0" max="99999" style="width:90px"></div>
+      <div style="flex:1"><label>${esc(L("قوة الدفاع","Defence strength"))}: <b id="detval">${det}%</b></label>
+        <input id="simdetect" type="range" min="0" max="100" value="${det}"></div>
+      <div style="display:flex;align-items:flex-end"><button class="btn primary" data-agent="simrun">▶ ${esc(L("تشغيل","Run"))}</button></div>
+    </div>
+    <p class="small muted">${esc(L("الأحمر يهاجم والأزرق يدافع عبر الأدوار. ارفع الدفاع لترى الأزرق يصدّ أكثر.",
+      "Red attacks, blue defends, turn by turn. Raise the defence to see blue contain more."))}</p></div>`;
+  return form + (S.simResult ? simResultView(S.simResult) : "");
+}
+
+function simResultView(r){
+  if(r.error) return notice(esc(r.error),"err");
+  const won = r.outcome==="red_win";
+  const banner = `<div class="simbanner ${won?"red":"blue"}">${won
+    ? "🔴 "+L("الفريق الأحمر وصل الهدف","Red team reached the goal")
+    : "🔵 "+L("الفريق الأزرق صدّ الهجوم — الهدف آمن","Blue team held — the goal is safe")}
+    <span class="small"> · ${esc(L("الهدف","Goal"))}: ${esc(r.goal.name)}</span></div>`;
+  const score = `<div class="scorebar">
+    <div class="sc red"><span>${esc(L("الأحمر","Red"))}</span><b>${r.red.score}</b>
+      <div class="small">${esc(L("أجهزة مخترقة","Hosts taken"))}: ${r.red.hosts_compromised}/${r.red.hosts_total} · ${esc(L("شيفرات مكسورة","Ciphers broken"))}: ${r.red.ciphers_broken}</div></div>
+    <div class="sc blue"><span>${esc(L("الأزرق","Blue"))}</span><b>${r.blue.score}</b>
+      <div class="small">${esc(L("كشوفات","Detections"))}: ${r.blue.detections} · ${esc(L("ترقيعات","Patches"))}: ${r.blue.vulns_patched} · ${esc(L("عزل","Isolations"))}: ${r.blue.hosts_isolated}</div></div></div>`;
+  const hosts = `<div class="hostgrid">`+r.hosts.map(h=>{
+    const st = h.compromised ? (h.isolated?"iso":"red") : (h.discovered?"seen":"safe");
+    return `<div class="hostcell ${st}" title="${esc(h.zone)} · value ${h.value}"><b>${esc(h.name)}</b><span class="small">${esc(h.zone)}</span></div>`;
+  }).join("")+`</div>`;
+  const lines = r.timeline.map(e=>{
+    const cls = e.team==="red"?"ev-red":"ev-blue";
+    const det = e.detected?` <span class="det">⚑${esc(L("مكشوف","seen"))}</span>`:"";
+    return `<div class="evline ${cls}"><span class="tn">T${e.turn}</span> <span class="eg">[${esc(e.group)}]</span> ${esc(e.action)} → <b>${esc(e.target)}</b> <span class="muted">${esc(e.detail||"")}</span>${det}</div>`;
+  }).join("");
+  return banner + score + hosts + `<div class="card term-card"><h3>${esc(L("سجل العملية","Operation log"))} · ${r.turns} ${esc(L("أدوار","turns"))}</h3><div class="timeline">${lines}</div></div>`;
+}
+
+async function teamsView(){
+  let meta=[]; try{ meta=(await api("/api/teams")).teams||[]; }catch(e){}
+  let summary=null;
+  if(S.project){ try{ summary=(await api(`/api/projects/${S.project.id}/teams`)).summary; }catch(e){} }
+  return `<div class="teamcols">`+meta.map(tm=>{
+    const s = summary && summary[tm.key];
+    const count = s?`<div class="tcount">${s.count} ${esc(L("نتيجة","findings"))}</div>`:"";
+    return `<div class="teamcol" style="border-top:3px solid ${esc(tm.accent)}">
+      <h3>${esc(L(tm.name_ar,tm.name_en))}</h3>
+      <div class="small muted">${esc(L(tm.tagline_ar,tm.tagline_en))}</div>
+      <p class="small">${esc(tm.role)}</p>${count}</div>`;
+  }).join("")+`</div><p class="small muted">${esc(L(
+    "عدسة واحدة على نفس خطّ الفحص المحكوم بالتفويض — لا تمنح أي فريق صلاحية جديدة.",
+    "One lens over the same scope-gated pipeline — it grants no team any new power."))}</p>`;
+}
+
+async function labView(){
+  if(!S.challenges){ try{ S.challenges=(await api("/api/lab/challenges")).challenges||[]; }catch(e){ S.challenges=[]; } }
+  S.labResults=S.labResults||{};
+  const cards = S.challenges.map(c=>{
+    const r=S.labResults[c.id];
+    const out = r ? `<div class="solved ${r.solved?"ok":"no"}">${r.solved?"✔":"✘"} ${esc(L("استرجع","recovered"))}: <b>${esc((r.recovered||"").slice(0,80))}</b>`
+      + (r.key?` · ${esc(L("مفتاح","key"))}: ${esc(String(r.key).slice(0,24))}`:"")+` <span class="small muted">[${esc(r.method||"")}]</span></div>` : "";
+    return `<div class="card term-card lab">
+      <div class="labhead"><b>${esc(L(c.title_ar,c.title_en))}</b> <span class="pts">${c.points}</span></div>
+      <code class="ct">${esc((c.ciphertext||"").slice(0,120))}${(c.ciphertext||"").length>120?"…":""}</code>
+      <div class="small muted">${esc(L(c.hint_ar,c.hint_en))}</div>
+      <button class="btn sm" data-agent="labsolve" data-id="${esc(c.id)}">🔓 ${esc(L("حلّ آليًا","Auto-solve"))}</button>${out}</div>`;
+  }).join("");
+  return `<div class="term-actions"><button class="btn primary" data-agent="labsolveall">⚙ ${esc(L("حلّ الكل","Solve all"))}</button></div><div class="labgrid">${cards}</div>`;
+}
+
+function groupsView(){
+  const card = (g, team) => `<div class="card term-card"><h3>${g.icon} ${esc(L(g.ar,g.en))} <span class="small muted">· ${esc(team)}</span></h3>
+    <p class="small">${esc(L(g.dar,g.den))}</p></div>`;
+  return `<div class="labgrid">`
+    + AGENT_GROUPS.offense.map(g=>card(g,L("هجوم","offense"))).join("")
+    + AGENT_GROUPS.defense.map(g=>card(g,L("دفاع","defense"))).join("")+`</div>`;
+}
+
+function helpView(){
+  const rows = Object.entries({sim:L("افتح المحاكاة","open the simulation"),
+    teams:L("لوحة الفرق الثلاث","the three-team board"), lab:L("مختبر فكّ الشيفرات","the cipher lab"),
+    recon:L("وصف فرق الوكلاء","describe the agent groups"), help:L("هذه المساعدة","this help")})
+    .map(([k,v])=>`<div class="evline"><b class="eg">${k}</b> <span class="muted">${esc(v)}</span></div>`).join("");
+  return `<div class="card term-card"><h3>${esc(L("الكلمات المفتاحية","Keywords"))}</h3><div class="timeline">${rows}</div></div>`;
+}
+
+async function scrAgent(ctx){
+  if(!S.agentView) S.agentView="sim";
+  let body="";
+  if(S.agentView==="sim") body=await simView();
+  else if(S.agentView==="teams") body=await teamsView();
+  else if(S.agentView==="lab") body=await labView();
+  else if(S.agentView==="groups") body=groupsView();
+  else body=helpView();
+  if(ctx.seq!==RENDER_SEQ) return;
+  setMain(ctx, topbar(t("agent")) + agentHeader() + `<div class="agent-body">${body}</div>`);
+  const cb=document.getElementById("cmdbar"); if(cb) cb.focus();
+}
+
+// Agent interactions (separate delegated listener; uses data-agent not data-act).
+document.addEventListener("click", async e=>{
+  const b=e.target.closest("[data-agent]"); if(!b) return;
+  const act=b.dataset.agent;
+  try{
+    if(act==="view"){ S.agentView=b.dataset.view; return renderScreen(); }
+    if(act==="simrun"){
+      const sc=(document.getElementById("simscenario")||{}).value||"corp";
+      const seed=parseInt((document.getElementById("simseed")||{}).value,10); S.simSeed=isNaN(seed)?1:seed;
+      const dv=parseInt((document.getElementById("simdetect")||{}).value,10); S.simDetect=isNaN(dv)?50:dv;
+      S.simScenario=sc;
+      b.disabled=true; b.textContent="…";
+      S.simResult=await api(`/api/sim/run?scenario=${encodeURIComponent(sc)}&seed=${S.simSeed}&detection=${(S.simDetect/100).toFixed(2)}`);
+      return renderScreen();
+    }
+    if(act==="labsolve"){ const id=b.dataset.id; b.disabled=true;
+      S.labResults=S.labResults||{}; S.labResults[id]=await api(`/api/lab/solve?id=${encodeURIComponent(id)}`); return renderScreen(); }
+    if(act==="labsolveall"){ b.disabled=true; b.textContent="…";
+      S.labResults=S.labResults||{};
+      for(const c of (S.challenges||[])){ try{ S.labResults[c.id]=await api(`/api/lab/solve?id=${encodeURIComponent(c.id)}`); }catch(err){} }
+      return renderScreen(); }
+  }catch(err){ const m=document.querySelector(".agent-body"); if(m) m.insertAdjacentHTML("afterbegin", errorNotice(err)); }
+});
+// The keyword command bar: a word opens a section.
+document.addEventListener("keydown", e=>{
+  if(!e.target || e.target.id!=="cmdbar" || e.key!=="Enter") return;
+  e.preventDefault();
+  const w=(e.target.value||"").trim().toLowerCase();
+  const view=CMD_MAP[w];
+  if(view){ S.agentView=view; renderScreen(); }
+  else if(w){ e.target.classList.add("bad"); setTimeout(()=>{ const c=document.getElementById("cmdbar"); if(c) c.classList.remove("bad"); },500); e.target.value=""; }
+});
+// Live percentage label as the defence slider moves.
+document.addEventListener("input", e=>{
+  if(e.target && e.target.id==="simdetect"){ const v=document.getElementById("detval"); if(v) v.textContent=e.target.value+"%"; }
+});
+
 applyMotion();
 document.documentElement.lang = S.lang;
 document.documentElement.dir = S.lang==="ar"?"rtl":"ltr";
