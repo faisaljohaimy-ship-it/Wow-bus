@@ -1,16 +1,23 @@
-# Render.com Blueprint — one-click, no-terminal deploy of Faisal Security Lab.
-# Use the "Deploy to Render" button:
+# Render.com Blueprint: deploys Faisal Security Lab from a browser, no terminal.
+# Open  https://render.com/deploy?repo=<address of the repository to deploy>
+# For the original repository that is:
 #   https://render.com/deploy?repo=https://github.com/faisaljohaimy-ship-it/Wow-bus
-# Render reads this file, builds the Docker image in faisal-security-lab/, and
-# asks you only for the owner password.
+# To deploy a fork, put the fork's address after "repo=". Render reads this
+# file, builds the Docker image in faisal-security-lab/, and asks you only for
+# the owner password.
 #
 # FSL_OWNER_PASSWORD must be at least 10 characters. If it is shorter the site
 # still starts, but no owner account is created and the sign-in page explains
 # what to change (Environment -> FSL_OWNER_PASSWORD, then redeploy).
 #
+# This Blueprint turns the public read-only view on (FSL_PUBLIC_VIEW=1): anyone
+# who has the address can read the bundled demo project without signing in.
+# Remove that variable, or set it to "0", if you do not want that.
+#
 # The free plan has no persistent disk: findings and evidence are reset whenever
 # the instance restarts or wakes from sleep. The owner account is re-created
-# from the two variables below on every start, so sign-in keeps working.
+# from FSL_OWNER_EMAIL and FSL_OWNER_PASSWORD on every such start, so sign-in
+# keeps working.
 services:
   - type: web
     name: faisal-security-lab

@@ -1,5 +1,5 @@
 # Fly.io deployment for Faisal Security Lab.
-# Deploy from a machine with open network access:
+# Deploy with the Fly.io command line (flyctl), from a clone of this repository:
 #   cd faisal-security-lab
 #   fly launch --no-deploy --copy-config --name <your-app-name>   # or: fly apps create <name>
 #   fly volumes create fsl_data --size 1 --region <region>

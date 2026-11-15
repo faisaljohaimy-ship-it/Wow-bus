@@ -1,0 +1,20 @@
+# Secret-scanner findings in this repository's git history that are not secrets.
+#
+# Every entry is a fabricated, non-functional string, written on purpose in:
+#   faisal-security-lab/samples/vulnerable-app/  the deliberately vulnerable sample
+#                                                that the platform scans in its demo
+#   faisal-security-lab/tests/                   input for the redaction tests
+#   faisal-security-lab/scripts/acceptance.py    input for the redaction gate, and the
+#                                                password of an instance that exists
+#                                                only while the script runs
+#
+# Format: <commit>:<file>:<rule id>:<line>, as `gitleaks git` prints it.
+# The entries apply to scans of the git history only. A scan of the files
+# themselves (`gitleaks dir`, or `--no-git`) still reports these strings, and
+# the platform's own secret scan of the sample depends on that.
+3295c114ea70a77d404c6bbeae2acd33151e11e2:faisal-security-lab/samples/vulnerable-app/app.py:github-pat:17
+3295c114ea70a77d404c6bbeae2acd33151e11e2:faisal-security-lab/scripts/acceptance.py:generic-api-key:27
+3295c114ea70a77d404c6bbeae2acd33151e11e2:faisal-security-lab/scripts/acceptance.py:github-pat:182
+3295c114ea70a77d404c6bbeae2acd33151e11e2:faisal-security-lab/tests/test_platform.py:github-pat:293
+3295c114ea70a77d404c6bbeae2acd33151e11e2:faisal-security-lab/tests/test_platform.py:github-pat:309
+3295c114ea70a77d404c6bbeae2acd33151e11e2:faisal-security-lab/tests/test_platform.py:private-key:295

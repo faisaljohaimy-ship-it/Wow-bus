@@ -3,7 +3,9 @@
 Each piece is tested on its own elsewhere. These tests follow one setting from
 the place that sets it to the place that acts on it: the entrypoint's report of
 a failed privilege drop, the client-address header named in the deploy files,
-and the setting names the guides tell an operator to use.
+the setting names the guides tell an operator to use, the owner password and
+the published port in the compose file, and what the CI workflow is allowed to
+do and when it runs.
 """
 from __future__ import annotations
 
@@ -15,16 +17,20 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import tomllib
 import unittest
 from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
+REPO = ROOT.parent
 sys.path.insert(0, str(ROOT))
 ENTRYPOINT = ROOT / "deploy" / "entrypoint.sh"
-RENDER_YAML = ROOT.parent / "render.yaml"
+COMPOSE_YAML = ROOT / "deploy" / "compose.yaml"
+RENDER_YAML = REPO / "render.yaml"
 FLY_TOML = ROOT / "fly.toml"
+WORKFLOW = REPO / ".github" / "workflows" / "faisal-security-lab-ci.yml"
 
 # Stand-ins for the commands the entrypoint uses to find out who it is and to
 # change that, so its root path runs the same way whoever runs the tests and
@@ -237,13 +243,160 @@ class TestDocumentedSettingNames(unittest.TestCase):
     def test_every_setting_in_the_deploy_files_and_guides_is_read_by_the_code(self):
         readers = [*sorted((ROOT / "app").rglob("*.py")), ENTRYPOINT]
         code = "\n".join(p.read_text() for p in readers)
-        written = [RENDER_YAML, FLY_TOML, ROOT / ".env.example",
+        written = [RENDER_YAML, FLY_TOML, COMPOSE_YAML, ROOT / ".env.example",
                    ROOT / "docs" / "DEPLOY.md", ROOT / "docs" / "OPERATIONS.md"]
         for path in written:
             # A trailing underscore is a family of settings (FSL_OWNER_*).
             for name in sorted(set(re.findall(r"FSL_[A-Z0-9_]+", path.read_text()))):
                 with self.subTest(file=path.name, setting=name):
                     self.assertIn(name, code)
+
+
+# The standard library has no YAML reader. The two files read below keep to a
+# plain layout (one key per line, block lists), which these helpers follow.
+def yaml_block(text: str, key: str, indent: int) -> list[str]:
+    """The lines under `key:` written at the given indentation, up to the next
+    line that is not indented deeper. Blank and comment lines are left out.
+    An empty list when the key is not there."""
+    lines = text.splitlines()
+    opening = re.compile(rf" {{{indent}}}{re.escape(key)}:\s*(#.*)?")
+    start = next((i for i, line in enumerate(lines) if opening.fullmatch(line)), None)
+    block: list[str] = []
+    if start is None:
+        return block
+    for line in lines[start + 1:]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if len(line) - len(line.lstrip()) <= indent:
+            break
+        block.append(line)
+    return block
+
+
+def workflow_paths(text: str, trigger: str) -> list[str]:
+    """The path filter of one trigger under `on:`."""
+    under_trigger = "\n".join(yaml_block(text, trigger, 2))
+    return [re.sub(r"^\s*-\s*", "", line).strip().strip("\"'")
+            for line in yaml_block(under_trigger, "paths", 4)]
+
+
+def workflow_step_script(text: str, name: str) -> str:
+    """The shell script of the named step (the body of its `run: |`)."""
+    lines = text.splitlines()
+    at = next(i for i, line in enumerate(lines) if line.strip() == f"- name: {name}")
+    run = next(i for i in range(at + 1, len(lines)) if lines[i].strip() == "run: |")
+    indent = len(lines[run]) - len(lines[run].lstrip())
+    body = []
+    for line in lines[run + 1:]:
+        if line.strip() and len(line) - len(line.lstrip()) <= indent:
+            break
+        body.append(line)
+    return textwrap.dedent("\n".join(body)).strip() + "\n"
+
+
+class TestWorkflowFile(unittest.TestCase):
+    """What the CI job may do, when it runs, and what it uploads."""
+
+    def setUp(self):
+        self.text = WORKFLOW.read_text(encoding="utf-8")
+
+    def test_the_job_token_can_only_read_the_repository(self):
+        self.assertEqual([line.strip() for line in yaml_block(self.text, "permissions", 0)],
+                         ["contents: read"])
+        self.assertEqual(self.text.count("permissions:"), 1)     # no job widens it again
+        # A pull request from a fork runs this file with the fork's changes,
+        # so it must never be handed a secret or a token that can write.
+        self.assertNotIn("pull_request_target", self.text)
+        self.assertNotRegex(self.text, r"secrets\.\w")           # no ${{ secrets.NAME }}
+        self.assertNotIn("github.token", self.text)
+
+    def test_both_triggers_cover_every_file_the_tests_read(self):
+        needed = [f"{ROOT.name}/**", WORKFLOW.relative_to(REPO).as_posix(),
+                  RENDER_YAML.relative_to(REPO).as_posix()]
+        self.assertEqual(needed, ["faisal-security-lab/**",
+                                  ".github/workflows/faisal-security-lab-ci.yml", "render.yaml"])
+        for trigger in ("push", "pull_request"):
+            with self.subTest(trigger=trigger):
+                self.assertEqual(sorted(workflow_paths(self.text, trigger)), sorted(needed))
+
+    @unittest.skipUnless(shutil.which("bash"), "needs bash")
+    def test_a_missing_tool_is_announced_without_failing_the_job(self):
+        steps = re.findall(r"^\s*- name: (.+)$", self.text, re.M)
+        self.assertLess(steps.index("Add tools to PATH"), steps.index("Warn about missing tools"))
+        self.assertLess(steps.index("Warn about missing tools"),
+                        steps.index("Unit + integration tests"))
+        script = workflow_step_script(self.text, "Warn about missing tools")
+        tools = ("bandit", "gitleaks", "pip-audit", "semgrep")
+        only_path = Path(tempfile.mkdtemp(prefix="fsl-ci-path-"))
+
+        def run_step():
+            # A step's script is run by `bash -e`.
+            return subprocess.run([shutil.which("bash"), "-e", "-c", script],
+                                  env={"PATH": str(only_path)}, capture_output=True, text=True,
+                                  timeout=60)
+
+        proc = run_step()                                        # none of the four is there
+        self.assertEqual((proc.returncode, proc.stderr), (0, ""))
+        warnings = proc.stdout.splitlines()
+        self.assertEqual(len(warnings), len(tools))
+        for tool, line in zip(tools, warnings):
+            with self.subTest(tool=tool):
+                self.assertRegex(line, rf"^::warning( [^:]+)?::{re.escape(tool)} is not on PATH")
+        for tool in tools:
+            (only_path / tool).write_text("#!/bin/sh\n")
+            (only_path / tool).chmod(0o755)
+        proc = run_step()                                        # all four are there
+        self.assertEqual((proc.returncode, proc.stdout, proc.stderr), (0, "", ""))
+
+    def test_the_uploaded_report_is_the_untracked_one(self):
+        self.assertIn("path: faisal-security-lab/var/acceptance-report.json", self.text)
+        self.assertNotIn("evidence/acceptance-report.json", self.text)
+        self.assertNotIn("--evidence", self.text)                # CI never rewrites the tracked copy
+
+
+class TestComposeFile(unittest.TestCase):
+    def setUp(self):
+        self.text = COMPOSE_YAML.read_text(encoding="utf-8")
+
+    def service(self, name: str) -> str:
+        return "\n".join(yaml_block(self.text, name, 2))
+
+    def test_the_api_port_is_published_on_this_machine_only(self):
+        published = re.findall(r"^\s*ports:\s*\[(.*)\]\s*$", self.text, re.M)
+        self.assertEqual(published, ['"127.0.0.1:8787:8787"'])
+        self.assertIn("ports:", self.service("api"))
+
+    def test_owner_password_goes_to_the_service_that_creates_the_owner_and_no_other(self):
+        api, worker = self.service("api"), self.service("worker")
+        self.assertIn("FSL_OWNER_PASSWORD: ${FSL_OWNER_PASSWORD:-}", api)
+        self.assertNotIn("FSL_OWNER", worker)
+        # The API image starts the server, which creates the owner; the worker
+        # image starts the worker, which never does.
+        self.assertIn("deploy/Dockerfile.api", api)
+        self.assertIn('CMD ["python3", "-m", "app.server"]',
+                      (ROOT / "deploy" / "Dockerfile.api").read_text(encoding="utf-8"))
+        self.assertIn("deploy/Dockerfile.worker", worker)
+        self.assertNotIn("bootstrap", (ROOT / "app" / "worker.py").read_text(encoding="utf-8"))
+
+    def test_a_password_left_unset_arrives_empty_and_one_is_generated(self):
+        # `${FSL_OWNER_PASSWORD:-}` gives the container an empty value when the
+        # variable is not set where `docker compose` runs.
+        from app import bootstrap, config, db
+        env = mock.patch.dict(os.environ)
+        env.start()
+        self.addCleanup(env.stop)
+        self.addCleanup(config.reset_config_for_tests, config._CONFIG)
+        self.addCleanup(db.reset_db_for_tests, db._DB)
+        for key in ("FSL_DB_PATH", "FSL_EVIDENCE_DIR", "FSL_OWNER_EMAIL"):
+            os.environ.pop(key, None)
+        os.environ["FSL_DATA_DIR"] = tempfile.mkdtemp(prefix="fsl-seam-")
+        os.environ["FSL_OWNER_PASSWORD"] = ""
+        cfg = config.Config.from_env()
+        config.reset_config_for_tests(cfg)
+        db.reset_db_for_tests(db.Database(cfg.db_path))
+        created = bootstrap.init_platform(sync_tools=False)["owner_bootstrap"]
+        self.assertTrue(created["created"] and created["generated"])
+        self.assertTrue(created["password"])
 
 
 if __name__ == "__main__":
