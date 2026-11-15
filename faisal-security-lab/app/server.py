@@ -1683,6 +1683,12 @@ def seed_public_demo(scans: bool = True) -> dict | None:
 
 def main():
     import os
+    # The hosted site opens to the public read-only view by default, so visitors
+    # see the interface with no sign-in screen. An operator who wants a sign-in
+    # for everything sets FSL_PUBLIC_VIEW=0; setdefault never overrides that.
+    # Only running the server flips it on — the library/config default stays off,
+    # so tests and embedders are unaffected.
+    os.environ.setdefault("FSL_PUBLIC_VIEW", "1")
     cfg = get_config()
     # Tool probing is deferred until the port is bound (see below) so a small
     # instance answers its health check in seconds, not minutes.

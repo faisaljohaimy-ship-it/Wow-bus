@@ -186,10 +186,12 @@ class Config:
     # number of proxies that each append one entry to X-Forwarded-For.
     client_ip_header: str = ""
     trusted_proxy_hops: int = 0
-    # Optional PUBLIC READ-ONLY VIEW (FSL_PUBLIC_VIEW=1). Off by default. When
-    # on, a visitor without a session may read ONE designated demo project
-    # through an explicit allowlist of GET routes; every action still needs a
-    # sign-in. See app/auth.py (GuestPrincipal) and app/demo.py.
+    # PUBLIC READ-ONLY VIEW (FSL_PUBLIC_VIEW). The library default is off; the
+    # server entrypoint (app.server main()) turns it ON unless an operator sets
+    # FSL_PUBLIC_VIEW=0, so the hosted site opens straight to the interface with
+    # no sign-in screen. When on, a visitor without a session may read ONE
+    # designated demo project through an explicit allowlist of GET routes; every
+    # action still needs a sign-in. See app/auth.py (GuestPrincipal), app/demo.py.
     public_view: bool = False
     demo_connectors: tuple = DEFAULT_DEMO_CONNECTORS
     # Ceiling on guest requests per minute, all visitors together. 0 keeps the

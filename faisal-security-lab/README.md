@@ -199,12 +199,15 @@ credential-shaped strings. They are fabricated on purpose, so that the secret
 scanner has something to find; secret scanners run on this repository will flag
 them.
 
-### Optional public read-only view
+### Public read-only view (on by default)
 
-`FSL_PUBLIC_VIEW=1` lets visitors **read** one seeded demo project (the bundled
-`samples/vulnerable-app`, scanned by the installed tools) without signing in. It
-is off by default and read-only; guests are not sent evidence text or server
-paths. See [docs/DEPLOY.md](docs/DEPLOY.md#optional-public-read-only-view).
+The server opens to a public read-only view, so the site shows the interface with
+**no sign-in screen**: visitors can read one seeded demo project (the bundled
+`samples/vulnerable-app`, scanned by the installed tools) and use the Agent,
+simulation and crypto lab. Every action (creating assets or scopes, running real
+scans, settings) still needs a sign-in, and guests are not sent evidence text or
+server paths. Set `FSL_PUBLIC_VIEW=0` to require a sign-in for everything. See
+[docs/DEPLOY.md](docs/DEPLOY.md#optional-public-read-only-view).
 
 ## What it does — the defensive loop
 
