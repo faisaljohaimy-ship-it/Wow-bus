@@ -39,7 +39,9 @@ const I18N = {
     connection:"الاتصال", yourip:"عنوانك كما يراه الخادم", ipsource:"مصدر العنوان",
     src_header:"ترويسة منصّة الاستضافة", src_forwarded:"X-Forwarded-For", src_peer:"اتصال مباشر",
     proxywarn:"تصل الطلبات عبر وسيط لكن الخادم غير مضبوط للوثوق به، فيظهر كل الزوّار بعنوان واحد وتُحتسب محاولات الدخول الخاطئة عليهم جميعًا. اضبط FSL_CLIENT_IP_HEADER في إعدادات الاستضافة.",
-    setupnotes:"ملاحظات الإعداد" },
+    setupnotes:"ملاحظات الإعداد",
+    needscantype:"اختر نوع فحص واحدًا على الأقل. التفويض بلا أنواع فحص لا يشغّل أي فحص.",
+    noscantypes:"بلا أنواع فحص", inscope:"مسموح في هذا التفويض", notinscope:"خارج هذا التفويض (يُرفض)" },
   en: { app:"Cyber Defense Center", kicker:"PRIVATE DEFENSE SYSTEM",
     login:"Verified owner sign-in", email:"Email", password:"Password", signin:"Sign in",
     signout:"Sign out", dashboard:"Dashboard", assets:"Assets & Scopes", catalog:"Tool Catalog",
@@ -71,7 +73,9 @@ const I18N = {
     connection:"Connection", yourip:"Your address as the server sees it", ipsource:"Address source",
     src_header:"hosting platform header", src_forwarded:"X-Forwarded-For", src_peer:"direct connection",
     proxywarn:"Requests arrive through a proxy the server is not set to trust, so every visitor appears under one address and wrong sign-in attempts count against all of them. Set FSL_CLIENT_IP_HEADER in the hosting settings.",
-    setupnotes:"Setup notes" }
+    setupnotes:"Setup notes",
+    needscantype:"Tick at least one scan type. An authorization without scan types cannot run any scan.",
+    noscantypes:"no scan types", inscope:"Allowed by this authorization", notinscope:"Not in this authorization (refused)" }
 };
 const t = k => (I18N[S.lang][k] || k);
 
@@ -80,7 +84,7 @@ const NOTICE_TEXT = {
   ar: {
     owner_password_too_short: "لم يُنشأ حساب المالك لأن كلمة المرور في إعدادات الاستضافة أقصر من {min} أحرف. افتح إعدادات الخدمة (Environment) واجعل قيمة FSL_OWNER_PASSWORD {min} أحرف أو أكثر، ثم أعد النشر.",
     owner_email_invalid: "قيمة FSL_OWNER_EMAIL في إعدادات الاستضافة ليست بريدًا صالحًا، لذلك يُستخدم البريد الافتراضي owner@faisal-security-lab.local لتسجيل الدخول.",
-    owner_password_generated: "لم تُضبط كلمة مرور للمالك (FSL_OWNER_PASSWORD). أُنشئت كلمة مرور لمرة واحدة وطُبعت في سجل الخدمة (Logs).",
+    owner_password_generated: "لم تُضبط كلمة مرور للمالك (FSL_OWNER_PASSWORD)، فأُنشئت كلمة مرور تلقائيًا. تظهر مرة واحدة فقط في سجل الخدمة (Logs) عند أول تشغيل، وتبقى هي كلمة مرور المالك.",
     data_dir_unwritable: "مجلد البيانات غير قابل للكتابة، لذلك تُحفظ البيانات مؤقتًا وتُفقد عند إعادة التشغيل.",
     owner_bootstrap_failed: "تعذّر إعداد حساب المالك. راجع سجل الخدمة (Logs).",
     owner_email_ignored: "قيمة FSL_OWNER_EMAIL في إعدادات الاستضافة ليست بريدًا صالحًا فتم تجاهلها. حسابات المالك الموجودة لم تتغيّر.",
@@ -91,7 +95,7 @@ const NOTICE_TEXT = {
   en: {
     owner_password_too_short: "No owner account was created because the password in the hosting settings is shorter than {min} characters. Open the service's Environment settings, set FSL_OWNER_PASSWORD to {min} or more characters, and redeploy.",
     owner_email_invalid: "FSL_OWNER_EMAIL in the hosting settings is not a valid email, so the default owner@faisal-security-lab.local is used to sign in.",
-    owner_password_generated: "No owner password is set (FSL_OWNER_PASSWORD). A one-time password was generated and printed in the service logs.",
+    owner_password_generated: "No owner password is set (FSL_OWNER_PASSWORD), so one was generated. It is shown once, in the service logs of the first start, and stays the owner's password.",
     data_dir_unwritable: "The data directory is not writable, so data is kept in temporary storage and lost on restart.",
     owner_bootstrap_failed: "The owner account could not be set up. Check the service logs.",
     owner_email_ignored: "FSL_OWNER_EMAIL in the hosting settings is not a valid email and was ignored. Existing owner accounts are unchanged.",
@@ -422,14 +426,18 @@ async function scrCatalog(ctx){
 
 async function scrScans(ctx){
   const pid=S.project.id;
-  const [a,sc,conn,jobs]=await Promise.all([api(`/api/projects/${pid}/assets`),
-    api(`/api/projects/${pid}/scopes`),api(`/api/connectors`),api(`/api/projects/${pid}/jobs`)]);
+  const [sc,conn,jobs]=await Promise.all([api(`/api/projects/${pid}/scopes`),
+    api(`/api/connectors`),api(`/api/projects/${pid}/jobs`)]);
   const activeScopes=sc.scopes.filter(s=>s.status==="active");
+  S.connectors = conn.connectors;
+  // The scan types are part of the label: two authorizations on one asset
+  // differ only in what they allow.
+  const scopeLabel = s => `${s.asset_id} · ${s.environment} · ${(s.scan_types||[]).join(", ") || t("noscantypes")}`;
   setMain(ctx, topbar(t("scans"), `<button class="btn sm" data-act="refresh">↻ ${esc(t("refresh"))}</button>`)
     + h`<div class="card"><h2>${esc(t("run"))}</h2>
       <form id="scanform" class="row">
-        <div><label>${esc(t("scope"))}</label><select name="scope_id">${activeScopes.map(s=>`<option value="${esc(s.id)}" data-asset="${esc(s.asset_id)}" data-types="${esc(JSON.stringify(s.scan_types||[]))}">${esc(s.asset_id)} · ${esc(s.environment)}</option>`).join("")}</select></div>
-        <div><label>${esc(t("connector"))}</label><select name="connector" id="connsel">${conn.connectors.map(c=>`<option value="${esc(c.name)}">${esc(c.name)} ${c.readiness.available?"":(c.state==="checking"?"(…)":"(blocked)")}</option>`).join("")}</select></div>
+        <div style="flex:3 1 320px"><label>${esc(t("scope"))}</label><select name="scope_id">${activeScopes.map(s=>`<option value="${esc(s.id)}" data-asset="${esc(s.asset_id)}" data-types="${esc(JSON.stringify(s.scan_types||[]))}">${esc(scopeLabel(s))}</option>`).join("")}</select></div>
+        <div><label>${esc(t("connector"))}</label><select name="connector" id="connsel"></select></div>
         <div><button class="btn primary">${esc(t("run"))}</button></div>
       </form><div class="small muted" style="margin-top:6px">${esc(t("unauthorized"))}</div></div>
     <div class="card"><h2>${esc(t("jobs"))}</h2><table><thead><tr><th>${esc(t("connector"))}</th><th>${esc(t("status"))}</th><th>phase</th><th>progress</th><th>${esc(t("tool"))}</th><th></th></tr></thead>
@@ -437,9 +445,28 @@ async function scrScans(ctx){
         <td class="small">${esc(j.phase)}</td><td style="width:120px"><div class="progress"><span style="width:${Math.round((Number(j.progress)||0)*100)}%"></span></div></td>
         <td class="small">${esc((j.result_summary&&j.result_summary.tool_version)||"")}</td>
         <td class="flex"><button class="btn sm" data-act="job" data-job="${esc(j.id)}">↳</button>${["queued","leased","running"].includes(j.state)?`<button class="btn sm danger" data-act="jobstop" data-job="${esc(j.id)}">${esc(t("stop"))}</button>`:""}</td></tr>`).join("")||`<tr><td colspan=6 class="muted">${esc(t("none"))}</td></tr>`}</tbody></table></div>`);
-  hydrateScanForm(a.assets);
+  if (ctx.seq === RENDER_SEQ) fillConnectorSelect();
 }
-function hydrateScanForm(){ /* connector list filtered by scope on submit */ }
+// The connector list of the scan form: the connectors the selected
+// authorization allows come first, the others after them under their own
+// heading. Run again whenever another authorization is selected.
+function fillConnectorSelect(){
+  const form = document.getElementById("scanform"); if (!form) return;
+  const sel = form.querySelector("#connsel"); if (!sel) return;
+  const scope = form.querySelector("[name=scope_id]").selectedOptions[0];
+  let allowed = [];
+  try{ allowed = scope ? JSON.parse(scope.dataset.types || "[]") : []; }catch(e){ allowed = []; }
+  if (!Array.isArray(allowed)) allowed = [];
+  const option = c => `<option value="${esc(c.name)}">${esc(c.name)}${c.readiness&&c.readiness.available?"":(c.state==="checking"?" (…)":" (blocked)")}</option>`;
+  const all = S.connectors || [];
+  const first = all.filter(c => allowed.includes(c.name));
+  const rest = all.filter(c => !allowed.includes(c.name));
+  const group = (label, list) => list.length ? `<optgroup label="${esc(label)}">${list.map(option).join("")}</optgroup>` : "";
+  const before = sel.value;
+  sel.innerHTML = scope ? group(t("inscope"), first) + group(t("notinscope"), rest) : all.map(option).join("");
+  // Keep the connector that was chosen when the new authorization also allows it.
+  if (first.some(c => c.name === before)) sel.value = before;
+}
 
 async function scrFindings(ctx){
   const pid=S.project.id;
@@ -582,6 +609,10 @@ document.addEventListener("submit", async e=>{
       await api(`/api/projects/${S.project.id}/assets`,"POST",{kind:fd.kind,identifier:fd.identifier,criticality:fd.criticality,metadata:meta});
       renderScreen(); return; }
     if(f.id==="scopeform"){ const types=[...f.querySelectorAll('input[name=st]:checked')].map(x=>x.value);
+      // An authorization without scan types can never run a scan: say so and send nothing.
+      if(!types.length){ const box=f.querySelector("#scopemsg");
+        if(box){ box.innerHTML=`<div style="margin-top:10px">${notice(t("needscantype"),"err")}</div>`; box.scrollIntoView({block:"nearest"}); }
+        return; }
       await api(`/api/projects/${S.project.id}/scopes`,"POST",{asset_id:fd.asset_id,proof:fd.proof,environment:fd.environment,
         allowed_targets:fd.allowed_targets?fd.allowed_targets.split(",").map(s=>s.trim()):[],scan_types:types,owner_contact:fd.owner_contact});
       if (S.screen==="assets") renderScreen();   // the user may have moved on meanwhile
@@ -610,6 +641,9 @@ document.addEventListener("change", async e=>{
       <form id="projform" class="row"><div style="flex:2"><label>${esc(t("name"))}</label><input name="name" required></div>
       <div><button class="btn primary">${esc(t("create"))}</button></div></form></div>`); return; }
     S.project=S.projects.find(p=>p.id===v); renderScreen(); }
+  else if(e.target.name==="scope_id" && e.target.closest("#scanform")){ fillConnectorSelect(); }
+  else if(e.target.name==="st" && e.target.closest("#scopeform")){
+    const box=document.getElementById("scopemsg"); if(box) box.innerHTML=""; }   // the notice has been answered
 });
 
 document.addEventListener("click", async e=>{
@@ -668,6 +702,7 @@ function showScopeForm(assetId){
         <div><label>${esc(t("owner_contact"))}</label><input name="owner_contact"></div></div>
       <label>${esc(t("allowed"))} (comma-separated)</label><input name="allowed_targets" placeholder="/path, https://host/path, owner/repo">
       <label>${esc(t("scantypes"))}</label><div class="flex">${connOpts}</div>
+      <div id="scopemsg" role="alert"></div>
       <div style="margin-top:12px"><button class="btn primary">${esc(t("create"))}</button></div></form></div>`;
   document.getElementById("scopeformbox").scrollIntoView({behavior:"smooth"});
 }
