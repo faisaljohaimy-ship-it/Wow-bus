@@ -1,9 +1,10 @@
 # FAISAL.AI — Faisal Security Lab (Defensive AI Security Platform)
 
-> **منصة دفاع واختبار أمني أخلاقي** — authorized, auditable security testing that
-> runs real security tools behind one execution contract and adds an AI layer
-> over evidence that can be checked again. Self-hosted; the server needs only the
-> Python standard library.
+> **منصة دفاع واختبار أمني أخلاقي** — authorized, auditable security testing. It
+> runs real security scanners through one common interface, keeps what they
+> report as evidence you can check again, and has an optional AI layer that
+> works on that evidence. Self-hosted; the server needs only the Python standard
+> library.
 
 **For systems you own or are authorized to test.** A scan needs an authorization
 scope, and the scope is enforced in code at both the API and the worker, not in
@@ -66,7 +67,7 @@ Network traffic happens only as part of these actions:
   versions go there and packages can be downloaded from there.
 - **OSV-Scanner** sends the package names and versions it finds in lockfiles
   and manifests to `api.osv.dev`.
-- **Trivy**, if you install it, downloads its vulnerability database.
+- **Trivy**, where it is installed, downloads its vulnerability database.
 - **Semgrep** runs with the rules bundled in `data/semgrep-rules` and with its
   version check switched off. If you set `FSL_SEMGREP_CONFIG` to a registry
   pack, your Semgrep downloads those rules from the Semgrep registry, and
@@ -122,12 +123,21 @@ Open the address and sign in as `owner@faisal-security-lab.local` with that
 password. The console opens in Arabic; the `🌐 EN` button on the sign-in page
 switches to English.
 
+If port 8787 is taken, name another one and open that address instead:
+
+```bash
+FSL_PORT=8788 make serve    # → http://127.0.0.1:8788
+```
+
 In a second terminal, optional:
 
 ```bash
-sudo make install-tools     # Semgrep, Bandit, pip-audit, Gitleaks, OSV-Scanner (pinned versions)
+sudo make install-tools     # Semgrep, Bandit, pip-audit, Gitleaks, OSV-Scanner and, optionally, Trivy (pinned versions)
 make verify                 # prints the state of every connector
 ```
+
+Trivy is optional: the first scan, the tests and the acceptance gates below do
+not need it.
 
 If you leave `FSL_OWNER_PASSWORD` unset, the first `make serve` prints the owner
 address and a generated password, shown once, in a line that starts with
@@ -141,8 +151,11 @@ holds all local data) and start again.
 
 ```bash
 make test           # unit and integration tests; tests of a scanner are skipped where it is not installed
-make acceptance     # the 10 acceptance gates → var/acceptance-report.json
+make acceptance     # the 10 acceptance gates → var/acceptance-report.json; needs the scanners
 ```
+
+`make acceptance` needs the scanners (`make install-tools`). Without them four
+of the ten gates fail (1, 2, 9 and 10) and the command ends with an error.
 
 The settings are environment variables; [`.env.example`](.env.example) lists
 them. The platform does not read a `.env` file by itself.
@@ -152,8 +165,10 @@ them. The platform does not read a `.env` file by itself.
 This scans the bundled sample `samples/vulnerable-app` with Bandit, so it needs
 `make install-tools` first. The labels are those of the English console.
 
-1. In the sidebar, open the **Project** drop-down and choose **+ New project**.
-   Type a name and press **Create**.
+1. Create a project. On a new installation the **New project** form is on the
+   page as soon as you have signed in. Where a project already exists, open the
+   **Project** list in the sidebar and choose **+ New project** to get the
+   form. Type a name and press **Create**.
 2. Open **Assets & Scopes**. Under **Add asset** leave **Kind** on `source`, put
    the full path of the sample into **Identifier** (run
    `echo "$PWD/samples/vulnerable-app"` in `faisal-security-lab/` to get it) and
@@ -167,13 +182,17 @@ This scans the bundled sample `samples/vulnerable-app` with Bandit, so it needs
    press **Run scan**. Press **↻ Refresh** until the job reads `succeeded`; it
    takes a few seconds.
 5. Open **Findings & Evidence**. The sample gives about nine findings in
-   `app.py`; click a row for the details and the evidence.
+   `app.py`; click a row for the details of a finding. The evidence, which is
+   the scanner's output after redaction, is kept with the job and not with the
+   finding: go back to **Scan Center**, press **↳** in the job's row and then
+   **view** under **Evidence**.
 6. Open **Reports**, press **HTML (EN)**, then **Open** or **Download**.
 
-A connector that the scope does not list is refused with
-`connector 'semgrep' is not in the authorized scan types [policy_denied]`. A
-scanner that is not installed is listed as `(blocked)` in **Connector**, and its
-job ends as `blocked`.
+A connector that the scope does not list is refused: the console shows the
+refusal, and the API answers HTTP 403 with the code `policy_denied` and the
+message `connector 'semgrep' is not in the authorized scan types`. A scanner
+that is not installed is listed as `(blocked)` in **Connector**, and its job
+ends as `blocked`.
 
 `samples/vulnerable-app`, `tests/` and `scripts/acceptance.py` contain
 credential-shaped strings. They are fabricated on purpose, so that the secret
@@ -225,10 +244,12 @@ installation, and `stale` when the tool's version changes after that.
 `make verify` prints the states of your installation; the dashboard shows them
 too.
 
-The **Tool Catalog** screen lists 76 open-source security projects with Arabic
-descriptions and a link to each project. It is a reference list. Six entries
-have a connector here; the others, among them tools with offensive uses, are
-listed only and cannot be run from this platform.
+The **Tool Catalog** screen lists 76 security projects with Arabic
+descriptions and a link to each project's repository on GitHub. It is a
+reference list. Six entries have a connector here; the others, among them tools
+with offensive uses, are listed only and cannot be run from this platform. The
+list does not say that every project in it is open source; what the catalog
+file holds is described in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Architecture
 
@@ -239,7 +260,7 @@ listed only and cannot be run from this platform.
 | Authorization | `app/scope.py`, `app/policy.py` | scopes and the policy check that runs when a scan is requested and when it starts; destination checks for network targets |
 | Queue | `app/queue.py` | durable jobs in SQLite, idempotency keys, leases, one scan per asset at a time, global stop; a lost worker gives `undetermined`, not a silent re-run |
 | Worker | `app/worker.py` | leases a job, copies the source into a temporary directory, repeats the policy check, runs the connector under limits, stores evidence and findings |
-| Connectors | `app/connectors/` | one contract for all tools; tools are started without a shell |
+| Connectors | `app/connectors/` | one common interface for all tools; tools are started without a shell |
 | Findings | `app/findings.py` | one model for all tools, de-duplication, work priority, status lifecycle, reopen |
 | Evidence | `app/evidence.py` | redaction before storage, SHA-256, restricted access |
 | Reports | `app/reports.py` | JSON, SARIF 2.1.0, HTML and Markdown in Arabic and English |
@@ -251,11 +272,16 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
 
 ## Acceptance
 
-`make acceptance` runs ten gates against the declared release scope (`r1`) on
-your machine and writes the result to `var/acceptance-report.json`. A passed
-gate means that check ran and produced the stated evidence. It is **not** a
-claim that the system is free of vulnerabilities. The gates, and the result
-recorded on the reference build, are in [ACCEPTANCE.md](ACCEPTANCE.md).
+`make acceptance` runs ten checks, called gates, on your machine and writes the
+result to `var/acceptance-report.json`. The command needs the scanners
+(`make install-tools`). The gates test the release scope, which is the list of
+features this release says it contains (named `r1`, written down in
+[specs/spec.md](specs/spec.md)). A passed gate means that check ran and
+produced the stated evidence. It is **not** a claim that the system is free of
+vulnerabilities. The gates are listed in [ACCEPTANCE.md](ACCEPTANCE.md),
+together with the result recorded on the reference build, which is the machine
+the recorded results come from: a Linux x86_64 container with Python 3.13 and
+the scanners installed.
 
 ## Security posture and limits
 
@@ -274,9 +300,9 @@ recorded on the reference build, are in [ACCEPTANCE.md](ACCEPTANCE.md).
   because it breaks Semgrep.
 - Known secret and personal-data patterns (access keys, tokens, private keys,
   `password=` style pairs, e-mail addresses, card-like numbers) are redacted in
-  stored evidence, in finding descriptions, in reports, in audit entries and in
-  text sent to a model. Redaction is pattern based and cannot catch everything,
-  and a finding's title is shown in the console as the tool reported it.
+  stored evidence, in finding titles and descriptions, in reports, in audit
+  entries and in text sent to a model. Redaction is pattern based and cannot
+  catch everything.
 - Known limits of this release are listed in
   [docs/RELEASE-NOTES.md](docs/RELEASE-NOTES.md#known-limits).
 
@@ -288,18 +314,29 @@ To report a vulnerability in the platform itself, follow
 
 The platform is licensed under either of the Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE)) or the MIT License ([LICENSE-MIT](LICENSE-MIT)), at your option.
 See also [NOTICE](NOTICE) and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
-The licences cover this directory only.
+
+The licences cover the security platform: everything in this directory
+(`faisal-security-lab/`) and the platform's own files at the repository root,
+which are `render.yaml`, `.gitleaksignore`, `SECURITY.md`, `CONTRIBUTING.md`,
+`CODE_OF_CONDUCT.md`, `.github/workflows/faisal-security-lab-ci.yml`,
+`.github/pull_request_template.md` and the files under
+`.github/ISSUE_TEMPLATE/`. Nothing else in the repository is covered: the
+Neexios site (the rest of the repository root and `src/`) is not covered by
+these licences. Text that some of these files quote from other sources keeps
+its own licence; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 Unless you say otherwise in writing, a contribution you submit for inclusion in
 the platform is licensed in the same way, under both licences, with no
 additional terms.
 
-The scanners are separate programs under their own licences (Semgrep LGPL-2.1,
-Gitleaks MIT, Bandit, pip-audit, OSV-Scanner and Trivy Apache-2.0). They are not
-included in this repository: the install script downloads them, and the platform
-starts them as separate processes.
+The scanners are separate programs under their own licences (Semgrep
+LGPL-2.1-or-later, Gitleaks MIT, Bandit, pip-audit, OSV-Scanner and Trivy
+Apache-2.0). They are not included in this repository: the install script
+downloads them, and the platform starts them as separate processes.
 
-The name FAISAL.AI and the mask logo identify the original project and are not
-licensed for use by forks: a fork or a hosted copy must use another name and
-logo. `FAISAL.AI` is a display brand; `faisal.ai` is **not** an owned/live
-domain.
+The name FAISAL.AI and the mask logo identify the original project; the
+licences cover the code and the documents and do not grant trademark rights in
+the name or the logo. This is a request, not a licence condition: if you publish
+a fork, a modified version or a hosted copy, please use your own name and logo,
+or say clearly that it is not run or endorsed by the original project.
+`FAISAL.AI` is a display brand; `faisal.ai` is **not** an owned/live domain.
