@@ -859,10 +859,17 @@ def assets_list(req: Req):
 def assets_create(req: Req):
     pid = req.params["pid"]
     req.principal.require_project(pid, "analyst")
+    metadata = req.body.get("metadata", {})
+    if not isinstance(metadata, dict):
+        raise ValidationError("metadata must be an object")
+    if metadata.get("internal"):
+        # An asset marked internal may be reached on private addresses. That
+        # lifts a guard, so it takes the role that grants authorization.
+        req.principal.require_project(pid, "admin")
     a = store.create_asset(pid, req.body.get("kind", ""), req.body.get("identifier", ""),
                            label=req.body.get("label", ""),
                            criticality=req.body.get("criticality", "medium"),
-                           metadata=req.body.get("metadata", {}),
+                           metadata=metadata,
                            created_by=req.principal.user_id)
     audit.record("asset.create", actor=req.principal.email, project_id=pid, target=a["id"],
                  detail={"kind": a["kind"]})

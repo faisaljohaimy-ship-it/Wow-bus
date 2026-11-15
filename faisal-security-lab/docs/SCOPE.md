@@ -19,7 +19,7 @@ fields marked with *; the others are set through the API.
 | `proof` * | reference to the authorization (a ticket, a signed letter, `LAB-SELF-OWNED` for your own lab). Required, free text |
 | `owner_contact` * | who authorized it |
 | `environment` * | `lab`, `staging` or `prod` |
-| `allowed_targets` * | the hosts, URLs, paths or repositories the scope covers, separated by commas in the console. A pattern matches itself; a host name also matches URLs on that host; `*.example.org` matches `example.org` and every host below it; `/path/*` matches `/path` and everything below it. **Leave it empty and targets are not restricted** (see "Known limits") |
+| `allowed_targets` * | the hosts, URLs, paths or repositories the scope covers, separated by commas in the console. A pattern matches itself; a host name also matches URLs on that host; `*.example.org` matches `example.org` and every host below it; `/path/*` matches `/path` and everything below it. **Leave it empty and the scope covers the asset's own identifier only.** For a source scan the directory that is read has to be the place an entry names, or below it |
 | `denied_targets` | explicit exclusions; checked first |
 | `scan_types` * | the connector names allowed on this asset. A scope with none allows no scan |
 | `valid_from` / `valid_until` | validity dates (ISO date and time, UTC) |
@@ -62,9 +62,16 @@ redirect is recorded but not followed.
   `staging`.
 - **Internal assets.** A private address is reachable only when the asset
   carries `"internal": true` in its metadata (set through the API when the
-  asset is registered) and a scope on that asset allows the connector. Look at
-  an asset before you grant a scope on it: the mark is set by whoever registered
-  the asset.
+  asset is registered) and a scope on that asset allows the connector. Setting
+  the mark takes the `admin` role in the project, the same role that grants
+  scopes.
+- **Source directories.** A source scan reads the directory given by the scan
+  request's `source_path`, else the asset's `local_path`, else the asset's
+  identifier. That directory is compared with the scope as a real path (after
+  `..` and symbolic links are resolved): it has to be a directory that an
+  allowed target names, or below one, and not inside a denied one. The check
+  runs when the scan is requested and again in the worker on the path it is
+  about to copy. Symbolic links inside the directory are not copied.
 - **Withdrawal.** Revoking a scope tells its queued and running jobs to stop
   and refuses any further scan on it.
 - **What is shipped.** This version has connectors that read source
@@ -87,19 +94,6 @@ who gets an account and where the worker runs.
 
 - **The proof is a declaration.** Nothing checks that the text in `proof` is
   true.
-- **An empty `allowed_targets` list does not restrict targets.** The scope then
-  still binds the asset and the scan types, but a `target` parameter in a scan
-  request may name another host. Always fill in the allowed targets; the console
-  form does not insist on it.
-- **The directory of a source scan is not compared with the scope.** A source
-  scan reads the asset's identifier, or, when they are given, the asset's
-  `local_path` metadata field or the `source_path` parameter of the scan
-  request. Only the identifier is compared with `allowed_targets`. Someone with
-  the `analyst` role in a project that has an active scope for a source scanner
-  can therefore have the worker read any directory the service user can read;
-  findings from it appear in that project. Give that role only to people you
-  trust with this, run the service as an unprivileged user, and run the worker
-  in a container that sees only what you mount into it.
 - **A `source` asset is a directory on the machine where the worker runs**, not
   on the machine of the person who registers it.
 - **`allowed_ports` and `rate_limits` are not enforced.**

@@ -1,6 +1,5 @@
 """Scope matching and network-destination validation.
 
-Carries forward the hardened patterns from the original runner.py:
   * canonical host parsing (reject tricks, require exact ASCII/punycode)
   * private / loopback / link-local CIDR blocks (SSRF)
   * never auto-follow redirects; validate every hop's destination
@@ -12,6 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 import ipaddress
+import os
 import re
 import socket
 from urllib.parse import urlsplit
@@ -122,17 +122,97 @@ def targets_for(asset: dict, params: dict) -> list[str]:
     return [t for t in targets if t]
 
 
+# ---------------------------------------------------------------------------
+# Local directories a source scan reads
+# ---------------------------------------------------------------------------
+def _is_remote(value: str) -> bool:
+    """A repository address that is cloned, not a directory on this machine."""
+    v = (value or "").strip()
+    return v.startswith(("http://", "https://", "git@", "ssh://")) or v.endswith(".git")
+
+
+def local_source_for(asset: dict, params: dict) -> str | None:
+    """The directory on this machine that a source scan of this asset would
+    read, or None when the asset is a repository address to clone or has no
+    source at all. The worker uses this function too, so the directory that is
+    authorized and the directory that is read are chosen in one place.
+
+    Order: the scan request's source_path, the asset's local_path, then the
+    identifier of a source or repository asset.
+    """
+    requested = params.get("source_path")
+    if requested is not None and not isinstance(requested, str):
+        raise PolicyDenied("source_path must be a directory path")
+    src = requested or (asset.get("metadata") or {}).get("local_path")
+    if src is not None and not isinstance(src, str):
+        raise PolicyDenied("local_path must be a directory path")
+    if src:
+        return src
+    if asset.get("kind") in ("repo", "source"):
+        ident = asset.get("identifier", "")
+        if ident and not _is_remote(ident):
+            return ident
+    return None
+
+
+def _directory_of(pattern: str, asset: dict) -> str | None:
+    """The real directory an allow-list entry names, or None when the entry
+    is a host, a URL or an image name. An entry names a directory when it is
+    written as a path, or when it is the identifier of a source asset."""
+    p = (pattern or "").strip()
+    if p.endswith("/*"):
+        p = p[:-2] or "/"
+    if not p or "://" in p or p.startswith("git@"):
+        return None
+    is_path = p.startswith(("/", "~", "./", "../")) or p in (".", "..")
+    if not is_path and not (asset.get("kind") in ("repo", "source")
+                            and p == (asset.get("identifier") or "").strip().rstrip("/")):
+        return None
+    return os.path.realpath(os.path.expanduser(p))
+
+
+def _inside(directory: str, base: str) -> bool:
+    return directory == base or directory.startswith(base.rstrip(os.sep) + os.sep)
+
+
+def check_source_dir(scope: dict, asset: dict, directory: str) -> None:
+    """Raise PolicyDenied unless `directory` is inside the scope.
+
+    Directories are compared as real paths, so "..", a symbolic link or another
+    spelling of a place cannot lead outside what was authorized. The directory
+    has to be a place an allowed target names, or below one. A scope without
+    allowed targets covers the asset's own identifier and nothing else.
+    """
+    real = os.path.realpath(os.path.expanduser(str(directory)))
+    for pattern in scope.get("denied_targets") or []:
+        base = _directory_of(pattern, asset)
+        if base is not None and _inside(real, base):
+            raise PolicyDenied("target is explicitly excluded by scope",
+                               detail={"target": str(directory)})
+    allowed = scope.get("allowed_targets") or [asset.get("identifier", "")]
+    for pattern in allowed:
+        base = _directory_of(pattern, asset)
+        if base is not None and _inside(real, base):
+            return
+    raise PolicyDenied("source directory is outside the authorized scope",
+                       detail={"target": str(directory)})
+
+
 def check_targets(scope: dict, asset: dict, params: dict) -> None:
-    allowed = scope.get("allowed_targets") or []
+    # A scope that names no target covers the asset's own identifier only.
+    allowed = scope.get("allowed_targets") or [asset.get("identifier", "")]
     denied = scope.get("denied_targets") or []
-    # If the scope declares an allowlist, every target must be inside it.
     for t in targets_for(asset, params):
         if denied and target_in_list(t, denied):
             raise PolicyDenied("target is explicitly excluded by scope",
                                detail={"target": t})
-        if allowed and not target_in_list(t, allowed):
+        if not target_in_list(t, allowed):
             raise PolicyDenied("target is outside the authorized scope",
                                detail={"target": t, "allowed": allowed})
+    # The directory a source scan would read is part of what is authorized.
+    directory = local_source_for(asset, params)
+    if directory is not None:
+        check_source_dir(scope, asset, directory)
 
 
 def within_window(scope: dict, when: dt.datetime | None = None) -> None:

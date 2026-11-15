@@ -15,7 +15,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import audit, evidence, findings as findings_mod, queue, store, util
+from . import audit, evidence, findings as findings_mod, queue, scope as scope_mod, store, util
 from .config import get_config
 from .connectors import get_connector
 from .connectors.base import ExecContext, run_tool
@@ -240,17 +240,18 @@ class Worker:
         """Stage read-only source into input_dir. Supports a local path (lab) or
         a shallow git clone of a scope-authorized URL."""
         params = job["params"]
-        src = params.get("source_path") or asset.get("metadata", {}).get("local_path")
-        if not src and asset.get("kind") in ("repo", "source"):
-            ident = asset["identifier"]
-            if ident.startswith(("http://", "https://", "git@")) or ident.endswith(".git"):
+        src = scope_mod.local_source_for(asset, params)
+        if not src:
+            ident = asset.get("identifier", "")
+            if asset.get("kind") in ("repo", "source") and ident:
                 self._git_clone(ident, scope, asset, input_dir)
                 return
-            src = ident
-        if not src:
             raise ConnectorError("no source available to scan "
                                  "(set asset.metadata.local_path or params.source_path)")
-        src_path = Path(src).resolve()
+        src_path = Path(src).expanduser().resolve()
+        # The policy check has already compared this directory with the scope.
+        # It is compared once more here, on the resolved path that is read.
+        scope_mod.check_source_dir(scope, asset, str(src_path))
         if not src_path.exists() or not src_path.is_dir():
             raise ConnectorError(f"source path not found or not a directory: {src}")
         self._copy_bounded(src_path, input_dir)
@@ -278,7 +279,6 @@ class Worker:
                     continue
 
     def _git_clone(self, url: str, scope, asset, input_dir: Path):
-        from . import scope as scope_mod
         # Clone is a network fetch; confirm the host is not internal unless allowed.
         scope_mod.validated_destination(url, allow_private=bool(asset.get("metadata", {}).get("internal")))
         run = run_tool(["git", "clone", "--depth", "1", "--no-tags", "--single-branch",
