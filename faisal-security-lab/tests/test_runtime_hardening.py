@@ -288,7 +288,15 @@ class LiveCase(EnvCase):
                 conn.putheader("Authorization", f"Bearer {token}")
             for name, value in headers:
                 conn.putheader(name, value)
-            conn.endheaders(data)
+            try:
+                conn.endheaders(data)
+            except (BrokenPipeError, ConnectionResetError):
+                # The server refused the request and closed the socket before we
+                # finished pushing the body (e.g. a large body from someone who
+                # is not signed in is never read). http.client has already moved
+                # the request to the "sent" state, and the response the server
+                # wrote is still waiting on the connection, so read it below.
+                pass
             resp = conn.getresponse()
             raw = resp.read()
             try:
