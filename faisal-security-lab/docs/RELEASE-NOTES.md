@@ -73,7 +73,7 @@ make acceptance               # the 10 gates → var/acceptance-report.json
 ```
 
 - **Tests.** `make test` passed on Python 3.11, 3.12 and 3.13 with Semgrep,
-  Bandit, Gitleaks, pip-audit and OSV-Scanner installed: 313 tests, 1 skipped
+  Bandit, Gitleaks, pip-audit and OSV-Scanner installed: 362 tests, 1 skipped
   (a container entrypoint test that is skipped when the suite runs as root).
   The suite covers roles and project isolation, the policy check and scopes,
   destination checks, queue idempotency and lost workers, connectors on known
@@ -136,10 +136,8 @@ Each item says how you can check it yourself.
 ## Known limits
 
 - **What the scope check does not cover** is listed in
-  [SCOPE.md](SCOPE.md#known-limits): the proof is a declaration, an empty
-  allowed-targets list does not restrict targets, the directory of a source
-  scan is not compared with the scope, and `allowed_ports` and `rate_limits`
-  are not enforced.
+  [SCOPE.md](SCOPE.md#known-limits): the proof is a declaration, and `allowed_ports` and
+  `rate_limits` are stored but not enforced.
 - **pip-audit can run package build code.** It resolves the packages named in
   requirement files. Scan requirement files you trust, or run the worker in a
   container.

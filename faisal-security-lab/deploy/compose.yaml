@@ -22,8 +22,8 @@ services:
 
   worker:
     build: { context: .., dockerfile: deploy/Dockerfile.worker }
-    environment:
-      FSL_WORKER_CONCURRENCY: "2"
+    # One worker process runs one job at a time; start more of them with
+    # "docker compose up --scale worker=3".
     volumes: ["fsl-data:/data"]
     # Supported memory isolation for untrusted tool runs:
     mem_limit: 3g

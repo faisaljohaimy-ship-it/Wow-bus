@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a vulnerability in Faisal Security Lab
+    url: https://github.com/faisaljohaimy-ship-it/Wow-bus/security/advisories/new
+    about: Report it privately. Do not open a public issue for a vulnerability that has not been fixed.

@@ -55,15 +55,16 @@ advisory databases change. `make verify` and `make acceptance` give your own.
   the packages those depend on. The number moves as advisories are published:
   a run on 2026-11-15 gave 44. Sample reports from the run of 2026-11-14 are in
   `evidence/reports/`.
-- **Tests.** 313 tests passed and 1 was skipped at commit `b4702d0`
-  (`tests/test_platform.py` 30, `tests/test_failure_modes.py` 9,
-  `tests/test_setup_robustness.py` 15, `tests/test_signin_hardening.py` 57,
-  `tests/test_platform_hardening.py` 22, `tests/test_deploy_seams.py` 8,
-  `tests/test_runtime_hardening.py` 24, `tests/test_public_view.py` 56,
-  `tests/test_public_view_hardening.py` 92). The skipped one is a container
-  entrypoint test that is skipped when the suite runs as root. Tests that need a
-  scanner are skipped where it is not installed. `evidence/test-run.txt` holds
-  the result lines of a later full run.
+- **Tests.** 362 tests passed and 1 was skipped on the release commit, on Python
+  3.11, 3.12 and 3.13 (`tests/test_platform.py` 30, `tests/test_failure_modes.py` 9,
+  `tests/test_setup_robustness.py` 20, `tests/test_signin_hardening.py` 57,
+  `tests/test_platform_hardening.py` 22, `tests/test_deploy_seams.py` 15,
+  `tests/test_runtime_hardening.py` 24, `tests/test_tooling.py` 26,
+  `tests/test_scope_sources.py` 11, `tests/test_public_view.py` 56,
+  `tests/test_public_view_hardening.py` 92). The skipped test is a container
+  entrypoint test that does not run as root. Tests of a scanner skip
+  themselves where the scanner is not installed. The run is recorded in
+  `evidence/test-run.txt`.
 
 What was **not** exercised on the reference build, and so is not counted as
 verified:

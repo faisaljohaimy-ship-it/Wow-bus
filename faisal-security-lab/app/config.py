@@ -1,7 +1,7 @@
 """Environment-driven configuration. No secrets are ever hard-coded.
 
 Every tunable comes from an environment variable with a safe default. Secret
-material (the session signing key) is read from the environment or generated
+material (the server's secret key) is read from the environment or generated
 once and persisted to a 0600 file inside the data directory — never committed.
 """
 from __future__ import annotations

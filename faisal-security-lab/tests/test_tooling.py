@@ -293,7 +293,12 @@ class TestLicenceLabels(unittest.TestCase):
     def test_connectors_that_are_the_projects_own_code_carry_the_project_licence(self):
         from app.connectors import get_connector
         from app.version import PROJECT_LICENSE
-        self.assertEqual(PROJECT_LICENSE, "Apache-2.0")
+        self.assertEqual(PROJECT_LICENSE, "MIT OR Apache-2.0")
+        root = Path(__file__).resolve().parent.parent
+        for name in ("LICENSE-APACHE", "LICENSE-MIT", "NOTICE", "THIRD-PARTY-NOTICES.md"):
+            self.assertTrue((root / name).is_file(), name)
+        self.assertIn("Apache License", (root / "LICENSE-APACHE").read_text(encoding="utf-8")[:200])
+        self.assertIn("MIT License", (root / "LICENSE-MIT").read_text(encoding="utf-8")[:40])
         for name in ("http_headers", "tls_certificate", "ai_redteam"):
             with self.subTest(connector=name):
                 self.assertEqual(get_connector(name).license, PROJECT_LICENSE)

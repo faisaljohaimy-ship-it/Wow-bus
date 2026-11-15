@@ -8,7 +8,7 @@ const S = { token: localStorage.getItem("fsl_token") || "", user: null,
   loginOpen: false };  // a guest asked for the owner sign-in form
 
 const I18N = {
-  ar: { app:"مركز الدفاع السيبراني", kicker:"PRIVATE DEFENSE SYSTEM",
+  ar: { app:"مركز الدفاع السيبراني", kicker:"DEFENSIVE SECURITY LAB",
     login:"دخول المالك الموثّق", email:"البريد", password:"كلمة المرور", signin:"دخول",
     signout:"خروج", dashboard:"لوحة القيادة", assets:"الأصول والنطاقات", catalog:"كتالوج الأدوات",
     scans:"مركز الفحوص", findings:"الثغرات والأدلة", ailab:"مختبر أمن AI", reports:"التقارير",
@@ -42,7 +42,7 @@ const I18N = {
     setupnotes:"ملاحظات الإعداد",
     needscantype:"اختر نوع فحص واحدًا على الأقل. التفويض بلا أنواع فحص لا يشغّل أي فحص.",
     noscantypes:"بلا أنواع فحص", inscope:"مسموح في هذا التفويض", notinscope:"خارج هذا التفويض (يُرفض)" },
-  en: { app:"Cyber Defense Center", kicker:"PRIVATE DEFENSE SYSTEM",
+  en: { app:"Cyber Defense Center", kicker:"DEFENSIVE SECURITY LAB",
     login:"Verified owner sign-in", email:"Email", password:"Password", signin:"Sign in",
     signout:"Sign out", dashboard:"Dashboard", assets:"Assets & Scopes", catalog:"Tool Catalog",
     scans:"Scan Center", findings:"Findings & Evidence", ailab:"AI Security Lab", reports:"Reports",

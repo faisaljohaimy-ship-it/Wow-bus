@@ -1,0 +1,31 @@
+Faisal Security Lab (FAISAL.AI)
+Copyright 2026 FAISAL.AI
+
+This software is licensed under either of
+
+  * the Apache License, Version 2.0 (see LICENSE-APACHE), or
+  * the MIT License (see LICENSE-MIT),
+
+at your option.
+
+Name and logo
+-------------
+The name "FAISAL.AI" and the hooded-mask logo identify the original project.
+Neither licence gives a right to use them. A fork, a modified version or a
+hosted copy must use a different name and logo and must not suggest that it is
+run or endorsed by the original project.
+
+Intended use
+------------
+This is a defensive security testing platform. Use it only on systems you own
+or have written permission to test. Testing systems without permission can be
+a crime, and you are responsible for what you scan. The software comes with no
+warranty; see the licences.
+
+What is not included
+--------------------
+The scanners this platform runs (Semgrep, Bandit, Gitleaks, pip-audit,
+OSV-Scanner, Trivy) are separate programs under their own licences. They are
+not part of this repository. See THIRD-PARTY-NOTICES.md.
+
+The files under evidence/ are sample output of runs of the platform.

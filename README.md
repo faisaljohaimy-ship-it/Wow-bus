@@ -15,7 +15,7 @@
 > - **Neexios** — the bus-booking site described below (repository root and
 >   `src/`).
 >
-> Licence: the licence in `faisal-security-lab/LICENSE` applies to that directory only; the Neexios site is not covered by it.
+> Licence: Faisal Security Lab is licensed under either Apache-2.0 or MIT, at your option (`faisal-security-lab/LICENSE-APACHE`, `faisal-security-lab/LICENSE-MIT`). Those licences apply to that directory only; the Neexios site is not covered by them.
 
 # Neexios — neexios.com
 

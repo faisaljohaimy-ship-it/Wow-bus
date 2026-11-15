@@ -20,7 +20,8 @@ and reports come out as JSON, SARIF, HTML and Markdown.
 
 Use it only on systems you own or have written permission to test. Scanning
 other people's systems can be illegal; you are responsible for what you scan.
-The software comes without warranty (see [LICENSE](LICENSE)).
+The software comes without warranty (see [LICENSE-APACHE](LICENSE-APACHE) and
+[LICENSE-MIT](LICENSE-MIT)).
 
 Guard rails in the code:
 
@@ -29,7 +30,11 @@ Guard rails in the code:
 - The scope is checked when a scan is requested and again when the worker starts
   it, so a scope revoked in between stops the scan.
 - A network target that resolves to a private, loopback or link-local address is
-  refused unless the asset is explicitly marked internal.
+  refused unless the asset is explicitly marked internal, which takes the admin
+  role in the project.
+- A source scan reads only a directory inside the scope: the directory is
+  compared with the allowed targets as a real path, when the scan is requested
+  and again before the worker copies it.
 - The header check sends one request and does not follow redirects.
 - The platform records the authorization you declare (the "Authorization proof"
   field is free text). It cannot verify it.
@@ -281,9 +286,13 @@ To report a vulnerability in the platform itself, follow
 
 ## Licensing
 
-The platform is licensed under the Apache License 2.0: see [LICENSE](LICENSE),
-[NOTICE](NOTICE) and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). The
-licence covers this directory only.
+The platform is licensed under either of the Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE)) or the MIT License ([LICENSE-MIT](LICENSE-MIT)), at your option.
+See also [NOTICE](NOTICE) and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+The licences cover this directory only.
+
+Unless you say otherwise in writing, a contribution you submit for inclusion in
+the platform is licensed in the same way, under both licences, with no
+additional terms.
 
 The scanners are separate programs under their own licences (Semgrep LGPL-2.1,
 Gitleaks MIT, Bandit, pip-audit, OSV-Scanner and Trivy Apache-2.0). They are not
