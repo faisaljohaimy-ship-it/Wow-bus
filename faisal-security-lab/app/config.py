@@ -7,7 +7,11 @@ once and persisted to a 0600 file inside the data directory — never committed.
 from __future__ import annotations
 
 import os
+import re
 import secrets
+import shutil
+import tempfile
+import threading
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
@@ -24,11 +28,93 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_header_name(name: str) -> str:
+    """An HTTP header name from the environment, or "" when unset or malformed."""
+    value = os.environ.get(name, "").strip()
+    return value if re.fullmatch(r"[A-Za-z0-9-]{1,64}", value) else ""
+
+
+_YES = ("1", "true", "yes", "on", "\u0661")       # the last one is the Arabic-Indic digit one
+_NO = ("", "0", "false", "no", "off", "\u0660")
+
+
 def _env_bool(name: str, default: bool) -> bool:
     v = os.environ.get(name)
     if v is None:
         return default
-    return v.strip().lower() in ("1", "true", "yes", "on")
+    return v.strip().lower() in _YES
+
+
+def _env_unrecognized_bool(name: str) -> bool:
+    """True when the variable is set to something that is neither a yes nor a
+    no value (it then counts as no, and the operator is told)."""
+    v = os.environ.get(name)
+    return v is not None and v.strip().lower() not in _YES + _NO
+
+
+# Connectors the public demo project scans by default: static analysis of the
+# bundled sample only, light enough for a 512 MB / 0.1 CPU instance.
+DEFAULT_DEMO_CONNECTORS = ("bandit", "gitleaks", "pip_audit")
+
+
+def _env_list(name: str, default: tuple) -> tuple:
+    """Comma-separated list; blank or unset falls back to the default."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return tuple(default)
+    seen: list[str] = []
+    for part in raw.split(","):
+        item = part.strip().lower()
+        if item and item not in seen:
+            seen.append(item)
+    return tuple(seen) or tuple(default)
+
+
+def _usable_dir(path: Path) -> bool:
+    """True when the directory exists (or can be created) and is writable."""
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=str(path)):
+            pass
+        return True
+    except OSError:
+        return False
+
+
+# Temporary storage root used in place of a location that is not usable. It is
+# created once per process so every Config.from_env() call resolves to the same
+# directory (and therefore the same database and session secret).
+_FALLBACK_DIR: Path | None = None
+_FALLBACK_LOCK = threading.Lock()
+
+
+def _fallback_dir() -> Path:
+    global _FALLBACK_DIR
+    with _FALLBACK_LOCK:
+        if _FALLBACK_DIR is None:
+            _FALLBACK_DIR = Path(tempfile.mkdtemp(prefix="fsl-data-")).resolve()
+        return _FALLBACK_DIR
+
+
+def discard_fallback_dir() -> None:
+    """Delete the temporary storage root, if this process created one.
+
+    For a process that will not use it after all: one that gives up at start
+    and is restarted in a loop would otherwise leave a directory behind on
+    every attempt.
+    """
+    global _FALLBACK_DIR
+    with _FALLBACK_LOCK:
+        if _FALLBACK_DIR is not None:
+            shutil.rmtree(_FALLBACK_DIR, ignore_errors=True)
+            _FALLBACK_DIR = None
+
+
+def reset_fallback_dir_for_tests() -> None:
+    """Forget the cached temporary storage root; the next fallback makes a new one."""
+    global _FALLBACK_DIR
+    with _FALLBACK_LOCK:
+        _FALLBACK_DIR = None
 
 
 @dataclass(frozen=True)
@@ -88,14 +174,53 @@ class Config:
     seed_catalog_path: Path
     limits: Limits = field(default_factory=Limits)
     ai: AIConfig = field(default_factory=AIConfig)
+    # True when the data directory, the database location or the evidence
+    # directory was not writable (for example a root-owned disk mounted for a
+    # non-root process) and a location under temporary storage is
+    # used instead. The service stays up and reports it rather than crashing.
+    data_dir_fallback: bool = False
+    # How the client address is taken from a reverse proxy. Both are off by
+    # default, which means proxy headers are ignored and the socket peer is the
+    # client. client_ip_header names a single header the proxy always
+    # overwrites (for example CF-Connecting-IP); trusted_proxy_hops is the
+    # number of proxies that each append one entry to X-Forwarded-For.
+    client_ip_header: str = ""
+    trusted_proxy_hops: int = 0
+    # Optional PUBLIC READ-ONLY VIEW (FSL_PUBLIC_VIEW=1). Off by default. When
+    # on, a visitor without a session may read ONE designated demo project
+    # through an explicit allowlist of GET routes; every action still needs a
+    # sign-in. See app/auth.py (GuestPrincipal) and app/demo.py.
+    public_view: bool = False
+    demo_connectors: tuple = DEFAULT_DEMO_CONNECTORS
+    # Ceiling on guest requests per minute, all visitors together. 0 keeps the
+    # built-in value, which is sized for a tenth of a CPU (see app/server.py).
+    guest_requests_per_minute: int = 0
+    # FSL_PUBLIC_VIEW was set to a value that is not understood (the view is off).
+    public_view_unrecognized: bool = False
 
     @classmethod
     def from_env(cls) -> "Config":
         data_dir = Path(_env("FSL_DATA_DIR", str(Path(__file__).resolve().parent.parent / "var"))).resolve()
-        data_dir.mkdir(parents=True, exist_ok=True)
+        data_dir_fallback = False
+        if not _usable_dir(data_dir):
+            data_dir = _fallback_dir()
+            data_dir_fallback = True
+        # Each location is checked on its own: an explicit FSL_EVIDENCE_DIR or
+        # FSL_DB_PATH that is usable is kept even when the data directory is
+        # not, and only an unusable one moves to temporary storage.
         evidence_dir = Path(_env("FSL_EVIDENCE_DIR", str(data_dir / "evidence"))).resolve()
-        evidence_dir.mkdir(parents=True, exist_ok=True)
-        (evidence_dir).chmod(0o700)
+        if not _usable_dir(evidence_dir):
+            evidence_dir = _fallback_dir() / "evidence"
+            evidence_dir.mkdir(parents=True, exist_ok=True)
+            data_dir_fallback = True
+        db_path = Path(_env("FSL_DB_PATH", str(data_dir / "faisal-security-lab.db"))).resolve()
+        if not _usable_dir(db_path.parent):
+            db_path = _fallback_dir() / "faisal-security-lab.db"
+            data_dir_fallback = True
+        try:
+            evidence_dir.chmod(0o700)
+        except OSError:
+            pass
 
         secret_key = cls._load_or_create_secret(data_dir)
 
@@ -103,7 +228,9 @@ class Config:
             job_timeout_seconds=_env_int("FSL_JOB_TIMEOUT", Limits.job_timeout_seconds),
             job_cpu_seconds=_env_int("FSL_JOB_CPU_SECONDS", Limits.job_cpu_seconds),
             job_address_space_mb=_env_int("FSL_JOB_AS_MB", Limits.job_address_space_mb),
-            worker_concurrency=_env_int("FSL_WORKER_CONCURRENCY", Limits.worker_concurrency),
+            # At least one worker: zero or a negative number is a typing mistake.
+            worker_concurrency=max(1, _env_int("FSL_WORKER_CONCURRENCY",
+                                               Limits.worker_concurrency)),
         )
 
         ai_key = os.environ.get("FSL_AI_API_KEY", "")
@@ -120,7 +247,7 @@ class Config:
 
         return cls(
             data_dir=data_dir,
-            db_path=Path(_env("FSL_DB_PATH", str(data_dir / "faisal-security-lab.db"))).resolve(),
+            db_path=db_path,
             evidence_dir=evidence_dir,
             bind_host=_env("FSL_BIND_HOST", "127.0.0.1"),
             # PaaS hosts (Render, Railway, Heroku, ...) inject $PORT and route to
@@ -134,6 +261,14 @@ class Config:
             seed_catalog_path=seed,
             limits=limits,
             ai=ai,
+            data_dir_fallback=data_dir_fallback,
+            client_ip_header=_env_header_name("FSL_CLIENT_IP_HEADER"),
+            trusted_proxy_hops=max(0, min(10, _env_int("FSL_TRUSTED_PROXY_HOPS", 0))),
+            public_view=_env_bool("FSL_PUBLIC_VIEW", False),
+            demo_connectors=_env_list("FSL_DEMO_CONNECTORS", DEFAULT_DEMO_CONNECTORS),
+            guest_requests_per_minute=max(0, min(1_000_000,
+                                                 _env_int("FSL_GUEST_REQUESTS_PER_MINUTE", 0))),
+            public_view_unrecognized=_env_unrecognized_bool("FSL_PUBLIC_VIEW"),
         )
 
     @staticmethod
@@ -159,6 +294,7 @@ class Config:
             "environment": self.environment,
             "allow_active_in_prod": self.allow_active_in_prod,
             "owner_email": self.owner_email,
+            "public_view": self.public_view,
             "ai": {"provider": self.ai.provider, "model": self.ai.model,
                    "available": self.ai.available},
             "limits": asdict(self.limits),

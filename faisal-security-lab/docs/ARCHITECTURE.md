@@ -35,6 +35,59 @@ Two deployable roles share one SQLite database (WAL):
    bearer token, stored hashed). Client-supplied identity headers are ignored.
    Every route re-derives the principal and checks RBAC. Request bodies are size
    capped; responses carry a strict CSP and other security headers.
+   *Optional public read-only view (`FSL_PUBLIC_VIEW=1`, off by default):* a
+   request with **no** `Authorization` header may resolve a `GuestPrincipal`, but
+   only on GET routes registered with `guest_ok=True` (`app/server.py`). The guest
+   has no global role and is `reader` of exactly one project — the demo project
+   owned by a reserved, non-loginable system account (`app/demo.py`) — so the same
+   `require_project` checks that isolate tenants confine it. Any presented
+   credential, valid or not, is validated as before. While the view is on, every
+   signed-in account is also at least a `reader` of that project
+   (`Principal.project_role`); higher roles stay membership-based.
+   - *What a guest is sent.* `Handler._dispatch` passes every result and error
+     of a guest request through `app/guest_view.py` after the handler returns —
+     the only place this happens, so a new guest route is covered by default. It
+     drops `redacted_summary`, `storage_ref`, `local_path`, a scope's
+     `owner_contact` and `proof`, and a readiness object's `path` wherever they
+     appear, and in every string (JSON values, the SARIF report parsed as JSON,
+     and the HTML/Markdown report text) cuts off the application directory and
+     shows the data directory as `data`. A directory two or more levels deep is
+     cut even when glued to a word, unless that word follows a slash (a longer
+     path or a URL); one directly below the root (`/app`, `/data`) only where a
+     path starts. The bundled sample reads `samples/vulnerable-app` under any
+     directory, which covers a database filled by an install at another path.
+     An error with the code `worker_error` or `internal` (the text of an
+     exception caught by the worker or by a route, cut to a fixed length before
+     it gets here) keeps the code and gets a fixed message. A guest therefore gets no
+     evidence text and no server paths; signed-in principals bypass the view
+     entirely. A guest's refusal carries no request-derived detail
+     (`GuestPrincipal.require_project`), so the rewriting cannot be used to
+     test a guessed directory. The report route accepts only `lang=ar|en` and
+     its four known formats.
+   - *What a guest may cost.* Guest requests are counted per client address
+     (240/min) and across all guests (1200/min), both fixed one-minute windows,
+     in memory; a full per-client table evicts its oldest entries instead of
+     refusing new clients. The guest connector list is read from the
+     `tool_registry` table, so anonymous traffic never runs a tool's version
+     command.
+   - *The demo across restarts* (`app/demo.py`). Startup runs three steps in
+     one background thread: the demo project, asset and scope are written and
+     published (database only, so visitors can read the project at once), the
+     tool registry is synced, and then the demo scans are enqueued, so a tool's
+     registry row exists before a demo scan can mark it verified. Demo jobs
+     carry idempotency keys `public-demo:<scope>:<connector>[:2|:3]:<tag>`
+     (the tag is a keyed digest under the server secret, so the keys cannot be
+     guessed from what a guest reads): a job that
+     is queued, leased, running or succeeded is final for that start (a scan
+     interrupted by a restart stays `running` until its lease expires), any
+     other end state gets the next key, at most three jobs per connector and
+     scope. Only jobs of the demo project under that scope are counted; a key
+     that a job of another project holds is passed over (`key_in_use` when none
+     is left), because the queue matches idempotency keys across projects.
+     The id of the scope the demo manages is kept in the `public_scope_id`
+     setting and is written before a superseded scope is revoked; finding that
+     scope revoked therefore means an operator did it, and the demo then issues
+     no scope and enqueues nothing.
 2. **API ↔ queue.** A job is only enqueued after `policy.evaluate_job` passes with
    the caller's principal. The policy engine is the single authorization chokepoint.
 3. **Queue ↔ worker.** The worker re-evaluates policy at execution time with no

@@ -16,7 +16,10 @@ WORKDIR /app
 COPY app ./app
 COPY data ./data
 ENV FSL_DATA_DIR=/data PATH="/usr/local/bin:${PATH}"
+# /data is created and owned BEFORE the VOLUME declaration so its ownership does
+# not depend on the image builder.
+# Same uid as the API image (10001) so both can write the shared /data volume.
+RUN useradd -m -u 10001 fslw && mkdir -p /data && chown fslw /data
 VOLUME ["/data"]
-RUN useradd -m -u 10002 fslw && mkdir -p /data && chown fslw /data
 USER fslw
 CMD ["python3", "-m", "app.worker"]

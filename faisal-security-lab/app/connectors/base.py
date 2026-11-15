@@ -18,6 +18,10 @@ from ..errors import ConfigError, TimeoutError_, ToolUnavailable
 # ---------------------------------------------------------------------------
 # Execution context + result objects
 # ---------------------------------------------------------------------------
+# How long a tool's version command may take. On a tenth of a CPU a Python
+# tool needs ten to twenty seconds just to start.
+PROBE_TIMEOUT_SECONDS = 30
+
 @dataclass
 class EvidenceArtifact:
     name: str
@@ -111,31 +115,52 @@ class Connector:
                 "path": path, "detail": "resolved on PATH"}
 
     def _probe_version(self, path: str) -> str | None:
+        """First output line of the tool's version command, or "unknown".
+
+        Only a command that exits with 0 is believed: a failed one prints an
+        error, not a version. A command that does not answer in time is slow,
+        not wrong, so the other spellings are not tried after it; it is run in
+        its own session so that whatever it started is stopped with it.
+        """
         # Disable telemetry / online version-checks that otherwise block
         # `--version` for several seconds when stdout is captured (Semgrep).
         env = dict(os.environ)
         env.update({"SEMGREP_ENABLE_VERSION_CHECK": "0", "SEMGREP_SEND_METRICS": "off",
                     "NO_COLOR": "1", "DO_NOT_TRACK": "1", "PYTHONWARNINGS": "ignore"})
-        fallback = None
         for flag in ("--version", "version", "-V"):
             try:
-                out = subprocess.run([path, flag], capture_output=True, timeout=10,
-                                     text=True, check=False, stdin=subprocess.DEVNULL, env=env)
+                proc = subprocess.Popen([path, flag], stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+                                        text=True, encoding="utf-8", errors="replace",
+                                        env=env, start_new_session=True)
             except (subprocess.SubprocessError, OSError):
                 continue
-            text = (out.stdout or out.stderr or "").strip().splitlines()
-            line = text[0][:120] if text else None
-            if out.returncode == 0 and line:
-                return line
-            if fallback is None and line:
-                fallback = line
-        return fallback or "unknown"
+            try:
+                stdout, stderr = proc.communicate(timeout=PROBE_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except OSError:
+                    proc.kill()
+                try:
+                    proc.communicate(timeout=5)
+                except (subprocess.SubprocessError, OSError):
+                    pass
+                break
+            except (subprocess.SubprocessError, OSError):
+                proc.kill()
+                continue
+            text = (stdout or stderr or "").strip().splitlines()
+            if proc.returncode == 0 and text:
+                return text[0][:120]
+        return "unknown"
 
     def execute(self, ctx: ExecContext) -> ConnectorResult:  # pragma: no cover - abstract
         raise NotImplementedError
 
-    def verified_ref(self) -> str:
-        r = self.readiness()
+    def verified_ref(self, readiness: dict | None = None) -> str:
+        # Pass an already-computed readiness to avoid probing the tool twice.
+        r = readiness if readiness is not None else self.readiness()
         return f"{self.name}@{r.get('version')}|connector={self.__class__.__name__}"
 
 

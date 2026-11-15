@@ -58,6 +58,13 @@ def ingest(job: dict, asset: dict, raw_findings: list, *, source_flag: str = "re
     criticality = asset.get("criticality", "medium")
     now = util.now_iso()
     for raw in raw_findings:
+        # Severity and confidence are fixed words everywhere they are used
+        # (ranking, filters, the console's styling). Anything else a connector
+        # reports is stored as the lowest one.
+        if raw.severity not in _SEV_BASE:
+            raw.severity = "info"
+        if raw.confidence not in _CONF_ADJ:
+            raw.confidence = "low"
         dk = dedup_key(job["project_id"], raw)
         wp = work_priority(raw.severity, criticality, exposure, raw.confidence)
         existing = db.query_one(
