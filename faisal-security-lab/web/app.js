@@ -33,6 +33,8 @@ const I18N = {
     open:"فتح", download:"تنزيل", report_note:"التقارير منقّحة: القيم الحساسة محجوبة.",
     throttled:"محاولات دخول خاطئة كثيرة من هذا الجهاز. انتظر {m} دقيقة ثم حاول من جديد.",
     signinbusy:"تسجيل الدخول مشغول الآن. انتظر بضع ثوانٍ ثم حاول من جديد.",
+    badlogin:"البريد أو كلمة المرور غير صحيحة.",
+    unavailable:"الخدمة مشغولة الآن أو الاتصال ضعيف. انتظر قليلًا ثم حاول من جديد.", retry:"إعادة المحاولة",
     ftitle:"العنوان",
     connection:"الاتصال", yourip:"عنوانك كما يراه الخادم", ipsource:"مصدر العنوان",
     src_header:"ترويسة منصّة الاستضافة", src_forwarded:"X-Forwarded-For", src_peer:"اتصال مباشر",
@@ -63,6 +65,8 @@ const I18N = {
     open:"Open", download:"Download", report_note:"Reports are redacted: sensitive values are withheld.",
     throttled:"Too many wrong sign-in attempts from this device. Wait {m} minutes, then try again.",
     signinbusy:"Sign-in is busy right now. Wait a few seconds, then try again.",
+    badlogin:"The email or the password is not correct.",
+    unavailable:"The service is busy or the connection is weak. Wait a moment, then try again.", retry:"Try again",
     ftitle:"Title",
     connection:"Connection", yourip:"Your address as the server sees it", ipsource:"Address source",
     src_header:"hosting platform header", src_forwarded:"X-Forwarded-For", src_peer:"direct connection",
@@ -81,7 +85,8 @@ const NOTICE_TEXT = {
     owner_bootstrap_failed: "تعذّر إعداد حساب المالك. راجع سجل الخدمة (Logs).",
     owner_email_ignored: "قيمة FSL_OWNER_EMAIL في إعدادات الاستضافة ليست بريدًا صالحًا فتم تجاهلها. حسابات المالك الموجودة لم تتغيّر.",
     running_as_root: "تعذّر على الحاوية التخلي عن صلاحيات root، فالخدمة وأدوات الفحص تعمل بصلاحيات root.",
-    demo_sample_missing: "ملفات العرض التوضيحي غير موجودة في هذه النسخة، لذلك العرض العام فارغ."
+    demo_sample_missing: "ملفات العرض التوضيحي غير موجودة في هذه النسخة، لذلك العرض العام فارغ.",
+    public_view_unrecognized: "قيمة FSL_PUBLIC_VIEW في إعدادات الاستضافة غير مفهومة، لذلك الدخول العام متوقف. اكتب 1 لتشغيله."
   },
   en: {
     owner_password_too_short: "No owner account was created because the password in the hosting settings is shorter than {min} characters. Open the service's Environment settings, set FSL_OWNER_PASSWORD to {min} or more characters, and redeploy.",
@@ -91,7 +96,8 @@ const NOTICE_TEXT = {
     owner_bootstrap_failed: "The owner account could not be set up. Check the service logs.",
     owner_email_ignored: "FSL_OWNER_EMAIL in the hosting settings is not a valid email and was ignored. Existing owner accounts are unchanged.",
     running_as_root: "The container could not drop root privileges, so the service and its scan tools run as root.",
-    demo_sample_missing: "The demo files are missing from this build, so the public view is empty."
+    demo_sample_missing: "The demo files are missing from this build, so the public view is empty.",
+    public_view_unrecognized: "FSL_PUBLIC_VIEW in the hosting settings has a value that is not understood, so the public view is off. Use 1 to turn it on."
   }
 };
 async function loadSetupNotices(){
@@ -127,7 +133,9 @@ async function apiRaw(path){
   if (!res.ok) throw new Error(res.status + " " + res.statusText);
   return { text, type: res.headers.get("Content-Type") || "text/plain" };
 }
-const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const esc = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+// A link target taken from data is used only when it is an http(s) address.
+const safeUrl = u => /^https?:\/\//i.test(String(u||"")) ? String(u) : "#";
 const h = (strings,...v)=>strings.map((s,i)=>s+(v[i]!=null?v[i]:"")).join("");
 
 // ---- shell / render ----
@@ -235,7 +243,7 @@ function render(){
   let nav = ["dashboard","assets","catalog","scans","findings","ailab","reports","audit","settings"];
   if (guestView) nav = nav.filter(k => !["audit","settings"].includes(k));
   if (!nav.includes(S.screen)) S.screen = "dashboard";
-  const projects = S.projects.map(p=>`<option value="${p.id}" ${S.project&&S.project.id===p.id?"selected":""}>${esc(p.name)}</option>`).join("")
+  const projects = S.projects.map(p=>`<option value="${esc(p.id)}" ${S.project&&S.project.id===p.id?"selected":""}>${esc(p.name)}</option>`).join("")
     + (guestView ? "" : `<option value="__new">+ ${esc(t("newproject"))}</option>`);
   root().innerHTML = h`
     <div class="app">
@@ -282,7 +290,9 @@ function renderLogin(){
   loadSetupNotices();
 }
 
-function setMain(html){
+function setMain(ctx, html){
+  if (html === undefined){ html = ctx; ctx = null; }       // called without a render number
+  if (ctx && ctx.seq !== RENDER_SEQ) return;               // a newer screen was asked for meanwhile
   const m = document.getElementById("main"); if (!m) return;
   const guestBar = (S.guest && !S.token)
     ? `<div class="guestbar"><span>${esc(t("publicview"))}</span><button class="btn sm primary right" data-act="showlogin">${esc(t("ownerlogin"))}</button></div>` : "";
@@ -292,63 +302,67 @@ function setMain(html){
 function notice(msg,cls=""){ return `<div class="notice ${cls}">${esc(msg)}</div>`; }
 
 // ---------- screens ----------
+// Every screen render gets a number. A screen that is still waiting for the
+// server when the user has moved on must not write over the newer screen.
+let RENDER_SEQ = 0;
 async function renderScreen(){
+  const ctx = { seq: ++RENDER_SEQ };
   try{
-    if (S.screen==="dashboard") return await scrDashboard();
+    if (S.screen==="dashboard") return await scrDashboard(ctx);
     if (!S.project && ["assets","scans","findings","reports"].includes(S.screen))
-      return setMain(notice(t("noproject")));
-    if (S.screen==="assets") return await scrAssets();
-    if (S.screen==="catalog") return await scrCatalog();
-    if (S.screen==="scans") return await scrScans();
-    if (S.screen==="findings") return await scrFindings();
-    if (S.screen==="ailab") return await scrAiLab();
-    if (S.screen==="reports") return await scrReports();
-    if (S.screen==="audit") return await scrAudit();
-    if (S.screen==="settings") return await scrSettings();
-  }catch(e){ setMain(notice(e.message + (e.code?` [${e.code}]`:""), "err")); }
+      return setMain(ctx, notice(t("noproject")));
+    if (S.screen==="assets") return await scrAssets(ctx);
+    if (S.screen==="catalog") return await scrCatalog(ctx);
+    if (S.screen==="scans") return await scrScans(ctx);
+    if (S.screen==="findings") return await scrFindings(ctx);
+    if (S.screen==="ailab") return await scrAiLab(ctx);
+    if (S.screen==="reports") return await scrReports(ctx);
+    if (S.screen==="audit") return await scrAudit(ctx);
+    if (S.screen==="settings") return await scrSettings(ctx);
+  }catch(e){ setMain(ctx, notice(e.message + (e.code?` [${e.code}]`:""), "err")); }
 }
 function topbar(title, extra=""){ return h`<div class="topbar"><h1>${esc(title)}</h1><div class="spacer"></div>${extra}</div>`; }
 
-async function scrDashboard(){
+async function scrDashboard(ctx){
   const pid = S.project?S.project.id:null;
   if (!pid && S.guest && !S.token)
-    return setMain(topbar(t("dashboard"), `<button class="btn sm" data-act="reload">↻ ${esc(t("refresh"))}</button>`) + notice(t("preparing")));
+    return setMain(ctx, topbar(t("dashboard"), `<button class="btn sm" data-act="reload">↻ ${esc(t("refresh"))}</button>`) + notice(t("preparing")));
   const m = await api("/api/metrics"+(pid?`?project=${pid}`:""));
   const ai = await api("/api/ai/status");
   const sev = m.findings_by_severity||{};
   const ts = m.tool_states||{};
-  setMain(topbar(t("dashboard"),
-      `<span class="pill ${ai.available?"ok":"warn"}">AI: ${ai.available?ai.model||"on":"fallback"}</span>
+  setMain(ctx, topbar(t("dashboard"),
+      `<span class="pill ${ai.available?"ok":"warn"}">AI: ${esc(ai.available?ai.model||"on":"fallback")}</span>
        <button class="btn sm" data-act="refresh">↻ ${esc(t("refresh"))}</button>`)
     + h`<div class="grid cols-4">
-      <div class="stat"><div class="n">${m.findings_total||0}</div><div class="l">${esc(t("findings_total"))}</div></div>
-      <div class="stat"><div class="n">${m.verified_fixes||0}</div><div class="l">${esc(t("verified_fixes"))}</div></div>
-      <div class="stat"><div class="n">${m.assets||0}</div><div class="l">${esc(t("assets"))}</div></div>
-      <div class="stat"><div class="n">${m.scopes_active||0}</div><div class="l">${esc(t("activescopes"))}</div></div>
+      <div class="stat"><div class="n">${esc(m.findings_total||0)}</div><div class="l">${esc(t("findings_total"))}</div></div>
+      <div class="stat"><div class="n">${esc(m.verified_fixes||0)}</div><div class="l">${esc(t("verified_fixes"))}</div></div>
+      <div class="stat"><div class="n">${esc(m.assets||0)}</div><div class="l">${esc(t("assets"))}</div></div>
+      <div class="stat"><div class="n">${esc(m.scopes_active||0)}</div><div class="l">${esc(t("activescopes"))}</div></div>
     </div>
     <div class="grid cols-2">
       <div class="card"><h2>${esc(t("severity"))}</h2>${sevBars(sev)}</div>
       <div class="card"><h2>${esc(t("jobs"))}</h2>${kvTable(m.jobs_by_state||{})}</div>
     </div>
     <div class="card"><h2>${esc(t("toolstate"))}</h2>${kvTable(ts)}
-      <div class="small muted" style="margin-top:8px">catalog: ${JSON.stringify(m.catalog_states||{})}</div></div>`);
+      <div class="small muted" style="margin-top:8px">catalog: ${esc(JSON.stringify(m.catalog_states||{}))}</div></div>`);
 }
 function sevBars(sev){ const order=["critical","high","medium","low","info"];
   const max=Math.max(1,...order.map(s=>sev[s]||0));
   return order.map(s=>`<div style="margin:6px 0"><div class="flex small"><span class="badge sev-${s}">${s}</span>
-    <span class="right mono">${sev[s]||0}</span></div>
-    <div class="progress"><span style="width:${(sev[s]||0)/max*100}%"></span></div></div>`).join("");
+    <span class="right mono">${esc(sev[s]||0)}</span></div>
+    <div class="progress"><span style="width:${Number((sev[s]||0)/max*100)||0}%"></span></div></div>`).join("");
 }
 function kvTable(obj){ const k=Object.keys(obj); if(!k.length) return `<div class="muted small">${esc(t("none"))}</div>`;
-  return `<table>${k.map(x=>`<tr><td>${esc(x)}</td><td class="mono right"><span class="state state-${esc(x)}">${obj[x]}</span></td></tr>`).join("")}</table>`; }
+  return `<table>${k.map(x=>`<tr><td>${esc(x)}</td><td class="mono right"><span class="state state-${esc(x)}">${esc(obj[x])}</span></td></tr>`).join("")}</table>`; }
 
-async function scrAssets(){
+async function scrAssets(ctx){
   const pid=S.project.id;
   const [a,sc,conn] = await Promise.all([api(`/api/projects/${pid}/assets`),
     api(`/api/projects/${pid}/scopes`), api(`/api/connectors`)]);
   S.connectors = conn.connectors;
-  const connOpts = conn.connectors.map(c=>`<label class="small"><input type="checkbox" name="st" value="${c.name}"> ${c.name}</label>`).join(" ");
-  setMain(topbar(t("assets"))
+  const connOpts = conn.connectors.map(c=>`<label class="small"><input type="checkbox" name="st" value="${esc(c.name)}"> ${esc(c.name)}</label>`).join(" ");
+  setMain(ctx, topbar(t("assets"))
     + h`<div class="card"><h2>${esc(t("addasset"))}</h2>
       <form id="assetform" class="row">
         <div><label>${esc(t("kind"))}</label><select name="kind">
@@ -363,67 +377,67 @@ async function scrAssets(){
       </form></div>
     <div class="card"><h2>${esc(t("assets"))}</h2><table><thead><tr><th>${esc(t("kind"))}</th><th>${esc(t("identifier"))}</th><th>${esc(t("criticality"))}</th><th></th></tr></thead>
       <tbody>${a.assets.map(x=>`<tr><td>${esc(x.kind)}</td><td class="mono-sm">${esc(x.identifier)}</td><td>${esc(x.criticality)}</td>
-        <td><button class="btn sm" data-act="scopeform" data-asset="${x.id}">+ ${esc(t("addscope"))}</button></td></tr>`).join("")||`<tr><td colspan=4 class="muted">${esc(t("none"))}</td></tr>`}</tbody></table></div>
+        <td><button class="btn sm" data-act="scopeform" data-asset="${esc(x.id)}">+ ${esc(t("addscope"))}</button></td></tr>`).join("")||`<tr><td colspan=4 class="muted">${esc(t("none"))}</td></tr>`}</tbody></table></div>
     <div id="scopeformbox"></div>
     <div class="card"><h2>${esc(t("scope"))}</h2><table><thead><tr><th>${esc(t("asset"))}</th><th>${esc(t("environment"))}</th><th>${esc(t("scantypes"))}</th><th>${esc(t("status"))}</th><th></th></tr></thead>
       <tbody>${sc.scopes.map(x=>`<tr><td class="mono-sm">${esc(x.asset_id)}</td><td>${esc(x.environment)}</td>
-        <td class="small">${(x.scan_types||[]).join(", ")}</td><td class="state state-${x.status==="active"?"ready":"blocked"}">${esc(x.status)}</td>
-        <td>${x.status==="active"?`<button class="btn sm danger" data-act="revoke" data-scope="${x.id}">${esc(t("revoke"))}</button>`:""}</td></tr>`).join("")||`<tr><td colspan=5 class="muted">${esc(t("none"))}</td></tr>`}</tbody></table></div>
+        <td class="small">${esc((x.scan_types||[]).join(", "))}</td><td class="state state-${x.status==="active"?"ready":"blocked"}">${esc(x.status)}</td>
+        <td>${x.status==="active"?`<button class="btn sm danger" data-act="revoke" data-scope="${esc(x.id)}">${esc(t("revoke"))}</button>`:""}</td></tr>`).join("")||`<tr><td colspan=5 class="muted">${esc(t("none"))}</td></tr>`}</tbody></table></div>
     <div id="_connopts" class="hidden">${connOpts}</div>`);
 }
 
-async function scrCatalog(){
+async function scrCatalog(ctx){
   const [cat,tools]=await Promise.all([api("/api/catalog"),api("/api/tools")]);
   const trMap={}; tools.tools.forEach(x=>trMap[x.name]=x);
-  setMain(topbar(t("catalog"), `<span class="pill">${cat.tools.length} tools · ${cat.categories.length} categories</span>`)
+  setMain(ctx, topbar(t("catalog"), `<span class="pill">${cat.tools.length} tools · ${cat.categories.length} categories</span>`)
     + h`<div class="card"><h2>${esc(t("connector"))} / ${esc(t("toolstate"))}</h2>
       <table><thead><tr><th>${esc(t("tool"))}</th><th>category</th><th>version</th><th>state</th><th>source</th></tr></thead>
       <tbody>${tools.tools.map(x=>`<tr><td class="mono">${esc(x.name)}</td><td class="small">${esc(x.category)}</td>
         <td class="small">${esc(x.version||"—")}</td><td class="state state-${esc(x.state)}">${esc(x.state)}</td>
-        <td class="small"><a href="${esc(x.source)}" target="_blank" rel="noopener">${esc((x.source||"").replace("https://github.com/",""))}</a></td></tr>`).join("")}</tbody></table>
+        <td class="small"><a href="${esc(safeUrl(x.source))}" target="_blank" rel="noopener">${esc((x.source||"").replace("https://github.com/",""))}</a></td></tr>`).join("")}</tbody></table>
       <div class="small muted" style="margin-top:8px">states: catalog→installed→ready→verified; blocked/stale/disabled are distinct.</div></div>
-    ${cat.categories.map(c=>`<div class="card"><h2>${esc(c.category)} <span class="muted small">(${c.n})</span></h2>
+    ${cat.categories.map(c=>`<div class="card"><h2>${esc(c.category)} <span class="muted small">(${esc(c.n)})</span></h2>
       <table>${cat.tools.filter(x=>x.category===c.category).map(x=>`<tr>
         <td class="mono-sm"><a href="https://github.com/${esc(x.repo)}" target="_blank" rel="noopener">${esc(x.repo)}</a></td>
         <td class="small">${esc(x.description)}</td>
         <td>${x.integration_state==="connector_available"?'<span class="pill ok">connector</span>':'<span class="pill">cataloged</span>'}${x.archived?' <span class="pill warn">archived</span>':""}</td></tr>`).join("")}</table></div>`).join("")}`);
 }
 
-async function scrScans(){
+async function scrScans(ctx){
   const pid=S.project.id;
   const [a,sc,conn,jobs]=await Promise.all([api(`/api/projects/${pid}/assets`),
     api(`/api/projects/${pid}/scopes`),api(`/api/connectors`),api(`/api/projects/${pid}/jobs`)]);
   const activeScopes=sc.scopes.filter(s=>s.status==="active");
-  setMain(topbar(t("scans"), `<button class="btn sm" data-act="refresh">↻ ${esc(t("refresh"))}</button>`)
+  setMain(ctx, topbar(t("scans"), `<button class="btn sm" data-act="refresh">↻ ${esc(t("refresh"))}</button>`)
     + h`<div class="card"><h2>${esc(t("run"))}</h2>
       <form id="scanform" class="row">
-        <div><label>${esc(t("scope"))}</label><select name="scope_id">${activeScopes.map(s=>`<option value="${s.id}" data-asset="${s.asset_id}" data-types='${JSON.stringify(s.scan_types)}'>${esc(s.asset_id)} · ${esc(s.environment)}</option>`).join("")}</select></div>
-        <div><label>${esc(t("connector"))}</label><select name="connector" id="connsel">${conn.connectors.map(c=>`<option value="${c.name}">${c.name} ${c.readiness.available?"":(c.state==="checking"?"(…)":"(blocked)")}</option>`).join("")}</select></div>
+        <div><label>${esc(t("scope"))}</label><select name="scope_id">${activeScopes.map(s=>`<option value="${esc(s.id)}" data-asset="${esc(s.asset_id)}" data-types="${esc(JSON.stringify(s.scan_types||[]))}">${esc(s.asset_id)} · ${esc(s.environment)}</option>`).join("")}</select></div>
+        <div><label>${esc(t("connector"))}</label><select name="connector" id="connsel">${conn.connectors.map(c=>`<option value="${esc(c.name)}">${esc(c.name)} ${c.readiness.available?"":(c.state==="checking"?"(…)":"(blocked)")}</option>`).join("")}</select></div>
         <div><button class="btn primary">${esc(t("run"))}</button></div>
       </form><div class="small muted" style="margin-top:6px">${esc(t("unauthorized"))}</div></div>
     <div class="card"><h2>${esc(t("jobs"))}</h2><table><thead><tr><th>${esc(t("connector"))}</th><th>${esc(t("status"))}</th><th>phase</th><th>progress</th><th>${esc(t("tool"))}</th><th></th></tr></thead>
       <tbody>${jobs.jobs.map(j=>`<tr><td class="mono">${esc(j.connector)}</td><td class="state state-${esc(j.state)}">${esc(j.state)}</td>
-        <td class="small">${esc(j.phase)}</td><td style="width:120px"><div class="progress"><span style="width:${Math.round((j.progress||0)*100)}%"></span></div></td>
+        <td class="small">${esc(j.phase)}</td><td style="width:120px"><div class="progress"><span style="width:${Math.round((Number(j.progress)||0)*100)}%"></span></div></td>
         <td class="small">${esc((j.result_summary&&j.result_summary.tool_version)||"")}</td>
-        <td class="flex"><button class="btn sm" data-act="job" data-job="${j.id}">↳</button>${["queued","leased","running"].includes(j.state)?`<button class="btn sm danger" data-act="jobstop" data-job="${j.id}">${esc(t("stop"))}</button>`:""}</td></tr>`).join("")||`<tr><td colspan=6 class="muted">${esc(t("none"))}</td></tr>`}</tbody></table></div>`);
+        <td class="flex"><button class="btn sm" data-act="job" data-job="${esc(j.id)}">↳</button>${["queued","leased","running"].includes(j.state)?`<button class="btn sm danger" data-act="jobstop" data-job="${esc(j.id)}">${esc(t("stop"))}</button>`:""}</td></tr>`).join("")||`<tr><td colspan=6 class="muted">${esc(t("none"))}</td></tr>`}</tbody></table></div>`);
   hydrateScanForm(a.assets);
 }
 function hydrateScanForm(){ /* connector list filtered by scope on submit */ }
 
-async function scrFindings(){
+async function scrFindings(ctx){
   const pid=S.project.id;
   const f=await api(`/api/projects/${pid}/findings`);
-  setMain(topbar(t("findings"), `<button class="btn sm" data-act="refresh">↻ ${esc(t("refresh"))}</button>`)
+  setMain(ctx, topbar(t("findings"), `<button class="btn sm" data-act="refresh">↻ ${esc(t("refresh"))}</button>`)
     + h`<div class="card"><table><thead><tr><th>${esc(t("severity"))}</th><th>${esc(t("priority"))}</th><th>${esc(t("tool"))}</th><th>${esc(t("location"))}</th><th>${esc(t("verification"))}</th><th>${esc(t("status"))}</th><th>${esc(t("ftitle"))}</th></tr></thead>
       <tbody>${f.findings.map(x=>{const loc=x.location||{};const L=(loc.file||loc.url||loc.host||loc.package||"")+(loc.line?":"+loc.line:"");
-        return `<tr data-act="finding" data-fid="${x.id}" style="cursor:pointer"><td><span class="badge sev-${x.severity}">${x.severity}</span></td>
-        <td class="mono">${x.work_priority}</td><td class="small">${esc(x.connector)}</td><td class="mono-sm">${esc(L)}</td>
+        return `<tr data-act="finding" data-fid="${esc(x.id)}" style="cursor:pointer"><td><span class="badge sev-${esc(x.severity)}">${esc(x.severity)}</span></td>
+        <td class="mono">${esc(x.work_priority)}</td><td class="small">${esc(x.connector)}</td><td class="mono-sm">${esc(L)}</td>
         <td class="small">${esc(x.verification_status)}</td><td class="small">${esc(x.status)}</td><td>${esc(x.title)}</td></tr>`;}).join("")||`<tr><td colspan=7 class="muted">${esc(t("none"))}</td></tr>`}</tbody></table></div>`);
 }
 
-async function scrAiLab(){
+async function scrAiLab(ctx){
   const ai=await api("/api/ai/status");
-  setMain(topbar(t("ailab"), `<span class="pill ${ai.available?"ok":"warn"}">${ai.available?ai.provider+" · "+ai.model:"fallback (no provider)"}</span>`)
+  setMain(ctx, topbar(t("ailab"), `<span class="pill ${ai.available?"ok":"warn"}">${esc(ai.available?ai.provider+" · "+ai.model:"fallback (no provider)")}</span>`)
     + h`<div class="card"><h2>${esc(t("evalset"))}</h2>
       <p class="small muted">Offline injection-resistance checks of the AI layer (sanitizer + structured-output contract). No external model.</p>
       <button class="btn primary" data-act="runeval">${esc(t("runeval"))}</button><div id="evalout"></div></div>
@@ -431,9 +445,9 @@ async function scrAiLab(){
     <div class="card"><h2>ai_redteam</h2><p class="small muted">AI model red-team connector (prompt-injection / jailbreak / data-exfiltration probes with synthetic canaries). Requires a configured AI provider; otherwise shown as <b>blocked</b> in the catalog.</p></div>`);
 }
 
-async function scrReports(){
+async function scrReports(ctx){
   const pid=S.project.id;
-  setMain(topbar(t("reports"))
+  setMain(ctx, topbar(t("reports"))
     + h`<div class="card"><h2>${esc(t("genreport"))}</h2>
       <div class="flex">
         <button class="btn" data-act="report" data-format="html" data-lang="ar">HTML (ع)</button>
@@ -446,17 +460,17 @@ async function scrReports(){
       <button class="btn primary" data-act="aireport" style="margin-top:8px">AI executive summary</button><div id="repout"></div></div>`);
 }
 
-async function scrAudit(){
+async function scrAudit(ctx){
   const pid=S.project?S.project.id:null;
   const a=await api("/api/audit"+(pid?`?project=${pid}`:""));
-  setMain(topbar(t("audit"))
+  setMain(ctx, topbar(t("audit"))
     + h`<div class="card"><table><thead><tr><th>time</th><th>actor</th><th>action</th><th>outcome</th><th>detail</th></tr></thead>
       <tbody>${a.audit.map(x=>`<tr><td class="small mono">${esc(x.created_at)}</td><td class="small">${esc(x.actor)}</td>
         <td class="small">${esc(x.action)}</td><td class="small state state-${x.outcome==="ok"?"ready":"blocked"}">${esc(x.outcome)}</td>
         <td class="mono-sm">${esc(JSON.stringify(x.detail))}</td></tr>`).join("")||`<tr><td colspan=5 class="muted">${esc(t("none"))}</td></tr>`}</tbody></table></div>`);
 }
 
-async function scrSettings(){
+async function scrSettings(ctx){
   let stop={engaged:false}, users={users:[]};
   try{ stop=await api("/api/admin/stop"); }catch(e){}
   try{ users=await api("/api/users"); }catch(e){}
@@ -465,7 +479,7 @@ async function scrSettings(){
   const cl=me.client;
   const notes=(me.setup_notices||[]).map(code=>
     notice((NOTICE_TEXT[S.lang][code]||code).replace(/\{min\}/g, cfg.min_password_length||10))).join("");
-  setMain(topbar(t("settings"))
+  setMain(ctx, topbar(t("settings"))
     + (notes?`<div class="card"><h2>${esc(t("setupnotes"))}</h2>${notes}</div>`:"")
     + (cl?`<div class="card"><h2>${esc(t("connection"))}</h2><div class="kv">
         <div class="k">${esc(t("yourip"))}</div><div class="mono-sm">${esc(cl.address||"—")}</div>
@@ -491,27 +505,27 @@ async function openFinding(fid){
   const d=await api(`/api/findings/${fid}`); const f=d.finding; const loc=f.location||{};
   S.drawer = h`<div class="overlay" data-act="closedrawer"></div><div class="drawer">
     <div class="flex"><h2>${esc(f.title)}</h2><button class="btn sm right" data-act="closedrawer">${esc(t("close"))}</button></div>
-    <span class="badge sev-${f.severity}">${f.severity}</span> <span class="pill">${esc(f.connector)}</span> <span class="pill">prio ${f.work_priority}</span>
+    <span class="badge sev-${esc(f.severity)}">${esc(f.severity)}</span> <span class="pill">${esc(f.connector)}</span> <span class="pill">prio ${esc(f.work_priority)}</span>
     <div class="kv"><div class="k">rule</div><div class="mono-sm">${esc(f.rule_id)}</div>
       <div class="k">${esc(t("location"))}</div><div class="mono-sm">${esc(JSON.stringify(loc))}</div>
       <div class="k">cve/cwe</div><div>${esc(f.cve||"—")} / ${esc(f.cwe||"—")}</div>
       <div class="k">${esc(t("verification"))}</div><div>${esc(f.verification_status)}</div>
       <div class="k">${esc(t("status"))}</div><div>${esc(f.status)}</div>
-      <div class="k">source</div><div>${esc(f.source_flag)} · occ ${f.occurrences}</div></div>
+      <div class="k">source</div><div>${esc(f.source_flag)} · occ ${esc(f.occurrences)}</div></div>
     <p class="small">${esc(f.description)}</p>
     <div class="flex">
-      <button class="btn sm" data-act="ftriage" data-fid="${fid}">${esc(t("triage"))}</button>
-      <button class="btn sm" data-act="fremediate" data-fid="${fid}">${esc(t("remediation"))}</button>
-      <button class="btn sm" data-act="fvalidate" data-fid="${fid}">${esc(t("validate"))}</button>
+      <button class="btn sm" data-act="ftriage" data-fid="${esc(fid)}">${esc(t("triage"))}</button>
+      <button class="btn sm" data-act="fremediate" data-fid="${esc(fid)}">${esc(t("remediation"))}</button>
+      <button class="btn sm" data-act="fvalidate" data-fid="${esc(fid)}">${esc(t("validate"))}</button>
     </div>
     <div class="flex" style="margin-top:8px">
-      <button class="btn sm" data-act="fstatus" data-fid="${fid}" data-status="false_positive">false positive</button>
-      <button class="btn sm" data-act="fstatus" data-fid="${fid}" data-status="risk_accepted">risk accepted</button>
-      <button class="btn sm" data-act="fstatus" data-fid="${fid}" data-status="fixed_in_branch">fixed in branch</button>
+      <button class="btn sm" data-act="fstatus" data-fid="${esc(fid)}" data-status="false_positive">false positive</button>
+      <button class="btn sm" data-act="fstatus" data-fid="${esc(fid)}" data-status="risk_accepted">risk accepted</button>
+      <button class="btn sm" data-act="fstatus" data-fid="${esc(fid)}" data-status="fixed_in_branch">fixed in branch</button>
     </div>
     <div id="aiout"></div>
     <h2 style="margin-top:18px">${esc(t("evidence"))}</h2>
-    ${(d.evidence||[]).map(e=>`<div class="small mono-sm">${esc(e.kind)} · ${esc(e.sha256.slice(0,12))} · ${e.bytes}b <button class="btn sm" data-act="evread" data-eid="${e.id}">view</button></div>`).join("")||`<div class="muted small">${esc(t("none"))}</div>`}
+    ${(d.evidence||[]).map(e=>`<div class="small mono-sm">${esc(e.kind)} · ${esc(String(e.sha256||"").slice(0,12))} · ${esc(e.bytes)}b <button class="btn sm" data-act="evread" data-eid="${esc(e.id)}">view</button></div>`).join("")||`<div class="muted small">${esc(t("none"))}</div>`}
     <div id="evout"></div></div>`;
   render();
 }
@@ -521,13 +535,13 @@ async function openJob(jid){
     <div class="flex"><h2>${esc(j.connector)} job</h2><button class="btn sm right" data-act="closedrawer">${esc(t("close"))}</button></div>
     <span class="state state-${esc(j.state)}">${esc(j.state)}</span>
     <div class="kv"><div class="k">phase</div><div>${esc(j.phase)}</div>
-      <div class="k">attempts</div><div>${j.attempts}/${j.max_attempts}</div>
+      <div class="k">attempts</div><div>${esc(j.attempts)}/${esc(j.max_attempts)}</div>
       <div class="k">created</div><div class="small">${esc(j.created_at)}</div>
       <div class="k">finished</div><div class="small">${esc(j.finished_at||"—")}</div>
       <div class="k">error</div><div class="mono-sm">${esc(JSON.stringify(j.error||"—"))}</div></div>
     <h2>result</h2><div class="ev">${esc(JSON.stringify(j.result_summary||{},null,2))}</div>
     <h2 style="margin-top:14px">${esc(t("evidence"))}</h2>
-    ${(d.evidence||[]).map(e=>`<div class="small mono-sm">${esc(e.kind)} · ${esc(e.sha256.slice(0,12))} <button class="btn sm" data-act="evread" data-eid="${e.id}">view</button></div>`).join("")||`<div class="muted small">${esc(t("none"))}</div>`}
+    ${(d.evidence||[]).map(e=>`<div class="small mono-sm">${esc(e.kind)} · ${esc(String(e.sha256||"").slice(0,12))} <button class="btn sm" data-act="evread" data-eid="${esc(e.id)}">view</button></div>`).join("")||`<div class="muted small">${esc(t("none"))}</div>`}
     <div id="evout"></div></div>`;
   render();
 }
@@ -557,6 +571,7 @@ document.addEventListener("submit", async e=>{
     if(f.id==="projform"){ const r=await api("/api/projects","POST",{name:fd.name}); S.projects.push(r.project); S.project=r.project; render(); return; }
   }catch(err){ const box=document.getElementById("loginmsg")||document.getElementById("main");
     let msg=err.message+(err.code?` [${err.code}]`:"");
+    if(f.id==="loginform" && err.status===401){ msg = t("badlogin"); }
     if(f.id==="loginform" && err.status===429){
       const secs=(err.detail&&err.detail.retry_after_seconds)||600;
       // A short wait means the password check had no free turn; a long one
@@ -597,10 +612,10 @@ document.addEventListener("click", async e=>{
     else if(act==="finding"){ await openFinding(b.dataset.fid); }
     else if(act==="revoke"){ renderScreen(); }
     else if(act==="runeval"){ const r=await api("/api/ai/evalset");
-      document.getElementById("evalout").innerHTML=`<div class="notice ${r.passed===r.total?"ok":"err"}">${r.passed}/${r.total} passed</div>`
+      document.getElementById("evalout").innerHTML=`<div class="notice ${r.passed===r.total?"ok":"err"}">${esc(r.passed)}/${esc(r.total)} passed</div>`
         +`<table>${r.results.map(x=>`<tr><td>${x.pass?"✓":"✗"}</td><td class="small">${esc(x.id)}</td><td class="small muted">${esc(x.detail)}</td></tr>`).join("")}</table>`; }
     else if(act==="aiplan"){ const r=await api(`/api/projects/${S.project.id}/ai/plan`,"POST",{});
-      const p=r.plan; document.getElementById("planout").innerHTML=`<div class="small muted">ai:${p.ai_available} fallback:${p.fallback}</div>`
+      const p=r.plan; document.getElementById("planout").innerHTML=`<div class="small muted">ai:${esc(p.ai_available)} fallback:${esc(p.fallback)}</div>`
         +`<table>${p.data.steps.map(s=>`<tr><td class="mono">${esc(s.connector)}</td><td class="mono-sm">${esc(s.asset_id)}</td><td class="small">${esc(s.rationale)}</td></tr>`).join("")}</table>`; }
     else if(act==="aireport"){ const r=await api(`/api/projects/${S.project.id}/ai/report`,"POST",{});
       const d=r.report.data; document.getElementById("repout").innerHTML=`<div class="notice">${esc(d.executive_summary_ar)}</div><div class="notice">${esc(d.executive_summary_en)}</div>`; }
@@ -658,12 +673,27 @@ async function boot(){
     if(!S.project || !S.projects.find(x=>x.id===S.project.id)) S.project=S.projects[0]||null;
     render();
   }catch(e){
-    // A stale session falls back to the public view when there is one.
-    const hadToken = !!S.token;
-    S.token=""; S.user=null; localStorage.removeItem("fsl_token");
-    if (hadToken && S.publicView){ S.guest=true; return boot(); }
-    S.guest=false; render();
+    if (e.status===401 || e.status===403){
+      // The session is no longer valid (or the public view was switched off):
+      // fall back to the public view when there is one, else to the sign-in form.
+      const hadToken = !!S.token;
+      S.token=""; S.user=null; localStorage.removeItem("fsl_token");
+      if (hadToken && S.publicView){ S.guest=true; return boot(); }
+      S.guest=false; return render();
+    }
+    // Busy or offline: keep the session and say so, with a way to try again.
+    renderUnavailable();
   }
+}
+function renderUnavailable(){
+  root().innerHTML = h`<div class="loginwrap"><div class="login">
+    <div class="hero">${MASK("lg")}<h1 class="brand">FAISAL<span class="dot">.AI</span></h1></div>
+    <div class="sub kicker">${esc(t("kicker"))}</div>
+    ${notice(t("unavailable"), "err")}
+    <div class="flex" style="margin-top:12px">
+      <button class="btn primary" type="button" data-act="reload">↻ ${esc(t("retry"))}</button>
+    </div></div></div>`;
+  decorate();
 }
 async function init(){
   try{ const c=await api("/api/config"); S.publicView=!!c.public_view; }catch(e){ S.publicView=false; }

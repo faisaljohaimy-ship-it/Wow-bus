@@ -24,6 +24,7 @@ import ipaddress
 import json
 import math
 import re
+import signal
 import sys
 import threading
 import time
@@ -312,9 +313,10 @@ class _Waiter:
         self.wake = threading.Event()
 
 
-class _VerifyGate:
-    """Hands out turns for the password check: lowest rank first, earliest
-    arrival first among equal ranks."""
+class _FairGate:
+    """Hands out a fixed number of places: lowest rank first, earliest arrival
+    first among equal ranks. Used for password checks (rank: turns a network
+    has had) and for guest requests (rank: requests a client has made)."""
 
     def __init__(self, slots: int, line: int):
         self._lock = threading.Lock()
@@ -361,7 +363,7 @@ class _VerifyGate:
             return len(self._waiting)
 
 
-_LOGIN_VERIFY = _VerifyGate(LOGIN_VERIFY_SLOTS, LOGIN_VERIFY_LINE)
+_LOGIN_VERIFY = _FairGate(LOGIN_VERIFY_SLOTS, LOGIN_VERIFY_LINE)
 
 
 class LoginTicket(NamedTuple):
@@ -519,7 +521,7 @@ def reset_login_throttle_for_tests() -> None:
         _LOGIN_TURNS.clear()
         _LOGIN_IN_PROGRESS.clear()
         _LOGIN_QUEUED.clear()
-        _LOGIN_VERIFY = _VerifyGate(LOGIN_VERIFY_SLOTS, LOGIN_VERIFY_LINE)
+        _LOGIN_VERIFY = _FairGate(LOGIN_VERIFY_SLOTS, LOGIN_VERIFY_LINE)
         _LOGIN_BUSY_REPORTED = None
 
 
@@ -616,13 +618,27 @@ def _login_leave(network: str) -> None:
 # cannot lock other visitors out. Forgetting a client resets its count, which
 # is why the global ceiling exists: it bounds total guest load no matter how
 # many addresses the requests appear to come from. A client only enters the
-# table after passing the ceiling, so with these numbers at most 2400 client
-# windows are live at any moment (two ceilings' worth) and dropping the expired
-# ones always makes room in the 4096 slots.
+# table after passing the ceiling, so at most two ceilings' worth of client
+# windows are live at any moment and dropping the expired ones makes room.
 GUEST_WINDOW_SECONDS = 60
-GUEST_LIMIT_PER_MINUTE = 240
-GUEST_GLOBAL_LIMIT_PER_MINUTE = 1200
+# Sized for the smallest host this runs on (a tenth of a CPU). Measured there,
+# the heaviest guest route (the JSON report) costs about 15 ms of CPU, so about
+# seven requests a second use all of it. The ceiling admits four a second,
+# which leaves room for the health check and for people who sign in. A larger
+# host can raise the ceiling with FSL_GUEST_REQUESTS_PER_MINUTE.
+GUEST_LIMIT_PER_MINUTE = 90
+GUEST_GLOBAL_LIMIT_PER_MINUTE = 240
 GUEST_MAX_CLIENTS = 4096
+# A limit per minute does not stop a burst, and a thread per connection lets a
+# burst pile up until nothing is answered, long after the burst is over. So
+# guest requests are also worked on GUEST_SLOTS at a time. Up to GUEST_LINE
+# more wait, at most GUEST_WAIT_SECONDS, the client that has asked for the
+# least this minute first; anyone past that is refused at once. People who
+# are signed in, and the health check, never wait behind guests.
+GUEST_SLOTS = 2
+GUEST_LINE = 16
+GUEST_WAIT_SECONDS = 4
+_GUEST_WORK = _FairGate(GUEST_SLOTS, GUEST_LINE)
 _GUEST_HITS: dict[str, list] = {}       # client -> [window_start, count]
 _GUEST_GLOBAL: list = [0.0, 0]          # [window_start, count] for all guests together
 _GUEST_LOCK = threading.Lock()
@@ -641,8 +657,13 @@ def _guest_make_room(now: float) -> None:
             del _GUEST_HITS[key]
 
 
-def guest_rate_check(client: str, now: float | None = None) -> None:
+def _guest_busy() -> RateLimitError:
+    return RateLimitError("the public view is busy; try again in a minute")
+
+
+def guest_rate_check(client: str, now: float | None = None) -> int:
     """Count one guest request for this client; raise RateLimitError if over.
+    Returns how many requests the client has made in the current window.
 
     Only a request that is let through counts toward the global ceiling, so a
     single client hammering past its own limit cannot use the ceiling up."""
@@ -651,8 +672,9 @@ def guest_rate_check(client: str, now: float | None = None) -> None:
     with _GUEST_LOCK:
         if now - _GUEST_GLOBAL[0] >= GUEST_WINDOW_SECONDS:
             _GUEST_GLOBAL[:] = [now, 0]
-        if _GUEST_GLOBAL[1] >= GUEST_GLOBAL_LIMIT_PER_MINUTE:
-            raise RateLimitError("the public view is busy; try again in a minute")
+        ceiling = get_config().guest_requests_per_minute or GUEST_GLOBAL_LIMIT_PER_MINUTE
+        if _GUEST_GLOBAL[1] >= ceiling:
+            raise _guest_busy()
         entry = _GUEST_HITS.get(client)
         if entry is None or now - entry[0] >= GUEST_WINDOW_SECONDS:
             if entry is None and len(_GUEST_HITS) >= GUEST_MAX_CLIENTS:
@@ -662,6 +684,7 @@ def guest_rate_check(client: str, now: float | None = None) -> None:
             raise RateLimitError("rate limit exceeded; slow down or sign in")
         entry[1] += 1
         _GUEST_GLOBAL[1] += 1
+        return entry[1]
 
 
 @route("POST", r"/api/auth/login", auth_required=False)
@@ -847,12 +870,19 @@ def scopes_create(req: Req):
     pid = req.params["pid"]
     req.principal.require_project(pid, "admin")  # only admins grant authorization
     b = req.body
+    # A scope authorizes connectors by name (the policy engine compares names),
+    # so nothing else is stored there.
+    scan_types = b.get("scan_types", [])
+    known = set(connector_names())
+    if (not isinstance(scan_types, list) or len(scan_types) > len(known)
+            or any(not isinstance(name, str) or name not in known for name in scan_types)):
+        raise ValidationError("scan_types must be a list of connector names")
     s = store.create_scope(pid, b["asset_id"], owner_contact=b.get("owner_contact", ""),
                            proof=b.get("proof", ""), environment=b.get("environment", "lab"),
                            allowed_targets=b.get("allowed_targets", []),
                            denied_targets=b.get("denied_targets", []),
                            allowed_ports=b.get("allowed_ports", []),
-                           scan_types=b.get("scan_types", []),
+                           scan_types=scan_types,
                            valid_from=b.get("valid_from"), valid_until=b.get("valid_until"),
                            window=b.get("window", {}), rate_limits=b.get("rate_limits", {}),
                            created_by=req.principal.user_id)
@@ -986,10 +1016,22 @@ def jobs_list(req: Req):
     return 200, {"jobs": queue.list_jobs(pid, state=req.q("state"))}
 
 
+def _require_reader(req: Req, project_id: str, missing: str) -> None:
+    """Reader access to the project an object belongs to. A guest who lacks it
+    is told the object does not exist, the same answer as for an id that was
+    never issued."""
+    try:
+        req.principal.require_project(project_id, "reader")
+    except ForbiddenError:
+        if req.principal.guest:
+            raise NotFoundError(missing) from None
+        raise
+
+
 @route("GET", r"/api/jobs/(?P<jid>[\w-]+)", guest_ok=True)
 def job_get(req: Req):
     job = queue.get_job(req.params["jid"])
-    req.principal.require_project(job["project_id"], "reader")
+    _require_reader(req, job["project_id"], "job not found")
     return 200, {"job": job, "evidence": evidence.list_for_job(job["id"])}
 
 
@@ -1016,7 +1058,7 @@ def findings_list(req: Req):
 @route("GET", r"/api/findings/(?P<fid>[\w-]+)", guest_ok=True)
 def finding_get(req: Req):
     f = F.get_finding(req.params["fid"])
-    req.principal.require_project(f["project_id"], "reader")
+    _require_reader(req, f["project_id"], "finding not found")
     return 200, {"finding": f, "evidence": evidence.list_for_finding(f["id"])}
 
 
@@ -1233,10 +1275,16 @@ class Handler(BaseHTTPRequestHandler):
             _report_ignored_proxy_headers(bool(cfg.client_ip_header or cfg.trusted_proxy_hops))
         return address, source, ignored
 
+    def _credentials(self) -> list[str]:
+        """Every non-blank Authorization header line of the request."""
+        return [line.strip() for line in self.headers.get_all("Authorization") or []
+                if line.strip()]
+
     def _token(self):
-        auth_h = self.headers.get("Authorization", "")
-        if auth_h.startswith("Bearer "):
-            return auth_h[7:].strip()
+        # The first credential that was presented is the one that is checked,
+        # whichever header line it is on.
+        for line in self._credentials():
+            return line[7:].strip() if line.startswith("Bearer ") else None
         return None
 
     def _guest_allowed(self, method: str, guest_ok: bool) -> bool:
@@ -1249,7 +1297,7 @@ class Handler(BaseHTTPRequestHandler):
         rejected with 401 like before rather than silently downgraded."""
         if not guest_ok or method != "GET":
             return False
-        if (self.headers.get("Authorization") or "").strip():
+        if self._credentials():
             return False
         return get_config().public_view
 
@@ -1283,6 +1331,7 @@ class Handler(BaseHTTPRequestHandler):
             if not match:
                 continue
             principal = None
+            gate, guest_slot = None, False
             try:
                 body = self._read_body() if method in ("POST", "PUT", "PATCH") else {}
                 tok = self._token()
@@ -1291,8 +1340,12 @@ class Handler(BaseHTTPRequestHandler):
                     if self._guest_allowed(method, guest_ok):
                         # Guests are limited by the same client key as sign-in
                         # (IPv4 address or IPv6 /64).
-                        guest_rate_check(client_key(address))
+                        asked = guest_rate_check(client_key(address))
                         principal = auth.guest_principal()
+                        gate = _GUEST_WORK
+                        guest_slot = gate.acquire(asked, GUEST_WAIT_SECONDS)
+                        if not guest_slot:
+                            raise _guest_busy()
                     else:
                         principal = auth.principal_from_token(tok)
                         if min_global:
@@ -1305,10 +1358,16 @@ class Handler(BaseHTTPRequestHandler):
                 status, obj = e.status, e.public()
             except Exception as e:  # unexpected
                 status, obj = 500, {"error": {"code": "internal", "message": str(e)[:200]}}
-            if principal is not None and principal.guest:
-                # The one place the guest view is applied: results and errors
-                # of every guest_ok route, JSON and report text alike.
-                obj = guest_view.apply(obj)
+            try:
+                if principal is not None and principal.guest:
+                    # The one place the guest view is applied: results and errors
+                    # of every guest_ok route, JSON and report text alike.
+                    obj = guest_view.apply(obj)
+            finally:
+                # Released before the response is written: a slow reader must
+                # not hold a place.
+                if guest_slot:
+                    gate.release()
             return self._send_json(status, obj)
         return self._send_json(404, {"error": {"code": "not_found", "message": "no such route"}})
 
@@ -1420,10 +1479,11 @@ def main():
     # run workers as separate processes/containers).
     if os.environ.get("FSL_NO_WORKER", "") not in ("1", "true"):
         from .worker import Worker
-        for i in range(max(1, cfg.limits.worker_concurrency)):
+        workers = max(1, cfg.limits.worker_concurrency)
+        for i in range(workers):
             w = Worker(worker_id=f"inproc-{i}")
             threading.Thread(target=w.run_forever, daemon=True).start()
-        print(f"[init] started {cfg.limits.worker_concurrency} in-process worker(s)", file=sys.stderr)
+        print(f"[init] started {workers} in-process worker(s)", file=sys.stderr)
 
     srv = build_server()
     print(f"[serve] http://{cfg.bind_host}:{cfg.bind_port}  (Ctrl-C to stop)", file=sys.stderr)
@@ -1454,7 +1514,22 @@ def main():
         # with the demo can never stop the service from answering.
         print("[init] public read-only view is ON: visitors can read the demo project "
               "without signing in; every action still requires a sign-in", file=sys.stderr)
+    else:
+        print("[init] public read-only view is off (FSL_PUBLIC_VIEW=1 turns it on)",
+              file=sys.stderr)
     threading.Thread(target=_after_bind, daemon=True).start()
+
+    # A hosting platform stops a container with SIGTERM. As the first process
+    # of a container this one gets no default action for it, so without a
+    # handler every restart waits out the grace period and ends in a kill.
+    def _stop(signum, _frame):
+        print("[serve] stop signal received, shutting down", file=sys.stderr)
+        threading.Thread(target=srv.shutdown, daemon=True).start()
+
+    try:
+        signal.signal(signal.SIGTERM, _stop)
+    except (ValueError, OSError):       # not the main thread (tests), or unsupported
+        pass
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

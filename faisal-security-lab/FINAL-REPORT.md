@@ -20,7 +20,7 @@ a hard structured-output safety contract, and a bilingual RTL/LTR operator conso
   evidence → report, through the standalone server with in-process workers.
 - **Policy enforcement over the live API:** an out-of-scope connector returns
   HTTP 403 `policy_denied`; SSRF to a private address is blocked.
-- **Tests:** 280 (`make test`) pass — RBAC/isolation, policy/scope/SSRF, queue
+- **Tests:** 298 (`make test`) pass — RBAC/isolation, policy/scope/SSRF, queue
   idempotency + crash-safety, connectors (known vs clean), dedup/reopen,
   redaction, AI safety, reports — plus the 9-row failure-mode matrix.
 - **Acceptance:** 10/10 gates (`make acceptance` → `evidence/acceptance-report.json`).
@@ -47,13 +47,24 @@ a hard structured-output safety contract, and a bilingual RTL/LTR operator conso
   vulnerable sample, scanned by the real tools) through a fixed list of GET
   routes. Everything a guest is sent passes one filter that drops evidence
   text, storage references, scope contact/proof and server paths. Every action
-  still needs a sign-in.
+  still needs a sign-in. Guest requests are limited per client and in total,
+  and only two are worked on at once, so anonymous traffic cannot hold up the
+  health check or a sign-in (measured at a tenth of a CPU under a 20
+  requests/second flood: health 0.3 s, owner sign-in 1.5 s at worst).
 - **Console theme.** Black page with red text, red cards with black text, mask
   icons inside a laser that keeps moving, and moving code on every card and at
   the top of the page; a motion switch and `prefers-reduced-motion` are honoured.
 
 Each of these went through independent adversarial review, and the defects the
-reviews confirmed were fixed and re-checked before merging.
+reviews confirmed were fixed and re-checked before merging. The last review of
+the integrated release found, and this release fixes: guest traffic within the
+documented limits that could starve a small instance; a scope's scan types
+being stored and shown without checking (now connector names only, and the
+console escapes every value it writes, single quotes included); form fields
+without a type attribute escaping the theme; and several smaller points
+(sign-in errors in Arabic, a late screen load overwriting the current screen,
+a credential on a second header line, private ids looking different from
+missing ones to a guest).
 
 ## What tests proved
 Authorization cannot be bypassed via the API (enqueue-time policy) or after
@@ -84,6 +95,12 @@ reaches the asset is confirmed by a re-scan before the finding is closed.
   fresh network for every attempt to keep a newcomer waiting; a flood from
   thousands of networks is a volumetric attack for the platform's edge, not for
   a 0.1-CPU instance.
+- **Leftover processes in the container.** The server is the first process of
+  the container and does not collect processes that outlive a tool run which
+  was stopped on a timeout, so a few finished entries stay in the process table
+  until the instance restarts (a dozen after a start on a tenth of a CPU). A
+  small init in the image would collect them; that needs an image build this
+  environment cannot do.
 - **Known limits of the guest filter** are listed in `docs/DEPLOY.md`: a server
   path glued to a word is cut only for directories two or more levels deep.
 
@@ -91,7 +108,7 @@ reaches the asset is confirmed by a re-scan before the finding is closed.
 ```bash
 cd faisal-security-lab
 make install-tools && make verify     # honest tool states
-make test                             # 280 tests
+make test                             # 298 tests
 make acceptance                       # 10 gates → evidence/acceptance-report.json
 make serve                            # open the console at http://127.0.0.1:8787
 ```

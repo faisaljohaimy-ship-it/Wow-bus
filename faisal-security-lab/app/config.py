@@ -34,11 +34,22 @@ def _env_header_name(name: str) -> str:
     return value if re.fullmatch(r"[A-Za-z0-9-]{1,64}", value) else ""
 
 
+_YES = ("1", "true", "yes", "on", "\u0661")       # the last one is the Arabic-Indic digit one
+_NO = ("", "0", "false", "no", "off", "\u0660")
+
+
 def _env_bool(name: str, default: bool) -> bool:
     v = os.environ.get(name)
     if v is None:
         return default
-    return v.strip().lower() in ("1", "true", "yes", "on")
+    return v.strip().lower() in _YES
+
+
+def _env_unrecognized_bool(name: str) -> bool:
+    """True when the variable is set to something that is neither a yes nor a
+    no value (it then counts as no, and the operator is told)."""
+    v = os.environ.get(name)
+    return v is not None and v.strip().lower() not in _YES + _NO
 
 
 # Connectors the public demo project scans by default: static analysis of the
@@ -181,6 +192,11 @@ class Config:
     # sign-in. See app/auth.py (GuestPrincipal) and app/demo.py.
     public_view: bool = False
     demo_connectors: tuple = DEFAULT_DEMO_CONNECTORS
+    # Ceiling on guest requests per minute, all visitors together. 0 keeps the
+    # built-in value, which is sized for a tenth of a CPU (see app/server.py).
+    guest_requests_per_minute: int = 0
+    # FSL_PUBLIC_VIEW was set to a value that is not understood (the view is off).
+    public_view_unrecognized: bool = False
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -212,7 +228,9 @@ class Config:
             job_timeout_seconds=_env_int("FSL_JOB_TIMEOUT", Limits.job_timeout_seconds),
             job_cpu_seconds=_env_int("FSL_JOB_CPU_SECONDS", Limits.job_cpu_seconds),
             job_address_space_mb=_env_int("FSL_JOB_AS_MB", Limits.job_address_space_mb),
-            worker_concurrency=_env_int("FSL_WORKER_CONCURRENCY", Limits.worker_concurrency),
+            # At least one worker: zero or a negative number is a typing mistake.
+            worker_concurrency=max(1, _env_int("FSL_WORKER_CONCURRENCY",
+                                               Limits.worker_concurrency)),
         )
 
         ai_key = os.environ.get("FSL_AI_API_KEY", "")
@@ -248,6 +266,9 @@ class Config:
             trusted_proxy_hops=max(0, min(10, _env_int("FSL_TRUSTED_PROXY_HOPS", 0))),
             public_view=_env_bool("FSL_PUBLIC_VIEW", False),
             demo_connectors=_env_list("FSL_DEMO_CONNECTORS", DEFAULT_DEMO_CONNECTORS),
+            guest_requests_per_minute=max(0, min(1_000_000,
+                                                 _env_int("FSL_GUEST_REQUESTS_PER_MINUTE", 0))),
+            public_view_unrecognized=_env_unrecognized_bool("FSL_PUBLIC_VIEW"),
         )
 
     @staticmethod

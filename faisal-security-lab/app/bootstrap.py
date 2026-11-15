@@ -46,6 +46,9 @@ _NOTICE_LOG = {
     "running_as_root":
         "the container could not drop root privileges; the service and its scan "
         "tools are running as root.",
+    "public_view_unrecognized":
+        "FSL_PUBLIC_VIEW is set to a value that is not understood, so the public "
+        "view is off; use 1 to turn it on or 0 to turn it off.",
     # Recorded by app/demo.py after startup (not by init_platform).
     "demo_sample_missing":
         "FSL_PUBLIC_VIEW is on but the bundled samples/vulnerable-app directory "
@@ -63,6 +66,8 @@ def init_platform(sync_tools: bool = True) -> dict:
     notices: list[str] = []
     if cfg.data_dir_fallback:
         notices.append("data_dir_unwritable")
+    if cfg.public_view_unrecognized:
+        notices.append("public_view_unrecognized")
     # The container entrypoint sets FSL_PRIVDROP_FAILED=1 when it had to keep
     # running as root; a deliberate root run outside the container is not flagged.
     if (os.environ.get("FSL_PRIVDROP_FAILED") == "1"

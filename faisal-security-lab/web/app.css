@@ -148,7 +148,8 @@ tr[data-act]:hover td{background:#ff7a8355}
 label{display:block;font-size:12.5px;font-weight:700;margin:10px 0 4px}
 input:not([type]),input[type=text],input[type=email],input[type=password],input[type=number],select,textarea{
   width:100%;background:var(--card2);border:1px solid var(--stroke);color:var(--ink);
-  padding:9px 10px;border-radius:8px;font-size:15px;min-height:44px;caret-color:var(--ink)}
+  padding:9px 10px;border-radius:8px;font-size:16px;min-height:44px;caret-color:var(--ink)}
+/* 16px and up: below that, Safari on a phone zooms the page when a field is focused. */
 input::placeholder,textarea::placeholder{color:#3a1118;opacity:1}
 textarea{min-height:70px;resize:vertical}
 .card :focus-visible,.drawer :focus-visible,.login :focus-visible{outline-color:var(--ink)}

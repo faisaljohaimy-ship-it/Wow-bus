@@ -363,6 +363,20 @@ class TestReports(Base):
         self.assertIn("تقرير", reports.to_markdown(p["id"], "ar"))
         self.assertIn("Report", reports.to_markdown(p["id"], "en"))
 
+    def test_html_report_carries_the_mask_and_moving_code_without_script(self):
+        from app import reports, store
+        p = store.create_project("report-look", self.owner.user_id)
+        for lang in ("ar", "en"):
+            page = reports.to_html(p["id"], lang)
+            self.assertEqual(page.count('class="cardhead"'), 3, lang)      # one per card
+            self.assertEqual(page.count('class="mask sm"'), 3, lang)
+            self.assertEqual(page.count('<svg class="mask "'), 1, lang)     # the header mark
+            self.assertIn("@keyframes laser-orbit", page)
+            self.assertIn("@keyframes code-flow", page)
+            self.assertIn("prefers-reduced-motion", page)
+            self.assertNotIn("<script", page.lower())
+            self.assertNotIn(" onload=", page.lower())
+
     def test_html_report_does_not_reflect_an_unknown_language(self):
         from app import reports, store
         p = store.create_project("p", self.owner.user_id)

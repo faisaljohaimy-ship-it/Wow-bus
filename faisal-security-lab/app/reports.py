@@ -33,6 +33,42 @@ _T = {
 }
 
 
+# The hooded-mask mark and the code strips of the console, for the HTML report.
+# Plain markup and CSS: the report runs no script.
+_MASK_OUTLINE = "M40 3C24 4 10 20 5 48l10 23 25 14 25-14 10-23C70 20 56 4 40 3Z"
+_CODE_LINES = (
+    "scope.check(target); verify(owner); audit.record(event); policy.allow(job);",
+    "findings.dedup(key); priority = severity * criticality; report.build(lang);",
+    "semgrep.scan(src); gitleaks.detect(src); bandit.audit(src); pip_audit.check(deps);",
+    "queue.lease(job, ttl=120); worker.run(connector, sandbox); evidence.redact(raw);",
+)
+
+
+def _mask_svg(size: str = "") -> str:
+    o = _MASK_OUTLINE
+    return (
+        f'<svg class="mask {size}" viewBox="-8 -8 96 104" aria-hidden="true" focusable="false">'
+        f'<path class="laser two" d="{o}" transform="translate(40 44) scale(1.16) translate(-40 -44)"'
+        ' fill="none" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="9 41" pathLength="100"/>'
+        f'<path d="{o}" fill="#130a0e" stroke="#bd203e" stroke-width="1.7"/>'
+        '<path d="M40 14 18 38l4 25 18 15 18-15 4-25Z" fill="#e9e1e4" stroke="#8f263e" stroke-width="1.4"/>'
+        '<path d="m21 38 12 4-4 6-9-5m39-5-12 4 4 6 9-5" fill="#10080b"/>'
+        '<path d="m23 33 11 5m23-5-11 5" fill="none" stroke="#971f3b" stroke-width="3" stroke-linecap="round"/>'
+        '<path d="m39 41-4 15 5 3 5-3-4-15m-12 20 11 5 11-5m-16 9 5 3 5-3" fill="none" stroke="#561728"'
+        ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<path d="m24 42 5 2m22 0 5-2" stroke="#f22b50" stroke-width="2" stroke-linecap="round"/>'
+        f'<path class="laser" d="{o}" fill="none" stroke-width="2.4" stroke-linecap="round"'
+        ' stroke-dasharray="18 82" pathLength="100"/></svg>')
+
+
+def _card_head(i: int) -> str:
+    """The strip at the top of a report card: the mask and a line of moving code."""
+    half = (_CODE_LINES[i % len(_CODE_LINES)] + "    ") * 5
+    rev = " rev" if i % 2 else ""
+    return (f'<div class="cardhead" aria-hidden="true">{_mask_svg("sm")}'
+            f'<div class="codebar{rev}"><span>{html.escape(half + half)}</span></div></div>')
+
+
 def build_report(project_id: str) -> dict:
     project = store.get_project(project_id)
     fnds = findings_mod.list_findings(project_id, limit=5000)
@@ -158,11 +194,11 @@ def to_html(project_id: str, lang: str = "ar") -> str:
             locs += f":{loc['line']}"
         rows.append(
             f"<tr><td><span class='sev sev-{html.escape(f['severity'])}'>"
-            f"{html.escape(f['severity'])}</span></td><td>{f['work_priority']}</td>"
+            f"{html.escape(f['severity'])}</span></td><td>{html.escape(str(f['work_priority']))}</td>"
             f"<td>{html.escape(f['connector'])}</td><td><code>{html.escape(locs)}</code></td>"
             f"<td>{html.escape(f['verification_status'])}</td><td>{html.escape(f['status'])}</td>"
             f"<td>{html.escape(f['title'])}</td></tr>")
-    counts = " · ".join(f"{s}: <b>{sev.get(s,0)}</b>" for s in SEV_ORDER)
+    counts = " · ".join(f"{s}: <b>{html.escape(str(sev.get(s, 0)))}</b>" for s in SEV_ORDER)
     body_rows = "".join(rows) or f"<tr><td colspan=7>{html.escape(t['no_findings'])}</td></tr>"
     return f"""<!doctype html><html lang="{lang}" dir="{direction}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -183,14 +219,29 @@ code{{font-family:ui-monospace,Consolas,monospace;font-size:12.5px}}
 .card .sev-high{{background:#33000f;color:#ffd3d7}}
 .sev-low{{border-style:dashed}} .sev-info{{border-style:dotted}}
 .note{{font-size:13px}}
+h1{{display:flex;align-items:center;gap:12px;flex-wrap:wrap}}
+.mask{{flex:0 0 auto;width:46px;height:50px}} .mask.sm{{width:22px;height:24px}}
+.mask .laser{{stroke:#ff2d4d;animation:laser-orbit 1.4s linear infinite}}
+.mask .laser.two{{animation-duration:2.3s;animation-direction:reverse;opacity:.75}}
+.card .mask .laser{{stroke:#080808}}
+@keyframes laser-orbit{{to{{stroke-dashoffset:-100}}}}
+.cardhead{{display:flex;align-items:center;gap:8px;margin:0 -18px 12px;padding:6px 12px;
+  border-bottom:1px solid #33000f66;overflow:hidden}}
+.codebar{{direction:ltr;flex:1;min-width:0;overflow:hidden;white-space:nowrap;
+  font-family:ui-monospace,Consolas,monospace;font-size:11px;opacity:.85}}
+.codebar>span{{display:inline-block;padding-inline-end:24px;animation:code-flow 38s linear infinite}}
+.codebar.rev>span{{animation-direction:reverse}}
+@keyframes code-flow{{to{{transform:translateX(-50%)}}}}
+@media (prefers-reduced-motion:reduce){{.mask .laser,.codebar>span{{animation-play-state:paused}}}}
+@media print{{.mask .laser,.codebar>span{{animation:none}}}}
 </style></head><body>
-<h1>FAISAL<span class="dot">.AI</span> — {html.escape(t['title'])}</h1>
-<div class="card"><b>{html.escape(t['project'])}:</b> {html.escape(r['project']['name'])}<br>
+<h1>{_mask_svg()}<span>FAISAL<span class="dot">.AI</span> — {html.escape(t['title'])}</span></h1>
+<div class="card">{_card_head(0)}<b>{html.escape(t['project'])}:</b> {html.escape(r['project']['name'])}<br>
 <b>{html.escape(t['generated'])}:</b> {html.escape(r['generated_at'])}<br>
 <span class="note">Faisal Security Lab v{html.escape(r['platform_version'])} — {html.escape(t['note'])}</span></div>
-<div class="card"><b>{html.escape(t['counts'])}:</b> {counts}<br>
-<b>{html.escape(t['verified_fixes'])}:</b> {r['metrics'].get('verified_fixes',0)}</div>
-<div class="card"><h2>{html.escape(t['findings'])}</h2>
+<div class="card">{_card_head(1)}<b>{html.escape(t['counts'])}:</b> {counts}<br>
+<b>{html.escape(t['verified_fixes'])}:</b> {html.escape(str(r['metrics'].get('verified_fixes', 0)))}</div>
+<div class="card">{_card_head(2)}<h2>{html.escape(t['findings'])}</h2>
 <table><thead><tr><th>{html.escape(t['severity'])}</th><th>{html.escape(t['priority'])}</th>
 <th>{html.escape(t['tool'])}</th><th>{html.escape(t['location'])}</th>
 <th>{html.escape(t['verification'])}</th><th>{html.escape(t['status'])}</th><th>Title</th></tr></thead>

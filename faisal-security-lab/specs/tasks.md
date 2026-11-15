@@ -9,7 +9,7 @@
 | T5 | Findings + evidence + reports | `app/findings.py app/evidence.py app/reports.py` | `TestConnectors/Redaction/Reports` | ✅ verified |
 | T6 | AI layer + safety | `app/ai/*` | `TestAISafety`, gate 5 | ✅ verified (fallback; live provider unconfigured) |
 | T7 | HTTP API + bilingual UI | `app/server.py web/*` | HTTP flow + `evidence/ui/*.png` | ✅ verified |
-| T8 | Tests, failure modes, acceptance, CI, deploy, docs | `tests/* scripts/* deploy/* .github/* docs/*` | `make test`, `make acceptance` | ✅ verified (10/10, 280 tests) |
+| T8 | Tests, failure modes, acceptance, CI, deploy, docs | `tests/* scripts/* deploy/* .github/* docs/*` | `make test`, `make acceptance` | ✅ verified (10/10, 298 tests) |
 | T9 | Start-up that survives mistyped owner settings; fast bind; storage fallback; non-root entrypoint | `app/auth.py app/bootstrap.py app/config.py app/worker.py app/connectors/registry.py deploy/entrypoint.sh` | `tests/test_setup_robustness.py`, `tests/test_platform_hardening.py`, `tests/test_deploy_seams.py` | ✅ verified (tests + container runs) |
 | T10 | Sign-in protection: client address from a declared proxy, per-client limits with no account lock, fair turns for the password check, bounded audit | `app/server.py app/auth.py docs/OPERATIONS.md` | `tests/test_signin_hardening.py` | ✅ verified (tests; flood runs at 0.1 CPU) |
 | T11 | Optional public read-only view with a seeded demo project and a single guest filter | `app/demo.py app/guest_view.py app/server.py` | `tests/test_public_view.py`, `tests/test_public_view_hardening.py` | ✅ verified (tests + live loopback run) |

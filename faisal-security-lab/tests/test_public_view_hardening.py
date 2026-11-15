@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import http.client
 import io
 import json
 import os
 import re
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.parse
@@ -134,8 +136,11 @@ class TestReportParameters(HardeningCase):
             self.assertEqual(status, 200, payload)
             self.assertIn("text/html", ctype)
             self.assertTrue(text.startswith('<!doctype html><html lang="ar" dir="rtl">'), payload)
-            if payload:
+            if len(payload) > 3:
                 self.assertNotIn(payload, text)
+            # A short value ("fr", "EN") is two letters that any page contains;
+            # what matters is that it is not the page's language.
+            self.assertNotIn(f'lang="{payload}"'.lower(), text.lower().replace('lang="ar"', ""))
             self.assertNotIn("<script", text.lower())
             self.assertNotIn("alert(1)", text)
 
@@ -1007,8 +1012,8 @@ class TestGuestConnectorListing(HardeningCase):
 class TestGuestRateLimitTable(HardeningCase):
     def test_limits(self):
         from app import server
-        self.assertEqual(server.GUEST_LIMIT_PER_MINUTE, 240)
-        self.assertEqual(server.GUEST_GLOBAL_LIMIT_PER_MINUTE, 1200)
+        self.assertEqual(server.GUEST_LIMIT_PER_MINUTE, 90)
+        self.assertEqual(server.GUEST_GLOBAL_LIMIT_PER_MINUTE, 240)
         self.assertEqual(server.GUEST_WINDOW_SECONDS, 60)
 
     def test_a_full_table_still_admits_a_new_client(self):
@@ -1859,6 +1864,225 @@ class TestSignedInWithoutADemoProject(HardeningCase):
         self.assertEqual(self.get(f"/api/projects/{private['pid']}", token=token)[0], 403)
         _, body = self.get("/api/projects", token=self.owner_token())
         self.assertEqual([p["id"] for p in body["projects"]], [private["pid"]])
+
+
+# ---------------------------------------------------------------------------
+# Findings of the last review before release
+# ---------------------------------------------------------------------------
+class TestCredentialOnAnyHeaderLine(HardeningCase):
+    """A request that presents a credential is never served as a guest,
+    whichever Authorization header line the credential is on."""
+
+    def send(self, path, lines):
+        conn = http.client.HTTPConnection("127.0.0.1", self.srv.server_address[1], timeout=15)
+        try:
+            conn.putrequest("GET", path)
+            for value in lines:
+                conn.putheader("Authorization", value)
+            conn.endheaders()
+            resp = conn.getresponse()
+            return resp.status, json.loads(resp.read().decode("utf-8"))
+        finally:
+            conn.close()
+
+    def test_a_blank_line_in_front_does_not_hide_the_credential(self):
+        self.seed_demo()
+        token = self.owner_token()
+        # Blank lines only: nothing was presented, so this is a guest.
+        status, body = self.send("/api/me", ["", "   "])
+        self.assertEqual((status, body["user"].get("guest")), (200, True))
+        # A bad credential on the second line is still a bad credential.
+        for lines in (["", "Bearer garbage"], ["  ", "Basic abc"], ["Bearer garbage", ""]):
+            status, body = self.send("/api/me", lines)
+            self.assertEqual((status, body["error"]["code"]), (401, "unauthenticated"), lines)
+        # A valid one on the second line signs in; it is not downgraded.
+        status, body = self.send("/api/me", ["", f"Bearer {token}"])
+        self.assertEqual(status, 200)
+        self.assertNotIn("guest", body["user"])
+        self.assertEqual(body["user"]["global_role"], "owner")
+
+
+class TestPrivateIdsLookMissingToAGuest(HardeningCase):
+    def test_a_private_job_or_finding_answers_like_an_id_that_was_never_issued(self):
+        self.seed_demo()
+        private = self.seed_private_project()
+        for kind, real, missing in (("jobs", private["jid"], "job_0000000000000000000000ff"),
+                                    ("findings", private["fid"], "fnd_0000000000000000000000ff")):
+            with self.subTest(kind=kind):
+                a = self.get(f"/api/{kind}/{real}")
+                b = self.get(f"/api/{kind}/{missing}")
+                self.assertEqual(a[0], 404)
+                self.assertEqual(a, b)
+        # Someone who is signed in but not a member is still told "forbidden".
+        _uid, token = self.new_user("reader@test.local")
+        self.assertEqual(self.get(f"/api/jobs/{private['jid']}", token=token)[0], 403)
+        self.assertEqual(self.get(f"/api/findings/{private['fid']}", token=token)[0], 403)
+        # The demo's own job and finding are readable as before.
+        self.assertEqual(self.get(f"/api/jobs/{self.demo['jid']}")[0], 200)
+        self.assertEqual(self.get(f"/api/findings/{self.demo['fid']}")[0], 200)
+
+
+class TestScopeScanTypes(HardeningCase):
+    def test_only_connector_names_are_stored(self):
+        from app import store
+        private = self.seed_private_project()
+        token = self.owner_token()
+        path = f"/api/projects/{private['pid']}/scopes"
+        base_body = {"asset_id": private["aid"], "proof": "x", "environment": "lab"}
+        bad = (["<img src=x onerror=alert(1)>", "bandit"], ["x'><b id=inj>"], ["Bandit"],
+               ["bandit", 7], "bandit", {"bandit": True}, ["bandit"] * 50)
+        before = len(store.list_scopes(private["pid"]))
+        for value in bad:
+            status, body = self.http("POST", path, token=token,
+                                     body=dict(base_body, scan_types=value))
+            self.assertEqual((status, body["error"]["code"]), (400, "validation_error"), value)
+        self.assertEqual(len(store.list_scopes(private["pid"])), before)
+        status, body = self.http("POST", path, token=token,
+                                 body=dict(base_body, scan_types=["bandit", "gitleaks"]))
+        self.assertEqual(status, 201)
+        self.assertEqual(body["scope"]["scan_types"], ["bandit", "gitleaks"])
+        status, body = self.http("POST", path, token=token, body=dict(base_body))
+        self.assertEqual((status, body["scope"]["scan_types"]), (201, []))
+
+
+class TestGuestWorkInProgress(HardeningCase):
+    def test_limits_fit_a_small_instance(self):
+        from app import server
+        self.assertEqual((server.GUEST_SLOTS, server.GUEST_LINE, server.GUEST_WAIT_SECONDS),
+                         (2, 16, 4))
+        # The ceiling admits fewer requests than a tenth of a CPU can serve
+        # (about seven a second on the heaviest route).
+        self.assertLessEqual(server.GUEST_GLOBAL_LIMIT_PER_MINUTE, 240)
+        self.assertLessEqual(server.GUEST_LIMIT_PER_MINUTE, server.GUEST_GLOBAL_LIMIT_PER_MINUTE)
+
+    def test_guest_requests_beyond_the_slots_wait_and_are_then_refused(self):
+        from app import server
+        self.seed_demo()
+        token = self.owner_token()
+        entered, finish = threading.Event(), threading.Event()
+        held = []
+
+        def slow_apply(body):
+            # Only the first guest response is held; it keeps its place meanwhile.
+            held.append(1)
+            if len(held) == 1:
+                entered.set()
+                finish.wait(30)
+            return body
+
+        results = []
+
+        def guest():
+            results.append(self.get("/api/projects")[0])
+
+        with mock.patch.object(server, "GUEST_SLOTS", 1), \
+                mock.patch.object(server, "_GUEST_WORK", server._FairGate(1, 4)), \
+                mock.patch.object(server, "GUEST_WAIT_SECONDS", 0.3), \
+                mock.patch.object(server.guest_view, "apply", slow_apply):
+            first = threading.Thread(target=guest)
+            first.start()
+            self.assertTrue(entered.wait(30))
+            started = time.monotonic()
+            status, body = self.get("/api/projects")
+            waited = time.monotonic() - started
+            self.assertEqual((status, body["error"]["code"]), (429, "rate_limited"))
+            self.assertIn("busy", body["error"]["message"])
+            self.assertTrue(0.25 <= waited < 5, waited)
+            # People who are signed in, and routes that need no sign-in, are not held up.
+            self.assertEqual(self.get("/api/projects", token=token)[0], 200)
+            self.assertEqual(self.get("/api/health")[0], 200)
+            finish.set()
+            first.join(30)
+            self.assertEqual(results, [200])
+            # The place is free again, also after a request that ended in an error.
+            self.assertEqual(self.get("/api/projects")[0], 200)
+            self.assertEqual(self.get("/api/projects/prj_missing")[0], 403)
+            self.assertEqual(self.get("/api/projects")[0], 200)
+
+    def test_a_visitor_who_asked_for_less_this_minute_is_served_first(self):
+        from app import server
+        self.seed_demo()
+
+        class RecordingGate:
+            def __init__(self):
+                self.ranks, self.released = [], 0
+
+            def acquire(self, rank, timeout):
+                self.ranks.append((rank, timeout))
+                return True
+
+            def release(self):
+                self.released += 1
+
+        gate = RecordingGate()
+        with mock.patch.object(server, "_GUEST_WORK", gate):
+            for _ in range(3):
+                self.assertEqual(self.get("/api/projects")[0], 200)
+            # Signed-in requests and open routes do not go through the gate.
+            self.assertEqual(self.get("/api/projects", token=self.owner_token())[0], 200)
+            self.assertEqual(self.get("/api/health")[0], 200)
+        # The rank is how many requests this client has made in the window.
+        self.assertEqual(gate.ranks, [(1, server.GUEST_WAIT_SECONDS), (2, server.GUEST_WAIT_SECONDS),
+                                      (3, server.GUEST_WAIT_SECONDS)])
+        self.assertEqual(gate.released, 3)
+
+    def test_a_full_line_refuses_at_once(self):
+        from app import server
+        self.seed_demo()
+        entered, finish = threading.Event(), threading.Event()
+        calls, results = [], []
+
+        def slow_apply(body):
+            calls.append(1)
+            if len(calls) == 1:
+                entered.set()
+                finish.wait(30)
+            return body
+
+        def guest():
+            results.append(self.get("/api/projects")[0])
+
+        gate = server._FairGate(1, 1)
+        with mock.patch.object(server, "_GUEST_WORK", gate), \
+                mock.patch.object(server, "GUEST_WAIT_SECONDS", 20), \
+                mock.patch.object(server.guest_view, "apply", slow_apply):
+            first = threading.Thread(target=guest)
+            first.start()
+            self.assertTrue(entered.wait(30))
+            second = threading.Thread(target=guest)       # takes the one waiting place
+            second.start()
+            deadline = time.monotonic() + 10
+            while gate.waiting() < 1 and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual(gate.waiting(), 1)
+            started = time.monotonic()
+            status, body = self.get("/api/projects")      # no place left: not made to wait
+            self.assertEqual((status, body["error"]["code"]), (429, "rate_limited"))
+            self.assertLess(time.monotonic() - started, 2)
+            finish.set()
+            first.join(30)
+            second.join(30)
+        self.assertEqual(results, [200, 200])
+        self.assertEqual(gate.waiting(), 0)
+
+    def test_the_ceiling_can_be_set_for_a_larger_host(self):
+        import dataclasses
+        from app import server
+        from app.config import Config, reset_config_for_tests
+        from app.errors import RateLimitError
+        self.assertEqual(self.cfg.guest_requests_per_minute, 0)
+        now = 5_000_000.0
+        reset_config_for_tests(dataclasses.replace(self.cfg, guest_requests_per_minute=3))
+        try:
+            for i in range(3):
+                server.guest_rate_check(f"10.2.0.{i}", now)
+            with self.assertRaises(RateLimitError):
+                server.guest_rate_check("10.2.0.9", now)
+        finally:
+            reset_config_for_tests(self.cfg)
+        for value, expected in (("900", 900), ("-5", 0), ("nonsense", 0), ("", 0)):
+            with mock.patch.dict(os.environ, {"FSL_GUEST_REQUESTS_PER_MINUTE": value}):
+                self.assertEqual(Config.from_env().guest_requests_per_minute, expected, value)
 
 
 if __name__ == "__main__":

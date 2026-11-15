@@ -652,7 +652,7 @@ class TestGuestRateLimit(PublicViewCase):
     def test_per_client_window(self):
         from app import server
         from app.errors import RateLimitError
-        self.assertEqual(server.GUEST_LIMIT_PER_MINUTE, 240)
+        self.assertEqual(server.GUEST_LIMIT_PER_MINUTE, 90)
         now = 1_000_000.0
         for _ in range(server.GUEST_LIMIT_PER_MINUTE):
             server.guest_rate_check("1.2.3.4", now)

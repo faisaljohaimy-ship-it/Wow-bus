@@ -731,7 +731,7 @@ class TestThrottle(SignInCase):
 
     def test_gate_serves_fewest_turns_first_then_earliest(self):
         from app import server
-        gate = server._VerifyGate(1, 8)
+        gate = server._FairGate(1, 8)
         self.assertTrue(gate.acquire(0, 0.1))            # the slot is taken
         order, threads = [], []
 
@@ -756,7 +756,7 @@ class TestThrottle(SignInCase):
 
     def test_full_line_gives_way_only_to_a_client_with_fewer_turns(self):
         from app import server
-        gate = server._VerifyGate(1, 2)
+        gate = server._FairGate(1, 2)
         self.assertTrue(gate.acquire(0, 0.1))
         results, threads = {}, []
 
@@ -791,7 +791,7 @@ class TestThrottle(SignInCase):
 
     def test_gate_wait_times_out_and_leaves_the_line(self):
         from app import server
-        gate = server._VerifyGate(1, 8)
+        gate = server._FairGate(1, 8)
         self.assertTrue(gate.acquire(0, 0.1))
         started = time.monotonic()
         self.assertFalse(gate.acquire(0, 0.2))

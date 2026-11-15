@@ -67,6 +67,7 @@ problem, and the sign-in page explains what to change:
 | `owner_email_ignored` | `FSL_OWNER_EMAIL` is not an email and an owner account at another address already exists; nothing was created or changed | sign in with that owner address, or fix the value |
 | `owner_password_generated` | no password was set | read the one-time password in the service logs |
 | `data_dir_unwritable` | the data directory (or an explicit `FSL_DB_PATH` / `FSL_EVIDENCE_DIR`) cannot be written | that location is temporary; fix the mount/ownership |
+| `public_view_unrecognized` | `FSL_PUBLIC_VIEW` is set to something other than a yes or no value; the public view is off | set it to `1` (or `0`), redeploy |
 | `demo_sample_missing` | `FSL_PUBLIC_VIEW` is on but `samples/vulnerable-app` is not in the image | rebuild with `deploy/Dockerfile.fly` (it copies `samples/`) |
 
 Only the location that cannot be written moves to temporary storage: an explicit
@@ -206,19 +207,36 @@ for a guest, so the list is empty for the first seconds after a start and is as
 fresh as the last sync.
 
 ### Guest rate limits
-Both are per API process, in fixed one-minute windows, and answer HTTP 429:
+Guests are limited in three ways, per API process. The first two count in fixed
+one-minute windows; all three answer HTTP 429.
 
 | Limit | Value | Message |
 |---|---|---|
-| per client (IPv4 address or IPv6 /64) | 240 requests/minute | `rate limit exceeded; slow down or sign in` |
-| all guests together | 1200 requests/minute | `the public view is busy; try again in a minute` |
+| per client (IPv4 address or IPv6 /64) | 90 requests/minute | `rate limit exceeded; slow down or sign in` |
+| all guests together | 240 requests/minute | `the public view is busy; try again in a minute` |
+| guest requests being worked on at once | 2, with up to 16 waiting for at most 4 seconds | `the public view is busy; try again in a minute` |
 
-Signed-in requests are never counted. A guest is counted under the same client
-address as a sign-in, so the proxy settings below apply here too: behind an
-undeclared proxy all visitors share the 240. The per-client table holds 4096 clients;
-when it is full the oldest entries are forgotten instead of new visitors being
-refused, and the global limit bounds the total regardless of how many addresses
-the requests come from.
+The numbers are sized for the smallest host (a tenth of a CPU), where the
+heaviest guest route, the JSON report, costs about 15 ms of CPU, so about seven
+requests a second use the whole instance. Measured there on this version with a
+flood of 20 guest requests a second from six addresses: the health check answered
+in 0.3 s at worst and an owner sign-in in 1.5 s (before the third limit existed,
+both took over 20 s and timed out). On a larger host raise the ceiling with
+`FSL_GUEST_REQUESTS_PER_MINUTE`.
+
+Among the guests that wait, the client that has asked for the least in the
+current minute is served first, so one visitor opening a page is not held behind
+an address that keeps asking. Signed-in requests are never counted and never
+wait behind guests. A guest is counted under the same client address as a
+sign-in, so the proxy settings below apply here too: behind an undeclared proxy
+all visitors share the 90. The per-client table holds 4096 clients; when it is
+full the oldest entries are forgotten instead of new visitors being refused, and
+the global limit bounds the total regardless of how many addresses the requests
+come from.
+
+What these limits do not stop: every refused request still costs a few
+milliseconds, so a flood of several dozen requests a second of any kind uses up
+a tenth of a CPU. That is a volumetric attack and belongs to the platform's edge.
 
 ### Demo scans across restarts
 On an **ephemeral disk** (the free Render instance) every start begins with an
