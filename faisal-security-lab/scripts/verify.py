@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-"""Sync the connector registry against live tool readiness and print the honest
-state of every tool + connector. Use after installing/updating tools."""
+"""Sync the connector registry against live tool readiness and print the state
+of every tool and connector. Use after installing or updating tools.
+
+It prepares the database if there is none yet, but never creates the owner
+account: that is left to the first server start, which is where a generated
+owner password is shown."""
 from __future__ import annotations
 
 import json
@@ -15,7 +19,7 @@ from app import store                            # noqa: E402
 
 
 def main():
-    init_platform()
+    init_platform(create_owner=False)
     print(f"{'connector':<18}{'type':<9}{'state':<12}{'version':<28}detail")
     print("-" * 100)
     for c in sorted(all_connectors(), key=lambda x: x.name):

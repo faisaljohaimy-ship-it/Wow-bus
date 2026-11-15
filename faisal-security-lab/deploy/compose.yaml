@@ -1,13 +1,22 @@
 # API host + isolated worker(s) sharing a data volume. The worker is where tools
 # run; it is resource-bounded and runs as a non-root user.
+#
+# The API service creates the owner account on its first start. Set
+# FSL_OWNER_PASSWORD (10 characters or more) in the environment of the
+# `docker compose` command to choose the password. If it is unset or empty, a
+# password is generated and shown once in the output of `docker compose logs api`.
 services:
   api:
     build: { context: .., dockerfile: deploy/Dockerfile.api }
     environment:
       FSL_OWNER_EMAIL: ${FSL_OWNER_EMAIL:-owner@faisal-security-lab.local}
+      FSL_OWNER_PASSWORD: ${FSL_OWNER_PASSWORD:-}
       FSL_NO_WORKER: "1"
       FSL_ENVIRONMENT: ${FSL_ENVIRONMENT:-lab}
-    ports: ["8787:8787"]
+    # Plain HTTP, reachable from this machine only. To serve other machines,
+    # put a reverse proxy that terminates TLS in front of it; do not publish
+    # this port on all interfaces.
+    ports: ["127.0.0.1:8787:8787"]
     volumes: ["fsl-data:/data"]
     restart: unless-stopped
 

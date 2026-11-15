@@ -1614,7 +1614,8 @@ def main():
     boot = info["owner_bootstrap"]
     if boot.get("generated"):
         print(f"[init] owner created: {boot['email']}", file=sys.stderr)
-        print(f"[init] ONE-TIME owner password: {boot['password']}", file=sys.stderr)
+        print(f"[init] generated owner password, shown once: {boot['password']}",
+              file=sys.stderr)
     print(f"[init] catalog={info['catalog_seeded']} ai_available={info['ai_available']}",
           file=sys.stderr)
     for line in client_address_report(cfg, os.environ):

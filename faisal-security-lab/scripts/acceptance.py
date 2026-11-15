@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """Runs the 10 release-acceptance gates end-to-end against a live loop with real
-tools and writes re-verifiable evidence to evidence/acceptance-report.json.
+tools and writes the result as JSON.
+
+The report goes to var/acceptance-report.json, which git ignores, so running
+the gates leaves the working tree clean. With --evidence the same report is
+also written to evidence/acceptance-report.json, the tracked reference copy.
 
 Each gate's score is earned only when its concrete check passes on this build.
-Blocked/undetermined items are reported honestly, never counted as passing.
+Blocked/undetermined items are reported as such, never counted as passing.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shutil
@@ -17,6 +22,28 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 SAMPLE = ROOT / "samples" / "vulnerable-app"
+REPORT = ROOT / "var" / "acceptance-report.json"                 # every run; ignored by git
+EVIDENCE_REPORT = ROOT / "evidence" / "acceptance-report.json"   # --evidence only; tracked
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run the 10 release-acceptance gates and write the report to "
+                    "var/acceptance-report.json (not tracked by git).")
+    parser.add_argument("--evidence", action="store_true",
+                        help="also rewrite the tracked copy, evidence/acceptance-report.json")
+    return parser.parse_args(argv)
+
+
+def report_paths(evidence: bool) -> list[Path]:
+    return [REPORT, EVIDENCE_REPORT] if evidence else [REPORT]
+
+
+def write_report(report: dict, paths: list[Path]) -> None:
+    text = json.dumps(report, ensure_ascii=False, indent=2)
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
 
 
 def setup():
@@ -47,7 +74,8 @@ def run_jobs():
     return n
 
 
-def main():
+def main(argv: list[str] | None = None):
+    args = parse_args(argv)
     cfg, info, owner, tmp = setup()
     from app import store, queue, policy, findings, reports, evidence
     from app.connectors import get_connector, connector_names
@@ -246,15 +274,15 @@ def main():
         "tool_coverage": {t["name"]: t["state"] for t in store.list_tool_registry()},
         "gates": gates,
     }
-    out = ROOT / "evidence" / "acceptance-report.json"
-    out.write_text(json.dumps(report, ensure_ascii=False, indent=2))
+    written = report_paths(args.evidence)
+    write_report(report, written)
     # Print tool states + per-gate evidence so a CI failure is self-diagnosing.
     print("tool states:", json.dumps(report["tool_coverage"], ensure_ascii=False))
     print(json.dumps({"score": report["score"],
                       "gates": [{"gate": g["gate"], "pass": g["pass"], "title": g["title"],
                                  "evidence": g["evidence"]} for g in gates]},
                      ensure_ascii=False, indent=2))
-    print(f"\nEvidence written to {out}")
+    print("\nReport written to " + " and ".join(str(p.relative_to(ROOT)) for p in written))
     return 0 if passed == len(gates) else 1
 
 
