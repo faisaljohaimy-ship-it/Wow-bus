@@ -83,8 +83,9 @@ make acceptance               # the 10 gates → var/acceptance-report.json
 ```
 
 - **Tests.** `make test` passed on Python 3.11, 3.12 and 3.13 with Semgrep,
-  Bandit, Gitleaks, pip-audit and OSV-Scanner installed: 362 tests, 1 skipped
-  (a container entrypoint test that is skipped when the suite runs as root).
+  Bandit, Gitleaks, pip-audit and OSV-Scanner installed: 417 tests, 2 skipped
+  (two tests that need a non-root user — a container entrypoint test and a
+  source-staging permission test — skipped when the suite runs as root).
   The suite covers roles and project isolation, the policy check and scopes,
   destination checks, queue idempotency and lost workers, connectors on known
   and clean input, de-duplication and reopening, redaction, the AI layer's
