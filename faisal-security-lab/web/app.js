@@ -909,7 +909,17 @@ function agentHeader(){
   const col = (title, arr, cls) => `<div class="grp-col ${cls}"><h3>${esc(title)}</h3>`
     + arr.map(g=>`<div class="grp"><span class="gi">${g.icon}</span><div><b>${esc(L(g.ar,g.en))}</b>`
       + `<div class="small muted">${esc(L(g.dar,g.den))}</div></div></div>`).join("") + `</div>`;
-  return `<div class="term" aria-label="command">
+  return `<div class="agent-hero">
+      <canvas id="matrixrain" class="matrixrain" aria-hidden="true"></canvas>
+      <div class="scan" aria-hidden="true"></div>
+      <div class="hero-inner">
+        ${MASK("lg")}
+        <div class="hero-title glitch" id="herotitle" data-text="${esc(L("الوكيل","AGENT"))}">${esc(L("الوكيل","AGENT"))}</div>
+        <div class="hero-sub small flicker">${esc(L("وكيلٌ واحد يقود الهجوم والدفاع — محاكاة كاملة","one agent — running attack and defence, fully simulated"))}</div>
+      </div>
+    </div>
+    ${codeHero()}
+    <div class="term" aria-label="command">
       <span class="prompt">agent@faisal</span><span class="muted">:~$</span>
       <input id="cmdbar" autocomplete="off" spellcheck="false"
         placeholder="${esc(L("اكتب كلمة مفتاحًا: sim · teams · lab · recon · help","type a keyword: sim · teams · lab · recon · help"))}">
@@ -1013,6 +1023,60 @@ function helpView(){
   return `<div class="card term-card"><h3>${esc(L("الكلمات المفتاحية","Keywords"))}</h3><div class="timeline">${rows}</div></div>`;
 }
 
+// Matrix-style code rain behind the agent, and a "decoding" scramble on the
+// title. Both run only when motion is on; they stop themselves when the canvas
+// leaves the page (navigating away) and never run on the server.
+let _matrixRAF = 0;
+function stopMatrix(){ if(_matrixRAF){ cancelAnimationFrame(_matrixRAF); _matrixRAF = 0; } }
+function startMatrix(){
+  stopMatrix();
+  const cv = document.getElementById("matrixrain");
+  if(!cv || !motionIsOn()) return;
+  const ctx = cv.getContext && cv.getContext("2d"); if(!ctx) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const rect = cv.getBoundingClientRect();
+  cv.width = Math.max(1, Math.floor(rect.width * dpr));
+  cv.height = Math.max(1, Math.floor(rect.height * dpr));
+  const glyphs = "01<>/\\{}[]()=+*#$%&;:アカサタナヒ0123456789ABCDEF".split("");
+  const fs = Math.max(12, 14 * dpr);
+  const cols = Math.max(6, Math.floor(cv.width / fs));
+  const drops = new Array(cols).fill(0).map(() => (Math.random() * cv.height / fs) | 0);
+  let last = 0;
+  function frame(ts){
+    if(!document.getElementById("matrixrain")){ stopMatrix(); return; }   // left the screen
+    if(ts - last >= 55){                                                   // ~18fps, light on a phone
+      last = ts;
+      ctx.fillStyle = "rgba(0,0,0,0.14)"; ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.font = fs + "px ui-monospace,Consolas,monospace";
+      for(let i = 0; i < cols; i++){
+        const ch = glyphs[(Math.random() * glyphs.length) | 0];
+        ctx.fillStyle = Math.random() < 0.12 ? "#ff3b4d" : "#2ecc5a";
+        ctx.fillText(ch, i * fs, drops[i] * fs);
+        if(drops[i] * fs > cv.height && Math.random() > 0.975) drops[i] = 0;
+        drops[i]++;
+      }
+    }
+    _matrixRAF = requestAnimationFrame(frame);
+  }
+  _matrixRAF = requestAnimationFrame(frame);
+}
+function scrambleText(el, finalText, dur=900){
+  if(!el) return;
+  if(!motionIsOn() || !window.performance){ el.textContent = finalText; return; }
+  const chars = "!<>-_\\/[]{}=+*^?#01ABCDEF§$%&";
+  const n = finalText.length, start = performance.now();
+  function step(t){
+    if(el !== document.getElementById(el.id)){ return; }   // replaced by a re-render
+    const p = Math.min(1, (t - start) / dur), reveal = Math.floor(p * n);
+    let out = "";
+    for(let i = 0; i < n; i++)
+      out += (i < reveal || finalText[i] === " ") ? finalText[i] : chars[(Math.random() * chars.length) | 0];
+    el.textContent = out;
+    if(p < 1) requestAnimationFrame(step); else el.textContent = finalText;
+  }
+  requestAnimationFrame(step);
+}
+
 async function scrAgent(ctx){
   if(!S.agentView) S.agentView="sim";
   let body="";
@@ -1023,6 +1087,8 @@ async function scrAgent(ctx){
   else body=helpView();
   if(ctx.seq!==RENDER_SEQ) return;
   setMain(ctx, topbar(t("agent")) + agentHeader() + `<div class="agent-body">${body}</div>`);
+  startMatrix();
+  const ht=document.getElementById("herotitle"); if(ht) scrambleText(ht, L("الوكيل","AGENT"), 850);
   const cb=document.getElementById("cmdbar"); if(cb) cb.focus();
 }
 

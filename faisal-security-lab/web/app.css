@@ -319,3 +319,44 @@ body.guest form,body.guest [data-owner]{display:none !important}
   .agent-groups,.scorebar{grid-template-columns:1fr}
   .evline{white-space:normal}
 }
+
+/* ---- One agent: hero with code rain, glitch title, flicker and scanlines ---- */
+.agent-hero{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:12px;
+  background:#030503;min-height:168px;display:grid;place-items:center;margin:4px 0 10px}
+.matrixrain{position:absolute;inset:0;width:100%;height:100%;opacity:.55;pointer-events:none}
+.agent-hero .scan{position:absolute;inset:0;pointer-events:none;z-index:1;opacity:.5;
+  background:repeating-linear-gradient(to bottom,rgba(0,0,0,0) 0,rgba(0,0,0,0) 2px,rgba(0,0,0,.22) 3px)}
+.hero-inner{position:relative;z-index:2;text-align:center;padding:14px 12px}
+.mask.lg{width:90px;height:auto;filter:drop-shadow(0 0 10px rgba(255,45,68,.45))}
+.hero-title{font-family:ui-monospace,Consolas,monospace;font-weight:800;
+  font-size:clamp(28px,8vw,54px);letter-spacing:8px;color:#ff2d44;margin-top:6px;
+  text-shadow:0 0 14px rgba(255,45,68,.6)}
+.hero-sub{color:#8fe3a0;font-family:ui-monospace,Consolas,monospace;margin-top:4px;letter-spacing:1px}
+/* Glitch: two offset colour ghosts clipped on a shifting band. */
+.glitch{position:relative;display:inline-block}
+.glitch::before,.glitch::after{content:attr(data-text);position:absolute;left:0;top:0;width:100%;
+  overflow:hidden;pointer-events:none}
+.glitch::before{transform:translate(2px,0);color:#00e5ff;clip-path:inset(0 0 55% 0);
+  animation:glitchTop 2.3s infinite steps(2) alternate-reverse;opacity:.75}
+.glitch::after{transform:translate(-2px,0);color:#ff003c;clip-path:inset(55% 0 0 0);
+  animation:glitchBot 1.9s infinite steps(2) alternate-reverse;opacity:.75}
+@keyframes glitchTop{
+  0%{clip-path:inset(0 0 60% 0);transform:translate(2px,-1px)}
+  25%{clip-path:inset(10% 0 40% 0);transform:translate(-2px,0)}
+  50%{clip-path:inset(30% 0 25% 0);transform:translate(3px,1px)}
+  75%{clip-path:inset(5% 0 70% 0);transform:translate(-1px,0)}
+  100%{clip-path:inset(20% 0 45% 0);transform:translate(2px,-1px)}}
+@keyframes glitchBot{
+  0%{clip-path:inset(60% 0 0 0);transform:translate(-2px,1px)}
+  25%{clip-path:inset(45% 0 15% 0);transform:translate(2px,0)}
+  50%{clip-path:inset(30% 0 30% 0);transform:translate(-3px,-1px)}
+  75%{clip-path:inset(70% 0 5% 0);transform:translate(1px,0)}
+  100%{clip-path:inset(50% 0 20% 0);transform:translate(-2px,1px)}}
+.flicker{animation:flicker 3.6s infinite steps(1)}
+@keyframes flicker{0%,18%,22%,55%,57%,100%{opacity:1}20%{opacity:.35}56%{opacity:.5}}
+/* Honour the motion setting: freeze these when motion is off or reduced. */
+.nomotion .glitch::before,.nomotion .glitch::after,.nomotion .flicker{animation:none}
+@media (prefers-reduced-motion:reduce){
+  html:not(.motion) .glitch::before,html:not(.motion) .glitch::after,
+  html:not(.motion) .flicker{animation:none}
+}
