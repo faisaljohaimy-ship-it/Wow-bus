@@ -214,9 +214,10 @@ def ensure_system_user(email: str = SYSTEM_DEMO_EMAIL,
 
 
 def bootstrap_owner() -> dict:
-    """Ensure an owner exists. Password comes from FSL_OWNER_PASSWORD, else a
-    one-time bootstrap password is generated and returned (surfaced once, to the
-    console only — never logged into the DB in plaintext).
+    """Ensure an owner exists. The password comes from FSL_OWNER_PASSWORD; when
+    that is unset a password is generated and returned, so the caller can show
+    it once (the database only ever holds its hash). The generated password is
+    not temporary: it stays the owner's password.
 
     Operator input is typed by hand into a hosting dashboard, so a bad value
     must never crash the service. Instead this returns `notices` (stable codes)
@@ -225,7 +226,7 @@ def bootstrap_owner() -> dict:
       owner_email_ignored       FSL_OWNER_EMAIL is not an email and an owner at another
                                 address exists; nothing is created or changed
       owner_password_too_short  FSL_OWNER_PASSWORD is too short; NO owner is created
-      owner_password_generated  no password was set; a one-time one is in the logs
+      owner_password_generated  no password was set; a generated one was shown once in the logs
     """
     cfg = get_config()
     db = get_db()

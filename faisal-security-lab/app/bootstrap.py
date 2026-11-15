@@ -35,8 +35,8 @@ _NOTICE_LOG = {
         f"FSL_OWNER_PASSWORD is shorter than {auth.MIN_PASSWORD_LENGTH} characters; "
         "NO owner account was created. Set a longer value and redeploy.",
     "owner_password_generated":
-        "FSL_OWNER_PASSWORD is not set; a one-time owner password was generated "
-        "(printed once below).",
+        "FSL_OWNER_PASSWORD is not set; an owner password was generated. It is "
+        "shown once, in the start-up log, and stays the owner's password.",
     "owner_bootstrap_failed":
         "owner account bootstrap failed unexpectedly; see the error above.",
     "data_dir_unwritable":
@@ -60,7 +60,14 @@ def describe_notice(code: str) -> str:
     return _NOTICE_LOG.get(code, code)
 
 
-def init_platform(sync_tools: bool = True) -> dict:
+def init_platform(sync_tools: bool = True, *, create_owner: bool = True) -> dict:
+    """Prepare the database, the owner account, the catalog and the tool registry.
+
+    create_owner=False leaves the accounts alone. It is for commands that only
+    inspect the installation (scripts/verify.py): a generated owner password is
+    shown once, by the caller that created the account, so a command that does
+    not show it must not be the one that creates the account.
+    """
     cfg = get_config()
     get_db()  # creates schema
     notices: list[str] = []
@@ -74,12 +81,16 @@ def init_platform(sync_tools: bool = True) -> dict:
             and hasattr(os, "geteuid") and os.geteuid() == 0):
         notices.append("running_as_root")
 
-    try:
-        boot = auth.bootstrap_owner()
-    except Exception as e:  # never let owner setup take the service down
-        print(f"[setup] owner bootstrap error: {type(e).__name__}: {e}", file=sys.stderr)
-        boot = {"email": cfg.owner_email, "created": False, "generated": False,
-                "password": None, "notices": ["owner_bootstrap_failed"]}
+    if create_owner:
+        try:
+            boot = auth.bootstrap_owner()
+        except Exception as e:  # never let owner setup take the service down
+            print(f"[setup] owner bootstrap error: {type(e).__name__}: {e}", file=sys.stderr)
+            boot = {"email": cfg.owner_email, "created": False, "generated": False,
+                    "password": None, "notices": ["owner_bootstrap_failed"]}
+    else:
+        boot = {"email": None, "created": False, "generated": False,
+                "password": None, "notices": [], "skipped": True}
     notices += [n for n in boot.get("notices", []) if n not in notices]
 
     seeded = store.seed_catalog(cfg.seed_catalog_path)
@@ -90,7 +101,7 @@ def init_platform(sync_tools: bool = True) -> dict:
     ADMIN_NOTICES[:] = notices
     SETUP_NOTICES[:] = [n for n in notices if n not in PRIVATE_NOTICE_CODES]
     return {
-        "owner_bootstrap": boot,          # includes a generated password ONCE if created
+        "owner_bootstrap": boot,          # a generated password is in it only on the call that made it
         "catalog_seeded": seeded,
         "connectors": reg,
         "ai_available": cfg.ai.available,
