@@ -3,7 +3,7 @@ PY ?= python3
 
 help:
 	@echo "Faisal Security Lab — targets:"
-	@echo "  make install-tools        install the security tools at pinned versions (semgrep, gitleaks, osv-scanner, bandit, pip-audit); needs root, or see: bash scripts/install-tools.sh --help"
+	@echo "  make install-tools        install the security tools at pinned versions (semgrep, gitleaks, osv-scanner, bandit, pip-audit; trivy is optional); needs root, or see: bash scripts/install-tools.sh --help"
 	@echo "  make init                 initialize db, owner, catalog, tool registry"
 	@echo "  make serve                run the API + UI + in-process worker (http://127.0.0.1:8787)"
 	@echo "  make worker               run a standalone scan worker (separate process)"
@@ -37,4 +37,4 @@ verify:
 	$(PY) scripts/verify.py
 
 clean:
-	rm -rf var __pycache__ app/__pycache__ app/connectors/__pycache__ app/ai/__pycache__ tests/__pycache__
+	rm -rf var __pycache__ app/__pycache__ app/connectors/__pycache__ app/ai/__pycache__ tests/__pycache__ scripts/__pycache__

@@ -1,6 +1,6 @@
 name: faisal-security-lab CI
 
-# The two extra paths are files outside faisal-security-lab/ that the tests read.
+# The extra paths are files outside faisal-security-lab/ that the tests read.
 on:
   push:
     branches: [main]
@@ -8,11 +8,15 @@ on:
       - "faisal-security-lab/**"
       - ".github/workflows/faisal-security-lab-ci.yml"
       - "render.yaml"
+      - ".gitignore"
+      - ".gitleaksignore"
   pull_request:
     paths:
       - "faisal-security-lab/**"
       - ".github/workflows/faisal-security-lab-ci.yml"
       - "render.yaml"
+      - ".gitignore"
+      - ".gitleaksignore"
 
 # The job only reads the repository: it uses no secrets and writes nothing back.
 permissions:
@@ -53,8 +57,9 @@ jobs:
             fi
           done
 
+      # The command the README and CONTRIBUTING tell people to run.
       - name: Unit + integration tests
-        run: python3 -W ignore -m unittest discover -s tests -p 'test_*.py'
+        run: make test
 
       - name: Acceptance gates
         run: python3 scripts/acceptance.py

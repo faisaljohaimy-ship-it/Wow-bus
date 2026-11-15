@@ -241,7 +241,8 @@ def _enqueue_scans(project: dict, asset: dict, scope: dict, connectors: list[str
         if not decision.allow:
             audit.record("scan.denied", actor=DEMO_ACTOR, project_id=project["id"],
                          target=name, outcome="denied",
-                         detail={"reason": decision.reason, "code": decision.code})
+                         detail={"reason": decision.reason, "code": decision.code,
+                                 **decision.detail})
             skipped[name] = f"policy:{decision.code}"
             continue
         job = None

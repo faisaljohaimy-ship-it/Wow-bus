@@ -251,6 +251,21 @@ class TestDocumentedSettingNames(unittest.TestCase):
                 with self.subTest(file=path.name, setting=name):
                     self.assertIn(name, code)
 
+    def test_every_setting_the_code_reads_is_named_in_the_reference_file(self):
+        readers = [*sorted((ROOT / "app").rglob("*.py")), *sorted((ROOT / "scripts").iterdir()),
+                   *sorted((ROOT / "deploy").iterdir())]
+        reference = set(re.findall(r"FSL_[A-Z0-9_]+", (ROOT / ".env.example").read_text()))
+        read = set()
+        for path in readers:
+            if path.is_file():
+                read.update(re.findall(r"FSL_[A-Z0-9_]+", path.read_text()))
+        self.assertIn("FSL_PORT", read)
+        for name in sorted(read):
+            if name.endswith("_"):          # a family of settings (FSL_OWNER_*)
+                continue
+            with self.subTest(setting=name):
+                self.assertIn(name, reference)
+
 
 # The standard library has no YAML reader. The two files read below keep to a
 # plain layout (one key per line, block lists), which these helpers follow.
@@ -278,6 +293,13 @@ def workflow_paths(text: str, trigger: str) -> list[str]:
     under_trigger = "\n".join(yaml_block(text, trigger, 2))
     return [re.sub(r"^\s*-\s*", "", line).strip().strip("\"'")
             for line in yaml_block(under_trigger, "paths", 4)]
+
+
+def workflow_step_command(text: str, name: str) -> str:
+    """The command of the named step when it is written on one line (`run: ...`)."""
+    lines = text.splitlines()
+    at = next(i for i, line in enumerate(lines) if line.strip() == f"- name: {name}")
+    return re.fullmatch(r"\s+run: (.+)", lines[at + 1]).group(1).strip()
 
 
 def workflow_step_script(text: str, name: str) -> str:
@@ -311,13 +333,26 @@ class TestWorkflowFile(unittest.TestCase):
         self.assertNotIn("github.token", self.text)
 
     def test_both_triggers_cover_every_file_the_tests_read(self):
+        # Outside the platform's directory the tests read this workflow, the
+        # Render file and the repository's two ignore files (test_tooling.py).
         needed = [f"{ROOT.name}/**", WORKFLOW.relative_to(REPO).as_posix(),
-                  RENDER_YAML.relative_to(REPO).as_posix()]
+                  RENDER_YAML.relative_to(REPO).as_posix(), ".gitignore", ".gitleaksignore"]
         self.assertEqual(needed, ["faisal-security-lab/**",
-                                  ".github/workflows/faisal-security-lab-ci.yml", "render.yaml"])
+                                  ".github/workflows/faisal-security-lab-ci.yml", "render.yaml",
+                                  ".gitignore", ".gitleaksignore"])
+        for name in needed[1:]:
+            with self.subTest(file=name):
+                self.assertTrue((REPO / name).is_file())
         for trigger in ("push", "pull_request"):
             with self.subTest(trigger=trigger):
                 self.assertEqual(sorted(workflow_paths(self.text, trigger)), sorted(needed))
+
+    def test_the_test_step_runs_the_command_the_documents_name(self):
+        # Contributors are told to run "make test", so that is what CI runs:
+        # a test that fails only under make is then seen here too.
+        self.assertEqual(workflow_step_command(self.text, "Unit + integration tests"), "make test")
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertRegex(makefile, r"(?m)^test:\n\t\$\(PY\) .*-m unittest discover -s tests\b")
 
     @unittest.skipUnless(shutil.which("bash"), "needs bash")
     def test_a_missing_tool_is_announced_without_failing_the_job(self):

@@ -227,12 +227,29 @@ class TestInstallToolsScript(unittest.TestCase):
         self.assertNotIn(" OK: ", proc.stdout)
 
 
-def load_acceptance_script():
-    spec = importlib.util.spec_from_file_location("fsl_acceptance_script",
-                                                  ROOT / "scripts" / "acceptance.py")
+def load_script(name: str):
+    spec = importlib.util.spec_from_file_location(f"fsl_{name}_script",
+                                                  ROOT / "scripts" / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)       # defines functions only; the gates run from main()
+    spec.loader.exec_module(module)       # defines functions only; the work runs from main()
     return module
+
+
+def load_acceptance_script():
+    return load_script("acceptance")
+
+
+def make_output(*args: str) -> str:
+    """What `make ARGS` prints, the same however the suite itself was started.
+    Under "make test" an inner make would inherit the outer one's settings and
+    print "Entering directory" and "Leaving directory" lines around its output."""
+    env = {key: value for key, value in os.environ.items()
+           if key not in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL")}
+    proc = subprocess.run(["make", "--no-print-directory", *args], cwd=str(ROOT), env=env,
+                          capture_output=True, text=True, timeout=60)
+    if proc.returncode != 0:
+        raise AssertionError(f"make {' '.join(args)} failed: {proc.stderr}")
+    return proc.stdout
 
 
 class TestAcceptanceReportLocation(unittest.TestCase):
@@ -272,19 +289,77 @@ class TestAcceptanceReportLocation(unittest.TestCase):
         tracked = "faisal-security-lab/evidence/acceptance-report.json"
         self.assertEqual(git("ls-files", "--", tracked).stdout.strip(), tracked)
 
-    @unittest.skipUnless(shutil.which("make"), "needs make")
-    def test_make_targets_choose_between_the_two(self):
-        def planned(target: str) -> str:
-            proc = subprocess.run(["make", "-n", target], cwd=str(ROOT), capture_output=True,
-                                  text=True, timeout=60)
-            self.assertEqual(proc.returncode, 0, proc.stderr)
-            return proc.stdout
-        self.assertRegex(planned("acceptance"), r"scripts/acceptance\.py\s*$")
-        self.assertRegex(planned("acceptance-evidence"), r"scripts/acceptance\.py --evidence\s*$")
-        listed = subprocess.run(["make", "help"], cwd=str(ROOT), capture_output=True, text=True,
-                                timeout=60).stdout
+    def check_make_targets(self):
+        self.assertRegex(make_output("-n", "acceptance"), r"scripts/acceptance\.py\s*$")
+        self.assertRegex(make_output("-n", "acceptance-evidence"),
+                         r"scripts/acceptance\.py --evidence\s*$")
+        listed = make_output("help")
         self.assertRegex(listed, r"make acceptance +.*var/acceptance-report\.json")
         self.assertRegex(listed, r"make acceptance-evidence +.*evidence/acceptance-report\.json")
+
+    @unittest.skipUnless(shutil.which("make"), "needs make")
+    def test_make_targets_choose_between_the_two(self):
+        self.check_make_targets()
+
+    @unittest.skipUnless(shutil.which("make"), "needs make")
+    def test_make_targets_read_the_same_when_make_started_the_suite(self):
+        # What a recipe of "make test" hands to the commands it starts.
+        with mock.patch.dict(os.environ, {"MAKELEVEL": "1", "MAKEFLAGS": "w", "MFLAGS": "-w"}):
+            self.check_make_targets()
+
+
+@unittest.skipUnless(shutil.which("make"), "needs make")
+class TestMakefile(unittest.TestCase):
+    def test_help_names_every_tool_the_install_script_installs(self):
+        script = INSTALL.read_text(encoding="utf-8")
+        installed = re.search(r"^for t in ([a-z -]+); do$", script, re.M).group(1).split()
+        self.assertEqual(sorted(installed), ["bandit", "gitleaks", "osv-scanner", "pip-audit",
+                                             "semgrep", "trivy"])
+        line = next(line for line in make_output("help").splitlines()
+                    if "make install-tools" in line)
+        for tool in installed:
+            with self.subTest(tool=tool):
+                self.assertIn(tool, line)
+        # The script goes on without Trivy, and says so; the help does too.
+        self.assertIn("trivy BLOCKED: download failed (optional", script)
+        self.assertIn("trivy is optional", line)
+
+    def test_clean_removes_the_compiled_files_of_every_python_directory(self):
+        planned = make_output("-n", "clean")
+        for directory in ("app", "app/connectors", "app/ai", "tests", "scripts"):
+            with self.subTest(directory=directory):
+                self.assertTrue((ROOT / directory).is_dir())
+                self.assertRegex(planned, rf"(^|\s){re.escape(directory)}/__pycache__(\s|$)")
+
+
+class TestVerifyTable(unittest.TestCase):
+    """`make verify` prints a table whose last column is free text."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.script = load_script("verify")
+
+    def test_a_long_detail_is_wrapped_between_words_and_not_cut(self):
+        # What the AI red-team connector reports when no provider is set.
+        detail = ("blocked: no AI provider configured "
+                  "(set FSL_AI_PROVIDER/FSL_AI_MODEL/FSL_AI_API_KEY)")
+        self.assertIn(detail, (ROOT / "app" / "ai" / "redteam.py").read_text(encoding="utf-8"))
+        lines = self.script.table_row("ai_redteam", "api", "installed", "probes=4",
+                                      detail).splitlines()
+        self.assertGreater(len(lines), 1)
+        self.assertTrue(lines[0].startswith("ai_redteam        api      installed   probes=4"))
+        column = self.script.DETAIL_AT
+        # Every word is whole: the lines put together again are the detail.
+        self.assertEqual(" ".join(line[column:] for line in lines), detail)
+        for line in lines[1:]:
+            self.assertEqual(line[:column].strip(), "")   # continues under its own column
+
+    def test_a_short_detail_stays_on_the_row(self):
+        row = self.script.table_row("bandit", "cli", "ready", "bandit 1.9.4", "resolved on PATH")
+        self.assertEqual(row, "bandit            cli      ready       bandit 1.9.4"
+                              "                resolved on PATH")
+        self.assertEqual(self.script.table_row("trivy", "cli", "blocked", "-", "").rstrip(),
+                         "trivy             cli      blocked     -")
 
 
 class TestLicenceLabels(unittest.TestCase):
@@ -305,8 +380,10 @@ class TestLicenceLabels(unittest.TestCase):
 
     def test_connectors_that_run_an_external_tool_carry_that_tools_licence(self):
         from app.connectors import get_connector
-        expected = {"semgrep": "LGPL-2.1", "bandit": "Apache-2.0", "pip_audit": "Apache-2.0",
-                    "gitleaks": "MIT", "osv_scanner": "Apache-2.0", "trivy": "Apache-2.0"}
+        # Semgrep 1.185.0 declares "License-Expression: LGPL-2.1-or-later".
+        expected = {"semgrep": "LGPL-2.1-or-later", "bandit": "Apache-2.0",
+                    "pip_audit": "Apache-2.0", "gitleaks": "MIT", "osv_scanner": "Apache-2.0",
+                    "trivy": "Apache-2.0"}
         for name, licence in expected.items():
             with self.subTest(connector=name):
                 self.assertEqual(get_connector(name).license, licence)
