@@ -34,8 +34,8 @@ from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import urlsplit, parse_qs
 
-from . import (audit, auth, demo, evidence, findings as F, guest_view, metrics, policy, queue,
-               reports, store, util)
+from . import (audit, auth, demo, evidence, findings as F, guest_view, lab, metrics, policy, queue,
+               reports, sim, store, teams, util)
 from .ai import agents, evalset
 from .bootstrap import ADMIN_NOTICES, SETUP_NOTICES, describe_notice, init_platform
 from .config import get_config
@@ -1250,6 +1250,72 @@ def ai_report(req: Req):
     m = metrics.snapshot(pid)
     top = F.list_findings(pid, limit=15)
     return 200, {"report": agents.reporting(m, top)}
+
+
+# ===========================================================================
+# Red/Blue teams, the training lab, and the attack/defence simulation.
+# All of this runs only on built-in, make-believe material: the lab solves
+# bundled ciphers and the simulation plays out on a virtual network. None of it
+# touches a real target, so these are safe read-only (GET) routes open to the
+# public view. They compute on demand and write nothing.
+# ===========================================================================
+def _q_int(value, default, lo, hi):
+    try:
+        return max(lo, min(hi, int(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _q_float(value, default, lo, hi):
+    try:
+        return max(lo, min(hi, float(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+@route("GET", r"/api/teams", guest_ok=True)
+def teams_meta(req: Req):
+    return 200, {"teams": teams.team_meta()}
+
+
+@route("GET", r"/api/projects/(?P<pid>[\w-]+)/teams", guest_ok=True)
+def teams_summary(req: Req):
+    pid = req.params["pid"]
+    req.principal.require_project(pid, "reader")
+    rows = [{"connector": f.get("connector", ""), "severity": f.get("severity", "info")}
+            for f in F.list_findings(pid)]
+    return 200, {"teams": teams.team_meta(), "summary": teams.summarize_by_team(rows)}
+
+
+@route("GET", r"/api/lab/challenges", guest_ok=True)
+def lab_challenges(req: Req):
+    return 200, {"challenges": lab.list_challenges()}
+
+
+@route("GET", r"/api/lab/solve", guest_ok=True)
+def lab_solve(req: Req):
+    return 200, lab.solve(req.q("id") or "")
+
+
+@route("GET", r"/api/lab/grade", guest_ok=True)
+def lab_grade(req: Req):
+    return 200, lab.grade_attempt(req.q("id") or "", req.q("answer") or "")
+
+
+@route("GET", r"/api/sim/scenarios", guest_ok=True)
+def sim_scenarios(req: Req):
+    return 200, {"scenarios": sim.scenario_names()}
+
+
+@route("GET", r"/api/sim/run", guest_ok=True)
+def sim_run(req: Req):
+    scenario = req.q("scenario") or "corp"
+    out = sim.run(scenario,
+                  seed=_q_int(req.q("seed"), 1, 0, 100000),
+                  detection=_q_float(req.q("detection"), 0.5, 0.0, 1.0),
+                  max_turns=_q_int(req.q("max_turns"), 24, 1, 60))
+    status = 404 if out.get("error") else 200
+    return status, out
 
 
 # ===========================================================================

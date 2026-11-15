@@ -60,6 +60,13 @@ GUEST_ALLOWLIST = {
     r"/api/projects/(?P<pid>[\w-]+)/report",
     r"/api/ai/status",
     r"/api/metrics",
+    r"/api/teams",
+    r"/api/projects/(?P<pid>[\w-]+)/teams",
+    r"/api/lab/challenges",
+    r"/api/lab/solve",
+    r"/api/lab/grade",
+    r"/api/sim/scenarios",
+    r"/api/sim/run",
 }
 
 
