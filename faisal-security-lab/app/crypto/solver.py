@@ -31,6 +31,33 @@ from .scoring import (
     TRIGRAM_SCORER,
     WORD_SCORER,
 )
+from . import classic
+from .classic import (
+    AFFINE_COEFFS,
+    a1z26_decode,
+    a1z26_encode,
+    affine_decrypt,
+    affine_encrypt,
+    ascii85_decode,
+    ascii85_encode,
+    baconian_decode,
+    baconian_encode,
+    base58_decode,
+    base58_encode,
+    base85_decode,
+    base85_encode,
+    beaufort_decrypt,
+    beaufort_encrypt,
+    decimal_sep_decode,
+    octal_decode,
+    octal_encode,
+    polybius_decode,
+    polybius_encode,
+    railfence_decrypt,
+    railfence_encrypt,
+    reverse_string,
+    rot47,
+)
 
 
 @dataclass
@@ -358,6 +385,72 @@ def substitution_break(ciphertext: str, iterations: int = 7000,
 
 
 # ---------------------------------------------------------------------------
+# Affine cipher breaker — every (a, b), ranked by letter-frequency chi-square
+# ---------------------------------------------------------------------------
+def affine_break(ciphertext: str) -> Candidate:
+    """Try every affine key (a coprime to 26, b in 0..25) and keep the one whose
+    decryption best matches English letter frequencies."""
+    letters = _ONLY_LETTERS.sub("", ciphertext.upper())
+    if len(letters) < 3:
+        return Candidate(method="affine", key="", text=ciphertext,
+                         score=english_score(ciphertext))
+    best, best_chi = None, 1e18
+    for a in AFFINE_COEFFS:
+        for b in range(26):
+            pt = affine_decrypt(ciphertext, a, b)
+            x = chi_squared(pt)
+            if x < best_chi:
+                best_chi = x
+                best = Candidate(method="affine", key=f"a={a} b={b}", text=pt,
+                                 score=english_score(pt),
+                                 extra={"a": a, "b": b})
+    return best
+
+
+# ---------------------------------------------------------------------------
+# Rail-fence breaker — try each rail count, keep the most English reading
+# ---------------------------------------------------------------------------
+def railfence_break(ciphertext: str, max_rails: int = 12) -> Candidate:
+    n = len(ciphertext)
+    if n < 3:
+        return Candidate(method="railfence", key="", text=ciphertext,
+                         score=english_score(ciphertext))
+    best = None
+    for rails in range(2, min(max_rails, n - 1) + 1):
+        pt = railfence_decrypt(ciphertext, rails)
+        cand = Candidate(method="railfence", key=str(rails), text=pt,
+                         score=english_score(pt))
+        if best is None or cand.score > best.score:
+            best = cand
+    return best or Candidate(method="railfence", key="", text=ciphertext,
+                             score=english_score(ciphertext))
+
+
+# ---------------------------------------------------------------------------
+# Beaufort breaker — key recovery per column, like Vigenere but C = (K - P)
+# ---------------------------------------------------------------------------
+def beaufort_break(ciphertext: str, max_keylen: int = 16) -> Candidate:
+    s = _ONLY_LETTERS.sub("", ciphertext.upper())
+    if len(s) < 4:
+        return Candidate(method="beaufort", key="", text=ciphertext,
+                         score=english_score(ciphertext))
+    klen = _best_keylen(s, max(1, min(max_keylen, len(s) // 2)))
+    key = []
+    for i in range(klen):
+        col = s[i::klen]
+        best_shift, best_chi = 0, 1e18
+        for k in range(26):
+            dec = "".join(chr((k - (ord(c) - 65)) % 26 + 65) for c in col)
+            x = chi_squared(dec)
+            if x < best_chi:
+                best_chi, best_shift = x, k
+        key.append(chr(best_shift + 65))
+    key_s = "".join(key)
+    pt = beaufort_decrypt(ciphertext, key_s)
+    return Candidate(method="beaufort", key=key_s, text=pt, score=english_score(pt))
+
+
+# ---------------------------------------------------------------------------
 # Encoding decoders — each returns bytes or None (None = does not apply)
 # ---------------------------------------------------------------------------
 def dec_base64(s) -> bytes | None:
@@ -443,10 +536,26 @@ def dec_morse(s) -> bytes | None:
     return " ".join(decoded).encode("utf-8")
 
 
+def _dec_base58(s) -> bytes | None:
+    """Base58 for the auto-decoder. The alphabet alone is too loose a gate, so
+    we only accept a decoding that comes out as clean printable ASCII — which is
+    what Base58-encoded text does and what random words almost never do."""
+    t = _as_text(s).strip()
+    if len(t) < 5 or re.search(r"\s", t):
+        return None
+    out = base58_decode(t)
+    if not out or len(out) < 3:
+        return None
+    if all(32 <= b < 127 for b in out):
+        return out
+    return None
+
+
 _DECODERS = [
     ("base64", dec_base64), ("base32", dec_base32), ("hex", dec_hex),
     ("url", dec_url), ("binary", dec_binary), ("decimal", dec_decimal),
-    ("morse", dec_morse),
+    ("morse", dec_morse), ("base58", _dec_base58), ("octal", octal_decode),
+    ("a1z26", a1z26_decode), ("decimal_sep", decimal_sep_decode),
 ]
 
 
@@ -590,4 +699,146 @@ def analyze(data, max_keylen: int = 16) -> dict:
         "best": best.as_dict(),
         "readable": best.score >= 0.35,
         "candidates": [c.as_dict() for c in candidates[:6]],
+    }
+
+
+# ---------------------------------------------------------------------------
+# deep_analyze — the headline auto-cracker
+# ---------------------------------------------------------------------------
+# Decoders that yield raw bytes worth running XOR breakers against (an encoding
+# wrapping a byte ciphertext, e.g. hex of a repeating-key XOR blob).
+_BYTE_DECODERS = [
+    ("hex", dec_hex), ("base64", dec_base64), ("base32", dec_base32),
+    ("base58", base58_decode), ("ascii85", ascii85_decode),
+    ("base85", base85_decode), ("binary", dec_binary), ("octal", octal_decode),
+]
+
+# Broad-alphabet / involution codecs that are not safe in the generic layer set
+# but are worth one explicit try on the original text here.
+_EXPLICIT_TEXT_DECODERS = [
+    ("ascii85", ascii85_decode), ("base85", base85_decode),
+    ("base58", base58_decode),
+]
+
+
+def _xor_byte_forms(data, limit: int = 8) -> list[tuple[str, bytes]]:
+    """Byte strings to run XOR breakers on: the raw input plus one layer of any
+    byte-ish decoding (so a hex/base64-wrapped XOR blob is unwrapped first)."""
+    raw = _to_bytes(data)
+    forms = [("raw", raw)]
+    seen = {bytes(raw[:64])}
+    for name, fn in _BYTE_DECODERS:
+        if len(forms) >= limit:
+            break
+        try:
+            decoded = fn(raw)
+        except Exception:
+            decoded = None
+        if decoded and len(decoded) >= 4:
+            fp = bytes(decoded[:64])
+            if fp not in seen:
+                seen.add(fp)
+                forms.append((name, bytes(decoded)))
+    return forms
+
+
+def deep_analyze(data, max_keylen: int = 16) -> dict:
+    """Break almost anything weak, with no hint of the scheme.
+
+    Cascades: peel encoding layers (auto_decode), then run every applicable
+    breaker — Caesar, Vigenere, affine, rail fence, Beaufort, ROT47/ROT13/Atbash,
+    reversed text, Baconian, Polybius, substitution for long text, and single-
+    and repeating-key XOR on the raw bytes — rank all readings by english_score
+    and report the best. Pure analysis: no network, no shell, no target.
+
+    Returns {"best": {method, text, key, score}, "readable": bool,
+             "candidates": [top 8], "steps": [...]}.
+    """
+    steps: list[str] = []
+    candidates: list[Candidate] = []
+    text0 = _as_text(data)
+
+    # 1) Peel encoding layers.
+    decoded = auto_decode(data)
+    if decoded["chain"]:
+        chain = ">".join(decoded["chain"])
+        steps.append(f"decoded encoding layers: {chain}")
+        candidates.append(Candidate(method="decode:" + chain,
+                                    text=decoded["text"], score=decoded["score"]))
+        working = decoded["text"]
+    else:
+        steps.append("no encoding layer peeled; working on the input as-is")
+        working = text0
+
+    # Explicit codecs that the generic layer set deliberately leaves out.
+    for name, fn in _EXPLICIT_TEXT_DECODERS:
+        try:
+            out = fn(text0)
+        except Exception:
+            out = None
+        if out:
+            txt = _as_text(out)
+            candidates.append(Candidate(method=f"decode:{name}", text=txt,
+                                        score=english_score(txt)))
+
+    # 2) Letter-based breakers on the most text-like form.
+    letters = _ONLY_LETTERS.sub("", working.upper())
+    if len(letters) >= 3:
+        steps.append("ran Caesar / Vigenere / affine / rail-fence / Beaufort breakers")
+        candidates.extend(caesar_break(working, top=2))
+        candidates.append(vigenere_break(working, max_keylen=max_keylen))
+        candidates.append(affine_break(working))
+        candidates.append(railfence_break(working))
+        candidates.append(beaufort_break(working, max_keylen=max_keylen))
+        for name, txt in (("rot13", rot13(working)), ("atbash", atbash(working)),
+                          ("rot47", rot47(working)),
+                          ("reversed", reverse_string(working))):
+            candidates.append(Candidate(method=name, text=txt,
+                                        score=english_score(txt)))
+
+    # 3) Baconian / Polybius on the original and the peeled text.
+    for form in {text0, working}:
+        bac = baconian_decode(form)
+        if bac is not None:
+            candidates.append(Candidate(method="baconian", text=bac,
+                                        score=english_score(bac)))
+        pol = polybius_decode(form)
+        if pol is not None:
+            candidates.append(Candidate(method="polybius", text=pol,
+                                        score=english_score(pol)))
+
+    # 4) XOR on raw bytes and any unwrapped byte layer.
+    forms = _xor_byte_forms(data)
+    if forms:
+        steps.append(f"ran single/repeating XOR on {len(forms)} byte form(s)")
+    for label, buf in forms:
+        if not buf:
+            continue
+        for c in xor_single_break(buf, top=1):
+            c.method = f"xor_single[{label}]" if label != "raw" else "xor_single"
+            candidates.append(c)
+        rc = xor_repeating_break(buf, max_keylen=min(40, max_keylen * 2))
+        if rc is not None:
+            if label != "raw":
+                rc.method = f"xor_repeating[{label}]"
+            candidates.append(rc)
+
+    # 5) Expensive monoalphabetic substitution only if nothing cheap read well.
+    best_so_far = max((c.score for c in candidates), default=0.0)
+    if len(letters) >= 40 and best_so_far < 0.45:
+        steps.append("fell back to monoalphabetic substitution hill-climb")
+        candidates.append(substitution_break(working))
+
+    # Always keep the untouched input as a baseline reading.
+    candidates.append(Candidate(method="raw", text=text0, score=english_score(text0)))
+
+    candidates = [c for c in candidates if c is not None]
+    candidates.sort(key=lambda c: c.score, reverse=True)
+    best = candidates[0]
+    return {
+        "best": {"method": best.method, "text": best.text,
+                 "key": best.key, "score": round(best.score, 4)},
+        "readable": best.score >= 0.35,
+        "candidates": [c.as_dict() for c in candidates[:8]],
+        "steps": steps,
     }

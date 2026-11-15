@@ -40,6 +40,7 @@ class Secret:
     data: str
     cracked: str = ""      # recovered plaintext, once the crypto group breaks it
     unlocks: str = ""      # host id this cred reuses onto, if any
+    size: int = 0          # make-believe byte weight, counted when exfiltrated (0 = nothing to steal)
 
 
 @dataclass
@@ -56,6 +57,10 @@ class Host:
     compromised: bool = False
     isolated: bool = False      # the blue team cut it off
     cred: str = ""              # the password that reuses onto this host (if any)
+    phish: bool = False         # a user/edge host a phishing lure can land on (initial access)
+    honeypot: bool = False      # a decoy; touching it trips a high-confidence alert
+    priv_esc: bool = False      # a local privilege-escalation path lives here
+    admin: bool = False         # the red team gained admin here (reached by escalation)
 
     def open_vulns(self) -> list[Vuln]:
         return [s.vuln for s in self.services
@@ -67,6 +72,7 @@ class Range:
     hosts: dict[str, Host]
     edges: dict[str, set]       # host id -> set of reachable host ids (topology)
     goal: str                   # the crown-jewel host id the red team wants
+    siem: bool = False          # SIEM correlation enabled for this engagement
 
     def neighbours(self, hid: str) -> set:
         return self.edges.get(hid, set())
@@ -115,14 +121,17 @@ def build_range(spec: dict, seed: int = 0) -> Range:
                 vuln = _mk_vuln(rng, s["vuln"], i * 10 + j)
             base = next((x for x in _SERVICE_POOL if x[0] == name), (name, 1000 + j, "unknown"))
             services.append(Service(name=base[0], port=base[1], version=base[2], vuln=vuln))
-        secrets = [Secret(kind=s["kind"], data=s["data"], unlocks=s.get("unlocks", ""))
+        secrets = [Secret(kind=s["kind"], data=s["data"], unlocks=s.get("unlocks", ""),
+                          size=s.get("size", 0))
                    for s in h.get("secrets", [])]
         hosts[h["id"]] = Host(
             hid=h["id"], name=h["name"], ip=f"10.0.{h.get('zone_n', 0)}.{i + 10}",
             zone=h["zone"], value=h.get("value", 10), services=services, secrets=secrets,
-            internet_facing=h.get("internet_facing", False), cred=h.get("cred", ""))
+            internet_facing=h.get("internet_facing", False), cred=h.get("cred", ""),
+            phish=h.get("phish", False), honeypot=h.get("honeypot", False),
+            priv_esc=h.get("priv_esc", False))
     edges: dict[str, set] = {h: set() for h in hosts}
     for a, b in spec.get("edges", []):
         edges.setdefault(a, set()).add(b)
         edges.setdefault(b, set()).add(a)   # links are two-way
-    return Range(hosts=hosts, edges=edges, goal=spec["goal"])
+    return Range(hosts=hosts, edges=edges, goal=spec["goal"], siem=spec.get("siem", False))
