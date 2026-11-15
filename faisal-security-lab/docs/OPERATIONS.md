@@ -1,51 +1,191 @@
 # Operations guide
 
+Commands are run in `faisal-security-lab/`. Examples use the local address
+`http://127.0.0.1:8787`; put your own in its place.
+
 ## Run modes
 
-**Standalone (dev / single host)**
+**One process (local use, a single small host)**
 ```bash
-make serve     # API + UI + in-process workers
+make serve     # API + console + worker threads in the same process
 ```
+The number of worker threads is `FSL_WORKER_CONCURRENCY` (default 2).
 
-**Split (production)**
+**API and workers as separate processes.** The API then runs no scan tool
+(`FSL_NO_WORKER=1`) and one or more worker processes run the tools. API and
+workers must use the same data directory. There are two ways to do it; use one
+of them, not both.
+
+*In containers.* The worker gets a memory limit, a process limit and no kernel
+capabilities, which is the setup to prefer when the scanned input is not yours:
 ```bash
-# API host (no tools)
-FSL_NO_WORKER=1 python3 -m app.server
-# One or more isolated workers (with tools + cgroup memory limit)
-docker compose -f deploy/compose.yaml up --build
+docker compose -f deploy/compose.yaml up --build -d
 ```
+The API is then at `http://127.0.0.1:8787`. The owner password, what the worker
+container can read and how to add workers are described in
+[DEPLOY.md](DEPLOY.md) ("Docker Compose: API and worker in separate
+containers").
+
+*Without containers, on one host.* Two terminals:
+```bash
+FSL_NO_WORKER=1 make serve      # terminal 1: API and console, no worker
+make worker                     # terminal 2: one worker
+```
+Both use `./var` unless `FSL_DATA_DIR` is set; if you set it, set the same value
+in both terminals. Start `make worker` again in further terminals for more
+workers. Nothing limits the memory of the tools in this mode.
+
+A worker process runs one job at a time; `FSL_WORKER_CONCURRENCY` applies only
+to the worker threads of `make serve`. While no worker is running, a requested
+scan stays `queued`.
 
 ## Tools: install, update, verify
 
 ```bash
-make install-tools      # pinned versions into a venv + /usr/local/bin
-make verify             # sync registry; print honest states
+make install-tools      # pinned versions into /opt/sectools-venv and /usr/local/bin (needs root)
+make verify             # prints the state of every connector and stores it
 ```
 
-Updating a tool or its rules/config invalidates its `verified` state → it becomes
-`stale` until a fresh real run re-verifies it. Test tool/ruleset updates before
-rollout; the registry records version + last-verified reference per tool.
+Without root, give the script two directories of your own and put the first on
+`PATH`: `bash scripts/install-tools.sh "$HOME/.local/bin" "$HOME/sectools-venv"`.
+The script exits with an error when it cannot write to its directories.
+
+Run `make verify` after installing or updating a tool, so that the console shows
+the new state. A tool that was `verified` and now reports another version
+becomes `stale` until a scan with the new version has completed. Try a tool or
+rule update on a test project before you rely on it.
+
+## Getting a token
+
+Apart from the health check, `/api/config` and the sign-in itself, API calls
+need a session token (the optional public view opens some read-only routes
+without one). Sign in to get a token:
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"owner@faisal-security-lab.local","password":"<your-password>"}'
+```
+
+The answer is JSON:
+
+```json
+{"token": "<43 characters>", "expires_at": "2026-11-15T22:59:16+00:00",
+ "user": {"id": "usr_…", "email": "owner@faisal-security-lab.local",
+          "global_role": "owner", "display_name": "Owner"}}
+```
+
+Keep the token in a shell variable and send it as a bearer token. This line
+signs in and stores it in `TOK`, which the examples below use:
+
+```bash
+TOK=$(curl -s -X POST http://127.0.0.1:8787/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"owner@faisal-security-lab.local","password":"<your-password>"}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+```
+
+A token is valid for `FSL_SESSION_TTL` seconds (12 hours by default) or until
+`POST /api/auth/logout` is called with it. A wrong address or password gives
+HTTP 401 `{"error": {"code": "unauthenticated", "message": "invalid credentials", "detail": {}}}`;
+too many attempts give HTTP 429 (see "Sign-in protection"). The password is part
+of the command, so it lands in your shell history; clear it there if that
+matters on your machine.
 
 ## Readiness checks
 
 ```bash
-curl -s localhost:8787/api/health
-curl -s -H "Authorization: Bearer $TOK" localhost:8787/api/connectors   # readiness per connector, from the last sync (?live=1 probes now)
-curl -s -H "Authorization: Bearer $TOK" localhost:8787/api/tools         # registry states
+curl -s http://127.0.0.1:8787/api/health
+curl -s -H "Authorization: Bearer $TOK" http://127.0.0.1:8787/api/connectors   # readiness per connector, from the last sync (?live=1 probes now)
+curl -s -H "Authorization: Bearer $TOK" http://127.0.0.1:8787/api/tools         # stored state, version and licence per tool
 ```
+
+## Requesting a scan through the API
+
+A scan request names an asset, a scope on that asset and a connector the scope
+allows. Requesting a scan needs the `analyst` role in the project; granting a
+scope needs the project's `admin` role (an owner has both everywhere). This
+example creates a project, an asset and a scope for the bundled sample and runs
+Bandit; `SAMPLE` must be the full path of `samples/vulnerable-app`.
+
+```bash
+B=http://127.0.0.1:8787
+AUTH="Authorization: Bearer $TOK"
+JSON='Content-Type: application/json'
+SAMPLE="$PWD/samples/vulnerable-app"
+getid() { python3 -c "import json,sys; print(json.load(sys.stdin)['$1']['id'])"; }
+
+PID=$(curl -s -X POST $B/api/projects -H "$AUTH" -H "$JSON" \
+  -d '{"name":"API example"}' | getid project)
+AID=$(curl -s -X POST $B/api/projects/$PID/assets -H "$AUTH" -H "$JSON" \
+  -d "{\"kind\":\"source\",\"identifier\":\"$SAMPLE\"}" | getid asset)
+SID=$(curl -s -X POST $B/api/projects/$PID/scopes -H "$AUTH" -H "$JSON" \
+  -d "{\"asset_id\":\"$AID\",\"proof\":\"LAB-SELF-OWNED\",\"allowed_targets\":[\"$SAMPLE\"],\"scan_types\":[\"bandit\"]}" | getid scope)
+
+# the scan request itself
+JID=$(curl -s -X POST $B/api/projects/$PID/scans -H "$AUTH" -H "$JSON" \
+  -d "{\"asset_id\":\"$AID\",\"scope_id\":\"$SID\",\"connector\":\"bandit\"}" | getid job)
+
+# repeat until "state" is no longer queued, leased or running (a few seconds)
+curl -s -H "$AUTH" $B/api/jobs/$JID
+
+# then read the findings and a report
+curl -s -H "$AUTH" $B/api/projects/$PID/findings
+curl -s -H "$AUTH" "$B/api/projects/$PID/report?format=html&lang=en" -o report.html
+```
+
+The scan request answers HTTP 201 with the job, `{"job": {"id": "job_…",
+"state": "queued", …}}`. A job ends in one of the states `succeeded`, `failed`,
+`blocked` (refused by the policy check at start, or the tool is not installed),
+`cancelled` or `undetermined` (the worker was lost while the tool ran). A
+request the scope does not allow is refused with HTTP 403:
+
+```json
+{"error": {"code": "policy_denied",
+           "message": "connector 'semgrep' is not in the authorized scan types",
+           "detail": {"policy_code": "connector_not_authorized"}}}
+```
+
+Fields of the scan request:
+
+| Field | Meaning |
+|---|---|
+| `asset_id`, `scope_id`, `connector` | required; ids of existing objects are listed by `GET /api/projects`, `GET /api/projects/{id}/assets` and `GET /api/projects/{id}/scopes`, connector names by `GET /api/connectors` |
+| `params` | connector parameters. `http_headers` needs `{"target": "https://host/"}`; `tls_certificate` needs `{"target": "host"}` and takes an optional `"port"` (443 by default). The source scanners need none |
+| `priority` | a whole number, 5 by default; lower numbers are started first |
+| `idempotency_key` | optional text; a second request with a key that was used before returns the first job and starts nothing |
+
+A request for one of the two network connectors has this form. Register the
+host as an asset first (kind `web`, `api` or `host`) and grant a scope that
+lists the connector and has the host in its allowed targets. Use it for a host
+you own:
+
+```bash
+curl -s -X POST $B/api/projects/$PID/scans -H "$AUTH" -H "$JSON" \
+  -d '{"asset_id":"ast_…","scope_id":"scp_…","connector":"http_headers","params":{"target":"https://www.example.org/"}}'
+```
+
+Without `params.target` the answer is HTTP 400
+`http_headers requires a 'target' URL`.
+
+Report formats are `json`, `sarif`, `md` and `html`; `lang` is `ar` or `en`. A
+project accepts at most 30 scan requests a minute (HTTP 429 beyond that). What
+the scope check compares, and what it does not, is listed in
+[SCOPE.md](SCOPE.md).
 
 ## Scheduling scans
 
-Scans run through the queue; schedule them with any external scheduler (cron,
-CI, systemd timer) hitting `POST /api/projects/{id}/scans` within a valid scope
-and run window. Per-asset serialization prevents overlapping scans on one asset.
-Network scans should be scheduled inside the scope's allowed `window` and under
-its rate limits.
+The platform has no scheduler of its own. Call the scan request above from cron,
+a CI job or a systemd timer, with a scope that is valid at that time: a scope
+can carry validity dates and an hour-of-day `window`, and a request outside
+them is refused. Only one scan runs on an asset at a time; a second one waits
+in the queue.
 
 ## Global stop & cancel
 
-- **Global stop:** `POST /api/admin/stop {"engaged":true}` (admin). Halts all
-  leasing and flags running jobs to stop. `Settings → Global stop` in the UI.
+- **Global stop:** `POST /api/admin/stop {"engaged":true}` (admin). No new
+  job is started and running jobs are told to stop. In the console:
+  **Settings → Global stop**.
 - **Cancel one job:** `POST /api/jobs/{id}/stop`. The worker kills the tool's
   process group cooperatively.
 
@@ -187,6 +327,12 @@ changed (`owner_email_ignored`). Otherwise the default owner address is used,
 and `owner_email_invalid` names it at every start for as long as the value
 stays wrong.
 
+A password generated at the first start is shown once, in the service log, in
+a line that starts with `[init]`. It is not a one-time password: it stays the
+owner's password. This version has no change-password screen or API. To replace
+a password, add another owner under **Settings → Users** (or `POST /api/users`)
+and retire the old account as shown below.
+
 `FSL_OWNER_EMAIL` and `FSL_OWNER_PASSWORD` only ever create an account; they
 never rename one or change its password. So after a mistyped address is
 corrected on a persistent disk there are two owners: the new one, and the one
@@ -196,12 +342,29 @@ yet. To retire it, stop the service and mark the account inactive in the
 database:
 
 ```bash
-python3 -m sqlite3 <data directory>/faisal-security-lab.db \
-  "UPDATE users SET active=0 WHERE email='owner@faisal-security-lab.local'"
+python3 -c "import sqlite3, sys; c = sqlite3.connect(sys.argv[1]); c.execute('UPDATE users SET active=0 WHERE email=?', (sys.argv[2],)); c.commit()" \
+  <data directory>/faisal-security-lab.db owner@faisal-security-lab.local
 ```
+
+An inactive account cannot sign in, and its open sessions stop working.
 
 On a host without a persistent disk (the free Render plan) the database is
 rebuilt at every start, so only the account for the current settings exists.
+
+### Locked out on a local install
+
+If nobody can sign in on a local install (the password was lost, or the owner
+account was created before you chose a password), there are two ways back in.
+
+- *Start over.* Stop the server, run `make clean` (it deletes `./var`: the
+  database and the evidence) and start again with `FSL_OWNER_PASSWORD`
+  exported.
+- *Keep the data.* Stop the server and start it once with a second owner
+  address and a password of at least 10 characters:
+  `FSL_OWNER_EMAIL=you@example.com FSL_OWNER_PASSWORD='<new-password>' make serve`.
+  This creates a second owner account. Sign in with it, then retire the first
+  account with the command above. Keep `FSL_OWNER_EMAIL` at the new address
+  from then on.
 
 Startup problems are logged as `[setup]` lines and published as codes. The
 sign-in page (`/api/config`) shows only the codes a visitor may need. Codes
@@ -213,20 +376,45 @@ in [DEPLOY.md](DEPLOY.md).
 
 ## Backup & restore
 
-The entire state is the SQLite DB + the evidence directory (`FSL_DATA_DIR`).
-Back up both together.
+The state is the SQLite database and the evidence directory, both in the data
+directory (`FSL_DATA_DIR`, `./var` for a local run). Back up both together. The
+database is in WAL mode, so do not copy its file while the service runs; take a
+consistent copy with one of these:
 
 ```bash
-# backup
+# with the sqlite3 command-line program, if it is installed
 sqlite3 var/faisal-security-lab.db ".backup var/backup.db"
-tar czf fsl-backup.tgz var/backup.db var/evidence
-# restore (stop the service first)
-tar xzf fsl-backup.tgz && mv var/backup.db var/faisal-security-lab.db
-make verify    # re-sync tool states on the restored host
+
+# or with Python alone (any supported version)
+python3 -c "import sqlite3; s = sqlite3.connect('var/faisal-security-lab.db'); d = sqlite3.connect('var/backup.db'); s.backup(d); d.close(); s.close()"
 ```
 
+`python3 -m sqlite3` exists from Python 3.12 and accepts SQL only, not
+`.backup`; there the equivalent is
+`python3 -m sqlite3 var/faisal-security-lab.db "VACUUM INTO 'var/backup.db'"`.
+
+```bash
+# pack the copy and the evidence
+tar czf fsl-backup.tgz var/backup.db var/evidence
+
+# restore: stop the service first
+tar xzf fsl-backup.tgz
+rm -f var/faisal-security-lab.db-wal var/faisal-security-lab.db-shm
+mv var/backup.db var/faisal-security-lab.db
+make verify    # stores the tool states of the restored host
+```
+
+The two `rm`-ed files belong to the database that is being replaced; left in
+place they would be applied to the restored one. Open sessions are rows of the
+database, so they keep working after a restore until they expire. The file
+`var/.session-secret` is not in the archive: on a new host a new one is
+generated, which only makes the scans of the public demo run once more. A
+backup holds finding text and password hashes; store it like the data directory
+itself.
+
 A restore drill: restore into a scratch `FSL_DATA_DIR`, start the API with
-`FSL_NO_WORKER=1`, and confirm `/api/health`, login, and a project's findings load.
+`FSL_NO_WORKER=1`, and confirm that `/api/health` answers, that you can sign in
+and that a project's findings load.
 
 In the single-image container the service runs as uid 10001 and must own what it
 writes. Files restored from a root shell (`docker exec`, `docker cp`,
@@ -235,19 +423,28 @@ next start. A container started with `--user 10001` cannot do that: run
 `chown -R 10001:10001 <data directory>` on the host after restoring, or the
 service fails at start with "attempt to write a readonly database".
 
-## Resource & cost estimate (rough)
+## Resource estimate (rough)
 
-- API host: ~128 MB RAM, negligible CPU.
-- Worker: 1–3 GB RAM per concurrent Semgrep/Trivy job (bound with `mem_limit`),
-  1 vCPU per concurrent job. Default `FSL_WORKER_CONCURRENCY=2`.
-- Storage: DB grows with findings/audit (KB per finding); redacted evidence is
-  small. Raw evidence retention default 90 days.
-- AI: off by default (deterministic fallback). When enabled, bounded by
-  `ai_token_budget` / `ai_cost_budget_usd` / `ai_timeout_seconds`; the platform
-  sends only redacted, minimal data.
+These are planning figures, not measurements of your workload.
+
+- API: about 128 MB of memory and little CPU.
+- Worker: 1 to 3 GB of memory for each Semgrep or Trivy job that runs at the
+  same time (`deploy/compose.yaml` limits the worker container to 3 GB), and
+  one CPU per job.
+- Storage: the database grows with findings and audit rows, a few KB per
+  finding. Evidence is stored redacted and is small. Each evidence record
+  carries a retention date 90 days ahead; this version does not delete
+  evidence when that date passes.
+- AI: off by default. With a provider set, each call has a 60-second timeout
+  and a reply limit of `FSL_AI_MAX_TOKENS` tokens. There is no total token or
+  cost budget in this version; watch the usage at your provider.
 
 ## Secrets
 
-Tool/API credentials are supplied via environment variables on the worker only,
-never committed. The session signing key is auto-generated to
-`var/.session-secret` (0600) or supplied via `FSL_SECRET_KEY`.
+The owner password and an AI key are given as environment variables and are
+never written to the repository. Passwords are stored as PBKDF2 hashes, and of
+a session token only the SHA-256 is stored. A secret key is generated into
+`<data directory>/.session-secret` (mode 0600) unless `FSL_SECRET_KEY` supplies
+it; this version uses it only to derive the job keys of the public demo's
+scans. The scan tools are started with a minimal environment and do not receive
+these variables.

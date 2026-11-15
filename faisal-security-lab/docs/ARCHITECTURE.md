@@ -4,18 +4,20 @@
 
 Two deployable roles share one SQLite database (WAL):
 
-- **API host** (`app.server`) — serves the JSON API and the static UI, verifies
-  identity, enforces RBAC, and enqueues jobs after a policy check. It runs **no**
-  security tools. In standalone/dev mode it also starts in-process worker threads;
-  set `FSL_NO_WORKER=1` to disable that and run workers separately.
-- **Scan worker** (`app.worker`) — leases jobs, stages read-only input, re-checks
-  policy, runs a connector under bounded isolation, and writes evidence + findings.
-  In production it runs as a separate, least-privilege container (see
-  `deploy/Dockerfile.worker`).
+- **API host** (`app.server`) — serves the JSON API and the static console,
+  verifies identity, checks roles, and enqueues jobs after a policy check. With
+  `FSL_NO_WORKER=1` it runs **no** security tools. Without it (the default of
+  `make serve`) it also starts worker threads in its own process.
+- **Scan worker** (`app.worker`) — leases jobs, copies the source to scan into a
+  temporary directory, repeats the policy check, runs a connector under limits,
+  and writes evidence and findings. It can run as a separate process or as a
+  separate container with a memory limit and no capabilities
+  (`deploy/Dockerfile.worker`, `deploy/compose.yaml`). A worker process runs one
+  job at a time.
 
 ```
                  ┌────────────┐     enqueue (policy @ API)    ┌──────────┐
-  operator ─TLS─▶│  API + UI  │ ─────────────────────────────▶│  queue   │
+  operator ─────▶│  API + UI  │ ─────────────────────────────▶│  queue   │
                  │ (no tools) │                                │ (sqlite) │
                  └────────────┘                                └────┬─────┘
                                                       lease + policy │ re-check
@@ -29,10 +31,14 @@ Two deployable roles share one SQLite database (WAL):
                                                             └─────────────────┘
 ```
 
+The server speaks plain HTTP. TLS is the job of the reverse proxy or the hosting
+platform in front of it.
+
 ## Trust boundaries
 
-1. **Client ↔ API.** Identity is a server-side signed session (PBKDF2 password →
-   bearer token, stored hashed). Client-supplied identity headers are ignored.
+1. **Client ↔ API.** Identity is a server-side session: a password checked with
+   PBKDF2 gives a random bearer token, of which the database keeps only the
+   SHA-256. Client-supplied identity headers are ignored.
    Every route re-derives the principal and checks RBAC. Request bodies are size
    capped; responses carry a strict CSP and other security headers.
    *Optional public read-only view (`FSL_PUBLIC_VIEW=1`, off by default):* a
@@ -65,11 +71,12 @@ Two deployable roles share one SQLite database (WAL):
      test a guessed directory. The report route accepts only `lang=ar|en` and
      its four known formats.
    - *What a guest may cost.* Guest requests are counted per client address
-     (240/min) and across all guests (1200/min), both fixed one-minute windows,
-     in memory; a full per-client table evicts its oldest entries instead of
-     refusing new clients. The guest connector list is read from the
-     `tool_registry` table, so anonymous traffic never runs a tool's version
-     command.
+     (90/min) and across all guests (240/min, `FSL_GUEST_REQUESTS_PER_MINUTE`),
+     both in fixed one-minute windows, in memory, and two guest requests are
+     worked on at once (up to 16 more wait, at most 4 seconds). A full
+     per-client table evicts its oldest entries instead of refusing new
+     clients. The guest connector list is read from the `tool_registry` table,
+     so anonymous traffic never runs a tool's version command.
    - *The demo across restarts* (`app/demo.py`). Startup runs three steps in
      one background thread: the demo project, asset and scope are written and
      published (database only, so visitors can read the project at once), the
@@ -89,7 +96,8 @@ Two deployable roles share one SQLite database (WAL):
      scope revoked therefore means an operator did it, and the demo then issues
      no scope and enqueues nothing.
 2. **API ↔ queue.** A job is only enqueued after `policy.evaluate_job` passes with
-   the caller's principal. The policy engine is the single authorization chokepoint.
+   the caller's principal. The policy engine is the single authorization chokepoint;
+what it compares, and what it does not, is listed in [SCOPE.md](SCOPE.md).
 3. **Queue ↔ worker.** The worker re-evaluates policy at execution time with no
    principal (internal path) so a scope revoked after enqueue stops the job. The
    worker also re-confirms the tool is actually available.
@@ -97,9 +105,12 @@ Two deployable roles share one SQLite database (WAL):
    argument list, `shell=False`, new session/process-group, `RLIMIT_CPU`/
    `FSIZE`/`NOFILE`/`NPROC`, wall-clock timeout, output caps, minimal environment
    (no inherited secrets), cooperative cancel that kills the whole process group.
-5. **Worker ↔ network.** `scope.validated_destination` resolves the host, rejects
-   private/loopback/link-local addresses unless an internal asset is authorized,
-   and never auto-follows redirects.
+5. **Worker ↔ network.** `scope.validated_destination` resolves the host and
+   rejects private, loopback and link-local addresses unless the asset is marked
+   internal (`metadata.internal`). The header and TLS connectors connect to the
+   address that was checked and do not follow redirects. A repository address
+   is checked the same way before `git clone` starts; git then resolves the
+   name again itself (see "Known limits" in [SCOPE.md](SCOPE.md)).
 6. **Platform ↔ model.** The model receives untrusted content only inside a
    labelled data envelope and returns only schema-constrained JSON; an independent
    validator rejects off-contract output. Model text is never executed.
@@ -107,8 +118,10 @@ Two deployable roles share one SQLite database (WAL):
 ## Data model (SQLite)
 
 `users, sessions, projects, project_members, assets, scopes, jobs, findings,
-evidence, tool_registry, catalog, audit, settings, schedules`. Project isolation
-is enforced in every query path via `Principal.project_role`.
+evidence, tool_registry, catalog, audit, settings, schedules, meta`. Routes
+check the caller's role in the project (`Principal.project_role`) before they
+read or write its rows. The `schedules` table is not used by this version;
+scans are scheduled from outside (see [OPERATIONS.md](OPERATIONS.md)).
 
 ## Connector contract
 
@@ -127,10 +140,13 @@ are NOT conflated, so "no findings" is never confused with "failed".
 
 ## Findings & priority
 
-`dedup_key = sha256(project | cve|rule_id | location | line)` collapses re-runs and
-cross-tool duplicates while keeping provenance. **Work priority** (0–100) is
-computed from severity × asset criticality + exposure + confidence, separately
-from CVSS/EPSS/KEV (each of which carries its own source + date when attached).
+`dedup_key = sha256(project | cve or rule_id | location | line)` collapses
+re-runs, and the same CVE at the same location reported by two tools, into one
+finding. **Work priority** (0–100) is computed from the tool's severity, the
+asset's criticality, the tool's confidence and whether the asset is a `web`,
+`api` or `host` asset. The finding record also has fields for CVSS, EPSS and
+KEV data; in this version only the Trivy connector fills CVSS, and nothing
+fills EPSS or KEV.
 
 ## Crash safety
 
