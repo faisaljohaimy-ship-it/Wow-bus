@@ -306,6 +306,14 @@ class TestGuestView(HardeningCase):
             r"/api/projects/(?P<pid>[\w-]+)/report": reports,
             r"/api/ai/status": ["/api/ai/status"],
             r"/api/metrics": [f"/api/metrics?project={pid}"],
+            r"/api/teams": ["/api/teams"],
+            r"/api/projects/(?P<pid>[\w-]+)/teams": [f"{project}/teams"],
+            r"/api/lab/challenges": ["/api/lab/challenges"],
+            r"/api/lab/solve": ["/api/lab/solve", "/api/lab/solve?id=enc-base64"],
+            r"/api/lab/grade": ["/api/lab/grade?id=enc-base64&answer=welcome"],
+            r"/api/sim/scenarios": ["/api/sim/scenarios"],
+            r"/api/sim/run": ["/api/sim/run?scenario=corp",
+                              "/api/sim/run?scenario=corp&seed=2&detection=0.7"],
         }
         guest_ok = {rx.pattern[1:-1] for _m, rx, _fn, _a, _g, ok in server._ROUTES if ok}
         self.assertEqual(set(urls), guest_ok, "every guest_ok route must be crawled here")
