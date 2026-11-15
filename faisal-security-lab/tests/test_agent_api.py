@@ -14,7 +14,20 @@ class TestAgentApi(PublicViewCase):
     def test_scenarios_are_public(self):
         st, body = self.get("/api/sim/scenarios")
         self.assertEqual(st, 200)
-        self.assertEqual({s["id"] for s in body["scenarios"]}, {"corp", "range"})
+        ids = {s["id"] for s in body["scenarios"]}
+        self.assertTrue({"corp", "range", "enterprise", "cloud", "ot"} <= ids)
+        for s in body["scenarios"]:
+            self.assertTrue(s["name_en"] and s["name_ar"])
+
+    def test_crypto_analyze_is_public(self):
+        # Uryyb, Jbeyq! is ROT13 of "Hello, World!" — the auto-cracker recovers it.
+        st, body = self.get("/api/crypto/analyze?text=Uryyb%2C%20Jbeyq%21")
+        self.assertEqual(st, 200)
+        self.assertTrue(body["readable"])
+        self.assertIn("Hello", body["best"]["text"])
+        st2, empty = self.get("/api/crypto/analyze")
+        self.assertEqual(st2, 200)
+        self.assertFalse(empty["readable"])
 
     def test_sim_run_is_public_and_deterministic(self):
         st, a = self.get("/api/sim/run?scenario=corp&seed=4&detection=0.5")

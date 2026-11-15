@@ -383,3 +383,14 @@ body.guest form,body.guest [data-owner]{display:none !important}
 @media (prefers-reduced-motion:reduce){
   html:not(.motion) .agent-hero::after,html:not(.motion) .agent-body{animation:none}
 }
+
+/* ---- Auto-cracker console + MITRE tactic badges ---- */
+.term-card textarea{width:100%;background:#0a0f0a;color:#d7ffd7;border:1px solid #1e7a33;border-radius:8px;
+  padding:9px 10px;font-family:ui-monospace,Consolas,monospace;font-size:14px;resize:vertical;min-height:52px;
+  caret-color:#38d66b}
+.term-card textarea:focus{outline:none;border-color:#38d66b}
+.tac{display:inline-block;background:#1a1012;border:1px solid #7a1b25;color:#ff9aa4;border-radius:5px;
+  padding:0 6px;font-size:10.5px;font-family:ui-monospace,Consolas,monospace;letter-spacing:.3px;white-space:nowrap}
+.tacrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.reclist{margin:6px 0 0;padding-inline-start:18px;color:#cfe}
+.reclist li{margin:3px 0}

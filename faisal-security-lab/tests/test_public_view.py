@@ -67,6 +67,7 @@ GUEST_ALLOWLIST = {
     r"/api/lab/grade",
     r"/api/sim/scenarios",
     r"/api/sim/run",
+    r"/api/crypto/analyze",
 }
 
 

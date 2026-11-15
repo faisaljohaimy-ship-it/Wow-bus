@@ -314,6 +314,8 @@ class TestGuestView(HardeningCase):
             r"/api/sim/scenarios": ["/api/sim/scenarios"],
             r"/api/sim/run": ["/api/sim/run?scenario=corp",
                               "/api/sim/run?scenario=corp&seed=2&detection=0.7"],
+            r"/api/crypto/analyze": ["/api/crypto/analyze",
+                                     "/api/crypto/analyze?text=Uryyb%20Jbeyq"],
         }
         guest_ok = {rx.pattern[1:-1] for _m, rx, _fn, _a, _g, ok in server._ROUTES if ok}
         self.assertEqual(set(urls), guest_ok, "every guest_ok route must be crawled here")
