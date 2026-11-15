@@ -1328,6 +1328,8 @@ class Handler(BaseHTTPRequestHandler):
         else:
             ctype = "application/json; charset=utf-8"
             data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        if self._body_pending:
+            self._discard_body()
         try:
             self.send_response(status)
             self.send_header("Content-Type", ctype)
@@ -1384,11 +1386,14 @@ class Handler(BaseHTTPRequestHandler):
         return get_config().public_view
 
     def _read_body(self, limit: int | None = None):
+        if self.headers.get("Transfer-Encoding") is not None:
+            raise ValidationError("send the request body with a Content-Length")
         try:
             length = int(self.headers.get("Content-Length", 0) or 0)
         except ValueError:
             raise ValidationError("invalid Content-Length")
         if length <= 0:
+            self._body_pending = False
             return {}
         if length > (limit or get_config().limits.max_request_bytes):
             raise ValidationError("request body too large")
@@ -1409,6 +1414,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", 0) or 0)
         except ValueError:
+            length = -1
+        if self.headers.get("Transfer-Encoding") is not None:
             length = -1
         if 0 <= length <= MAX_DISCARDED_BODY_BYTES:
             try:
@@ -1443,7 +1450,6 @@ class Handler(BaseHTTPRequestHandler):
                 continue
             principal = None
             gate, guest_slot = None, False
-            self._body_pending = has_body
             try:
                 try:
                     try:
@@ -1490,22 +1496,35 @@ class Handler(BaseHTTPRequestHandler):
                 # the response is written: a slow reader must not hold one.
                 if guest_slot:
                     gate.release()
-            if self._body_pending:
-                self._discard_body()
             return self._send_json(status, obj)
         return self._send_json(404, {"error": {"code": "not_found", "message": "no such route"}})
 
+    def _begin(self, head_only: bool) -> None:
+        """Note whether this request carries a body. Whatever the answer turns
+        out to be, a body that nobody read must not be left on the connection:
+        it would be taken for the next request."""
+        self._head_only = head_only
+        self._body_pending = False
+        if self.headers.get("Transfer-Encoding") is not None:
+            # A body without a stated length is not read by this server at all.
+            self._body_pending = True
+            self.close_connection = True
+            return
+        length = self.headers.get("Content-Length")
+        if length is not None and length.strip() not in ("", "0"):
+            self._body_pending = True
+
     def do_GET(self):
-        self._head_only = False
+        self._begin(False)
         self._dispatch("GET")
 
     def do_HEAD(self):
         # Same as GET without the body (uptime monitors commonly use HEAD).
-        self._head_only = True
+        self._begin(True)
         self._dispatch("GET")
 
     def do_POST(self):
-        self._head_only = False
+        self._begin(False)
         self._dispatch("POST")
 
     def _serve_static(self, path):
@@ -1524,10 +1543,14 @@ class Handler(BaseHTTPRequestHandler):
                  ".css": "text/css; charset=utf-8", ".json": "application/json",
                  ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon"}.get(ext, "text/plain")
         data = target.read_bytes()
+        if self._body_pending:
+            self._discard_body()
         try:
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
+            if self.close_connection:
+                self.send_header("Connection", "close")
             self._security_headers()
             self.end_headers()
             if not self._head_only:

@@ -109,7 +109,12 @@ small and fixed:
 - a request body is read only after the caller has been identified. Without a
   session, only the sign-in route takes a body, of at most 16 KB. An unwanted
   body of up to 64 KB is read and thrown away unparsed; beyond that the answer
-  carries `Connection: close`.
+  carries `Connection: close`;
+- a body that nobody read is never left on the connection, whatever the method
+  or the route (a `GET` with a body, a static file, an unknown route), because
+  it would be taken for the next request. A body sent without a length
+  (`Transfer-Encoding: chunked`) is not accepted: the request is refused where
+  a body is expected, and the connection is closed after the answer either way.
 
 What remains is the cost of answering at all (about 2.5 ms of CPU for the
 smallest request on a tenth of a CPU, so several dozen requests a second of any

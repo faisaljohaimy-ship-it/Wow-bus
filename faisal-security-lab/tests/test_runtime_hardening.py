@@ -328,6 +328,57 @@ class TestRequestBody(LiveCase):
         self.assertEqual(status, 200)
         self.assertTrue(body["token"])
 
+    def exchange(self, payload: bytes, wait: float = 3.0) -> bytes:
+        """Send raw bytes on one connection and return everything that comes back."""
+        sock = socket.create_connection(("127.0.0.1", self.port), timeout=10)
+        try:
+            sock.sendall(payload)
+            sock.settimeout(wait)
+            answer = b""
+            try:
+                while True:
+                    chunk = sock.recv(65536)
+                    if not chunk:
+                        break
+                    answer += chunk
+            except socket.timeout:
+                pass
+            return answer
+        finally:
+            sock.close()
+
+    def test_a_body_nobody_read_is_never_taken_for_the_next_request(self):
+        smuggled = b"GET /api/config HTTP/1.1\r\nHost: x\r\n\r\n"
+        cases = {
+            "GET with a body": b"GET /api/health HTTP/1.1\r\nHost: x\r\nContent-Length: "
+                               + str(len(smuggled)).encode() + b"\r\n\r\n" + smuggled,
+            "static file with a body": b"GET / HTTP/1.1\r\nHost: x\r\nContent-Length: "
+                                       + str(len(smuggled)).encode() + b"\r\n\r\n" + smuggled,
+            "unknown route with a body": b"POST /api/nope HTTP/1.1\r\nHost: x\r\nContent-Length: "
+                                         + str(len(smuggled)).encode() + b"\r\n\r\n" + smuggled,
+            "chunked body": b"POST /api/auth/login HTTP/1.1\r\nHost: x\r\n"
+                            b"Transfer-Encoding: chunked\r\n\r\n"
+                            + hex(len(smuggled))[2:].encode() + b"\r\n" + smuggled + b"\r\n0\r\n\r\n",
+            "chunked GET": b"GET /api/health HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n"
+                           + hex(len(smuggled))[2:].encode() + b"\r\n" + smuggled + b"\r\n0\r\n\r\n",
+        }
+        for name, payload in cases.items():
+            with self.subTest(case=name):
+                answer = self.exchange(payload, wait=1.5)
+                # One answer only: the bytes of the body were not served as a request.
+                self.assertEqual(answer.count(b"HTTP/1.1 "), 1, answer[:300])
+                self.assertNotIn(b'"min_password_length"', answer)
+        # A chunked sign-in is refused, and the connection is closed after the answer.
+        answer = self.exchange(cases["chunked body"], wait=1.5)
+        self.assertTrue(answer.startswith(b"HTTP/1.1 400 "), answer[:60])
+        self.assertIn(b"Connection: close", answer)
+        # Two ordinary requests on one connection are both answered.
+        two = (b"GET /api/health HTTP/1.1\r\nHost: x\r\n\r\n"
+               b"GET /api/config HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+        answer = self.exchange(two)
+        self.assertEqual(answer.count(b"HTTP/1.1 200 "), 2, answer[:300])
+        self.assertIn(b'"min_password_length"', answer)
+
     def test_a_content_length_that_is_not_a_number_is_a_bad_request(self):
         status, body, _ = self.call("POST", "/api/auth/login",
                                     headers=[("Content-Length", "many")])
