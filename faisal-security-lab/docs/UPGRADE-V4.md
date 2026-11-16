@@ -220,3 +220,19 @@ _The base toolchain is strong: Python 3.13.18, Node 22.23.4/npx 10.9.9, Go 1.24.
 
 Each phase ships as a tested, committed, pushed increment; the combined build is re-tested after each
 integration (§25). External blockers (ZAP end-to-end, live Render deploy) are marked honestly, never faked.
+
+## Progress log
+
+- **Phase 1 — done.** `allowed_ports` enforced at the network layer; cancel→`cancelled` with a measured
+  cancel time; over-limit→`timed_out`; time-limited signed execution-permission grant per job (v4 §19);
+  egress withheld for local scans. +10 tests. (axes 4, 5, 6 advanced)
+- **Phase 2 — done.** Agent Tool Gateway (`app/gateway.py`) exposing the nine §18 contracts
+  (`list_capabilities`, `validate_request`, `estimate_resources`, `start_job`, `get_job_status`,
+  `cancel_job`, `collect_evidence`, `normalize_findings`, `retest_finding`); every scan now goes through
+  it. `credential_ref` secret store (`app/secretstore.py`) with the §19 kind taxonomy — the value reaches
+  only a tool's environment, never a job record, the audit log, a report or the model; a connector whose
+  required secret is unconfigured is blocked. New routes: scan estimate/validate, finding retest, gateway
+  capabilities, owner-only secret set/list/delete. +12 tests. (axes 1, 2, 5, 7, 8 advanced)
+  - Deferred, honestly: the additional scan-engine binaries (Syft, testssl.sh, Schemathesis, Nuclei,
+    Trivy install) — the gateway + connector contract are ready for them; adding each connector with a
+    verified install is tracked for a follow-up so readiness stays honest, not catalogued-as-done.

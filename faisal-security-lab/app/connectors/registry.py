@@ -81,6 +81,22 @@ def all_connectors() -> list[Connector]:
     return list(_REGISTRY.values())
 
 
+def snapshot() -> list[dict]:
+    """Stored tool_registry rows for the known connectors, WITHOUT probing any
+    tool (so it is cheap to call). A connector not yet synced reports its
+    catalogued license/category and state 'catalog'."""
+    _build()
+    rows = []
+    for name in sorted(_REGISTRY):
+        conn = _REGISTRY[name]
+        row = store.get_tool_registry(name) or {}
+        rows.append({"name": name, "state": row.get("state", "catalog"),
+                     "license": row.get("license") or conn.license,
+                     "version": row.get("version", ""),
+                     "category": row.get("category") or conn.category})
+    return rows
+
+
 def _state_for(readiness: dict) -> str:
     if readiness.get("available") and readiness.get("installed"):
         return "ready"

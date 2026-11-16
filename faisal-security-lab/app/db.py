@@ -12,7 +12,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -227,6 +227,19 @@ CREATE INDEX IF NOT EXISTS idx_audit_project ON audit(project_id, created_at);
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
+);
+
+-- Credential store referenced by credential_ref (§19). Only the worker's
+-- connector-staging path reads `value`; it is never returned by any API, logged,
+-- shown, reported, or sent to the model. Every other surface sees ref/kind/host.
+CREATE TABLE IF NOT EXISTS secrets (
+    ref        TEXT PRIMARY KEY,
+    kind       TEXT NOT NULL DEFAULT 'api_credential',  -- api_credential|activation_token|tls_cert|license|training_badge|other
+    host       TEXT NOT NULL DEFAULT '',
+    value      TEXT NOT NULL,
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS schedules (

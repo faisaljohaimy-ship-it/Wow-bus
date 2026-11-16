@@ -163,6 +163,21 @@ class Worker:
                                            message="cancelled before execution started")
                 return
 
+            # 2d. Resolve any credential_ref this connector declares. A required
+            # secret that is not configured blocks the job — never a silent run
+            # without it. The value reaches only the tool's environment.
+            from . import secretstore
+            env_secrets, missing = secretstore.resolve_for_connector(connector)
+            if missing:
+                queue.complete(jid, "blocked",
+                               error={"code": "secret_unavailable",
+                                      "message": "required credential(s) not configured: "
+                                                 + ", ".join(missing)})
+                audit.record("job.secret_unavailable", actor=self.worker_id,
+                             project_id=project["id"], target=jid, outcome="denied",
+                             detail={"missing": missing})
+                return
+
             queue.mark_running(jid, self.worker_id, phase="preparing")
 
             with tempfile.TemporaryDirectory(prefix="fsl-job-") as tmp:
@@ -186,6 +201,7 @@ class Worker:
                     stop_event=threading.Event(),
                     allow_private=bool(asset.get("metadata", {}).get("internal")),
                     allow_network=bool(caps.get("needs_network")),
+                    secrets=env_secrets,
                     limits=get_config().limits)
 
                 queue.update_progress(jid, 0.25, phase="running")

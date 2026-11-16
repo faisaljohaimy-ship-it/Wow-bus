@@ -70,6 +70,10 @@ class ExecContext:
     # worker sets this False and run_tool withholds the egress proxy, so the
     # tool cannot phone out. Network/active connectors leave it True.
     allow_network: bool = True
+    # Resolved credential_ref values as {ENV_NAME: value}, injected into the
+    # tool's environment by run_tool. The worker fills this from the connector's
+    # declared secret_refs; it is never part of the job params, result or logs.
+    secrets: dict = field(default_factory=dict)
     limits: Limits = field(default_factory=lambda: get_config().limits)
     logs: list = field(default_factory=list)
 
@@ -261,6 +265,10 @@ def run_tool(argv: list[str], *, ctx: ExecContext | None = None, cwd: Path | Non
         # Local scan with no need for egress: withhold the proxy and force
         # no_proxy so the tool cannot reach the network through it.
         base_env["no_proxy"] = base_env["NO_PROXY"] = "*"
+    # Resolved credential_ref values go into the tool's environment only — never
+    # into the job params, the result, the audit log or anything the model sees.
+    if ctx is not None and getattr(ctx, "secrets", None):
+        base_env.update(ctx.secrets)
     if extra_env:
         base_env.update(extra_env)
 
