@@ -34,8 +34,9 @@ from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import urlsplit, parse_qs
 
-from . import (audit, auth, conflicts, crypto, demo, evidence, findings as F, gateway, guest_view,
-               lab, metrics, policy, queue, reports, secretstore, sim, store, teams, util)
+from . import (audit, auth, campaigns, circuit, conflicts, crypto, demo, evidence, findings as F,
+               gateway, guest_view, lab, metrics, policy, queue, reports, secretstore, sim, store,
+               teams, util)
 from .ai import agents, evalset
 from .bootstrap import ADMIN_NOTICES, SETUP_NOTICES, describe_notice, init_platform
 from .config import get_config
@@ -1087,6 +1088,48 @@ def scan_validate(req: Req):
 @route("GET", r"/api/gateway/capabilities")
 def gateway_capabilities(req: Req):
     return 200, gateway.list_capabilities(req.principal, project_id=req.q("project"))
+
+
+# ===========================================================================
+# Campaigns (v4 §20) + the circuit breaker (§27)
+# ===========================================================================
+@route("POST", r"/api/projects/(?P<pid>[\w-]+)/campaigns")
+def campaign_create(req: Req):
+    pid = req.params["pid"]
+    _rate_check(pid)
+    b = req.body
+    c = campaigns.create(req.principal, project_id=pid, name=b.get("name", ""),
+                         plan=b.get("plan", []), caps=b.get("caps"))
+    return 201, {"campaign": c}
+
+
+@route("GET", r"/api/projects/(?P<pid>[\w-]+)/campaigns")
+def campaign_list(req: Req):
+    pid = req.params["pid"]
+    req.principal.require_project(pid, "reader")
+    return 200, {"campaigns": campaigns.list_for_project(pid)}
+
+
+@route("GET", r"/api/campaigns/(?P<cid>[\w-]+)")
+def campaign_get(req: Req):
+    c = campaigns.get(req.params["cid"])
+    _require_reader(req, c["project_id"], "campaign not found")
+    return 200, {"campaign": c}
+
+
+@route("POST", r"/api/projects/(?P<pid>[\w-]+)/campaigns/(?P<cid>[\w-]+)/cancel")
+def campaign_cancel(req: Req):
+    pid = req.params["pid"]
+    req.principal.require_project(pid, "analyst")        # authorize before loading
+    c = campaigns.get(req.params["cid"])
+    if c["project_id"] != pid:
+        raise NotFoundError("campaign not found")
+    return 200, {"campaign": campaigns.cancel(req.principal, c["id"])}
+
+
+@route("GET", r"/api/circuit")
+def circuit_status(req: Req):
+    return 200, {"circuit": circuit.status()}
 
 
 # ===========================================================================

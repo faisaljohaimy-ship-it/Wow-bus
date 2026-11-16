@@ -109,7 +109,8 @@ def estimate_resources(principal, *, project_id, asset_id, scope_id, connector, 
 # 4. start_job — enqueue after the enforced policy check (the one write path)
 # ---------------------------------------------------------------------------
 def start_job(principal, *, project_id, asset_id, scope_id, connector, params,
-              priority: int = 5, idempotency_key: str | None = None) -> dict:
+              priority: int = 5, idempotency_key: str | None = None,
+              campaign_id: str | None = None, depends_on: list | None = None) -> dict:
     principal.require_project(project_id, "analyst")
     project, asset, scope, conn = _resolve(project_id, asset_id, scope_id, connector)
     normalized = conn.validate_config(params or {})
@@ -123,9 +124,10 @@ def start_job(principal, *, project_id, asset_id, scope_id, connector, params,
                              detail=decision.public_detail())
     job = queue.enqueue(project_id=project_id, asset_id=asset["id"], scope_id=scope["id"],
                         connector=conn.name, params=normalized, created_by=principal.user_id,
-                        priority=int(priority), idempotency_key=idempotency_key)
+                        priority=int(priority), idempotency_key=idempotency_key,
+                        campaign_id=campaign_id, depends_on=depends_on)
     audit.record("scan.enqueue", actor=principal.email, project_id=project_id, target=job["id"],
-                 detail={"connector": conn.name, "asset": asset["id"]})
+                 detail={"connector": conn.name, "asset": asset["id"], "campaign": campaign_id})
     return job
 
 

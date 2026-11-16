@@ -319,6 +319,12 @@ class Worker:
         if outcome == "failed":
             state = "failed"
         queue.complete(jid, state, result_summary=summary)
+        # Feed the circuit breaker: a clean run closes it, a tool failure counts.
+        from . import circuit
+        if state == "succeeded":
+            circuit.record_success(connector.name)
+        else:
+            circuit.record_failure(connector.name)
 
         # Mark the tool verified the first time a real run on an authorized asset
         # completes with evidence (version+connector+config captured).
@@ -364,8 +370,12 @@ class Worker:
             audit.record("job.retry", actor=self.worker_id, project_id=job["project_id"],
                          target=jid, detail={"code": err.code, "attempt": j["attempts"]})
         elif timeout:
+            from . import circuit
+            circuit.record_failure(job["connector"])
             self._complete_interrupted(jid, "timed_out", code=err.code, message=err.message)
         else:
+            from . import circuit
+            circuit.record_failure(job["connector"])
             queue.complete(jid, "failed", error={"code": err.code, "message": err.message})
 
     # ------------------------------------------------------------------

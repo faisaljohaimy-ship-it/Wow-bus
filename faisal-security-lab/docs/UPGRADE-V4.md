@@ -245,3 +245,16 @@ integration (§25). External blockers (ZAP end-to-end, live Render deploy) are m
   **"absence of findings is not safety"** note, and export **CSV** (BOM + formula-guarded + comma-safe) on
   top of JSON/SARIF/MD/HTML. New routes: project/finding conflicts, conflict resolve, retest outcome,
   report `?format=csv`. +7 tests. (axis 3 advanced; axis 7 retest result persisted)
+- **Phase 4 — done.** Campaign engine (`app/campaigns.py` + `campaigns` table, v4 §20): a
+  dependency-ordered plan of scan tasks with hard total caps — `max_tasks`, `max_concurrency` and
+  `per_asset_max_tasks` — so parallel tools cannot exceed an asset's budget by splitting requests. Each
+  task still goes through the gateway (policy-checked, grant-verified). `claim_next` is now
+  dependency-aware: a task waits for its prerequisites, is blocked (`dependency_failed`) if one cannot
+  succeed, and a cancelled campaign stops its running and pending tasks. Per-connector **circuit breaker**
+  (`app/circuit.py`, §27): repeated real failures open the breaker and new jobs for that connector are
+  held back for a cooldown while everything else keeps working; a success closes it. New routes: campaign
+  create/list/get/cancel, circuit status. +7 tests. (axes 2, 4, 6 advanced)
+  - The deterministic campaign orchestration + gateway are the enforced execution path (§18/§20). The AI
+    planner proposes plans; turning a plan into a running campaign is operator-initiated by default, which
+    keeps execution authority in the server, not in the model (v4 §11). A planner→campaign auto-bridge is
+    the remaining thin layer.

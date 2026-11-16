@@ -12,7 +12,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -111,6 +111,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     lease_expires_at TEXT,
     stop_requested   INTEGER NOT NULL DEFAULT 0,
     stop_requested_at TEXT,                            -- when a cancel/global-stop was first requested
+    campaign_id      TEXT,                             -- the campaign this task belongs to (v4 §20)
+    depends_on       TEXT NOT NULL DEFAULT '[]',       -- JSON: job ids that must succeed before this one runs
     result_summary   TEXT NOT NULL DEFAULT '{}',
     error            TEXT,
     created_by       TEXT NOT NULL,
@@ -269,6 +271,25 @@ CREATE TABLE IF NOT EXISTS secrets (
     updated_at TEXT NOT NULL
 );
 
+-- Campaigns (v4 §20): a dependency-ordered plan of scan tasks with hard total
+-- caps per campaign and per asset, so parallel tools cannot exceed an asset's
+-- budget by splitting requests. Cancelling a campaign stops its running and
+-- pending tasks.
+CREATE TABLE IF NOT EXISTS campaigns (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT NOT NULL,
+    name        TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'running',   -- running|completed|cancelled
+    caps        TEXT NOT NULL DEFAULT '{}',        -- JSON: max_tasks, max_concurrency, per_asset_max_tasks
+    plan        TEXT NOT NULL DEFAULT '[]',        -- JSON: the requested plan (connector/asset/scope/depends)
+    created_by  TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    finished_at TEXT,
+    FOREIGN KEY (project_id) REFERENCES projects(id)
+);
+CREATE INDEX IF NOT EXISTS idx_campaigns_project ON campaigns(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_jobs_campaign ON jobs(campaign_id);
+
 CREATE TABLE IF NOT EXISTS schedules (
     id          TEXT PRIMARY KEY,
     project_id  TEXT NOT NULL,
@@ -333,6 +354,8 @@ class Database:
             ("findings", "safe_verify_step", "TEXT NOT NULL DEFAULT ''"),
             ("findings", "suggested_fix", "TEXT NOT NULL DEFAULT ''"),
             ("findings", "retest_result", "TEXT NOT NULL DEFAULT '{}'")],
+        7: [("jobs", "campaign_id", "TEXT"),
+            ("jobs", "depends_on", "TEXT NOT NULL DEFAULT '[]'")],
     }
 
     def _migrate(self, c: sqlite3.Connection, from_version: int) -> None:
