@@ -34,8 +34,8 @@ from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import urlsplit, parse_qs
 
-from . import (audit, auth, demo, evidence, findings as F, guest_view, lab, metrics, policy, queue,
-               reports, sim, store, teams, util)
+from . import (audit, auth, crypto, demo, evidence, findings as F, guest_view, lab, metrics, policy,
+               queue, reports, sim, store, teams, util)
 from .ai import agents, evalset
 from .bootstrap import ADMIN_NOTICES, SETUP_NOTICES, describe_notice, init_platform
 from .config import get_config
@@ -1304,7 +1304,19 @@ def lab_grade(req: Req):
 
 @route("GET", r"/api/sim/scenarios", guest_ok=True)
 def sim_scenarios(req: Req):
-    return 200, {"scenarios": sim.scenario_names()}
+    return 200, {"scenarios": sim.scenario_catalog()}
+
+
+# The crypto auto-cracker: analyse caller-supplied text (a cipher or encoded
+# blob) with the standard-library engine. Pure computation on the given text —
+# no target, no network. Bounded input so a guest cannot ask for heavy work.
+@route("GET", r"/api/crypto/analyze", guest_ok=True)
+def crypto_analyze(req: Req):
+    text = (req.q("text") or "")[:2000]
+    if not text.strip():
+        return 200, {"best": {"method": "", "text": "", "key": "", "score": 0},
+                     "readable": False, "candidates": [], "steps": []}
+    return 200, crypto.deep_analyze(text)
 
 
 @route("GET", r"/api/sim/run", guest_ok=True)

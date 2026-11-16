@@ -895,7 +895,8 @@ const AGENT_GROUPS = {
 // The "word as a key": a typed keyword opens a section.
 const CMD_MAP = { sim:"sim", simulate:"sim", run:"sim", attack:"sim", hack:"sim",
   teams:"teams", team:"teams", purple:"teams", blue:"teams", red:"teams",
-  lab:"lab", ctf:"lab", crypto:"lab", cipher:"lab", decrypt:"lab",
+  lab:"lab", ctf:"lab",
+  crypto:"cracker", crack:"cracker", cipher:"cracker", decrypt:"cracker", analyze:"cracker", solve:"cracker",
   recon:"groups", exploit:"groups", network:"groups", net:"groups", agents:"groups",
   defense:"groups", defence:"groups", help:"help", "?":"help" };
 const GROUP_TEXT = k => (AGENT_GROUPS.offense.concat(AGENT_GROUPS.defense)
@@ -903,8 +904,8 @@ const GROUP_TEXT = k => (AGENT_GROUPS.offense.concat(AGENT_GROUPS.defense)
 
 function agentHeader(){
   const chips = [["sim", L("المحاكاة","Simulation")], ["groups", L("الفرق","Groups")],
-    ["teams", L("لوحة الفرق","Teams")], ["lab", L("مختبر الشيفرات","Crypto lab")],
-    ["help", L("مساعدة","Help")]]
+    ["cracker", L("فكّ الشيفرات","Auto-crack")], ["teams", L("لوحة الفرق","Teams")],
+    ["lab", L("مختبر الشيفرات","Crypto lab")], ["help", L("مساعدة","Help")]]
     .map(([v,lab])=>`<button class="chip ${S.agentView===v?"on":""}" data-agent="view" data-view="${v}">${esc(lab)}</button>`).join("");
   const col = (title, arr, cls) => `<div class="grp-col ${cls}"><h3>${esc(title)}</h3>`
     + arr.map(g=>`<div class="grp"><span class="gi">${g.icon}</span><div><b>${esc(L(g.ar,g.en))}</b>`
@@ -960,7 +961,7 @@ function simResultView(r){
     <span class="small"> · ${esc(L("الهدف","Goal"))}: ${esc(r.goal.name)}</span></div>`;
   const score = `<div class="scorebar">
     <div class="sc red"><span>${esc(L("الأحمر","Red"))}</span><b>${r.red.score}</b>
-      <div class="small">${esc(L("أجهزة مخترقة","Hosts taken"))}: ${r.red.hosts_compromised}/${r.red.hosts_total} · ${esc(L("شيفرات مكسورة","Ciphers broken"))}: ${r.red.ciphers_broken}</div></div>
+      <div class="small">${esc(L("أجهزة مخترقة","Hosts taken"))}: ${r.red.hosts_compromised}/${r.red.hosts_total} · ${esc(L("شيفرات","Ciphers"))}: ${r.red.ciphers_broken}${r.red.exfiltrated?` · ${esc(L("تسريب","Exfil"))}: ${r.red.exfiltrated}B`:""}</div></div>
     <div class="sc blue"><span>${esc(L("الأزرق","Blue"))}</span><b>${r.blue.score}</b>
       <div class="small">${esc(L("كشوفات","Detections"))}: ${r.blue.detections} · ${esc(L("ترقيعات","Patches"))}: ${r.blue.vulns_patched} · ${esc(L("عزل","Isolations"))}: ${r.blue.hosts_isolated}</div></div></div>`;
   const hosts = `<div class="hostgrid">`+r.hosts.map(h=>{
@@ -970,9 +971,20 @@ function simResultView(r){
   const lines = r.timeline.map(e=>{
     const cls = e.team==="red"?"ev-red":"ev-blue";
     const det = e.detected?` <span class="det">⚑${esc(L("مكشوف","seen"))}</span>`:"";
-    return `<div class="evline ${cls}"><span class="tn">T${e.turn}</span> <span class="eg">[${esc(e.group)}]</span> ${esc(e.action)} → <b>${esc(e.target)}</b> <span class="muted">${esc(e.detail||"")}</span>${det}</div>`;
+    const tac = e.tactic?` <span class="tac">${esc(e.tactic)}</span>`:"";
+    return `<div class="evline ${cls}"><span class="tn">T${e.turn}</span> <span class="eg">[${esc(e.group)}]</span> ${esc(e.action)} → <b>${esc(e.target)}</b> <span class="muted">${esc(e.detail||"")}</span>${tac}${det}</div>`;
   }).join("");
-  return banner + score + hosts + `<div class="card term-card"><h3>${esc(L("سجل العملية","Operation log"))} · ${r.turns} ${esc(L("أدوار","turns"))}</h3><div class="timeline">${lines}</div></div>`;
+  const techs = (r.techniques||[]).map(t=>`<span class="tac">${esc(t)}</span>`).join(" ");
+  const narr = (r.narrative||[]).map((s,i)=>`<div class="evline"><span class="tn">${i+1}.</span> ${esc(s)}</div>`).join("");
+  const recs = (r.recommendations||[]).map(s=>`<li>${esc(s)}</li>`).join("");
+  const extra = (techs||narr||recs) ? `<div class="card term-card">`
+    + (techs?`<h3>${esc(L("تقنيات مستخدمة · MITRE","Techniques used · MITRE"))}</h3><div class="tacrow">${techs}</div>`:"")
+    + (narr?`<h3 style="margin-top:12px">${esc(L("سرد العملية","Kill-chain narrative"))}</h3><div class="timeline">${narr}</div>`:"")
+    + (recs?`<h3 style="margin-top:12px">${esc(L("توصيات دفاعية","Defensive recommendations"))}</h3><ul class="small reclist">${recs}</ul>`:"")
+    + `</div>` : "";
+  return banner + score + hosts
+    + `<div class="card term-card"><h3>${esc(L("سجل العملية","Operation log"))} · ${r.turns} ${esc(L("أدوار","turns"))}</h3><div class="timeline">${lines}</div></div>`
+    + extra;
 }
 
 async function teamsView(){
@@ -1023,6 +1035,38 @@ function helpView(){
   return `<div class="card term-card"><h3>${esc(L("الكلمات المفتاحية","Keywords"))}</h3><div class="timeline">${rows}</div></div>`;
 }
 
+// The auto-cracker console: paste any weak ciphertext/encoding; the agent
+// detects the method and recovers the plaintext (GET /api/crypto/analyze).
+function crackerView(){
+  const r = S.crackResult;
+  const samples = ["Uryyb, Jbeyq!", "KHOOR ZRUOG", "aGVsbG8gd29ybGQh", "LXtechjvpxoebjasbk"];
+  let out = "";
+  if(r){
+    if(r.error){ out = notice(esc(r.error),"err"); }
+    else {
+      const b = r.best || {};
+      const cands = (r.candidates||[]).slice(0,6).map(c=>
+        `<div class="evline"><span class="eg">${esc(c.method||"")}</span> <span class="muted">(${Number(c.score||0).toFixed(2)})</span> ${esc(String(c.text||"").slice(0,90))}</div>`).join("");
+      out = `<div class="simbanner ${r.readable?"blue":"red"}">${r.readable
+          ? "🔓 "+esc(L("تمّ الفكّ","Cracked"))+" — "+esc(b.method||"")
+          : "⚠ "+esc(L("لم يُفكّ بثقة","no confident reading"))}</div>
+        <div class="card term-card"><h3>${esc(L("أفضل قراءة","Best reading"))}</h3>
+          <code class="ct" style="color:#9dffb0;font-size:14px">${esc(String(b.text||"").slice(0,400))||"—"}</code>
+          ${b.key?`<div class="small muted">${esc(L("المفتاح","key"))}: ${esc(String(b.key).slice(0,48))}</div>`:""}
+          <h3 style="margin-top:12px">${esc(L("مرشّحات أخرى","Other candidates"))}</h3>
+          <div class="timeline">${cands||"—"}</div></div>`;
+    }
+  }
+  return `<div class="card term-card"><h2>🔓 ${esc(L("فكّ الشيفرات التلقائي","Auto-cracker"))}</h2>
+      <p class="small muted">${esc(L("ألصق أيّ نصّ مشفّر أو مُرمّز (Base64/Hex/قيصر/فيجنر/أفيني/XOR…) وسيكتشف الوكيل الطريقة ويفكّها.",
+        "Paste any ciphertext or encoded blob (Base64/Hex/Caesar/Vigenere/Affine/XOR…) — the agent detects the method and cracks it."))}</p>
+      <textarea id="crackinput" rows="3" placeholder="${esc(L("ألصق النصّ هنا…","paste ciphertext here…"))}">${esc(S.crackInput||"")}</textarea>
+      <div class="term-actions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
+        <button class="btn primary" data-agent="crackrun">⚡ ${esc(L("فُكّ الآن","Crack it"))}</button>
+        ${samples.map(s=>`<button class="chip" data-agent="cracksample" data-s="${esc(s)}">${esc(s.slice(0,16))}</button>`).join("")}
+      </div></div>${out}`;
+}
+
 // Matrix-style code rain behind the agent, and a "decoding" scramble on the
 // title. Both run only when motion is on; they stop themselves when the canvas
 // leaves the page (navigating away) and never run on the server.
@@ -1037,28 +1081,65 @@ function startMatrix(){
   const rect = cv.getBoundingClientRect();
   cv.width = Math.max(1, Math.floor(rect.width * dpr));
   cv.height = Math.max(1, Math.floor(rect.height * dpr));
-  const glyphs = "01<>/\\{}[]()=+*#$%&;:アカサタナヒ0123456789ABCDEF".split("");
-  const fs = Math.max(12, 14 * dpr);
-  const cols = Math.max(6, Math.floor(cv.width / fs));
-  const drops = new Array(cols).fill(0).map(() => (Math.random() * cv.height / fs) | 0);
+  const glyphs = "01<>/\\{}[]()=+*#$%&;:アカサタナヒミラ0123456789ABCDEF".split("");
+  const fs = Math.max(11, 13 * dpr);
+  const cols = Math.max(8, Math.floor(cv.width / fs));
+  const drops = new Array(cols).fill(0).map(() => -((Math.random() * 40) | 0));
+  const speed = new Array(cols).fill(0).map(() => 0.6 + Math.random() * 0.8);  // organic, varied fall
   let last = 0;
+  ctx.textBaseline = "top";
   function frame(ts){
     if(!document.getElementById("matrixrain")){ stopMatrix(); return; }   // left the screen
-    if(ts - last >= 55){                                                   // ~18fps, light on a phone
+    if(ts - last >= 50){
       last = ts;
-      ctx.fillStyle = "rgba(0,0,0,0.14)"; ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.fillStyle = "rgba(2,7,3,0.10)"; ctx.fillRect(0, 0, cv.width, cv.height);  // soft fade = long trails
       ctx.font = fs + "px ui-monospace,Consolas,monospace";
       for(let i = 0; i < cols; i++){
         const ch = glyphs[(Math.random() * glyphs.length) | 0];
-        ctx.fillStyle = Math.random() < 0.12 ? "#ff3b4d" : "#2ecc5a";
-        ctx.fillText(ch, i * fs, drops[i] * fs);
-        if(drops[i] * fs > cv.height && Math.random() > 0.975) drops[i] = 0;
-        drops[i]++;
+        const y = drops[i] * fs;
+        const r = Math.random();
+        ctx.fillStyle = r < 0.05 ? "#ff4d5e" : (r < 0.30 ? "#c9ffd4" : "#2ecc5a");  // bright heads + red sparks
+        if(y >= 0) ctx.fillText(ch, i * fs, y);
+        if(y > cv.height && Math.random() > 0.965) { drops[i] = -2; }
+        drops[i] += speed[i];
       }
     }
     _matrixRAF = requestAnimationFrame(frame);
   }
   _matrixRAF = requestAnimationFrame(frame);
+}
+
+// A one-time "boot" sequence: a few lines type out over the hero, then fade.
+let _agentBooted = false;
+function bootSequence(){
+  if(_agentBooted || !motionIsOn()) return;
+  _agentBooted = true;
+  const hero = document.querySelector(".agent-hero"); if(!hero) return;
+  const box = document.createElement("div"); box.className = "boot";
+  hero.appendChild(box);
+  const lines = [
+    "> initializing agent core …",
+    "> offensive modules [recon·exploit·crypto·network] … OK",
+    "> defensive modules [detect·harden·respond] … OK",
+    "> arming simulation engine … OK",
+    "> AGENT ONLINE.",
+  ];
+  let li = 0;
+  function typeLine(){
+    if(li >= lines.length || !document.body.contains(box)){
+      setTimeout(() => { box.classList.add("gone"); setTimeout(() => box.remove(), 500); }, 450);
+      return;
+    }
+    const row = document.createElement("div"); row.className = "brow"; box.appendChild(row);
+    const text = lines[li++]; let ci = 0;
+    (function typeChar(){
+      if(!document.body.contains(box)) return;
+      row.textContent = text.slice(0, ++ci);
+      if(ci < text.length) setTimeout(typeChar, 11);
+      else setTimeout(typeLine, 55);
+    })();
+  }
+  typeLine();
 }
 function scrambleText(el, finalText, dur=900){
   if(!el) return;
@@ -1084,10 +1165,12 @@ async function scrAgent(ctx){
   else if(S.agentView==="teams") body=await teamsView();
   else if(S.agentView==="lab") body=await labView();
   else if(S.agentView==="groups") body=groupsView();
+  else if(S.agentView==="cracker") body=crackerView();
   else body=helpView();
   if(ctx.seq!==RENDER_SEQ) return;
   setMain(ctx, topbar(t("agent")) + agentHeader() + `<div class="agent-body">${body}</div>`);
   startMatrix();
+  bootSequence();
   const ht=document.getElementById("herotitle"); if(ht) scrambleText(ht, L("الوكيل","AGENT"), 850);
   const cb=document.getElementById("cmdbar"); if(cb) cb.focus();
 }
@@ -1113,6 +1196,16 @@ document.addEventListener("click", async e=>{
       S.labResults=S.labResults||{};
       for(const c of (S.challenges||[])){ try{ S.labResults[c.id]=await api(`/api/lab/solve?id=${encodeURIComponent(c.id)}`); }catch(err){} }
       return renderScreen(); }
+    if(act==="crackrun" || act==="cracksample"){
+      const ta=document.getElementById("crackinput");
+      if(act==="cracksample" && ta) ta.value=b.dataset.s||"";
+      const text=((ta&&ta.value)||"").trim();
+      S.crackInput=text;
+      if(!text){ if(ta) ta.focus(); return; }
+      b.disabled=true; b.classList.add("pulsing");
+      S.crackResult=await api(`/api/crypto/analyze?text=${encodeURIComponent(text.slice(0,2000))}`);
+      return renderScreen();
+    }
   }catch(err){ const m=document.querySelector(".agent-body"); if(m) m.insertAdjacentHTML("afterbegin", errorNotice(err)); }
 });
 // The keyword command bar: a word opens a section.

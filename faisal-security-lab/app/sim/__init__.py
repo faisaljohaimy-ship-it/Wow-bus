@@ -8,7 +8,13 @@ targets and never reaches a real host. See engine.run().
 """
 from .engine import Simulation, run
 from .network import build_range
-from .scenarios import SCENARIOS, get_spec, scenario_names
+from .scenarios import (
+    ALL_SCENARIOS,
+    SCENARIOS,
+    get_spec,
+    scenario_catalog,
+    scenario_names,
+)
 
-__all__ = ["Simulation", "run", "build_range", "SCENARIOS", "get_spec",
-           "scenario_names"]
+__all__ = ["Simulation", "run", "build_range", "SCENARIOS", "ALL_SCENARIOS",
+           "get_spec", "scenario_names", "scenario_catalog"]
