@@ -35,8 +35,8 @@ from typing import NamedTuple
 from urllib.parse import urlsplit, parse_qs
 
 from . import (audit, auth, campaigns, circuit, conflicts, crypto, demo, evidence, findings as F,
-               gateway, guest_view, lab, metrics, policy, queue, reports, secretstore, sim, store,
-               teams, util)
+               gateway, guest_view, hardening, lab, metrics, policy, queue, reports, secretstore,
+               sim, store, teams, util)
 from .ai import agents, evalset
 from .bootstrap import ADMIN_NOTICES, SETUP_NOTICES, describe_notice, init_platform
 from .config import get_config
@@ -1371,6 +1371,41 @@ def ai_report(req: Req):
     m = metrics.snapshot(pid)
     top = F.list_findings(pid, limit=15)
     return 200, {"report": agents.reporting(m, top)}
+
+
+# ===========================================================================
+# Defensive hardening advisor (defensive-only, advisory): protect assets you
+# own. Scans nothing; runs no tool. GET the controls catalogue; POST a
+# self-assessment to score your posture.
+# ===========================================================================
+@route("GET", r"/api/hardening", guest_ok=True)
+def hardening_catalog(req: Req):
+    dom = req.q("domain")
+    if dom and dom not in hardening.DOMAINS:
+        dom = None
+    return 200, {"domains": hardening.domains(), "controls": hardening.checklist(dom)}
+
+
+@route("POST", r"/api/hardening/assess")
+def hardening_assess(req: Req):
+    # Authenticated but project-independent: it scores guidance about the
+    # caller's own assets and reads no stored data. `answers` maps a control id
+    # to 'yes' / 'no' / 'unknown'; anything else is treated as 'unknown'.
+    answers = req.body.get("answers") or {}
+    if not isinstance(answers, dict):
+        raise ValidationError("answers must be an object of control_id -> yes|no|unknown")
+    clean = {str(k): str(v) for k, v in list(answers.items())[:200]}
+    return 200, {"assessment": hardening.assess(clean)}
+
+
+@route("GET", r"/api/projects/(?P<pid>[\w-]+)/hardening", guest_ok=True)
+def project_hardening(req: Req):
+    pid = req.params["pid"]
+    _require_reader(req, pid, "project not found")
+    # Link this project's real findings to the controls that would reduce them,
+    # so the analyzer's output ends in concrete defensive actions.
+    top = F.list_findings(pid, limit=200)
+    return 200, {"recommended": hardening.recommend_for_findings(top)}
 
 
 # ===========================================================================

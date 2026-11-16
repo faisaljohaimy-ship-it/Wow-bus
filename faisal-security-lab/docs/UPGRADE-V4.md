@@ -276,3 +276,17 @@ integration (§25). External blockers (ZAP end-to-end, live Render deploy) are m
   - **Deploy itself (axis 10) is the owner's action:** this environment cannot reach the Render hosting,
     so after merge the owner clicks **Deploy latest commit** (and enables Auto-Deploy) in Render, then runs
     `post_deploy_verify.py <url>`. Everything that can be prepared here is prepared.
+- **Defensive hardening advisor (additive, advisory).** `app/hardening.py`: a defensive-only controls
+  catalogue grouped by the three areas a person actually owns — their **Wi-Fi/router**, their
+  **USB & endpoints** (the BadUSB defence: auto-lock, no autorun, no unknown drives, patch), and their
+  **network & accounts** (default-credential changes, MFA, patching, backups, firewall, segmentation).
+  Each control is bilingual with a *why* and a *how*. A **self-assessment** (`assess`) scores posture with
+  a high=3/medium=2/low=1 weighting, lists the missing controls by priority, and never counts an
+  *unknown* answer as in place. `recommend_for_findings` **links real scan findings to the controls that
+  would reduce them**, so the analyzer's output ends in concrete defensive actions. New routes:
+  `GET /api/hardening` (+`?domain=`), `POST /api/hardening/assess`, `GET /api/projects/{id}/hardening`
+  (findings→controls). A bilingual **Hardening** UI screen (nav + `scrHardening`). It scans nothing, runs
+  no tool and targets no third-party asset — the protective counterpart to attack demos, consistent with
+  the defensive posture of the spec (authorized assets only; no unauthorized scanning). +18 tests
+  (`test_hardening`); the public-view governance crawlers were extended to cover the new guest-readable
+  routes.
