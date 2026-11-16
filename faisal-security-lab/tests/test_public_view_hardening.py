@@ -308,6 +308,8 @@ class TestGuestView(HardeningCase):
             r"/api/findings/(?P<fid>[\w-]+)/conflicts":
                 [f"/api/findings/{fid}/conflicts" for fid in finding_ids],
             r"/api/projects/(?P<pid>[\w-]+)/report": reports,
+            r"/api/hardening": ["/api/hardening", "/api/hardening?domain=wifi"],
+            r"/api/projects/(?P<pid>[\w-]+)/hardening": [f"{project}/hardening"],
             r"/api/ai/status": ["/api/ai/status"],
             r"/api/metrics": [f"/api/metrics?project={pid}"],
             r"/api/teams": ["/api/teams"],

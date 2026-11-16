@@ -36,7 +36,7 @@ const I18N = {
     publicview:"عرض عام للقراءة فقط. تشغيل الفحوص وأي تعديل يتطلب دخول المالك.",
     ownerlogin:"دخول المالك", backpublic:"العودة للعرض العام",
     motion_stop:"إيقاف الحركة", motion_start:"تشغيل الحركة",
-    theme_light:"فاتح", theme_dark:"داكن", tools:"الأدوات والتراخيص",
+    theme_light:"فاتح", theme_dark:"داكن", tools:"الأدوات والتراخيص", hardening:"التحصين الدفاعي",
     preparing:"يجري تجهيز العرض التوضيحي. حدّث الصفحة بعد لحظات.",
     open:"فتح", download:"تنزيل", report_note:"التقارير منقّحة: القيم الحساسة محجوبة.",
     throttled:"محاولات دخول خاطئة كثيرة من هذا الجهاز. انتظر {wait} ثم حاول من جديد.",
@@ -77,7 +77,7 @@ const I18N = {
     publicview:"Public read-only view. Running scans or changing anything requires the owner to sign in.",
     ownerlogin:"Owner sign-in", backpublic:"Back to the public view",
     motion_stop:"Pause motion", motion_start:"Resume motion",
-    theme_light:"Light", theme_dark:"Dark", tools:"Tools & Licences",
+    theme_light:"Light", theme_dark:"Dark", tools:"Tools & Licences", hardening:"Hardening",
     preparing:"The demo is being prepared. Refresh in a moment.",
     open:"Open", download:"Download", report_note:"Reports are redacted: sensitive values are withheld.",
     throttled:"Too many wrong sign-in attempts from this device. Wait {wait}, then try again.",
@@ -319,7 +319,7 @@ function render(){
   if (!S.token && !guestView){ return renderLogin(); }
   document.documentElement.dir = S.lang==="ar"?"rtl":"ltr";
   document.documentElement.lang = S.lang;
-  let nav = ["dashboard","agent","assets","catalog","tools","scans","findings","ailab","reports","audit","settings"];
+  let nav = ["dashboard","agent","assets","catalog","tools","scans","findings","hardening","ailab","reports","audit","settings"];
   if (guestView) nav = nav.filter(k => !["audit","settings"].includes(k));
   if (!nav.includes(S.screen)) S.screen = "dashboard";
   // With no project the list starts with a placeholder. "+ New project" as the
@@ -427,6 +427,7 @@ async function renderScreen(){
     if (S.screen==="tools") return await scrTools(ctx);
     if (S.screen==="scans") return await scrScans(ctx);
     if (S.screen==="findings") return await scrFindings(ctx);
+    if (S.screen==="hardening") return await scrHardening(ctx);
     if (S.screen==="ailab") return await scrAiLab(ctx);
     if (S.screen==="reports") return await scrReports(ctx);
     if (S.screen==="audit") return await scrAudit(ctx);
@@ -631,6 +632,55 @@ async function scrFindings(ctx){
         <td class="small">${esc(x.verification_status)}</td><td class="small">${esc(x.status)}</td><td>${esc(x.title)}</td></tr>`;}).join("")||`<tr><td colspan=7 class="muted">${esc(t("none"))}</td></tr>`}</tbody></table></div>`);
 }
 
+// Defensive hardening advisor: protect assets you own (your Wi-Fi/router, your
+// USB & endpoints, your network). Advisory only — it scans nothing and runs no
+// tool. A self-assessment scores your posture; with a project selected it links
+// the real findings to the controls that would reduce them.
+async function scrHardening(ctx){
+  const lang = S.lang;
+  const pid = S.project ? S.project.id : null;
+  const signedIn = !!S.token;
+  const [cat, rec] = await Promise.all([
+    api("/api/hardening"),
+    pid ? api(`/api/projects/${pid}/hardening`).catch(()=>({recommended:[]}))
+        : Promise.resolve({recommended:[]})]);
+  const PRI = {high:L("عالية","High"), medium:L("متوسطة","Medium"), low:L("منخفضة","Low")};
+  const PCLS = {high:"sev-high", medium:"sev-medium", low:"sev-low"};
+  const domName = d => (cat.domains.find(x=>x.key===d)||{title:{}}).title[lang] || d;
+  // One control row: title, priority, why, how, and a 3-way self-assessment.
+  const control = c => `<div class="card" style="margin:0" data-ctl="${esc(c.id)}">
+      <div class="flex" style="align-items:flex-start;gap:8px">
+        <span class="badge ${PCLS[c.priority]||""}">${esc(PRI[c.priority]||c.priority)}</span>
+        <h3 style="margin:0;flex:1">${esc(c.title[lang]||c.title.en)}</h3>
+      </div>
+      <p class="small" style="margin:6px 0 4px"><b>${esc(L("لماذا","Why"))}:</b> ${esc(c.why[lang]||c.why.en)}</p>
+      <p class="small muted" style="margin:0 0 8px"><b>${esc(L("كيف","How"))}:</b> ${esc(c.how[lang]||c.how.en)}</p>
+      ${signedIn ? `<div class="flex" dir="ltr"><label class="small muted" style="align-self:center">${esc(L("لديّ هذا الضابط؟","In place?"))}</label>
+        <select data-ctl-ans="${esc(c.id)}">
+          <option value="unknown">${esc(L("غير معروف","Unknown"))}</option>
+          <option value="yes">${esc(L("نعم","Yes"))}</option>
+          <option value="no">${esc(L("لا","No"))}</option></select></div>` : ""}</div>`;
+  const section = d => `<div class="card"><h2>${esc(domName(d))}</h2>
+      <div class="grid cols-2" style="gap:12px">${cat.controls.filter(c=>c.domain===d).map(control).join("")}</div></div>`;
+  const recCard = (rec.recommended||[]).length ? `<div class="card"><h2>${esc(L(
+      "موصى به من نتائج هذا المشروع","Recommended from this project's findings"))}</h2>
+      <p class="small muted">${esc(L(
+        "ربط نتائج الفحص الحقيقية بالضوابط التي تقلّلها — ليخرج التحليل بإجراءات دفاعية محدّدة.",
+        "Links the real scan findings to the controls that would reduce them, so the analysis ends in concrete defensive actions."))}</p>
+      <ul>${rec.recommended.map(c=>`<li class="small"><span class="badge ${PCLS[c.priority]||""}">${esc(PRI[c.priority]||c.priority)}</span>
+        <b>${esc(c.title[lang]||c.title.en)}</b> — ${esc(c.how[lang]||c.how.en)}</li>`).join("")}</ul></div>` : "";
+  setMain(ctx, topbar(t("hardening"), `<button class="btn sm" data-act="refresh">↻ ${esc(t("refresh"))}</button>`)
+    + h`<div class="card"><h2>${esc(t("hardening"))}</h2>
+        <p class="small muted">${esc(L(
+          "دليل دفاعي استرشادي لحماية أصولك أنت: شبكتك اللاسلكية والراوتر، منافذ USB والأجهزة الطرفية، والشبكة والحسابات. لا يفحص أي شبكة ولا يشغّل أي أداة ولا يستهدف أحداً — إنه النظير الدفاعي لعروض الهجوم: كيف تحمي ما تملكه.",
+          "An advisory defensive guide to protect assets you own: your Wi-Fi/router, your USB & endpoints, your network & accounts. It scans nothing, runs no tool and targets no one — the defensive counterpart to the attack demos: how to protect what is yours."))}</p>
+        ${signedIn ? `<div class="flex"><button class="btn primary" data-act="hardassess">${esc(L("قيّم وضعي الدفاعي","Assess my posture"))}</button></div><div id="hardout"></div>`
+          : `<p class="small">${esc(L("سجّل دخول المالك لتقييم وضعك الدفاعي.","Sign in to score your defensive posture."))}</p>`}
+      </div>`
+    + recCard
+    + cat.domains.map(d=>section(d.key)).join(""));
+}
+
 async function scrAiLab(ctx){
   const ai=await api("/api/ai/status");
   setMain(ctx, topbar(t("ailab"), `<span class="pill ${ai.available?"ok":"warn"}">${esc(ai.available?ai.provider+" · "+ai.model:"fallback (no provider)")}</span>`)
@@ -831,6 +881,19 @@ document.addEventListener("click", async e=>{
     else if(act==="aireport"){ const r=await api(`/api/projects/${S.project.id}/ai/report`,"POST",{});
       const d=r.report.data; document.getElementById("repout").innerHTML=`<div class="notice">${esc(d.executive_summary_ar)}</div><div class="notice">${esc(d.executive_summary_en)}</div>`; }
     else if(act==="togglestop"){ await api("/api/admin/stop","POST",{engaged:b.dataset.engaged==="1"}); renderScreen(); }
+    else if(act==="hardassess"){
+      const answers={}; document.querySelectorAll("[data-ctl-ans]").forEach(s=>{ answers[s.dataset.ctlAns]=s.value; });
+      const r=await api("/api/hardening/assess","POST",{answers});
+      const a=r.assessment, cls=a.label==="strong"?"ok":(a.label==="moderate"?"warn":"err");
+      const LAB={strong:L("قوي","Strong"),moderate:L("متوسط","Moderate"),weak:L("ضعيف","Weak")};
+      const miss=(a.missing||[]).map(c=>`<li class="small"><b>${esc(c.title[S.lang]||c.title.en)}</b> — ${esc(c.how[S.lang]||c.how.en)}</li>`).join("");
+      document.getElementById("hardout").innerHTML=
+        `<div class="notice ${cls}" style="margin-top:12px">${esc(L("درجة التحصين","Hardening score"))}: <b>${esc(a.score)}%</b> · ${esc(LAB[a.label]||a.label)}
+           — ${esc(a.counts.in_place)}/${esc(a.counts.total)} ${esc(L("ضابط مطبّق","controls in place"))}
+           · ${esc(a.counts.missing)} ${esc(L("ناقص","missing"))} · ${esc(a.counts.unknown)} ${esc(L("غير معروف","unknown"))}</div>`
+        + `<p class="small muted">${esc(a.note[S.lang]||a.note.en)}</p>`
+        + (miss?`<h3>${esc(L("ضوابط ناقصة (حسب الأولوية)","Missing controls (by priority)"))}</h3><ul>${miss}</ul>`:"");
+    }
     else if(act==="ftriage"){ const r=await api(`/api/findings/${b.dataset.fid}/triage`,"POST",{});
       aiBox(`triage (ai:${r.triage.ai_available})`, JSON.stringify(r.triage.data,null,2)); }
     else if(act==="fremediate"){ const r=await api(`/api/findings/${b.dataset.fid}/remediation`,"POST",{});
