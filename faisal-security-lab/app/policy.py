@@ -60,7 +60,9 @@ def set_global_stop(engaged: bool) -> None:
     db = get_db()
     db.set_setting(GLOBAL_STOP_KEY, "1" if engaged else "0")
     if engaged:
-        db.execute("UPDATE jobs SET stop_requested=1 WHERE state IN ('queued','leased','running')")
+        db.execute("UPDATE jobs SET stop_requested=1, "
+                   "stop_requested_at=COALESCE(stop_requested_at,?) "
+                   "WHERE state IN ('queued','leased','running')", (util.now_iso(),))
 
 
 def evaluate_job(*, principal: Principal | None, project: dict, asset: dict, scope: dict,

@@ -2,13 +2,26 @@
 (Arabic/English) Markdown + HTML. All content is redacted on the way out."""
 from __future__ import annotations
 
+import csv
 import html
+import io
 import json
 
+from . import conflicts as conflicts_mod
 from . import findings as findings_mod
 from . import metrics as metrics_mod
+from . import queue as queue_mod
 from . import store, util
+from .connectors import connector_names
 from .version import __version__
+
+# Absence of findings is never a safety guarantee (§10).
+_SAFETY_NOTE = {
+    "ar": "غياب النتائج لا يعني أن الأصل آمن؛ النتائج تبيّن فقط ما غطّته الأدوات المتاحة ضمن النطاق "
+          "وتاريخ قواعدها. ما لم يُفحص يبقى غير معروف.",
+    "en": "Absence of findings is NOT a guarantee of safety; results reflect only what the available "
+          "tools covered within scope and the date of their rule data. What was not scanned is unknown.",
+}
 
 SEV_ORDER = ["critical", "high", "medium", "low", "info"]
 
@@ -69,6 +82,33 @@ def _card_head(i: int) -> str:
             f'<div class="codebar{rev}"><span>{html.escape(half + half)}</span></div></div>')
 
 
+def _coverage(project_id: str) -> dict:
+    """What was and was not scanned — so a report never implies more coverage
+    than it has. Connectors that ran, assets reached, and the tools available
+    but not run."""
+    jobs = queue_mod.list_jobs(project_id, limit=5000)
+    ran: dict[str, dict] = {}
+    assets = set()
+    for j in jobs:
+        c = j["connector"]
+        r = ran.setdefault(c, {"connector": c, "runs": 0, "succeeded": 0, "last_at": ""})
+        r["runs"] += 1
+        if j["state"] == "succeeded":
+            r["succeeded"] += 1
+        fin = j.get("finished_at") or ""
+        if fin > r["last_at"]:
+            r["last_at"] = fin
+        assets.add(j["asset_id"])
+    available = set(connector_names())
+    return {
+        "connectors_run": sorted(ran.values(), key=lambda x: x["connector"]),
+        "connectors_available_not_run": sorted(available - set(ran)),
+        "assets_scanned": len(assets),
+        "total_assets": len(store.list_assets(project_id)),
+        "jobs_total": len(jobs),
+    }
+
+
 def build_report(project_id: str) -> dict:
     project = store.get_project(project_id)
     fnds = findings_mod.list_findings(project_id, limit=5000)
@@ -78,8 +118,40 @@ def build_report(project_id: str) -> dict:
         "generated_at": util.now_iso(),
         "project": {"id": project["id"], "name": project["name"]},
         "metrics": m,
+        "coverage": _coverage(project_id),
+        "conflicts_open": conflicts_mod.open_count(project_id),
+        "safety_note": _SAFETY_NOTE,
         "findings": [_loc(f) for f in fnds],
     }
+
+
+def _csv_cell(value) -> str:
+    """A CSV cell that cannot be read as a spreadsheet formula."""
+    s = "" if value is None else str(value)
+    if s and s[0] in "=+-@\t\r":
+        s = "'" + s
+    return s
+
+
+def to_csv(project_id: str) -> str:
+    """Findings as CSV (UTF-8 with BOM so spreadsheets read Arabic correctly).
+    Values are redacted and formula-guarded; csv handles comma/quote escaping."""
+    r = build_report(project_id)
+    buf = io.StringIO()
+    buf.write("﻿")
+    w = csv.writer(buf)
+    w.writerow(["id", "severity", "work_priority", "connector", "tool_version", "rule_id",
+                "status", "verification_status", "location", "cve", "cwe", "title"])
+    for f in r["findings"]:
+        loc = f["location"]
+        locs = loc.get("file") or loc.get("url") or loc.get("host") or loc.get("package") or ""
+        if loc.get("line"):
+            locs += f":{loc['line']}"
+        w.writerow([_csv_cell(x) for x in (
+            f["id"], f["severity"], f["work_priority"], f["connector"], f.get("tool_version", ""),
+            f["rule_id"], f["status"], f["verification_status"], locs, f.get("cve", ""),
+            f.get("cwe", ""), f["title"])])
+    return buf.getvalue()
 
 
 def _loc(f: dict) -> dict:
@@ -158,6 +230,22 @@ def to_markdown(project_id: str, lang: str = "ar") -> str:
     lines.append(f"**{t['counts']}:** " +
                  ", ".join(f"{s}={sev.get(s,0)}" for s in SEV_ORDER))
     lines.append(f"**{t['verified_fixes']}:** {r['metrics'].get('verified_fixes',0)}")
+    # Coverage + the "no findings != safe" statement (§10).
+    cov = r.get("coverage", {})
+    ran = ", ".join(f"{c['connector']}({c['succeeded']}/{c['runs']})"
+                    for c in cov.get("connectors_run", [])) or "—"
+    cov_label = "التغطية" if lang == "ar" else "Coverage"
+    tools_lbl = "أدوات شُغّلت" if lang == "ar" else "tools run"
+    assets_lbl = "أصول" if lang == "ar" else "assets"
+    conf_lbl = "تعارضات مفتوحة" if lang == "ar" else "open conflicts"
+    lines.append(f"**{cov_label}:** {tools_lbl}: {ran}; {assets_lbl}: "
+                 f"{cov.get('assets_scanned',0)}/{cov.get('total_assets',0)}; "
+                 f"{conf_lbl}: {r.get('conflicts_open',0)}")
+    not_run = cov.get("connectors_available_not_run", [])
+    if not_run:
+        nr_lbl = "أدوات متاحة لم تُشغّل" if lang == "ar" else "available, not run"
+        lines.append(f"**{nr_lbl}:** " + ", ".join(not_run))
+    lines.append(f"> ⚠ {_SAFETY_NOTE.get(lang, _SAFETY_NOTE['en'])}")
     lines += ["", f"## {t['findings']}", ""]
     if not r["findings"]:
         lines.append(t["no_findings"])
@@ -200,6 +288,16 @@ def to_html(project_id: str, lang: str = "ar") -> str:
             f"<td>{html.escape(f['title'])}</td></tr>")
     counts = " · ".join(f"{s}: <b>{html.escape(str(sev.get(s, 0)))}</b>" for s in SEV_ORDER)
     body_rows = "".join(rows) or f"<tr><td colspan=7>{html.escape(t['no_findings'])}</td></tr>"
+    cov = r.get("coverage", {})
+    ran = ", ".join(f"{html.escape(c['connector'])} ({c['succeeded']}/{c['runs']})"
+                    for c in cov.get("connectors_run", [])) or "—"
+    cov_label = "التغطية" if lang == "ar" else "Coverage"
+    assets_lbl = "أصول" if lang == "ar" else "assets"
+    conf_lbl = "تعارضات مفتوحة" if lang == "ar" else "open conflicts"
+    cov_line = (f"{html.escape(cov_label)}: {ran} · {html.escape(assets_lbl)} "
+                f"{cov.get('assets_scanned', 0)}/{cov.get('total_assets', 0)} · "
+                f"{html.escape(conf_lbl)}: {r.get('conflicts_open', 0)}")
+    safety = html.escape(_SAFETY_NOTE.get(lang, _SAFETY_NOTE["en"]))
     return f"""<!doctype html><html lang="{lang}" dir="{direction}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(t['title'])} — {html.escape(r['project']['name'])}</title>
@@ -240,7 +338,8 @@ h1{{display:flex;align-items:center;gap:12px;flex-wrap:wrap}}
 <b>{html.escape(t['generated'])}:</b> {html.escape(r['generated_at'])}<br>
 <span class="note">Faisal Security Lab v{html.escape(r['platform_version'])} — {html.escape(t['note'])}</span></div>
 <div class="card">{_card_head(1)}<b>{html.escape(t['counts'])}:</b> {counts}<br>
-<b>{html.escape(t['verified_fixes'])}:</b> {html.escape(str(r['metrics'].get('verified_fixes', 0)))}</div>
+<b>{html.escape(t['verified_fixes'])}:</b> {html.escape(str(r['metrics'].get('verified_fixes', 0)))}<br>
+{cov_line}<br><span class="note">⚠ {safety}</span></div>
 <div class="card">{_card_head(2)}<h2>{html.escape(t['findings'])}</h2>
 <table><thead><tr><th>{html.escape(t['severity'])}</th><th>{html.escape(t['priority'])}</th>
 <th>{html.escape(t['tool'])}</th><th>{html.escape(t['location'])}</th>

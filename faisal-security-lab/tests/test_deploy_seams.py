@@ -241,8 +241,11 @@ class TestClientAddressHeaderFromDeployFiles(unittest.TestCase):
 
 class TestDocumentedSettingNames(unittest.TestCase):
     def test_every_setting_in_the_deploy_files_and_guides_is_read_by_the_code(self):
-        readers = [*sorted((ROOT / "app").rglob("*.py")), ENTRYPOINT]
-        code = "\n".join(p.read_text() for p in readers)
+        # The same corpus the reverse check scans: app + scripts + deploy + the
+        # entrypoint, so a setting read by a maintained script counts as read.
+        readers = [*sorted((ROOT / "app").rglob("*.py")), *sorted((ROOT / "scripts").iterdir()),
+                   *sorted((ROOT / "deploy").iterdir()), ENTRYPOINT]
+        code = "\n".join(p.read_text() for p in readers if p.is_file())
         written = [RENDER_YAML, FLY_TOML, COMPOSE_YAML, ROOT / ".env.example",
                    ROOT / "docs" / "DEPLOY.md", ROOT / "docs" / "OPERATIONS.md"]
         for path in written:

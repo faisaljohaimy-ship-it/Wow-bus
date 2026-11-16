@@ -12,7 +12,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 7
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     scope_id         TEXT NOT NULL,
     connector        TEXT NOT NULL,
     params           TEXT NOT NULL DEFAULT '{}',
-    state            TEXT NOT NULL DEFAULT 'queued',  -- queued|leased|running|succeeded|failed|blocked|cancelled|undetermined
+    state            TEXT NOT NULL DEFAULT 'queued',  -- queued|leased|running|succeeded|failed|blocked|cancelled|timed_out|undetermined
     phase            TEXT NOT NULL DEFAULT 'queued',
     progress         REAL NOT NULL DEFAULT 0.0,
     idempotency_key  TEXT,
@@ -110,6 +110,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     lease_owner      TEXT,
     lease_expires_at TEXT,
     stop_requested   INTEGER NOT NULL DEFAULT 0,
+    stop_requested_at TEXT,                            -- when a cancel/global-stop was first requested
+    campaign_id      TEXT,                             -- the campaign this task belongs to (v4 §20)
+    depends_on       TEXT NOT NULL DEFAULT '[]',       -- JSON: job ids that must succeed before this one runs
     result_summary   TEXT NOT NULL DEFAULT '{}',
     error            TEXT,
     created_by       TEXT NOT NULL,
@@ -150,6 +153,12 @@ CREATE TABLE IF NOT EXISTS findings (
     occurrences        INTEGER NOT NULL DEFAULT 1,
     reopened           INTEGER NOT NULL DEFAULT 0,
     source_flag        TEXT NOT NULL DEFAULT 'real',  -- real|simulated
+    -- §10 first-class fields
+    sources            TEXT NOT NULL DEFAULT '[]',    -- JSON: contributing {connector,job_id,tool_version,seen_at}
+    context_ref        TEXT NOT NULL DEFAULT '',      -- version/config signature at observation (for evidence expiry)
+    safe_verify_step   TEXT NOT NULL DEFAULT '',      -- a safe, minimal way to confirm this finding
+    suggested_fix      TEXT NOT NULL DEFAULT '',      -- concrete fix, distinct from the abstract remediation
+    retest_result      TEXT NOT NULL DEFAULT '{}',    -- JSON: last retest outcome {job_id,state,reappeared,at}
     created_at         TEXT NOT NULL,
     updated_at         TEXT NOT NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id),
@@ -157,6 +166,27 @@ CREATE TABLE IF NOT EXISTS findings (
 );
 CREATE INDEX IF NOT EXISTS idx_findings_project ON findings(project_id, severity);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_findings_dedup ON findings(project_id, dedup_key);
+
+-- Conflicting-evidence ledger (v4 §10): when a new observation or review
+-- disagrees with a prior one, both are kept and the conflict stays
+-- 'needs_verification' until a proper check resolves it. A conflict is never
+-- silently treated as fixed.
+CREATE TABLE IF NOT EXISTS finding_conflicts (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT NOT NULL,
+    finding_id  TEXT NOT NULL,
+    kind        TEXT NOT NULL,          -- evidence_expired|reappeared_after_fix|verification_disagreement|tool_disagreement
+    status      TEXT NOT NULL DEFAULT 'needs_verification',  -- needs_verification|resolved
+    prior       TEXT NOT NULL DEFAULT '{}',
+    current     TEXT NOT NULL DEFAULT '{}',
+    detail      TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL,
+    resolved_at TEXT,
+    FOREIGN KEY (project_id) REFERENCES projects(id),
+    FOREIGN KEY (finding_id) REFERENCES findings(id)
+);
+CREATE INDEX IF NOT EXISTS idx_conflicts_finding ON finding_conflicts(finding_id);
+CREATE INDEX IF NOT EXISTS idx_conflicts_project ON finding_conflicts(project_id, status);
 
 CREATE TABLE IF NOT EXISTS evidence (
     id             TEXT PRIMARY KEY,
@@ -228,6 +258,38 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 
+-- Credential store referenced by credential_ref (§19). Only the worker's
+-- connector-staging path reads `value`; it is never returned by any API, logged,
+-- shown, reported, or sent to the model. Every other surface sees ref/kind/host.
+CREATE TABLE IF NOT EXISTS secrets (
+    ref        TEXT PRIMARY KEY,
+    kind       TEXT NOT NULL DEFAULT 'api_credential',  -- api_credential|activation_token|tls_cert|license|training_badge|other
+    host       TEXT NOT NULL DEFAULT '',
+    value      TEXT NOT NULL,
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Campaigns (v4 §20): a dependency-ordered plan of scan tasks with hard total
+-- caps per campaign and per asset, so parallel tools cannot exceed an asset's
+-- budget by splitting requests. Cancelling a campaign stops its running and
+-- pending tasks.
+CREATE TABLE IF NOT EXISTS campaigns (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT NOT NULL,
+    name        TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'running',   -- running|completed|cancelled
+    caps        TEXT NOT NULL DEFAULT '{}',        -- JSON: max_tasks, max_concurrency, per_asset_max_tasks
+    plan        TEXT NOT NULL DEFAULT '[]',        -- JSON: the requested plan (connector/asset/scope/depends)
+    created_by  TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    finished_at TEXT,
+    FOREIGN KEY (project_id) REFERENCES projects(id)
+);
+CREATE INDEX IF NOT EXISTS idx_campaigns_project ON campaigns(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_jobs_campaign ON jobs(campaign_id);
+
 CREATE TABLE IF NOT EXISTS schedules (
     id          TEXT PRIMARY KEY,
     project_id  TEXT NOT NULL,
@@ -279,6 +341,33 @@ class Database:
             if row is None:
                 c.execute("INSERT INTO meta(key,value) VALUES('schema_version',?)",
                           (str(SCHEMA_VERSION),))
+            else:
+                self._migrate(c, int(row["value"]) if str(row["value"]).isdigit() else 0)
+
+    # Additive, rollback-friendly migrations: every step only ADDs a nullable
+    # column, so an older build keeps running against a newer database and the
+    # rollback procedure is "deploy the previous build" with no data change.
+    _MIGRATIONS = {
+        4: [("jobs", "stop_requested_at", "TEXT")],
+        6: [("findings", "sources", "TEXT NOT NULL DEFAULT '[]'"),
+            ("findings", "context_ref", "TEXT NOT NULL DEFAULT ''"),
+            ("findings", "safe_verify_step", "TEXT NOT NULL DEFAULT ''"),
+            ("findings", "suggested_fix", "TEXT NOT NULL DEFAULT ''"),
+            ("findings", "retest_result", "TEXT NOT NULL DEFAULT '{}'")],
+        7: [("jobs", "campaign_id", "TEXT"),
+            ("jobs", "depends_on", "TEXT NOT NULL DEFAULT '[]'")],
+    }
+
+    def _migrate(self, c: sqlite3.Connection, from_version: int) -> None:
+        if from_version >= SCHEMA_VERSION:
+            return
+        for version in range(from_version + 1, SCHEMA_VERSION + 1):
+            for table, column, decl in self._MIGRATIONS.get(version, []):
+                have = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
+                if column not in have:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+        c.execute("UPDATE meta SET value=? WHERE key='schema_version'",
+                  (str(SCHEMA_VERSION),))
 
     @contextmanager
     def tx(self):
@@ -311,6 +400,9 @@ class Database:
         self.conn.execute(
             "INSERT INTO settings(key,value) VALUES(?,?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+
+    def delete_setting(self, key: str) -> None:
+        self.conn.execute("DELETE FROM settings WHERE key=?", (key,))
 
 
 _DB: Database | None = None

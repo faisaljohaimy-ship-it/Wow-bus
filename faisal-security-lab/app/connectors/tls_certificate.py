@@ -46,7 +46,8 @@ class TlsCertificateConnector(Connector):
         port = ctx.params.get("port", 443)
         dest = scope_mod.validated_destination(
             target if "://" in target else f"https://{target}:{port}",
-            allow_private=ctx.allow_private)
+            allow_private=ctx.allow_private,
+            allowed_ports=ctx.scope.get("allowed_ports"))
         host, ip = dest["host"], dest["ips"][0]
 
         sslctx = ssl.create_default_context()

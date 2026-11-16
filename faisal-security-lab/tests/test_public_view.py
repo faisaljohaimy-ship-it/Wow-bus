@@ -57,6 +57,8 @@ GUEST_ALLOWLIST = {
     r"/api/jobs/(?P<jid>[\w-]+)",
     r"/api/projects/(?P<pid>[\w-]+)/findings",
     r"/api/findings/(?P<fid>[\w-]+)",
+    r"/api/projects/(?P<pid>[\w-]+)/conflicts",
+    r"/api/findings/(?P<fid>[\w-]+)/conflicts",
     r"/api/projects/(?P<pid>[\w-]+)/report",
     r"/api/ai/status",
     r"/api/metrics",
@@ -105,8 +107,12 @@ def _clean_env():
 
 
 def path_for(pattern: str, ids: dict) -> str:
-    """Concrete URL path for a route regex, e.g. /api/jobs/(?P<jid>...) -> /api/jobs/job_1."""
-    return re.sub(r"\(\?P<(\w+)>[^)]*\)", lambda m: ids[m.group(1)], pattern.strip("^$"))
+    """Concrete URL path for a route regex, e.g. /api/jobs/(?P<jid>...) -> /api/jobs/job_1.
+    An id the caller did not supply falls back to the parameter's own name, a
+    valid path segment, so a route with a new parameter is still crawled (it must
+    still deny the caller — the point of these crawlers)."""
+    return re.sub(r"\(\?P<(\w+)>[^)]*\)", lambda m: ids.get(m.group(1), m.group(1)),
+                  pattern.strip("^$"))
 
 
 class PublicViewCase(unittest.TestCase):

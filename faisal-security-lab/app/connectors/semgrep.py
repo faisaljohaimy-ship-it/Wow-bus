@@ -99,8 +99,14 @@ class SemgrepConnector(Connector):
 
     def _run(self, ctx, argv):
         from .base import run_tool
+        # A local scan needs no network: disable Semgrep's metrics/version pings
+        # so that withholding the egress proxy (needs_network=False) can never
+        # make a scan hang or error attempting to phone home.
         return run_tool(argv, ctx=ctx, cwd=ctx.workdir,
-                        timeout=min(ctx.limits.job_timeout_seconds, 320))
+                        timeout=min(ctx.limits.job_timeout_seconds, 320),
+                        extra_env={"SEMGREP_SEND_METRICS": "off",
+                                   "SEMGREP_ENABLE_VERSION_CHECK": "0",
+                                   "SEMGREP_METRICS": "off"})
 
     @staticmethod
     def _relpath(ctx, p):

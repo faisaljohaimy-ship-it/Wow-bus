@@ -85,7 +85,7 @@ class TestFailureModes(Base):
             get_connector("http_headers").validate_config({})  # no target
         self.assertIn("target", cm.exception.message)
 
-    def test_3_timeout_bounded_retry_then_failed(self):
+    def test_3_timeout_bounded_retry_then_timed_out(self):
         from app import queue
         _register(_mk("syn_timeout", "timeout"))
         p, a, s = self._scope_for(["syn_timeout"])
@@ -94,9 +94,13 @@ class TestFailureModes(Base):
                           idempotency_key="fm3", max_attempts=2)
         run_all_jobs()
         job = queue.get_job(j["id"])
-        self.assertEqual(job["state"], "failed")
-        self.assertGreaterEqual(job["attempts"], 2)  # retried up to the bound
-        self.assertEqual((job.get("error") or {}).get("code"), "timeout")
+        # Retried up to the bound, then ended in the dedicated timed_out state
+        # (not a generic failure), preserving the underlying tool timeout.
+        self.assertEqual(job["state"], "timed_out")
+        self.assertGreaterEqual(job["attempts"], 2)
+        err = job.get("error") or {}
+        self.assertEqual(err.get("code"), "timed_out")
+        self.assertEqual(err.get("tool_code"), "timeout")
 
     def test_4_corrupt_output_rejected_not_counted_clean(self):
         from app import queue

@@ -107,3 +107,30 @@ The areas are those of [specs/spec.md](specs/spec.md).
 | Bilingual console, roles | `web/`, `app/server.py` | `evidence/ui/*.png`, a browser run |
 | CI, operations, backup | `.github/workflows/faisal-security-lab-ci.yml` at the repository root, [docs/OPERATIONS.md](docs/OPERATIONS.md) | the CI workflow |
 | Failure-mode matrix | `tests/test_failure_modes.py` | 9 tests |
+
+## v4 defensive-upgrade evidence (§26 axes)
+
+The upgrade toward the Security_Prompt v4 10/10 matrix. Each axis points to the
+real, reviewable tests/scripts that back it. See `docs/UPGRADE-V4.md` for the
+full gap map and per-phase notes.
+
+| Axis (§26) | Where it is implemented | Evidence |
+|---|---|---|
+| 1. Tool integration | `app/connectors/*`, `app/gateway.py` | 5 scanners run here; `test_gateway`; `test_platform` TestConnectors |
+| 2. Agent cycle / campaigns | `app/gateway.py`, `app/campaigns.py` | `test_gateway` (9 contracts), `test_phase4` (campaigns, dependencies) |
+| 3. Findings validity + conflicts | `app/findings.py`, `app/conflicts.py` | `test_phase3` (dedupe-keep-sources, conflict ledger, evidence expiry) |
+| 4. Scope & permissions | `app/scope.py` (ports), `app/permission.py` | `test_phase1_hardening` (port enforcement, exec grant) |
+| 5. Isolation & secrets | `app/connectors/base.py` (egress), `app/secretstore.py` | `test_phase1_hardening` (egress), `test_secretstore` (no-leak) |
+| 6. Job reliability | `app/queue.py`, `app/worker.py` | `test_phase1_hardening` (measured cancel, timed_out), `test_failure_modes` |
+| 7. Fix & retest | `gateway.retest_finding`, `findings.retest_result` | `test_gateway` (retest reappearance) |
+| 8. Licences & cost | `secretstore` taxonomy, Tools & Licences screen | `test_secretstore` (kinds), `/api/tools`, `/api/gateway/capabilities` |
+| 9. UX & performance | `web/app.js`/`app.css` (light theme, Tools & Licences) | Playwright UI check (zero console errors) |
+| 10. Deploy & rollback | `scripts/post_deploy_verify.py`, `docs/ROLLBACK.md` | run against the prod URL after deploy; additive, rollback-safe migrations |
+| Circuit breaker (§27) | `app/circuit.py` | `test_phase4` (opens/closes, claim skips suspended) |
+| Reference benchmark (§15) | `app/benchmark.py` | `test_benchmark` (held-out eval set, "not_computable") |
+
+Honest limits: axis 10's production **deploy + live verification** is an external
+action — this build environment cannot reach the Render hosting, so the owner
+runs the deploy (and `post_deploy_verify.py` against the URL). A full ZAP/Nuclei
+end-to-end and the extra scan-engine binaries are tracked follow-ups so tool
+readiness stays honest rather than catalogued-as-done.

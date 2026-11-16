@@ -79,6 +79,9 @@ class Worker:
         self.worker_id = worker_id or f"worker-{os.getpid()}-{util.token()[:6]}"
         self.connectors = connectors
         self._stop = threading.Event()
+        # Why the current job was interrupted, set during supervision:
+        # "cancel" (operator/global stop) or "timeout" (ran past its limit).
+        self._stop_reason: str | None = None
 
     def stop(self):
         self._stop.set()
@@ -105,6 +108,7 @@ class Worker:
     # ------------------------------------------------------------------
     def process(self, job: dict) -> None:
         jid = job["id"]
+        self._stop_reason = None
         try:
             project = store.get_project(job["project_id"])
             asset = store.get_asset(job["asset_id"])
@@ -136,6 +140,44 @@ class Worker:
                                       "message": readiness.get("detail", "tool not ready")})
                 return
 
+            # 2b. Verify the signed, time-limited execution grant minted for THIS
+            # job at enqueue time — an independent gate the model cannot forge.
+            from . import permission
+            try:
+                permission.verify_job(job)
+            except PolicyDenied as e:
+                queue.complete(jid, "blocked", error={"code": e.code, "message": e.message})
+                audit.record("job.exec_denied", actor=self.worker_id, project_id=project["id"],
+                             target=jid, outcome="denied",
+                             detail={"code": e.code, "message": e.message})
+                return
+
+            # 2c. A job still authorized here but cancelled while it waited must
+            # not run. This is checked AFTER the policy re-check so a withdrawn
+            # authorization is reported as 'blocked' (policy), not 'cancelled'.
+            from .db import get_db
+            pre = get_db().query_one("SELECT stop_requested FROM jobs WHERE id=?", (jid,))
+            if pre and pre.get("stop_requested"):
+                self._stop_reason = "cancel"
+                self._complete_interrupted(jid, "cancelled", code="cancelled",
+                                           message="cancelled before execution started")
+                return
+
+            # 2d. Resolve any credential_ref this connector declares. A required
+            # secret that is not configured blocks the job — never a silent run
+            # without it. The value reaches only the tool's environment.
+            from . import secretstore
+            env_secrets, missing = secretstore.resolve_for_connector(connector)
+            if missing:
+                queue.complete(jid, "blocked",
+                               error={"code": "secret_unavailable",
+                                      "message": "required credential(s) not configured: "
+                                                 + ", ".join(missing)})
+                audit.record("job.secret_unavailable", actor=self.worker_id,
+                             project_id=project["id"], target=jid, outcome="denied",
+                             detail={"missing": missing})
+                return
+
             queue.mark_running(jid, self.worker_id, phase="preparing")
 
             with tempfile.TemporaryDirectory(prefix="fsl-job-") as tmp:
@@ -158,6 +200,8 @@ class Worker:
                     asset=asset, scope=scope, workdir=workdir, input_dir=input_dir,
                     stop_event=threading.Event(),
                     allow_private=bool(asset.get("metadata", {}).get("internal")),
+                    allow_network=bool(caps.get("needs_network")),
+                    secrets=env_secrets,
                     limits=get_config().limits)
 
                 queue.update_progress(jid, 0.25, phase="running")
@@ -171,7 +215,16 @@ class Worker:
         except ToolUnavailable as e:
             queue.complete(jid, "blocked", error={"code": e.code, "message": e.message})
         except (TimeoutError_, ConnectorError) as e:
-            self._handle_retryable(jid, job, e)
+            # Report what actually happened. A cancel ends 'cancelled' at once. A
+            # timeout still retries while attempts remain (a transient slow run
+            # can pass on a retry) but, once exhausted, ends in the honest
+            # 'timed_out' state rather than a generic failure. Other transient
+            # connector errors retry, then end 'failed'.
+            if self._stop_reason == "cancel":
+                self._complete_interrupted(jid, "cancelled", code=e.code, message=e.message)
+            else:
+                is_timeout = self._stop_reason == "timeout" or isinstance(e, TimeoutError_)
+                self._handle_retryable(jid, job, e, timeout=is_timeout)
         except AppError as e:
             queue.complete(jid, "failed", error={"code": e.code, "message": e.message})
         except Exception as e:  # unexpected
@@ -210,11 +263,14 @@ class Worker:
             row = get_db().query_one("SELECT stop_requested FROM jobs WHERE id=?", (jid,))
             if row and row.get("stop_requested"):
                 ctx.stop_event.set()
+                self._stop_reason = self._stop_reason or "cancel"
             from .policy import global_stop_engaged
             if global_stop_engaged():
                 ctx.stop_event.set()
+                self._stop_reason = self._stop_reason or "cancel"
             if now > deadline:
                 ctx.stop_event.set()
+                self._stop_reason = self._stop_reason or "timeout"
         th.join(timeout=5)
         if "e" in error_box:
             raise error_box["e"]
@@ -224,11 +280,22 @@ class Worker:
     def _finalize(self, jid, job, asset, connector, readiness, result):
         from .db import get_db
         if result is None:
-            # Cancelled before producing output.
-            row = get_db().query_one(
-                "SELECT stop_requested FROM jobs WHERE id=?", (jid,))
-            state = "cancelled" if (row and row.get("stop_requested")) else "failed"
-            queue.complete(jid, state, error={"code": state, "message": "no result produced"})
+            # Interrupted before producing output: say which — cancel or timeout.
+            if self._stop_reason == "cancel":
+                self._complete_interrupted(jid, "cancelled", code="cancelled",
+                                           message="cancelled before producing output")
+                return
+            if self._stop_reason == "timeout":
+                self._complete_interrupted(jid, "timed_out", code="timed_out",
+                                           message="ran past the job time limit")
+                return
+            row = get_db().query_one("SELECT stop_requested FROM jobs WHERE id=?", (jid,))
+            if row and row.get("stop_requested"):
+                self._complete_interrupted(jid, "cancelled", code="cancelled",
+                                           message="cancelled before producing output")
+                return
+            queue.complete(jid, "failed",
+                           error={"code": "no_result", "message": "no result produced"})
             return
 
         tool_version = readiness.get("version") or ""
@@ -252,6 +319,12 @@ class Worker:
         if outcome == "failed":
             state = "failed"
         queue.complete(jid, state, result_summary=summary)
+        # Feed the circuit breaker: a clean run closes it, a tool failure counts.
+        from . import circuit
+        if state == "succeeded":
+            circuit.record_success(connector.name)
+        else:
+            circuit.record_failure(connector.name)
 
         # Mark the tool verified the first time a real run on an authorized asset
         # completes with evidence (version+connector+config captured).
@@ -266,7 +339,24 @@ class Worker:
                      target=jid, detail={"outcome": outcome, "counts": counts,
                                           "connector": connector.name})
 
-    def _handle_retryable(self, jid, job, err):
+    def _complete_interrupted(self, jid: str, state: str, *, code: str, message: str) -> None:
+        """Finish a cancelled or timed-out job in that exact state and record how
+        long it took from the stop request to the job finishing (a real cancel
+        time, not an estimate)."""
+        import json as _json
+        from .db import get_db
+        queue.complete(jid, state, error={"code": state, "message": message, "tool_code": code})
+        job = queue.get_job(jid)
+        latency = queue.cancel_latency_seconds(job)
+        if latency is not None:
+            err = dict(job.get("error") or {})
+            err["cancel_seconds"] = round(latency, 3)
+            get_db().execute("UPDATE jobs SET error=? WHERE id=?", (_json.dumps(err), jid))
+        audit.record("job." + state, actor=self.worker_id, project_id=job["project_id"],
+                     target=jid, outcome=("ok" if state == "cancelled" else "error"),
+                     detail={"state": state, "cancel_seconds": latency})
+
+    def _handle_retryable(self, jid, job, err, *, timeout: bool = False):
         j = queue.get_job(jid)
         if queue.retry_eligible(j):
             # Return to the queue for another attempt (lease cleared).
@@ -279,7 +369,13 @@ class Worker:
                               "transient": True}), jid))
             audit.record("job.retry", actor=self.worker_id, project_id=job["project_id"],
                          target=jid, detail={"code": err.code, "attempt": j["attempts"]})
+        elif timeout:
+            from . import circuit
+            circuit.record_failure(job["connector"])
+            self._complete_interrupted(jid, "timed_out", code=err.code, message=err.message)
         else:
+            from . import circuit
+            circuit.record_failure(job["connector"])
             queue.complete(jid, "failed", error={"code": err.code, "message": err.message})
 
     # ------------------------------------------------------------------
@@ -349,7 +445,9 @@ class Worker:
 
     def _git_clone(self, url: str, scope, asset, input_dir: Path):
         # Clone is a network fetch; confirm the host is not internal unless allowed.
-        scope_mod.validated_destination(url, allow_private=bool(asset.get("metadata", {}).get("internal")))
+        scope_mod.validated_destination(
+            url, allow_private=bool(asset.get("metadata", {}).get("internal")),
+            allowed_ports=scope.get("allowed_ports"))
         run = run_tool(["git", "clone", "--depth", "1", "--no-tags", "--single-branch",
                         "--", url, str(input_dir / "repo")],
                        cwd=input_dir, timeout=180)

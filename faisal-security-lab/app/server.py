@@ -34,8 +34,9 @@ from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import urlsplit, parse_qs
 
-from . import (audit, auth, crypto, demo, evidence, findings as F, guest_view, lab, metrics, policy,
-               queue, reports, sim, store, teams, util)
+from . import (audit, auth, campaigns, circuit, conflicts, crypto, demo, evidence, findings as F,
+               gateway, guest_view, lab, metrics, policy, queue, reports, secretstore, sim, store,
+               teams, util)
 from .ai import agents, evalset
 from .bootstrap import ADMIN_NOTICES, SETUP_NOTICES, describe_notice, init_platform
 from .config import get_config
@@ -1053,36 +1054,109 @@ def scan_enqueue(req: Req):
     req.principal.require_project(pid, "analyst")
     _rate_check(pid)
     b = req.body
-    project = store.get_project(pid)
-    asset = store.get_asset(b["asset_id"])
-    scope = store.get_scope(b["scope_id"])
-    conn = get_connector(b.get("connector", ""))
-    if conn is None:
-        raise ValidationError(f"unknown connector '{b.get('connector')}'")
-    params = conn.validate_config(b.get("params", {}))
-    # POLICY AT ENQUEUE — an out-of-scope request is rejected even here.
-    decision = policy.evaluate_job(principal=req.principal, project=project, asset=asset,
-                                   scope=scope, connector=conn, params=params)
-    if not decision.allow:
-        # The refusal names what was refused and what the scope allows, in the
-        # answer and in the audit record alike.
-        audit.record("scan.denied", actor=req.principal.email, project_id=pid,
-                     target=b.get("connector"), outcome="denied",
-                     detail={"reason": decision.reason, "code": decision.code,
-                             **decision.detail})
-        raise ForbiddenError(decision.reason, code="policy_denied",
-                             detail=decision.public_detail())
-    job = queue.enqueue(project_id=pid, asset_id=asset["id"], scope_id=scope["id"],
-                        connector=conn.name, params=params, created_by=req.principal.user_id,
-                        priority=int(b.get("priority", 5)),
-                        idempotency_key=b.get("idempotency_key"))
+    # Every scan goes through the Agent Tool Gateway: it runs the enqueue-time
+    # policy check and the one authorized write to the queue.
+    job = gateway.start_job(req.principal, project_id=pid, asset_id=b["asset_id"],
+                            scope_id=b["scope_id"], connector=b.get("connector", ""),
+                            params=b.get("params", {}), priority=int(b.get("priority", 5)),
+                            idempotency_key=b.get("idempotency_key"))
     if job["project_id"] != pid:
         # The queue matches an idempotency key across projects. A key that a
         # job of another project holds is refused; that job is not handed out.
         raise ConflictError("idempotency key is already in use")
-    audit.record("scan.enqueue", actor=req.principal.email, project_id=pid, target=job["id"],
-                 detail={"connector": conn.name, "asset": asset["id"]})
     return 201, {"job": job}
+
+
+@route("POST", r"/api/projects/(?P<pid>[\w-]+)/scans/estimate")
+def scan_estimate(req: Req):
+    pid = req.params["pid"]
+    b = req.body
+    return 200, gateway.estimate_resources(
+        req.principal, project_id=pid, asset_id=b["asset_id"], scope_id=b["scope_id"],
+        connector=b.get("connector", ""), params=b.get("params", {}))
+
+
+@route("POST", r"/api/projects/(?P<pid>[\w-]+)/scans/validate")
+def scan_validate(req: Req):
+    pid = req.params["pid"]
+    b = req.body
+    return 200, gateway.validate_request(
+        req.principal, project_id=pid, asset_id=b["asset_id"], scope_id=b["scope_id"],
+        connector=b.get("connector", ""), params=b.get("params", {}))
+
+
+@route("GET", r"/api/gateway/capabilities")
+def gateway_capabilities(req: Req):
+    return 200, gateway.list_capabilities(req.principal, project_id=req.q("project"))
+
+
+# ===========================================================================
+# Campaigns (v4 §20) + the circuit breaker (§27)
+# ===========================================================================
+@route("POST", r"/api/projects/(?P<pid>[\w-]+)/campaigns")
+def campaign_create(req: Req):
+    pid = req.params["pid"]
+    _rate_check(pid)
+    b = req.body
+    c = campaigns.create(req.principal, project_id=pid, name=b.get("name", ""),
+                         plan=b.get("plan", []), caps=b.get("caps"))
+    return 201, {"campaign": c}
+
+
+@route("GET", r"/api/projects/(?P<pid>[\w-]+)/campaigns")
+def campaign_list(req: Req):
+    pid = req.params["pid"]
+    req.principal.require_project(pid, "reader")
+    return 200, {"campaigns": campaigns.list_for_project(pid)}
+
+
+@route("GET", r"/api/campaigns/(?P<cid>[\w-]+)")
+def campaign_get(req: Req):
+    c = campaigns.get(req.params["cid"])
+    _require_reader(req, c["project_id"], "campaign not found")
+    return 200, {"campaign": c}
+
+
+@route("POST", r"/api/projects/(?P<pid>[\w-]+)/campaigns/(?P<cid>[\w-]+)/cancel")
+def campaign_cancel(req: Req):
+    pid = req.params["pid"]
+    req.principal.require_project(pid, "analyst")        # authorize before loading
+    c = campaigns.get(req.params["cid"])
+    if c["project_id"] != pid:
+        raise NotFoundError("campaign not found")
+    return 200, {"campaign": campaigns.cancel(req.principal, c["id"])}
+
+
+@route("GET", r"/api/circuit")
+def circuit_status(req: Req):
+    return 200, {"circuit": circuit.status()}
+
+
+# ===========================================================================
+# Credential store (§19) — owner sets secrets; the VALUE is never read back.
+# ===========================================================================
+@route("GET", r"/api/secrets", min_global="admin")
+def secrets_list(req: Req):
+    return 200, {"secrets": secretstore.list_refs(), "kinds": sorted(secretstore.KINDS)}
+
+
+@route("POST", r"/api/secrets", min_global="owner")
+def secrets_put(req: Req):
+    b = req.body
+    meta = secretstore.put_secret(b.get("ref", ""), b.get("value", ""),
+                                  kind=b.get("kind", "api_credential"), host=b.get("host", ""),
+                                  created_by=req.principal.email)
+    # The audit record names the ref/kind/host — never the value.
+    audit.record("secret.put", actor=req.principal.email, target=meta["ref"],
+                 detail={"kind": meta["kind"], "host": meta["host"]})
+    return 201, {"secret": meta}
+
+
+@route("POST", r"/api/secrets/(?P<ref>[\w.:-]+)/delete", min_global="owner")
+def secrets_delete(req: Req):
+    secretstore.delete(req.params["ref"])
+    audit.record("secret.delete", actor=req.principal.email, target=req.params["ref"])
+    return 200, {"deleted": req.params["ref"]}
 
 
 @route("GET", r"/api/projects/(?P<pid>[\w-]+)/jobs", guest_ok=True)
@@ -1179,6 +1253,16 @@ def finding_validate(req: Req):
     return 200, {"validation": agents.validation(f, reappeared)}
 
 
+@route("POST", r"/api/findings/(?P<fid>[\w-]+)/retest")
+def finding_retest(req: Req):
+    # Re-run the scan that produced this finding, on the current asset, through
+    # the gateway (so the current authorization is re-checked). The result is
+    # read back with retest_outcome once the job completes.
+    out = gateway.retest_finding(req.principal, req.params["fid"],
+                                 idempotency_key=req.body.get("idempotency_key"))
+    return 202, out
+
+
 # ===========================================================================
 # Evidence
 # ===========================================================================
@@ -1194,7 +1278,7 @@ def evidence_read(req: Req):
 # ===========================================================================
 # Reports
 # ===========================================================================
-REPORT_FORMATS = ("json", "sarif", "md", "html")
+REPORT_FORMATS = ("json", "sarif", "md", "html", "csv")
 REPORT_LANGS = ("ar", "en")
 
 
@@ -1216,7 +1300,44 @@ def report(req: Req):
         return 200, ("text/markdown; charset=utf-8", reports.to_markdown(pid, lang))
     if fmt == "html":
         return 200, ("text/html; charset=utf-8", reports.to_html(pid, lang))
+    if fmt == "csv":
+        return 200, ("text/csv; charset=utf-8", reports.to_csv(pid))
     return 200, json.loads(reports.to_json(pid))
+
+
+# ===========================================================================
+# Conflicting-evidence ledger (v4 §10)
+# ===========================================================================
+@route("GET", r"/api/projects/(?P<pid>[\w-]+)/conflicts", guest_ok=True)
+def project_conflicts(req: Req):
+    pid = req.params["pid"]
+    _require_reader(req, pid, "project not found")
+    return 200, {"conflicts": conflicts.list_for_project(pid, status=req.q("status"))}
+
+
+@route("GET", r"/api/findings/(?P<fid>[\w-]+)/conflicts", guest_ok=True)
+def finding_conflicts(req: Req):
+    f = F.get_finding(req.params["fid"])
+    _require_reader(req, f["project_id"], "finding not found")
+    return 200, {"conflicts": conflicts.list_for_finding(f["id"])}
+
+
+@route("POST", r"/api/projects/(?P<pid>[\w-]+)/conflicts/(?P<cid>[\w-]+)/resolve")
+def conflict_resolve(req: Req):
+    pid = req.params["pid"]
+    req.principal.require_project(pid, "analyst")          # authorize before loading
+    c = conflicts.get(req.params["cid"])
+    if c["project_id"] != pid:
+        raise NotFoundError("conflict not found")
+    out = conflicts.resolve(c["id"], actor=req.principal.email, note=req.body.get("note", ""))
+    return 200, {"conflict": out}
+
+
+@route("GET", r"/api/findings/(?P<fid>[\w-]+)/retest/(?P<jid>[\w-]+)/outcome")
+def finding_retest_outcome(req: Req):
+    f = F.get_finding(req.params["fid"])
+    req.principal.require_project(f["project_id"], "analyst")
+    return 200, {"outcome": gateway.retest_outcome(f["id"], req.params["jid"])}
 
 
 # ===========================================================================

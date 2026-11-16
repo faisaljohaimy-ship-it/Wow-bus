@@ -65,6 +65,15 @@ class ExecContext:
     input_dir: Path                # read-only inputs (cloned source, uploaded file)
     stop_event: threading.Event
     allow_private: bool = False
+    # Whether tools this job runs may reach the network. For a local scan that
+    # does not need egress (source/dependency scanning of a staged tree) the
+    # worker sets this False and run_tool withholds the egress proxy, so the
+    # tool cannot phone out. Network/active connectors leave it True.
+    allow_network: bool = True
+    # Resolved credential_ref values as {ENV_NAME: value}, injected into the
+    # tool's environment by run_tool. The worker fills this from the connector's
+    # declared secret_refs; it is never part of the job params, result or logs.
+    secrets: dict = field(default_factory=dict)
     limits: Limits = field(default_factory=lambda: get_config().limits)
     logs: list = field(default_factory=list)
 
@@ -214,10 +223,16 @@ class ToolRun:
 def run_tool(argv: list[str], *, ctx: ExecContext | None = None, cwd: Path | None = None,
              timeout: int | None = None, extra_env: dict | None = None,
              input_bytes: bytes | None = None,
-             max_output: int | None = None) -> ToolRun:
+             max_output: int | None = None,
+             allow_network: bool | None = None) -> ToolRun:
     """Run an external tool with no shell, bounded resources, hard timeout and
     cooperative cancellation. argv[0] is resolved on PATH but NEVER built from
     user/model/scan text — connectors pass a fixed program name + validated args.
+
+    Egress: when `allow_network` is False (or None and the job's ExecContext has
+    allow_network False), the egress proxy is withheld and no_proxy is forced, so
+    a local scan that needs no network cannot phone out. Outbound access in this
+    container flows only through that proxy, so withholding it blocks egress.
     """
     if not argv:
         raise ConfigError("empty argv")
@@ -241,9 +256,19 @@ def run_tool(argv: list[str], *, ctx: ExecContext | None = None, cwd: Path | Non
         "SSL_CERT_FILE": os.environ.get("SSL_CERT_FILE", ""),
         "CURL_CA_BUNDLE": os.environ.get("CURL_CA_BUNDLE", ""),
     }
-    if os.environ.get("HTTPS_PROXY"):
+    net_ok = allow_network if allow_network is not None else (
+        ctx.allow_network if ctx is not None else True)
+    if net_ok and os.environ.get("HTTPS_PROXY"):
         base_env["HTTPS_PROXY"] = os.environ["HTTPS_PROXY"]
         base_env["HTTP_PROXY"] = os.environ.get("HTTP_PROXY", os.environ["HTTPS_PROXY"])
+    elif not net_ok:
+        # Local scan with no need for egress: withhold the proxy and force
+        # no_proxy so the tool cannot reach the network through it.
+        base_env["no_proxy"] = base_env["NO_PROXY"] = "*"
+    # Resolved credential_ref values go into the tool's environment only — never
+    # into the job params, the result, the audit log or anything the model sees.
+    if ctx is not None and getattr(ctx, "secrets", None):
+        base_env.update(ctx.secrets)
     if extra_env:
         base_env.update(extra_env)
 
