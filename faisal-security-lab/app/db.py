@@ -12,7 +12,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     scope_id         TEXT NOT NULL,
     connector        TEXT NOT NULL,
     params           TEXT NOT NULL DEFAULT '{}',
-    state            TEXT NOT NULL DEFAULT 'queued',  -- queued|leased|running|succeeded|failed|blocked|cancelled|undetermined
+    state            TEXT NOT NULL DEFAULT 'queued',  -- queued|leased|running|succeeded|failed|blocked|cancelled|timed_out|undetermined
     phase            TEXT NOT NULL DEFAULT 'queued',
     progress         REAL NOT NULL DEFAULT 0.0,
     idempotency_key  TEXT,
@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     lease_owner      TEXT,
     lease_expires_at TEXT,
     stop_requested   INTEGER NOT NULL DEFAULT 0,
+    stop_requested_at TEXT,                            -- when a cancel/global-stop was first requested
     result_summary   TEXT NOT NULL DEFAULT '{}',
     error            TEXT,
     created_by       TEXT NOT NULL,
@@ -279,6 +280,26 @@ class Database:
             if row is None:
                 c.execute("INSERT INTO meta(key,value) VALUES('schema_version',?)",
                           (str(SCHEMA_VERSION),))
+            else:
+                self._migrate(c, int(row["value"]) if str(row["value"]).isdigit() else 0)
+
+    # Additive, rollback-friendly migrations: every step only ADDs a nullable
+    # column, so an older build keeps running against a newer database and the
+    # rollback procedure is "deploy the previous build" with no data change.
+    _MIGRATIONS = {
+        4: [("jobs", "stop_requested_at", "TEXT")],
+    }
+
+    def _migrate(self, c: sqlite3.Connection, from_version: int) -> None:
+        if from_version >= SCHEMA_VERSION:
+            return
+        for version in range(from_version + 1, SCHEMA_VERSION + 1):
+            for table, column, decl in self._MIGRATIONS.get(version, []):
+                have = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
+                if column not in have:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+        c.execute("UPDATE meta SET value=? WHERE key='schema_version'",
+                  (str(SCHEMA_VERSION),))
 
     @contextmanager
     def tx(self):
@@ -311,6 +332,9 @@ class Database:
         self.conn.execute(
             "INSERT INTO settings(key,value) VALUES(?,?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+
+    def delete_setting(self, key: str) -> None:
+        self.conn.execute("DELETE FROM settings WHERE key=?", (key,))
 
 
 _DB: Database | None = None

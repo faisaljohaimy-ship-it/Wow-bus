@@ -24,7 +24,8 @@ fields marked with *; the others are set through the API.
 | `scan_types` * | the connector names allowed on this asset. A scope with none allows no scan |
 | `valid_from` / `valid_until` | validity dates (ISO date and time, UTC) |
 | `window` | `{"start_hour_utc": 1, "end_hour_utc": 5}`: hours of the day in which scans may run |
-| `allowed_ports`, `rate_limits` | stored and shown; not enforced in this version |
+| `allowed_ports` | the TCP ports a network scan of this asset may reach, as integers or `start-end` ranges (e.g. `443`, `8000-8100`). **Empty means no port restriction.** Enforced at the network layer for every network connector. |
+| `rate_limits` | stored and shown; not enforced in this version |
 
 ## How it is enforced
 
@@ -53,8 +54,20 @@ start ends in the state `blocked`. Both are written to the audit log.
 
 For the network connectors the destination is resolved when the job runs. An
 address in a private, loopback or link-local range is refused unless the asset
-is marked internal, the connection goes to the address that was checked, and a
-redirect is recorded but not followed.
+is marked internal, the connection goes to the address that was checked, a
+redirect is recorded but not followed, and the destination port must be within
+`allowed_ports` when that list is set.
+
+Each job also carries a **time-limited, signed execution grant** the server
+mints at enqueue and the worker verifies before the tool runs (bound to that
+exact job/project/asset/connector, with an expiry). A missing, expired or
+mismatched grant ends the job in `blocked` with an `exec_grant_*` code. It is a
+technical proof of the recorded authorization that the AI layer cannot forge,
+not a new authorization.
+
+A job the operator cancels ends in `cancelled` (with the measured seconds from
+the request to the stop recorded in its error), and a job that runs past its
+time limit ends in `timed_out`, distinct from a plain `failed`.
 
 ## Rules the platform enforces
 
@@ -109,7 +122,11 @@ who gets an account and where the worker runs.
   symbolic links are skipped. A hard link to a file outside the directory is
   therefore read as part of it. Use as a source directory one whose content you
   control.
-- **`allowed_ports` and `rate_limits` are not enforced.**
+- **`allowed_ports` is enforced; `rate_limits` is not.** A network connector's
+  destination port must be within `allowed_ports` (when the list is non-empty);
+  the check runs in `scope.validated_destination`, the single place every network
+  connector routes its connection through, so a redirect or DNS-rebind to another
+  port is caught too. `rate_limits` is stored and shown but not yet enforced.
 - **A repository clone is checked once.** The host name of a repository address
   is resolved and checked before `git clone` starts. git then resolves the name
   again by itself and can follow a redirect on its first request. Clone only

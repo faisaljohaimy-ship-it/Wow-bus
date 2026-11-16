@@ -47,7 +47,9 @@ class HttpHeadersConnector(Connector):
 
     def execute(self, ctx: ExecContext) -> ConnectorResult:
         target = ctx.params["target"]
-        dest = scope_mod.validated_destination(target, allow_private=ctx.allow_private)
+        dest = scope_mod.validated_destination(
+            target, allow_private=ctx.allow_private,
+            allowed_ports=ctx.scope.get("allowed_ports"))
         host, port, scheme = dest["host"], dest["port"], dest["scheme"]
         ip = dest["ips"][0]
         timeout = ctx.limits.network_connect_timeout

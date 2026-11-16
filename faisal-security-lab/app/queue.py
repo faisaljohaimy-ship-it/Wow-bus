@@ -48,6 +48,12 @@ def enqueue(*, project_id: str, asset_id: str, scope_id: str, connector: str,
             if existing:
                 return _hydrate(existing)
         raise
+    # Mint a time-limited, signed execution grant for this exact operation. The
+    # worker verifies it before running (see app/permission.py). Issuing it here,
+    # on the server enqueue path, is what the AI model cannot do for itself.
+    from . import permission
+    permission.issue_and_store(job_id=jid, project_id=project_id, asset_id=asset_id,
+                               connector=connector, created_by=created_by)
     return get_job(jid)
 
 
@@ -150,7 +156,7 @@ def update_progress(jid: str, progress: float, phase: str | None = None) -> None
 
 def complete(jid: str, state: str, *, result_summary: dict | None = None,
              error: dict | None = None) -> dict:
-    if state not in ("succeeded", "failed", "blocked", "cancelled", "undetermined"):
+    if state not in ("succeeded", "failed", "blocked", "cancelled", "timed_out", "undetermined"):
         raise ValidationError("invalid terminal state")
     get_db().execute(
         "UPDATE jobs SET state=?, phase=?, progress=?, finished_at=?, result_summary=?, error=? "
@@ -158,13 +164,33 @@ def complete(jid: str, state: str, *, result_summary: dict | None = None,
         (state, state, 1.0 if state == "succeeded" else None and 1.0 or 1.0,
          util.now_iso(), json.dumps(result_summary or {}, ensure_ascii=False),
          json.dumps(error) if error else None, jid))
+    # The execution grant is spent once the job reaches a terminal state.
+    from . import permission
+    permission.clear(jid)
     return get_job(jid)
 
 
 def request_stop(jid: str) -> dict:
-    get_db().execute("UPDATE jobs SET stop_requested=1 WHERE id=? AND state IN "
-                     "('queued','leased','running')", (jid,))
+    # Stamp the request time once so the time from a cancel request to the job
+    # reaching a terminal state can be measured honestly.
+    get_db().execute("UPDATE jobs SET stop_requested=1, "
+                     "stop_requested_at=COALESCE(stop_requested_at,?) WHERE id=? AND state IN "
+                     "('queued','leased','running')", (util.now_iso(), jid))
     return get_job(jid)
+
+
+def cancel_latency_seconds(job: dict) -> float | None:
+    """Seconds from the cancel/stop request to the job finishing, or None when
+    either timestamp is missing. Used to report a real cancel time."""
+    req, fin = job.get("stop_requested_at"), job.get("finished_at")
+    if not req or not fin:
+        return None
+    try:
+        t0 = dt.datetime.fromisoformat(req)
+        t1 = dt.datetime.fromisoformat(fin)
+    except (ValueError, TypeError):
+        return None
+    return max(0.0, (t1 - t0).total_seconds())
 
 
 def retry_eligible(job: dict) -> bool:

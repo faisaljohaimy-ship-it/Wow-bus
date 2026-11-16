@@ -56,10 +56,53 @@ def resolve_ips(host: str) -> list[str]:
     return sorted({info[4][0] for info in infos})
 
 
-def validated_destination(url_or_host: str, *, allow_private: bool) -> dict:
+def _parse_port(value) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        p = int(value)
+    except (TypeError, ValueError):
+        return None
+    return p if 1 <= p <= 65535 else None
+
+
+def port_allowed(allowed_ports, port: int) -> bool:
+    """True when `port` is permitted by the scope's allow-list. An empty or
+    absent list places no port restriction (the scope did not constrain ports).
+    Entries are ints or 'start-end' range strings, as the store validates them."""
+    if not allowed_ports:
+        return True
+    for entry in allowed_ports:
+        if isinstance(entry, bool):
+            continue
+        if isinstance(entry, int):
+            if entry == port:
+                return True
+        elif isinstance(entry, str):
+            s = entry.strip()
+            if "-" in s:
+                lo, _, hi = s.partition("-")
+                lo_i, hi_i = _parse_port(lo), _parse_port(hi)
+                if lo_i is not None and hi_i is not None and lo_i <= port <= hi_i:
+                    return True
+            else:
+                if _parse_port(s) == port:
+                    return True
+    return False
+
+
+def validated_destination(url_or_host: str, *, allow_private: bool,
+                          allowed_ports=None) -> dict:
     """Resolve a URL/host and confirm no resolved address is private unless the
-    scope explicitly authorizes an internal asset. Returns dict with host, ips,
-    port, scheme. Raises PolicyDenied on an internal/forbidden destination."""
+    scope explicitly authorizes an internal asset, and that the destination port
+    is within the scope's allowed ports. Returns dict with host, ips, port,
+    scheme. Raises PolicyDenied on an internal/forbidden destination or port.
+
+    `allowed_ports` is the scope's port allow-list (ints / 'start-end' ranges);
+    an empty or None list places no port restriction. Enforcing it here — the
+    single place every network connector routes its connection through — keeps
+    the port bound at the network layer, so a redirect or DNS-rebind to another
+    port is caught too, not only the UI."""
     if "://" in url_or_host:
         parts = urlsplit(url_or_host)
         host = parts.hostname or ""
@@ -70,6 +113,10 @@ def validated_destination(url_or_host: str, *, allow_private: bool) -> dict:
         scheme = "https"
         port = 443
     host = canonical_host(host)
+    if allowed_ports and not port_allowed(allowed_ports, port):
+        raise PolicyDenied("destination port is outside the authorized scope",
+                           detail={"host": host, "port": port,
+                                   "allowed_ports": list(allowed_ports)})
     ips = resolve_ips(host)
     if not allow_private:
         for ip in ips:
