@@ -57,6 +57,8 @@ GUEST_ALLOWLIST = {
     r"/api/jobs/(?P<jid>[\w-]+)",
     r"/api/projects/(?P<pid>[\w-]+)/findings",
     r"/api/findings/(?P<fid>[\w-]+)",
+    r"/api/projects/(?P<pid>[\w-]+)/conflicts",
+    r"/api/findings/(?P<fid>[\w-]+)/conflicts",
     r"/api/projects/(?P<pid>[\w-]+)/report",
     r"/api/ai/status",
     r"/api/metrics",

@@ -34,8 +34,8 @@ from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import urlsplit, parse_qs
 
-from . import (audit, auth, crypto, demo, evidence, findings as F, gateway, guest_view, lab,
-               metrics, policy, queue, reports, secretstore, sim, store, teams, util)
+from . import (audit, auth, conflicts, crypto, demo, evidence, findings as F, gateway, guest_view,
+               lab, metrics, policy, queue, reports, secretstore, sim, store, teams, util)
 from .ai import agents, evalset
 from .bootstrap import ADMIN_NOTICES, SETUP_NOTICES, describe_notice, init_platform
 from .config import get_config
@@ -1235,7 +1235,7 @@ def evidence_read(req: Req):
 # ===========================================================================
 # Reports
 # ===========================================================================
-REPORT_FORMATS = ("json", "sarif", "md", "html")
+REPORT_FORMATS = ("json", "sarif", "md", "html", "csv")
 REPORT_LANGS = ("ar", "en")
 
 
@@ -1257,7 +1257,44 @@ def report(req: Req):
         return 200, ("text/markdown; charset=utf-8", reports.to_markdown(pid, lang))
     if fmt == "html":
         return 200, ("text/html; charset=utf-8", reports.to_html(pid, lang))
+    if fmt == "csv":
+        return 200, ("text/csv; charset=utf-8", reports.to_csv(pid))
     return 200, json.loads(reports.to_json(pid))
+
+
+# ===========================================================================
+# Conflicting-evidence ledger (v4 §10)
+# ===========================================================================
+@route("GET", r"/api/projects/(?P<pid>[\w-]+)/conflicts", guest_ok=True)
+def project_conflicts(req: Req):
+    pid = req.params["pid"]
+    _require_reader(req, pid, "project not found")
+    return 200, {"conflicts": conflicts.list_for_project(pid, status=req.q("status"))}
+
+
+@route("GET", r"/api/findings/(?P<fid>[\w-]+)/conflicts", guest_ok=True)
+def finding_conflicts(req: Req):
+    f = F.get_finding(req.params["fid"])
+    _require_reader(req, f["project_id"], "finding not found")
+    return 200, {"conflicts": conflicts.list_for_finding(f["id"])}
+
+
+@route("POST", r"/api/projects/(?P<pid>[\w-]+)/conflicts/(?P<cid>[\w-]+)/resolve")
+def conflict_resolve(req: Req):
+    pid = req.params["pid"]
+    req.principal.require_project(pid, "analyst")          # authorize before loading
+    c = conflicts.get(req.params["cid"])
+    if c["project_id"] != pid:
+        raise NotFoundError("conflict not found")
+    out = conflicts.resolve(c["id"], actor=req.principal.email, note=req.body.get("note", ""))
+    return 200, {"conflict": out}
+
+
+@route("GET", r"/api/findings/(?P<fid>[\w-]+)/retest/(?P<jid>[\w-]+)/outcome")
+def finding_retest_outcome(req: Req):
+    f = F.get_finding(req.params["fid"])
+    req.principal.require_project(f["project_id"], "analyst")
+    return 200, {"outcome": gateway.retest_outcome(f["id"], req.params["jid"])}
 
 
 # ===========================================================================

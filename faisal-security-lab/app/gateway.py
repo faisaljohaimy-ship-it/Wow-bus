@@ -185,7 +185,12 @@ def retest_outcome(finding_id: str, retest_job_id: str) -> dict:
     job = queue.get_job(retest_job_id)
     done = job["state"] in ("succeeded",)
     reappeared = f.get("job_id") == retest_job_id and job["state"] == "succeeded"
-    return {"finding_id": finding_id, "retest_job": retest_job_id,
-            "retest_state": job["state"], "completed": done,
-            "reappeared": bool(reappeared),
-            "cleared": bool(done and not reappeared)}
+    result = {"finding_id": finding_id, "retest_job": retest_job_id,
+              "retest_state": job["state"], "completed": done,
+              "reappeared": bool(reappeared),
+              "cleared": bool(done and not reappeared), "at": job.get("finished_at")}
+    try:
+        F.set_retest_result(finding_id, result)
+    except Exception:
+        pass
+    return result

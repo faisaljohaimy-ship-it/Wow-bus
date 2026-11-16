@@ -236,3 +236,12 @@ integration (§25). External blockers (ZAP end-to-end, live Render deploy) are m
   - Deferred, honestly: the additional scan-engine binaries (Syft, testssl.sh, Schemathesis, Nuclei,
     Trivy install) — the gateway + connector contract are ready for them; adding each connector with a
     verified install is tracked for a follow-up so readiness stays honest, not catalogued-as-done.
+- **Phase 3 — done.** Conflicting-evidence ledger (`app/conflicts.py` + `finding_conflicts` table, v4
+  §10): a reappearance after a fix, or a re-observation under a different tool/version, opens a conflict
+  that stays `needs_verification` — never silently a fix; evidence expires on a context change and the
+  prior human verdict is reset. Findings keep all contributing **sources** (dedupe-keep-sources) and gained
+  the §10 first-class fields `context_ref`, `safe_verify_step`, `suggested_fix`, `retest_result`. Reports
+  now state **coverage** (tools run vs available, assets scanned, open conflicts), carry a bilingual
+  **"absence of findings is not safety"** note, and export **CSV** (BOM + formula-guarded + comma-safe) on
+  top of JSON/SARIF/MD/HTML. New routes: project/finding conflicts, conflict resolve, retest outcome,
+  report `?format=csv`. +7 tests. (axis 3 advanced; axis 7 retest result persisted)

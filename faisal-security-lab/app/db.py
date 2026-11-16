@@ -12,7 +12,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -151,6 +151,12 @@ CREATE TABLE IF NOT EXISTS findings (
     occurrences        INTEGER NOT NULL DEFAULT 1,
     reopened           INTEGER NOT NULL DEFAULT 0,
     source_flag        TEXT NOT NULL DEFAULT 'real',  -- real|simulated
+    -- §10 first-class fields
+    sources            TEXT NOT NULL DEFAULT '[]',    -- JSON: contributing {connector,job_id,tool_version,seen_at}
+    context_ref        TEXT NOT NULL DEFAULT '',      -- version/config signature at observation (for evidence expiry)
+    safe_verify_step   TEXT NOT NULL DEFAULT '',      -- a safe, minimal way to confirm this finding
+    suggested_fix      TEXT NOT NULL DEFAULT '',      -- concrete fix, distinct from the abstract remediation
+    retest_result      TEXT NOT NULL DEFAULT '{}',    -- JSON: last retest outcome {job_id,state,reappeared,at}
     created_at         TEXT NOT NULL,
     updated_at         TEXT NOT NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id),
@@ -158,6 +164,27 @@ CREATE TABLE IF NOT EXISTS findings (
 );
 CREATE INDEX IF NOT EXISTS idx_findings_project ON findings(project_id, severity);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_findings_dedup ON findings(project_id, dedup_key);
+
+-- Conflicting-evidence ledger (v4 §10): when a new observation or review
+-- disagrees with a prior one, both are kept and the conflict stays
+-- 'needs_verification' until a proper check resolves it. A conflict is never
+-- silently treated as fixed.
+CREATE TABLE IF NOT EXISTS finding_conflicts (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT NOT NULL,
+    finding_id  TEXT NOT NULL,
+    kind        TEXT NOT NULL,          -- evidence_expired|reappeared_after_fix|verification_disagreement|tool_disagreement
+    status      TEXT NOT NULL DEFAULT 'needs_verification',  -- needs_verification|resolved
+    prior       TEXT NOT NULL DEFAULT '{}',
+    current     TEXT NOT NULL DEFAULT '{}',
+    detail      TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL,
+    resolved_at TEXT,
+    FOREIGN KEY (project_id) REFERENCES projects(id),
+    FOREIGN KEY (finding_id) REFERENCES findings(id)
+);
+CREATE INDEX IF NOT EXISTS idx_conflicts_finding ON finding_conflicts(finding_id);
+CREATE INDEX IF NOT EXISTS idx_conflicts_project ON finding_conflicts(project_id, status);
 
 CREATE TABLE IF NOT EXISTS evidence (
     id             TEXT PRIMARY KEY,
@@ -301,6 +328,11 @@ class Database:
     # rollback procedure is "deploy the previous build" with no data change.
     _MIGRATIONS = {
         4: [("jobs", "stop_requested_at", "TEXT")],
+        6: [("findings", "sources", "TEXT NOT NULL DEFAULT '[]'"),
+            ("findings", "context_ref", "TEXT NOT NULL DEFAULT ''"),
+            ("findings", "safe_verify_step", "TEXT NOT NULL DEFAULT ''"),
+            ("findings", "suggested_fix", "TEXT NOT NULL DEFAULT ''"),
+            ("findings", "retest_result", "TEXT NOT NULL DEFAULT '{}'")],
     }
 
     def _migrate(self, c: sqlite3.Connection, from_version: int) -> None:

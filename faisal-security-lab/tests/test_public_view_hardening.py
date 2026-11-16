@@ -303,6 +303,10 @@ class TestGuestView(HardeningCase):
             r"/api/projects/(?P<pid>[\w-]+)/findings":
                 [f"{project}/findings", f"{project}/findings?severity=high"],
             r"/api/findings/(?P<fid>[\w-]+)": [f"/api/findings/{fid}" for fid in finding_ids],
+            r"/api/projects/(?P<pid>[\w-]+)/conflicts":
+                [f"{project}/conflicts", f"{project}/conflicts?status=needs_verification"],
+            r"/api/findings/(?P<fid>[\w-]+)/conflicts":
+                [f"/api/findings/{fid}/conflicts" for fid in finding_ids],
             r"/api/projects/(?P<pid>[\w-]+)/report": reports,
             r"/api/ai/status": ["/api/ai/status"],
             r"/api/metrics": [f"/api/metrics?project={pid}"],

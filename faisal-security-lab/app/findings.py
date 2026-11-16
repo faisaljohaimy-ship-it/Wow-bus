@@ -56,7 +56,12 @@ def ingest(job: dict, asset: dict, raw_findings: list, *, source_flag: str = "re
     created = updated = reopened = 0
     exposure = asset.get("kind") in ("web", "api", "host")
     criticality = asset.get("criticality", "medium")
+    from . import conflicts
     now = util.now_iso()
+    # The context a finding was observed under: the tool and its version. When
+    # the same finding is later re-observed under a DIFFERENT context, a prior
+    # human verdict no longer transfers automatically (§10 evidence expiry).
+    context = f"{job['connector']}@{tool_version or '?'}"
     for raw in raw_findings:
         # Severity and confidence are fixed words everywhere they are used
         # (ranking, filters, the console's styling). Anything else a connector
@@ -67,51 +72,105 @@ def ingest(job: dict, asset: dict, raw_findings: list, *, source_flag: str = "re
             raw.confidence = "low"
         dk = dedup_key(job["project_id"], raw)
         wp = work_priority(raw.severity, criticality, exposure, raw.confidence)
+        source = {"connector": job["connector"], "job_id": job["id"],
+                  "tool_version": tool_version, "seen_at": now}
         existing = db.query_one(
-            "SELECT id,status FROM findings WHERE project_id=? AND dedup_key=?",
-            (job["project_id"], dk))
+            "SELECT id,status,verification_status,context_ref,sources FROM findings "
+            "WHERE project_id=? AND dedup_key=?", (job["project_id"], dk))
         if existing:
-            # Re-observed. If it was marked fixed, reopen it (it came back).
+            fid = existing["id"]
+            # Keep the set of contributing sources (which tools/jobs saw it).
+            sources = _merge_source(existing.get("sources"), source)
             new_status = existing["status"]
             reopen_flag = 0
+            new_verification = existing["verification_status"]
             if existing["status"] in ("fixed_in_branch", "fixed_on_asset"):
+                # It came back after being marked fixed: reopen AND record a
+                # conflict — a reappearance is not silently a fix.
                 new_status = "reopened"
                 reopen_flag = 1
                 reopened += 1
+                conflicts.record(fid, "reappeared_after_fix", project_id=job["project_id"],
+                                 prior={"status": existing["status"]},
+                                 current={"job_id": job["id"], "context": context},
+                                 detail="finding re-observed after it was marked fixed")
+            prior_ctx = existing.get("context_ref") or ""
+            if (prior_ctx and prior_ctx != context
+                    and existing["verification_status"] in ("confirmed", "false_positive")):
+                # Seen under a different tool/version: the old verdict's evidence
+                # has expired for this context; needs a fresh check.
+                new_verification = "needs_verification"
+                conflicts.record(fid, "evidence_expired", project_id=job["project_id"],
+                                 prior={"context": prior_ctx,
+                                        "verification": existing["verification_status"]},
+                                 current={"context": context},
+                                 detail="re-observed under a different tool/rules version")
             db.execute(
                 "UPDATE findings SET occurrences=occurrences+1, job_id=?, tool_version=?, "
-                "updated_at=?, status=?, reopened=?, work_priority=? WHERE id=?",
-                (job["id"], tool_version, now, new_status, reopen_flag, wp, existing["id"]))
+                "updated_at=?, status=?, reopened=?, work_priority=?, sources=?, context_ref=?, "
+                "verification_status=? WHERE id=?",
+                (job["id"], tool_version, now, new_status, reopen_flag, wp,
+                 json.dumps(sources, ensure_ascii=False), context, new_verification, fid))
             updated += 1
-            raw._finding_id = existing["id"]
+            raw._finding_id = fid
         else:
             fid = util.new_id("fnd")
             db.execute(
                 "INSERT INTO findings(id,project_id,asset_id,job_id,connector,tool_version,"
                 "rule_id,title,location,severity,confidence,verification_status,status,"
                 "work_priority,cve,cwe,cvss,epss,kev,remediation,description,dedup_key,"
-                "occurrences,reopened,source_flag,created_at,updated_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,0,?,?,?)",
+                "occurrences,reopened,source_flag,sources,context_ref,safe_verify_step,"
+                "suggested_fix,retest_result,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,0,?,?,?,?,?,?,?,?)",
                 (fid, job["project_id"], asset["id"], job["id"], job["connector"],
                  tool_version, raw.rule_id[:200], util.redact(raw.title)[:300],
                  json.dumps(raw.location, ensure_ascii=False), raw.severity, raw.confidence,
                  "needs_verification", "open", wp, raw.cve, raw.cwe,
                  json.dumps(raw.cvss or {}), "{}", "{}", raw.remediation[:2000],
-                 util.redact(raw.description)[:4000], dk, source_flag, now, now))
+                 util.redact(raw.description)[:4000], dk, source_flag,
+                 json.dumps([source], ensure_ascii=False), context, "",
+                 util.redact(raw.remediation)[:2000], "{}", now, now))
             created += 1
             raw._finding_id = fid
     return {"created": created, "updated": updated, "reopened": reopened}
+
+
+def _merge_source(existing_json, source: dict) -> list:
+    """Append a contributing source, deduped by (connector, tool_version)."""
+    try:
+        sources = json.loads(existing_json) if existing_json else []
+        if not isinstance(sources, list):
+            sources = []
+    except (ValueError, TypeError):
+        sources = []
+    key = (source.get("connector"), source.get("tool_version"))
+    if not any((s.get("connector"), s.get("tool_version")) == key
+               for s in sources if isinstance(s, dict)):
+        sources.append(source)
+    return sources[:50]
+
+
+def set_retest_result(fid: str, result: dict) -> dict:
+    """Record the outcome of the most recent retest on a finding."""
+    get_finding(fid)
+    get_db().execute("UPDATE findings SET retest_result=?, updated_at=? WHERE id=?",
+                     (json.dumps(result, ensure_ascii=False), util.now_iso(), fid))
+    return get_finding(fid)
 
 
 def get_finding(fid: str) -> dict:
     row = get_db().query_one("SELECT * FROM findings WHERE id=?", (fid,))
     if not row:
         raise NotFoundError("finding not found")
-    for k in ("location", "cvss", "epss", "kev"):
+    for k in ("location", "cvss", "epss", "kev", "retest_result"):
         try:
             row[k] = json.loads(row[k])
         except (ValueError, TypeError):
             row[k] = {}
+    try:
+        row["sources"] = json.loads(row.get("sources") or "[]")
+    except (ValueError, TypeError):
+        row["sources"] = []
     return row
 
 
@@ -132,11 +191,15 @@ def list_findings(project_id: str, *, severity: str | None = None, status: str |
     args += [limit, offset]
     rows = get_db().query_all(sql, tuple(args))
     for row in rows:
-        for k in ("location", "cvss", "epss", "kev"):
+        for k in ("location", "cvss", "epss", "kev", "retest_result"):
             try:
                 row[k] = json.loads(row[k])
             except (ValueError, TypeError):
                 row[k] = {}
+        try:
+            row["sources"] = json.loads(row.get("sources") or "[]")
+        except (ValueError, TypeError):
+            row["sources"] = []
     return rows
 
 
