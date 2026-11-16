@@ -3,6 +3,7 @@
 const S = { token: localStorage.getItem("fsl_token") || "", user: null,
   lang: localStorage.getItem("fsl_lang") || "ar", projects: [], project: null,
   screen: "dashboard", connectors: [], drawer: null,
+  theme: (function(){ try{ return localStorage.getItem("fsl_theme") || "dark"; }catch(e){ return "dark"; } })(),
   publicView: false,   // server offers a read-only public view
   configKnown: false,  // the server has answered whether it does
   guest: false,        // browsing that view without signing in
@@ -35,6 +36,7 @@ const I18N = {
     publicview:"عرض عام للقراءة فقط. تشغيل الفحوص وأي تعديل يتطلب دخول المالك.",
     ownerlogin:"دخول المالك", backpublic:"العودة للعرض العام",
     motion_stop:"إيقاف الحركة", motion_start:"تشغيل الحركة",
+    theme_light:"فاتح", theme_dark:"داكن", tools:"الأدوات والتراخيص",
     preparing:"يجري تجهيز العرض التوضيحي. حدّث الصفحة بعد لحظات.",
     open:"فتح", download:"تنزيل", report_note:"التقارير منقّحة: القيم الحساسة محجوبة.",
     throttled:"محاولات دخول خاطئة كثيرة من هذا الجهاز. انتظر {wait} ثم حاول من جديد.",
@@ -75,6 +77,7 @@ const I18N = {
     publicview:"Public read-only view. Running scans or changing anything requires the owner to sign in.",
     ownerlogin:"Owner sign-in", backpublic:"Back to the public view",
     motion_stop:"Pause motion", motion_start:"Resume motion",
+    theme_light:"Light", theme_dark:"Dark", tools:"Tools & Licences",
     preparing:"The demo is being prepared. Refresh in a moment.",
     open:"Open", download:"Download", report_note:"Reports are redacted: sensitive values are withheld.",
     throttled:"Too many wrong sign-in attempts from this device. Wait {wait}, then try again.",
@@ -260,6 +263,16 @@ function toggleMotion(){
   try{ localStorage.setItem("fsl_motion", motionIsOn() ? "off" : "on"); }catch(e){}
   applyMotion(); render();
 }
+// Theme: dark by default (the console identity), with a light option (§12).
+function applyTheme(){
+  if (S.theme === "light") document.documentElement.setAttribute("data-theme","light");
+  else document.documentElement.removeAttribute("data-theme");
+}
+function toggleTheme(){
+  S.theme = S.theme === "light" ? "dark" : "light";
+  try{ localStorage.setItem("fsl_theme", S.theme); }catch(e){}
+  applyTheme(); render();
+}
 
 // Every card gets its own mask and code strip; wide tables scroll inside the card;
 // in the public view the owner-only controls are hidden.
@@ -306,7 +319,7 @@ function render(){
   if (!S.token && !guestView){ return renderLogin(); }
   document.documentElement.dir = S.lang==="ar"?"rtl":"ltr";
   document.documentElement.lang = S.lang;
-  let nav = ["dashboard","agent","assets","catalog","scans","findings","ailab","reports","audit","settings"];
+  let nav = ["dashboard","agent","assets","catalog","tools","scans","findings","ailab","reports","audit","settings"];
   if (guestView) nav = nav.filter(k => !["audit","settings"].includes(k));
   if (!nav.includes(S.screen)) S.screen = "dashboard";
   // With no project the list starts with a placeholder. "+ New project" as the
@@ -325,6 +338,7 @@ function render(){
         <div class="side-actions">
           <button class="btn sm" data-act="lang">🌐 ${esc(t("lang"))}</button>
           <button class="btn sm" data-act="motion">${motionIsOn()?"⏸ "+esc(t("motion_stop")):"▶ "+esc(t("motion_start"))}</button>
+          <button class="btn sm" data-act="theme">${S.theme==="light"?"🌙 "+esc(t("theme_dark")):"☀ "+esc(t("theme_light"))}</button>
           ${guestView ? `<button class="btn sm primary" data-act="showlogin">${esc(t("ownerlogin"))}</button>`
                       : `<button class="btn sm" data-act="logout">⎋ ${esc(t("signout"))}</button>`}
         </div>
@@ -410,6 +424,7 @@ async function renderScreen(){
       return setMain(ctx, notice(t("noproject")));
     if (S.screen==="assets") return await scrAssets(ctx);
     if (S.screen==="catalog") return await scrCatalog(ctx);
+    if (S.screen==="tools") return await scrTools(ctx);
     if (S.screen==="scans") return await scrScans(ctx);
     if (S.screen==="findings") return await scrFindings(ctx);
     if (S.screen==="ailab") return await scrAiLab(ctx);
@@ -517,6 +532,41 @@ async function scrCatalog(ctx){
         <td class="mono-sm"><a href="https://github.com/${esc(x.repo)}" target="_blank" rel="noopener">${esc(x.repo)}</a></td>
         <td class="small">${esc(x.description)}</td>
         <td>${x.integration_state==="connector_available"?'<span class="pill ok">connector</span>':'<span class="pill">cataloged</span>'}${x.archived?' <span class="pill warn">archived</span>':""}</td></tr>`).join("")}</table></div>`).join("")}`);
+}
+
+async function scrTools(ctx){
+  // Tools & Licences (§21): each tool's real state, licence, agent-readiness and
+  // circuit-breaker status. Uses the public tool registry; circuit is owner-only.
+  const signedIn = !!S.token;
+  const [tools, circ] = await Promise.all([
+    api("/api/tools"),
+    signedIn ? api("/api/circuit").catch(()=>({circuit:[]})) : Promise.resolve({circuit:[]})]);
+  const cmap = {}; (circ.circuit||[]).forEach(c=>cmap[c.connector]=c);
+  const rows = (tools.tools||[]).map(x=>{
+    const cb = cmap[x.name];
+    const ready = ["ready","verified"].includes(x.state);
+    const circText = !signedIn ? "—" : (cb ? (cb.suspended
+        ? `<span class="pill warn">${esc(L("موقوف","suspended"))}</span>`
+        : (cb.fails ? `${cb.fails} ${esc(L("إخفاقات","fails"))}` : "✓")) : "✓");
+    return `<tr><td class="mono">${esc(x.name)}</td><td class="small">${esc(x.category||"")}</td>
+      <td class="state state-${tok(x.state)}">${esc(x.state)}</td>
+      <td class="small">${esc(x.version||"—")}</td>
+      <td class="small">${esc(x.license||x.licence||"—")}</td>
+      <td>${ready?"✓":"—"}</td><td class="small">${circText}</td></tr>`;
+  }).join("");
+  setMain(ctx, topbar(t("tools"))
+    + h`<div class="card"><h2>${esc(t("tools"))}</h2>
+      <p class="small muted">${esc(L(
+        "كل أداة: حالتها الحقيقية، ترخيصها، وجاهزيتها للوكيل. 'جاهز للوكيل' يتطلب تثبيتاً وإصداراً وفحص صحة وتشغيلاً مختبرياً بدليل. 'موقوف' = قاطع الدائرة أوقفها مؤقتاً بعد إخفاقات متكررة.",
+        "Each tool: its real state, licence and agent-readiness. 'Agent-ready' requires install + version + a health check + a real lab run with evidence. 'suspended' = the circuit breaker paused it after repeated failures."))}</p>
+      <table><thead><tr><th>${esc(t("tool"))}</th><th>${esc(L("الفئة","Category"))}</th>
+        <th>${esc(t("status"))}</th><th>${esc(L("الإصدار","Version"))}</th>
+        <th>${esc(L("الترخيص","Licence"))}</th><th>${esc(L("جاهز للوكيل","Agent-ready"))}</th>
+        <th>${esc(L("قاطع الدائرة","Circuit"))}</th></tr></thead>
+      <tbody>${rows||`<tr><td colspan=7 class="muted">${esc(t("none"))}</td></tr>`}</tbody></table>
+      <div class="small muted" style="margin-top:8px">${esc(L(
+        "التراخيص مفتوحة/مجانية. ترخيص قواعد الأداة قد يختلف عن ترخيص محرّكها.",
+        "Licences are free / open-source. A tool's rules licence can differ from its engine licence."))}</div></div>`);
 }
 
 async function scrScans(ctx){
@@ -759,6 +809,7 @@ document.addEventListener("click", async e=>{
     else if(act==="logout"){ try{await api("/api/auth/logout","POST",{});}catch(_){}
       S.token=""; S.user=null; S.project=null; S.projects=[]; localStorage.removeItem("fsl_token"); await init(); }
     else if(act==="motion"){ toggleMotion(); }
+    else if(act==="theme"){ toggleTheme(); }
     else if(act==="showlogin"){ S.loginOpen=true; S.drawer=null; render(); }
     else if(act==="backpublic"){ S.loginOpen=false; await init(); }
     else if(act==="reload"){ await init(); }
@@ -1223,6 +1274,7 @@ document.addEventListener("input", e=>{
 });
 
 applyMotion();
+applyTheme();
 document.documentElement.lang = S.lang;
 document.documentElement.dir = S.lang==="ar"?"rtl":"ltr";
 watchDom();

@@ -258,3 +258,21 @@ integration (§25). External blockers (ZAP end-to-end, live Render deploy) are m
     planner proposes plans; turning a plan into a running campaign is operator-initiated by default, which
     keeps execution authority in the server, not in the model (v4 §11). A planner→campaign auto-bridge is
     the remaining thin layer.
+- **Phase 5 — in progress.** UI: a **light theme** option (§12) on the token-driven CSS (keeps the red
+  identity on a light page; remembered per viewer) and a **Tools & Licences** screen (§21) surfacing each
+  tool's real state, version, licence, agent-readiness and circuit-breaker status. Browser-verified (zero
+  console errors; light/dark toggle; RTL). Remaining UI polish (agent run cards with cancel/evidence,
+  tools-center run actions, results sort/search, a dedicated fix&retest panel, a cost view, a conflicts
+  panel) is honestly deferred — it is visible only after a Render deploy and is not a backend 10/10
+  blocker.
+- **Phase 6 — in progress.** Reference evaluation lab (`app/benchmark.py`, v4 §15): scores detection on
+  KNOWN cases, on a **held-out eval set** kept apart from the rule-development set, and writes
+  `not_computable` rather than inventing a rate when a set is thin; `compare()` gives version-over-version
+  deltas. **Rollback plan** (`docs/ROLLBACK.md`, §28): every migration is additive/rollback-safe, so a
+  rollback is "deploy the previous version" with no DB change and no lost rows. **Post-deploy verification**
+  (`scripts/post_deploy_verify.py`, §29/§30): low-impact checks of a deployed URL (health, version, tool
+  readiness), with opt-in authenticated lab-scan+cancel; it exits non-zero on a mandatory failure so a bad
+  release is caught, never faked. ACCEPTANCE.md gains a v4-axes evidence table. +4 tests (`test_benchmark`).
+  - **Deploy itself (axis 10) is the owner's action:** this environment cannot reach the Render hosting,
+    so after merge the owner clicks **Deploy latest commit** (and enables Auto-Deploy) in Render, then runs
+    `post_deploy_verify.py <url>`. Everything that can be prepared here is prepared.

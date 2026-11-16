@@ -14,6 +14,21 @@
   --laser:#ff2d4f;         /* laser on the page */
   --radius:14px;
 }
+/* Light option (§12): keeps the red identity on a light page. */
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#fff7f8;            /* page */
+  --text:#9e1228;          /* text on the page (7:1 on the light page) */
+  --dim:#7a2330;           /* secondary text */
+  --line:#eecdd2;          /* hairlines on the page */
+  --card:#ffe3e6;          /* card surface */
+  --card2:#ffd0d6;         /* inputs / inner surfaces on a card */
+  --ink:#5a0f1b;           /* text on a card */
+  --stroke:#e0a7b0;        /* hairlines and laser on a card */
+  --laser:#d11e3a;
+}
+:root[data-theme="light"] .sidebar{background:#fff1f3}
+:root[data-theme="light"] select#projsel{background:#fff}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
 body{
