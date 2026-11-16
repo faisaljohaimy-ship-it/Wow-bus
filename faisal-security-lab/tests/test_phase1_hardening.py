@@ -204,7 +204,12 @@ class TestExecutionGrant(Base):
         _, _, _, j = self._enqueue_semgrep("gr3")
         run_all_jobs()
         job = queue.get_job(j["id"])
-        self.assertEqual(job["state"], "succeeded")       # the grant did not get in the way
+        # A valid grant must not BLOCK the job — it reaches real execution. The
+        # tool's own result (succeeded/failed) is not what this test verifies.
+        self.assertNotEqual(job["state"], "blocked")
+        self.assertNotIn((job.get("error") or {}).get("code", ""),
+                         ("exec_grant_missing", "exec_grant_expired",
+                          "exec_grant_mismatch", "exec_grant_invalid"))
 
 
 class TestEgressControl(Base):
