@@ -1,0 +1,12 @@
+# Local credentials and deployment links never belong in source control.
+.env*
+.vercel/
+*.pem
+*.key
+
+# Generated development output; app assets remain tracked.
+node_modules/
+qa-out/
+qa-output/
+playwright-report/
+test-results/

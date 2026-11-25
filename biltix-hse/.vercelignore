@@ -1,5 +1,9 @@
 # Development files stay in GitHub but are not deployed or served by Vercel.
 # Keep docs/golive/plan.md and plan-ar.md: the go-live view opens them.
+/.git/
+/.github/
+/.gitignore
+/.vercel/
 /tests/
 /tools/
 /AGENTS.md

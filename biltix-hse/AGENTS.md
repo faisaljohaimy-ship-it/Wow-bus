@@ -8,7 +8,9 @@ A static, build-free web app (plain ES modules, CSS custom properties, Canvas 2D
 It is a **demo**: all data is a seeded local simulation. Nothing in this folder talks to a
 real BILTIX, Primavera P6, Autodesk APS, Oracle or sensor system. The UI must say so.
 
-- Deployment root: this folder (`biltix-hse/`). Vercel project `biltix-risk-ai`, no build command.
+- Deployment root: the repository root (`.`), with `index.html`, `api/`, `js/` and `assets/` directly inside it.
+  This standalone copy needs its own Vercel project and new URL; neither is confirmed yet. No build command.
+  Do not configure `biltix-hse` as Root Directory: that wrapper folder does not exist in this repository.
 - Production deploys come from `main` only. Branches matching `claude/**` do not auto-deploy
   (`vercel.json` → `git.deploymentEnabled`); previews are created by hand at milestones.
 - Never deploy to production, buy services, or call a preview a production release
@@ -19,6 +21,8 @@ real BILTIX, Primavera P6, Autodesk APS, Oracle or sensor system. The UI must sa
 | Topic | File |
 |---|---|
 | Current scope, decisions, acceptance criteria | `docs/specs/v3-precision/spec.md` |
+| Standalone repository and deployment transition | `docs/specs/standalone-migration-2026-11-25.md` |
+| Optional owner-access GPT assistant | `docs/specs/gpt-assistant-2026-11-25.md` |
 | Module contract: tokens, i18n API, status, motion, components, data model, file ownership | `docs/specs/v3-precision/CONTRACT.md` |
 | Task list and status | `docs/specs/v3-precision/tasks.md` |
 | Baseline measurements before v3 | `docs/specs/v3-precision/baseline.md` |
@@ -128,6 +132,7 @@ carries **browser-only demos** of three of them — the field kit (offline copy 
 a 360° viewer with one simulated capture point — each labelled as a demo, with no server, no installed labels and
 no real capture. They show a proposed design; they are not an approved scope. A CAD/BIM viewer is not built (the
 site plans are illustrative drawings). `#/golive` lists what a real go-live needs for each.
-A real backend (auth, multi-user storage, connectors, signed webhooks) is not built.
-The Remotion explainer in `../biltix-explainer/` needs a Remotion company licence if BILTIX
+A multi-user backend (auth, shared storage, connectors, signed webhooks) is not built. The optional GPT
+assistant at `api/assistant.mjs` requires separate server configuration; its presence does not prove a live connection.
+The Remotion explainer authoring project is not included in this standalone repository. It needs a Remotion company licence if BILTIX
 has more than three employees. See "Open questions" in `docs/specs/v3-precision/spec.md`.

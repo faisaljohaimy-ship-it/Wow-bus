@@ -29,7 +29,8 @@ This is an owner-access feature, not a multi-user identity system.
 
 ## Server configuration
 
-Configure these values only for the intended `biltix-risk-ai` deployment environment. None belongs in a
+Configure these values only for the separately created Vercel project for this standalone repository;
+its new project name and URL must be recorded after creation. None belongs in a
 browser bundle, Git commit, chat message, static file, or the existing Settings → data-source key field.
 
 | Environment variable | Meaning |

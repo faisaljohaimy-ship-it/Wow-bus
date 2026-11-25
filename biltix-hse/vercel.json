@@ -1,4 +1,8 @@
 {
+  "framework": null,
+  "buildCommand": "",
+  "installCommand": "",
+  "outputDirectory": ".",
   "cleanUrls": true,
   "trailingSlash": false,
   "functions": {
@@ -74,7 +78,8 @@
   ],
   "git": {
     "deploymentEnabled": {
-      "claude/**": false
+      "claude/**": false,
+      "biltix-standalone-template": false
     }
   }
 }
