@@ -1,0 +1,25 @@
+# Development files stay in GitHub but are not deployed or served by Vercel.
+# Keep docs/golive/plan.md and plan-ar.md: the go-live view opens them.
+/tests/
+/tools/
+/AGENTS.md
+/CLAUDE.md
+/README.md
+/docs/ARCHITECTURE.md
+/docs/design/
+/docs/i18n.md
+/docs/offline.md
+/docs/specs/
+
+# Generated test output, local settings and archive copies are not runtime assets.
+/qa-out/
+/qa-output/
+/node_modules/
+/.env*
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.pem
+*.key
