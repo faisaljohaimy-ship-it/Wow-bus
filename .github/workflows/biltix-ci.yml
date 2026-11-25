@@ -17,8 +17,6 @@ jobs:
     name: Verify BILTIX deployment source
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    env:
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/biltix-playwright
     steps:
       - name: Check out candidate commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -67,6 +65,8 @@ jobs:
 
       - name: Install isolated browser test tools
         shell: bash
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/biltix-playwright
         run: |
           set -euo pipefail
           npm install --prefix "$RUNNER_TEMP/biltix-qa-tools" --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.62.1
@@ -76,6 +76,7 @@ jobs:
         working-directory: biltix-hse
         shell: bash
         env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/biltix-playwright
           NODE_PATH: ${{ runner.temp }}/biltix-qa-tools/node_modules
         run: |
           set -euo pipefail
