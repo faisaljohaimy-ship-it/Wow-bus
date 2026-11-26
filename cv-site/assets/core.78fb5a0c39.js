@@ -1,4 +1,4 @@
-window.SITE={"pages":[{"id":"home","path":"/","nav":["الرئيسية","Home"],"num":"01","icon":"systems","desc":["نهندس الأنظمة والذكاء الاصطناعي من الفكرة إلى منتج يعمل: عشرة موضوعات في عشرين فيلمًا، ومع كل ادعاء دليله وحالته.","We engineer systems and AI from idea to working product: ten topics in twenty films, with the evidence and its state beside every claim."],"intro":["نهندس الأنظمة والذكاء الاصطناعي من الفكرة إلى منتج يعمل، ونضع بجانب كل ادعاء دليله وحالته.","We engineer systems and AI from idea to working product, and we put the evidence and its state beside every claim."]},{"id":"films","path":"/films/","nav":["الأفلام","Films"],"num":"02","icon":"cinema","desc":["عشرة موضوعات في عشرين فيلمًا قصيرًا بالعربية والإنجليزية، مع الفصول والأدلة لكل فيلم.","Ten topics in twenty short films, in Arabic and English, with the chapters and the evidence of each film."],"intro":["كل فيلم يشرح فكرة واحدة في نحو ثلاثين ثانية بلغة الصفحة، وكل ادعاء على الشاشة معه حالته.","Each film explains one idea in about thirty seconds, in the page language, and every claim on screen carries its state."]},{"id":"workflows","path":"/workflows/","nav":["مسارات العمل","Workflows"],"num":"03","icon":"decision","desc":["عشر فرضيات تشغيلية قابلة للاختبار، لكل منها سبع خطوات من المشكلة إلى الدليل وزر إلى فصلها في الفيلم.","Ten testable operational hypotheses, each in seven steps from problem to evidence, with a button to its film chapter."],"intro":["سبع خطوات لكل فرضية، من المشكلة إلى الدليل. النتيجة المتوقعة لا تُعرض إنجازًا أبدًا.","Seven steps for each hypothesis, from problem to evidence. An expected result is never shown as an achievement."]},{"id":"capabilities","path":"/capabilities/","nav":["القدرات","Capabilities"],"num":"04","icon":"architecture","desc":["اثنتا عشرة قدرة هندسية، لكل منها مثال عملي وحالة تحقق ودليل.","Twelve engineering capabilities, each with a practical example, a verification state and its evidence."],"intro":["سطر واحد لكل قدرة، ومثال عملي، وحالة تحقق. افتح البطاقة لترى الدليل.","One line per capability, a practical example and its verification state. Open a card for the evidence."]},{"id":"projects","path":"/projects/","nav":["المشاريع","Projects"],"num":"05","icon":"projects","desc":["سديد، ونسخة BILTIX التجريبية، ومؤشر أداء يُعاد حسابه، ومختبر الأدوات وأطلس التكامل.","SADEED, the BILTIX demo build, a KPI you can recompute, the tool lab and the integration atlas."],"intro":["سديد، ونسخة BILTIX التجريبية، ومؤشر تعيد حسابه هنا: ١٦ من ٢٠ تساوي ٨٠٪.","SADEED, the BILTIX demo build, and a KPI you can recompute here: 16 of 20 is 80%."]},{"id":"evidence","path":"/evidence/","nav":["الأدلة والجودة","Evidence & Quality"],"num":"06","icon":"evidence","desc":["سجل الادعاءات بمعرّفاتها ومصادرها وحالاتها، وفصل الإنتاج عن الاختبار والعرض، وبوابات الجودة ومعرّف الإصدار.","The claim ledger with IDs, sources and states, production kept apart from testing and demos, quality gates and the release ID."],"intro":["لكل ادعاء معرّف ومصدر وحالة وتاريخ. الإنتاج والاختبار والعرض منفصلة، وما لم يُقس يبقى غير مقاس.","Every claim has an ID, a source, a state and a date. Production, testing and demos stay apart; what was not measured stays not measured."]},{"id":"briefing","path":"/briefing/","nav":["الإحاطة","Briefing"],"num":"07","icon":"deployment","desc":["إحاطة تنفيذية في نحو تسعين ثانية: قاعدة مختبرة، وقرار قابل للمراجعة، ومؤشر محسوب، وإصدار يمكن تتبّعه.","An executive briefing of about ninety seconds: a tested rule, a reviewable decision, a computed KPI and a traceable release."],"intro":["ستة مقاطع من الأفلام: قاعدة مختبرة، وقرار قابل للمراجعة، ومؤشر محسوب، وإصدار يمكن تتبّعه.","Six passages from the films: a tested rule, a reviewable decision, a computed KPI and a traceable release."]},{"id":"company","path":"/company/","nav":["الشركة","Company"],"num":"08","icon":"agents","desc":["القائد التقني فيصل الجهيمي، ومصنع الهندسة السريعة، ومكتبة الحركة، وكيف نبدأ مشروعًا واحدًا محدد النطاق.","Faisal Al-Juhaimy, technical lead; the rapid engineering factory; the motion library; and how we start one scoped project."],"intro":["استوديو هندسي بقيادة فيصل الجهيمي. نبدأ بمشروع واحد محدد النطاق، ويقرر الدليل ما يكبر بعده.","An engineering studio led by Faisal Al-Juhaimy. We start with one scoped project, and the evidence decides what grows next."]}],"sectionPage":{"top":"home","cinema":"films","playlist":"films","hypotheses":"workflows","flows":"workflows","capabilities":"capabilities","caps":"capabilities","cases":"projects","kpi":"projects","lab":"projects","atlas":"projects","evidence":"evidence","ledger":"evidence","envs":"evidence","quality":"evidence","release":"evidence","filmqa":"evidence","briefing":"briefing","plan":"briefing","profile":"company","method":"company","factory":"company","motion":"company","contact":"company","takeaway":"company"},"strings":{"mp.skip":["انتقل إلى المحتوى","Skip to the content"],"mp.cta.films":["شاهد الأفلام","Watch the films"],"mp.cta.brief":["إحاطة ٩٠ ثانية","The 90-second briefing"],"mp.cta.flows":["مسارات العمل","The workflows"],"mp.open":["افتح الصفحة","Open the page"],"mp.inst.h":["ثلاثة مؤشرات تتحقق منها بنفسك","Three figures you can check yourself"],"mp.inst.films":["عشرة موضوعات · عشرون فيلمًا","10 topics · 20 films"],"mp.inst.filmsNote":["كل موضوع بالعربية والإنجليزية، من بيانات هذا البناء","Each topic in Arabic and in English, from this build's data"],"mp.inst.kpi":["مؤشر محسوب الآن: ١٦ من ٢٠","A KPI computed now: 16 of 20"],"mp.inst.kpiNote":["حسبه محرك المؤشر في هذا المتصفح · بيانات العرض محاكاة","Computed by the KPI engine in this browser · demo data simulated"],"mp.inst.rel":["إصدار يمكن تتبّعه","A release you can trace"],"mp.inst.relNote":["معرّف هذا البناء ومفتاح محتواه","This build's ID and content key"],"mp.pages.h":["ثماني صفحات، فكرة واحدة لكل صفحة","Eight pages, one idea each"],"mp.scenario.note":["سيناريو افتراضي للتوضيح، لا نتيجة مقاسة","A hypothetical scenario for illustration, not a measured result"],"mp.ai.credit":["فن مفاهيمي مولَّد بالذكاء الاصطناعي","AI-generated concept art"],"mp.foot.made":["ثماني صفحات ثابتة مبنية بلغات الويب القياسية، بلا تتبّع.","Eight static pages: HTML, CSS and JavaScript, with no tracking."],"mp.foot.r2":["الخلفيات والطبقات المصورة فن مفاهيمي مولَّد بالذكاء الاصطناعي، لا صور منتجات.","Backgrounds and image layers are AI-generated concept art, not product photographs."],"mp.foot.r4":["«كوانتم» هوية تصميم بصرية، لا حوسبة كمية.","“Quantum” is a visual design identity, not quantum computing."],"mp.watchCh":["شاهد الفصل: {c}","Watch the chapter: {c}"],"mp.watchFilm":["شاهد الفيلم {n}","Watch film {n}"],"mp.loopNote":["حلقة صامتة قصيرة","A short silent loop"],"mp.flows.wfCard":["مسار العمل {n} · الفيلم {n}","Workflow {n} · Film {n}"],"mp.flows.details":["المسار والتفاصيل","Workflow and details"],"mp.flows.problem":["المشكلة","The problem"],"mp.flows.key":["سبع خطوات: المشكلة ← المدخلات ← الذكاء الاصطناعي ← المعالجة ← القرار ← النتيجة ← الدليل","Seven steps: Problem → Inputs → AI → Processing → Decision → Result → Evidence"],"mp.flows.ledgerIds":["الأدلة في السجل","Evidence in the ledger"],"mp.caps.example":["مثال عملي","Practical example"],"mp.caps.items":["ما يثبته الدليل","What the evidence shows"],"mp.caps.tools":["الأدوات المرتبطة وحالتها","Related tools and their state"],"mp.caps.film":["الفيلم المرتبط","Related film"],"mp.caps.source":["المصدر","Source"],"mp.proj.cases":["الحالات","Cases"],"mp.proj.kpi":["مؤشر يمكن الدفاع عنه","A KPI you can defend"],"mp.proj.kpiP":["أعد الحساب بنفسك: النتيجة من محرك المؤشر، والمستهدف المفقود يبقى قيد المراجعة.","Recompute it yourself: the result comes from the KPI engine, and a missing target stays under review."],"mp.proj.lab":["مختبر الأدوات","The tool lab"],"mp.proj.atlas":["أطلس التكامل","The integration atlas"],"mp.proj.caseFile":["ملف الحالات الكامل","The full case file"],"mp.proj.open":["افتح","Open"],"mp.proj.compare":["الحالات المرجعية الأربع، محسوبة الآن","The four reference cases, computed now"],"mp.ev.ledger":["سجل الادعاءات","The claim ledger"],"mp.ev.envs":["الإنتاج والاختبار والعرض، كلٌّ على حدة","Production, testing and demos, each apart"],"mp.ev.quality":["بوابات الجودة","Quality gates"],"mp.ev.filmqa":["فحص الأفلام بعد التصيير","Film checks after render"],"mp.ev.filmqaP":["قاسها بناء الموقع بأداة ffprobe على ملفات هذا الإصدار.","Measured by the site build with ffprobe on this release's files."],"mp.ev.release":["الإصدار ومرجع الرجوع","The release and its rollback reference"],"mp.ev.rollback":["مرجع الرجوع","Rollback reference"],"mp.ev.rollbackNone":["لم يُسجَّل مرجع رجوع لهذا البناء؛ يحتفظ المضيف بالنشرات السابقة.","No rollback reference is recorded for this build; the host keeps the earlier deployments."],"mp.ev.claims":["{n} ادعاءً","{n} claims"],"mp.brief.start":["ابدأ الإحاطة","Start the briefing"],"mp.brief.resume":["تابع من المقطع {n}","Resume at passage {n}"],"mp.brief.plan":["ما ستراه","What you will see"],"mp.brief.offline":["نسخة للعرض دون اتصال","A copy for offline viewing"],"mp.brief.offlineP":["تُحفظ صفحة الإحاطة ومقاطعها الستة بلغة الصفحة فقط، عند طلبك فقط.","Only the briefing page and its six passages in the page language are saved, and only when you ask."],"mp.co.leader":["القائد التقني","Technical lead"],"mp.co.method":["مصنع الهندسة السريعة","The rapid engineering factory"],"mp.co.motion":["مكتبة الحركة","The motion library"],"mp.co.contact":["ابدأ بمشروع واحد محدد النطاق","Start with one scoped project"],"mp.co.how":["كيف نبدأ","How we start"],"mp.co.bring":["ما نحتاجه منكم","What we need from you"],"mp.back":["عودة إلى {p}","Back to {p}"],"mp.notFound":["هذه الصفحة غير موجودة","This page does not exist"]},"scenarios":{"home":{"films":{"source":"the five semantic chapters of every film (hook, problem, method, result, closing)","steps":[["inputs","فكرة","Idea"],["problem","مشكلة","Problem"],["ai","طريقة","Method"],["result","نتيجة","Result"],["decision","خطوة تالية","Next step"]]},"workflows":{"source":"the seven workflow steps (problem to evidence)","steps":[["problem","مشكلة","Problem"],["inputs","مدخلات","Inputs"],["ai","ذكاء اصطناعي","AI"],["decision","قرار","Decision"],["evidence","دليل","Evidence"]]},"capabilities":{"source":"the method line: one requirement, one owner and an acceptance test before any code","steps":[["inputs","متطلب واحد","One requirement"],["decision","مالك واحد","One owner"],["code","اختبار قبول","Acceptance test"],["evidence","دليل","Evidence"]]},"projects":{"source":"the cases on the projects page","steps":[["projects","سديد","SADEED"],["integration","عرض تجريبي","Demo build"],["data","مؤشر الأداء","The KPI"]]},"evidence":{"source":"the ledger fields: claim, source, state, date","steps":[["evidence","ادعاء","Claim"],["inputs","مصدر","Source"],["data","حالة","State"],["result","تاريخ","Date"]]},"briefing":{"source":"the six briefing passages","steps":[["cinema","ما نفعله","What we do"],["code","قاعدة مختبرة","Tested rule"],["decision","قرار","Decision"],["data","مؤشر","KPI"],["deployment","إصدار","Release"],["projects","لماذا","Why"]]},"company":{"source":"the four steps of how we start","steps":[["problem","مشكلة واحدة","One problem"],["inputs","نطاق ومعيار","Scope and proof"],["automation","بناء خلف البوابات","Build behind gates"],["decision","قرار بالدليل","Decision on evidence"]]}},"modules":{"cases":{"source":"the cases on the projects page","steps":[["projects","سديد","SADEED"],["integration","عرض تجريبي","Demo build"],["data","مؤشر الأداء","The KPI"]]},"lab":{"source":"the tool lab: each tool by its actual use, categories never added up","steps":[["code","أداة","A tool"],["inputs","سجل استخدام","Usage record"],["data","فئة","Category"],["evidence","حالة","State"]]},"atlas":{"source":"the integration atlas: systems, protocols and the state of each link","steps":[["inputs","نظام","A system"],["integration","بروتوكول","Protocol"],["automation","ربط","Link"],["evidence","حالة الربط","Link state"]]},"quality":{"source":"workflow 08, the release path shown in film 08","steps":[["code","مراجعة","Review"],["automation","اختبار","Test"],["cloud","نشر","Deploy"],["evidence","تحقق","Verify"],["deployment","رجوع","Rollback"]]},"profile":{"source":"the four steps of how we start","steps":[["problem","مشكلة واحدة","One problem"],["inputs","نطاق ومعيار","Scope and proof"],["automation","بناء خلف البوابات","Build behind gates"],["decision","قرار بالدليل","Decision on evidence"]]},"factory":{"source":"the bridge after film 09 (independent tasks, each with its start and end)","steps":[["inputs","تقسيم العمل","Split the work"],["automation","مهام متوازية","Parallel tasks"],["performance","بداية ونهاية","Start and end"],["data","قياس منفصل","Separate measure"]]},"motion":{"source":"the bridge after film 07 (every file is checked after render)","steps":[["code","مشهد من الكود","Scene in code"],["motion","حركة","Motion"],["cinema","تصيير","Render"],["evidence","فحص الملف","File check"]]}},"cases":{"SADEED":{"source":"the method line 'the model proposes, a person approves' (SADEED decision path)","steps":[["inputs","بلاغ","Report"],["ai","النموذج يقترح","Model proposes"],["decision","الإنسان يعتمد","Person approves"],["evidence","دليل جديد","New evidence"]]},"BILTIX Risk AI":{"source":"the BILTIX demo: an observation becomes a risk with an owner","steps":[["inputs","ملاحظة ميدانية","Field note"],["data","خطر بأولوية","Ranked risk"],["decision","مالك وموعد","Owner and date"],["result","سجل المخاطر","Risk register"]]},"KPI calculator":{"source":"the KPI engine's reference cases","steps":[["data","١٦ من ٢٠","16 of 20"],["performance","وزن ٦٠/٤٠","60/40 weight"],["result","٨٨٪","88%"],["problem","بلا مستهدف","No target"],["decision","قيد المراجعة","Under review"]]},"Evidence portfolio":{"source":"the bridge after film 01 (a figure links to its formula and its test)","steps":[["data","رقم","A figure"],["code","معادلة","Formula"],["automation","اختبار","Test"],["evidence","حالة","State"]]}}},"icons3d":{}};
+window.SITE={"pages":[{"id":"home","path":"/","nav":["الرئيسية","Home"],"num":"01","icon":"systems","desc":["نحوّل الذكاء الاصطناعي إلى أنظمة تصنع أثرًا حقيقيًا: حلول وطريقة بناء وأعمال وأفلام، ومع كل ادعاء دليله وحالته.","We turn AI into systems that make a real impact: solutions, method, work and films, with the evidence and its state beside every claim."],"intro":["نصمم أنظمة الذكاء الاصطناعي ونبنيها ونختبرها وننشرها، ونضع بجانب كل ادعاء دليله وحالته.","We design, build, test and deploy AI systems, and we put the evidence and its state beside every claim."],"parent":null},{"id":"solutions","path":"/solutions/","nav":["الحلول","Solutions"],"num":"02","icon":"ai","desc":["ست حلول لأنظمة الذكاء الاصطناعي، لكل منها المشكلة وطريقة الحل والحدود والدليل وطريقة البدء.","Six solutions for AI systems, each with the problem, the approach, its limits, its evidence and how to start."],"intro":["لكل حل: المشكلة، وطريقة الحل، والتقنية، والمخرجات المتوقعة، والحدود، والدليل، وكيف تبدأ.","For each: the problem, our approach, the technology, expected outputs, the limits, the evidence and how to start."],"parent":null},{"id":"how-we-build","path":"/how-we-build/","nav":["كيف نبني","How we build"],"num":"03","icon":"automation","desc":["سبع خطوات من الاستكشاف إلى التحسين، وكل خطوة مرتبطة بدليلها في السجل.","Seven steps from discovery to improvement, each linked to its evidence in the ledger."],"intro":["من الاستكشاف إلى التحسين. افتح أي خطوة لترى ما تفعله ودليلها وحالته.","From discovery to improvement. Open any step to see what it does, its evidence and its state."],"parent":null},{"id":"work","path":"/work/","nav":["الأعمال","Work"],"num":"04","icon":"projects","desc":["أعمال حقيقية بحالتها كما سُجلت: سديد، ونسخة BILTIX التجريبية، وحاسبة المؤشر، وهذا البورتفوليو.","Real work with its recorded state: SADEED, the BILTIX demo build, the KPI calculator and this portfolio."],"intro":["لكل عمل طريقته وتاريخه وحالته: عرض أو اختبار قبول أو إنتاج، دون رفع أي حالة.","Each piece of work with its method, date and state: demo, acceptance testing or production, never raised."],"parent":null},{"id":"films","path":"/films/","nav":["الأفلام","Films"],"num":"05","icon":"cinema","desc":["عشرة موضوعات في عشرين فيلمًا قصيرًا بالعربية والإنجليزية، مع الفصول والأدلة لكل فيلم.","Ten topics in twenty short films, in Arabic and English, with the chapters and the evidence of each film."],"intro":["كل فيلم يشرح فكرة واحدة في نحو ثلاثين ثانية بلغة الصفحة، وكل ادعاء على الشاشة معه حالته.","Each film explains one idea in about thirty seconds, in the page language, and every claim on screen carries its state."],"parent":null},{"id":"evidence","path":"/evidence/","nav":["الأدلة والجودة","Evidence & Quality"],"num":"06","icon":"evidence","desc":["سجل الادعاءات بمعرّفاتها ومصادرها وحالاتها، وفصل الإنتاج عن الاختبار والعرض، وبوابات الجودة ومعرّف الإصدار.","The claim ledger with IDs, sources and states, production kept apart from testing and demos, quality gates and the release ID."],"intro":["لكل ادعاء معرّف ومصدر وحالة وتاريخ. الإنتاج والاختبار والعرض منفصلة، وما لم يُقس يبقى غير مقاس.","Every claim has an ID, a source, a state and a date. Production, testing and demos stay apart; what was not measured stays not measured."],"parent":null},{"id":"company","path":"/company/","nav":["الشركة","Company"],"num":"07","icon":"agents","desc":["القائد التقني فيصل الجهيمي، ومصنع الهندسة السريعة، ومكتبة الحركة، وكيف نبدأ مشروعًا واحدًا محدد النطاق.","Faisal Al-Juhaimy, technical lead; the rapid engineering factory; the motion library; and how we start one scoped project."],"intro":["استوديو هندسي بقيادة فيصل الجهيمي. نبدأ بمشروع واحد محدد النطاق، ويقرر الدليل ما يكبر بعده.","An engineering studio led by Faisal Al-Juhaimy. We start with one scoped project, and the evidence decides what grows next."],"parent":null},{"id":"contact","path":"/contact/","nav":["تواصل","Contact"],"num":"08","icon":"inputs","desc":["طلب عرض توضيحي أو عرض فني ومالي لمشروع واحد محدد النطاق.","Request a demo, or a technical and financial proposal for one scoped project."],"intro":["اختر عرضًا توضيحيًا أو عرضًا فنيًا وماليًا. لا ننشر بريدًا ولا هاتفًا؛ النموذج هو القناة.","Choose a demo or a technical and financial proposal. We publish no e-mail or phone; the form is the channel."],"parent":null},{"id":"briefing","path":"/briefing/","nav":["الإحاطة","Briefing"],"num":"09","icon":"deployment","desc":["إحاطة تنفيذية في نحو تسعين ثانية: قاعدة مختبرة، وقرار قابل للمراجعة، ومؤشر محسوب، وإصدار يمكن تتبّعه.","An executive briefing of about ninety seconds: a tested rule, a reviewable decision, a computed KPI and a traceable release."],"intro":["ستة مقاطع من الأفلام: قاعدة مختبرة، وقرار قابل للمراجعة، ومؤشر محسوب، وإصدار يمكن تتبّعه.","Six passages from the films: a tested rule, a reviewable decision, a computed KPI and a traceable release."],"parent":null},{"id":"workflows","path":"/workflows/","nav":["مسارات العمل","Workflows"],"num":"10","icon":"decision","desc":["عشر فرضيات تشغيلية قابلة للاختبار، لكل منها سبع خطوات من المشكلة إلى الدليل وزر إلى فصلها في الفيلم.","Ten testable operational hypotheses, each in seven steps from problem to evidence, with a button to its film chapter."],"intro":["سبع خطوات لكل فرضية، من المشكلة إلى الدليل. النتيجة المتوقعة لا تُعرض إنجازًا أبدًا.","Seven steps for each hypothesis, from problem to evidence. An expected result is never shown as an achievement."],"parent":"how-we-build"},{"id":"capabilities","path":"/capabilities/","nav":["القدرات","Capabilities"],"num":"11","icon":"architecture","desc":["اثنتا عشرة قدرة هندسية، لكل منها مثال عملي وحالة تحقق ودليل.","Twelve engineering capabilities, each with a practical example, a verification state and its evidence."],"intro":["سطر واحد لكل قدرة، ومثال عملي، وحالة تحقق. افتح البطاقة لترى الدليل.","One line per capability, a practical example and its verification state. Open a card for the evidence."],"parent":"solutions"},{"id":"sol-enterprise-ai","path":"/solutions/enterprise-ai/","nav":["حلول الذكاء الاصطناعي للمؤسسات","Enterprise AI solutions"],"num":"02.1","icon":"ai","desc":["مساعد ذكاء اصطناعي يقترح، ومسؤول يعتمد، ودليل جديد يعيد المراجعة.","An AI assistant proposes, an accountable person approves, and new evidence reopens the review."],"intro":["مساعد ذكاء اصطناعي يقترح، ومسؤول يعتمد، ودليل جديد يعيد المراجعة.","An AI assistant proposes, an accountable person approves, and new evidence reopens the review."],"parent":"solutions"},{"id":"sol-systems-engineering","path":"/solutions/systems-engineering/","nav":["هندسة الأنظمة وتطوير المنتجات","Systems engineering and product development"],"num":"02.2","icon":"systems","desc":["من متطلب واحد ومالك واحد واختبار قبول إلى منتج يعمل وله هوية يمكن فحصها.","From one requirement, one owner and an acceptance test to a working product with a checkable identity."],"intro":["من متطلب واحد ومالك واحد واختبار قبول إلى منتج يعمل وله هوية يمكن فحصها.","From one requirement, one owner and an acceptance test to a working product with a checkable identity."],"parent":"solutions"},{"id":"sol-automation-agents","path":"/solutions/automation-agents/","nav":["أتمتة العمليات والوكلاء الأذكياء","Process automation and intelligent agents"],"num":"02.3","icon":"automation","desc":["قواعد مكتوبة ومهام منسّقة تحت إشراف بشري، وفحوص آلية قبل كل دمج.","Written rules and coordinated tasks under human supervision, with automated checks before every merge."],"intro":["قواعد مكتوبة ومهام منسّقة تحت إشراف بشري، وفحوص آلية قبل كل دمج.","Written rules and coordinated tasks under human supervision, with automated checks before every merge."],"parent":"solutions"},{"id":"sol-data-risk-decisions","path":"/solutions/data-risk-decisions/","nav":["إدارة البيانات والمخاطر والقرار","Data, risk and decision management"],"num":"02.4","icon":"data","desc":["أرقام بمعادلة معلنة، ومخاطر لها مالك وموعد مراجعة، وقرار يُراجع حين يتغيّر الدليل.","Figures with a stated formula, risks with an owner and a review date, and decisions reviewed when the evidence changes."],"intro":["أرقام بمعادلة معلنة، ومخاطر لها مالك وموعد مراجعة، وقرار يُراجع حين يتغيّر الدليل.","Figures with a stated formula, risks with an owner and a review date, and decisions reviewed when the evidence changes."],"parent":"solutions"},{"id":"sol-integration","path":"/solutions/integration/","nav":["تكامل الأنظمة والخدمات وقواعد البيانات","Systems, services and database integration"],"num":"02.5","icon":"integration","desc":["نربط الأنظمة عبر الواجهات البرمجية وخوادم MCP، ونعرض حالة كل ربط كما هي.","We connect systems through APIs and MCP servers, and show the state of every link as it is."],"intro":["نربط الأنظمة عبر الواجهات البرمجية وخوادم MCP، ونعرض حالة كل ربط كما هي.","We connect systems through APIs and MCP servers, and show the state of every link as it is."],"parent":"solutions"},{"id":"sol-prototype-to-product","path":"/solutions/prototype-to-product/","nav":["من النموذج الأولي إلى منتج قابل للتوسع","From prototype to scalable product"],"num":"02.6","icon":"deployment","desc":["نموذج أولي محدد النطاق تجرّبونه بأنفسكم، ثم توسّع يقرره الدليل لا الوعد.","A scoped prototype you can try yourselves, then growth decided by evidence, not by promises."],"intro":["نموذج أولي محدد النطاق تجرّبونه بأنفسكم، ثم توسّع يقرره الدليل لا الوعد.","A scoped prototype you can try yourselves, then growth decided by evidence, not by promises."],"parent":"solutions"}],"nav":["home","solutions","how-we-build","work","films","evidence","company","contact"],"sectionPage":{"top":"home","cinema":"films","playlist":"films","hypotheses":"workflows","flows":"workflows","capabilities":"capabilities","caps":"capabilities","cases":"work","kpi":"work","lab":"work","atlas":"work","evidence":"evidence","ledger":"evidence","envs":"evidence","quality":"evidence","release":"evidence","filmqa":"evidence","briefing":"briefing","plan":"briefing","profile":"company","method":"company","factory":"company","motion":"company","contact":"contact","takeaway":"contact","projects":"work","solutions":"solutions","method-graph":"how-we-build","forms":"contact"},"strings":{"mp.skip":["انتقل إلى المحتوى","Skip to the content"],"mp.cta.films":["شاهد الأفلام","Watch the films"],"mp.cta.brief":["إحاطة ٩٠ ثانية","The 90-second briefing"],"mp.cta.flows":["مسارات العمل","The workflows"],"mp.open":["افتح الصفحة","Open the page"],"mp.inst.h":["ثلاثة مؤشرات تتحقق منها بنفسك","Three figures you can check yourself"],"mp.inst.films":["عشرة موضوعات · عشرون فيلمًا","10 topics · 20 films"],"mp.inst.filmsNote":["كل موضوع بالعربية والإنجليزية، من بيانات هذا البناء","Each topic in Arabic and in English, from this build's data"],"mp.inst.kpi":["مؤشر محسوب الآن: ١٦ من ٢٠","A KPI computed now: 16 of 20"],"mp.inst.kpiNote":["حسبه محرك المؤشر في هذا المتصفح · بيانات العرض محاكاة","Computed by the KPI engine in this browser · demo data simulated"],"mp.inst.rel":["إصدار يمكن تتبّعه","A release you can trace"],"mp.inst.relNote":["معرّف هذا البناء ومفتاح محتواه","This build's ID and content key"],"mp.pages.h":["ثماني صفحات، فكرة واحدة لكل صفحة","Eight pages, one idea each"],"mp.scenario.note":["سيناريو افتراضي للتوضيح، لا نتيجة مقاسة","A hypothetical scenario for illustration, not a measured result"],"mp.ai.credit":["فن مفاهيمي مولَّد بالذكاء الاصطناعي","AI-generated concept art"],"mp.foot.made":["ثماني صفحات ثابتة مبنية بلغات الويب القياسية، بلا تتبّع.","Eight static pages: HTML, CSS and JavaScript, with no tracking."],"mp.foot.r2":["الخلفيات والطبقات المصورة فن مفاهيمي مولَّد بالذكاء الاصطناعي، لا صور منتجات.","Backgrounds and image layers are AI-generated concept art, not product photographs."],"mp.foot.r4":["«كوانتم» هوية تصميم بصرية، لا حوسبة كمية.","“Quantum” is a visual design identity, not quantum computing."],"mp.watchCh":["شاهد الفصل: {c}","Watch the chapter: {c}"],"mp.watchFilm":["شاهد الفيلم {n}","Watch film {n}"],"mp.loopNote":["حلقة صامتة قصيرة","A short silent loop"],"mp.flows.wfCard":["مسار العمل {n} · الفيلم {n}","Workflow {n} · Film {n}"],"mp.flows.details":["المسار والتفاصيل","Workflow and details"],"mp.flows.problem":["المشكلة","The problem"],"mp.flows.key":["سبع خطوات: المشكلة ← المدخلات ← الذكاء الاصطناعي ← المعالجة ← القرار ← النتيجة ← الدليل","Seven steps: Problem → Inputs → AI → Processing → Decision → Result → Evidence"],"mp.flows.ledgerIds":["الأدلة في السجل","Evidence in the ledger"],"mp.caps.example":["مثال عملي","Practical example"],"mp.caps.items":["ما يثبته الدليل","What the evidence shows"],"mp.caps.tools":["الأدوات المرتبطة وحالتها","Related tools and their state"],"mp.caps.film":["الفيلم المرتبط","Related film"],"mp.caps.source":["المصدر","Source"],"mp.proj.cases":["الحالات","Cases"],"mp.proj.kpi":["مؤشر يمكن الدفاع عنه","A KPI you can defend"],"mp.proj.kpiP":["أعد الحساب بنفسك: النتيجة من محرك المؤشر، والمستهدف المفقود يبقى قيد المراجعة.","Recompute it yourself: the result comes from the KPI engine, and a missing target stays under review."],"mp.proj.lab":["مختبر الأدوات","The tool lab"],"mp.proj.atlas":["أطلس التكامل","The integration atlas"],"mp.proj.caseFile":["ملف الحالات الكامل","The full case file"],"mp.proj.open":["افتح","Open"],"mp.proj.compare":["الحالات المرجعية الأربع، محسوبة الآن","The four reference cases, computed now"],"mp.ev.ledger":["سجل الادعاءات","The claim ledger"],"mp.ev.envs":["الإنتاج والاختبار والعرض، كلٌّ على حدة","Production, testing and demos, each apart"],"mp.ev.quality":["بوابات الجودة","Quality gates"],"mp.ev.filmqa":["فحص الأفلام بعد التصيير","Film checks after render"],"mp.ev.filmqaP":["قاسها بناء الموقع بأداة ffprobe على ملفات هذا الإصدار.","Measured by the site build with ffprobe on this release's files."],"mp.ev.release":["الإصدار ومرجع الرجوع","The release and its rollback reference"],"mp.ev.rollback":["مرجع الرجوع","Rollback reference"],"mp.ev.rollbackNone":["لم يُسجَّل مرجع رجوع لهذا البناء؛ يحتفظ المضيف بالنشرات السابقة.","No rollback reference is recorded for this build; the host keeps the earlier deployments."],"mp.ev.claims":["{n} ادعاءً","{n} claims"],"mp.brief.start":["ابدأ الإحاطة","Start the briefing"],"mp.brief.resume":["تابع من المقطع {n}","Resume at passage {n}"],"mp.brief.plan":["ما ستراه","What you will see"],"mp.brief.offline":["نسخة للعرض دون اتصال","A copy for offline viewing"],"mp.brief.offlineP":["تُحفظ صفحة الإحاطة ومقاطعها الستة بلغة الصفحة فقط، عند طلبك فقط.","Only the briefing page and its six passages in the page language are saved, and only when you ask."],"mp.co.leader":["القائد التقني","Technical lead"],"mp.co.method":["مصنع الهندسة السريعة","The rapid engineering factory"],"mp.co.motion":["مكتبة الحركة","The motion library"],"mp.co.contact":["ابدأ بمشروع واحد محدد النطاق","Start with one scoped project"],"mp.co.how":["كيف نبدأ","How we start"],"mp.co.bring":["ما نحتاجه منكم","What we need from you"],"mp.back":["عودة إلى {p}","Back to {p}"],"mp.notFound":["هذه الصفحة غير موجودة","This page does not exist"],"mp.cta.solutions":["استكشف الحلول","Explore the solutions"],"mp.cta.demo":["احجز عرضًا توضيحيًا","Book a demo"],"mp.cta.proposal":["اطلب عرضًا فنيًا وماليًا","Request a technical and financial proposal"],"mp.cta.meeting":["اطلب اجتماعًا تعريفيًا","Request an introductory meeting"],"mp.home.caps":["قدرات هندسة الذكاء الاصطناعي","AI engineering capabilities"],"mp.home.capsP":["اثنتا عشرة قدرة مترابطة، لكل منها حالة تحقق.","Twelve connected capabilities, each with its verification state."],"mp.home.build":["كيف نبني","How we build"],"mp.home.buildP":["سبع خطوات من الاستكشاف إلى التحسين، وكل خطوة مرتبطة بدليل.","Seven steps from discovery to improvement, each linked to evidence."],"mp.home.solutions":["الحلول","Solutions"],"mp.home.solutionsP":["ست حلول، ولكل حل حدوده ودليله وطريقة البدء.","Six solutions, each with its limits, its evidence and a way to start."],"mp.home.evidence":["أدلة من أنظمة حقيقية","Evidence from real systems"],"mp.home.evidenceP":["كل رقم بتاريخه وطريقة قياسه، وكل نظام بحالته كما سُجلت، دون رفع أي حالة.","Every figure with its date and how it was measured; every system with its recorded state, never raised."],"mp.home.notLive":["لقطات مسجلة، لا بث حي","Recorded snapshots, not a live feed"],"mp.home.film":["فيلم الشركة","The company film"],"mp.home.filmP":["فيلم الشركة بالعربية قيد الإنتاج. حتى يصدر، شاهد الأفلام العشرة.","The Arabic company film is in production. Until it is released, watch the ten films."],"mp.home.contact":["لنتحدث عن مشروعكم","Let's talk about your project"],"mp.home.contactP":["اجتماع تعريفي مع عرض توضيحي، أو عرض فني ومالي لمشروع واحد محدد النطاق.","An introductory meeting with a demo, or a technical and financial proposal for one scoped project."],"mp.motion.pause":["أوقف الحركة","Pause motion"],"mp.motion.play":["شغّل الحركة","Play motion"],"mp.brief.cta":["إحاطة ٩٠ ثانية","90-second briefing"],"mp.sol.problem":["المشكلة","The problem"],"mp.sol.approach":["كيف نحلها","How we solve it"],"mp.sol.diagram":["مخطط النظام","The system, as a diagram"],"mp.sol.tech":["التقنية المستخدمة","Technology used"],"mp.sol.outputs":["المخرجات المتوقعة","Expected outputs"],"mp.sol.outputsTag":["متوقعة، لا إنجاز","Expected, not an achievement"],"mp.sol.limits":["حدود الحل","Limits of the solution"],"mp.sol.evidence":["الدليل المتاح","Available evidence"],"mp.sol.data":["التكامل والتعامل مع البيانات","Integration and data handling"],"mp.sol.start":["كيف يبدأ العميل","How a client starts"],"mp.sol.faq":["أسئلة المشتري","Buyer questions"],"mp.sol.all":["كل الحلول","All solutions"],"mp.sol.caps":["القدرات التي يقوم عليها","The capabilities behind it"],"mp.sol.open":["افتح الحل","Open the solution"],"mp.how.graph":["الخطوات السبع","The seven steps"],"mp.how.drivers":["ما يجعل البناء أسرع، وحالته","What makes the build faster, and its state"],"mp.how.text":["الخطوات نصًا","The steps as text"],"mp.how.flows":["عشر فرضيات قابلة للاختبار","Ten testable hypotheses"],"mp.work.status":["الحالة المسجلة","Recorded state"],"mp.work.method":["الطريقة","Method"],"mp.work.date":["تاريخ الدليل","Evidence date"],"mp.ct.demo":["طلب عرض توضيحي","Request a demo"],"mp.ct.demoP":["اجتماع تعريفي نعرض فيه نظامًا يعمل على بيانات عيّنة آمنة.","An introductory meeting where we show a working system on safe sample data."],"mp.ct.proposal":["طلب عرض فني ومالي","Request a technical and financial proposal"],"mp.ct.proposalP":["عرض مكتوب لمشروع واحد محدد النطاق: النطاق والمخرجات والجدول والتكلفة.","A written proposal for one scoped project: scope, outputs, schedule and cost."],"mp.ct.step1":["الخطوة ١ من ٢: الأساسيات","Step 1 of 2: the basics"],"mp.ct.step2":["الخطوة ٢ من ٢: التفاصيل والموافقة","Step 2 of 2: details and consent"],"mp.ct.next":["التالي","Next"],"mp.ct.back":["رجوع","Back"],"mp.ct.send":["أرسل الطلب","Send the request"],"mp.ct.notConnected":["تنبيه صادق: خدمة استقبال الطلبات لم تُوصل بعد، وأي إرسال الآن لن يُحفظ. ستعرض الصفحة رد الخدمة كما هو.","Honest notice: the request intake service is not connected yet, so a submission now will not be saved. The page shows the service's answer as it is."],"mp.ct.noscript":["يتطلب النموذج تفعيل جافاسكربت، لأن الخدمة تستقبل بيانات بصيغة JSON فقط.","The form needs JavaScript: the service accepts JSON only."],"mp.ct.reply":["مدة الرد يحددها المالك ولم تُعلن بعد.","The reply time is set by the owner and is not published yet."],"mp.ct.usd":["بالدولار الأمريكي","in US dollars"],"mp.ct.req":["مطلوب","required"],"mp.ct.badEmail":["اكتب بريدًا إلكترونيًا صحيحًا.","Enter a valid e-mail address."],"mp.ct.short":["اكتب ١٠ أحرف على الأقل.","Write at least 10 characters."],"mp.ct.min2":["اكتب حرفين على الأقل.","Write at least 2 characters."],"mp.ct.reach":["لا ننشر بيانات اتصال على هذا الموقع. استخدم أحد النموذجين، أو القناة التي وصلك منها هذا الرابط.","We publish no contact details on this site. Use one of the two forms, or the channel this link reached you by."],"mp.co.contactCta":["ابدأ من صفحة التواصل","Start from the contact page"]},"scenarios":{"home":{"films":{"source":"the five semantic chapters of every film (hook, problem, method, result, closing)","steps":[["inputs","فكرة","Idea"],["problem","مشكلة","Problem"],["ai","طريقة","Method"],["result","نتيجة","Result"],["decision","خطوة تالية","Next step"]]},"workflows":{"source":"the seven workflow steps (problem to evidence)","steps":[["problem","مشكلة","Problem"],["inputs","مدخلات","Inputs"],["ai","ذكاء اصطناعي","AI"],["decision","قرار","Decision"],["evidence","دليل","Evidence"]]},"capabilities":{"source":"the method line: one requirement, one owner and an acceptance test before any code","steps":[["inputs","متطلب واحد","One requirement"],["decision","مالك واحد","One owner"],["code","اختبار قبول","Acceptance test"],["evidence","دليل","Evidence"]]},"projects":{"source":"the cases on the projects page","steps":[["projects","سديد","SADEED"],["integration","عرض تجريبي","Demo build"],["data","مؤشر الأداء","The KPI"]]},"evidence":{"source":"the ledger fields: claim, source, state, date","steps":[["evidence","ادعاء","Claim"],["inputs","مصدر","Source"],["data","حالة","State"],["result","تاريخ","Date"]]},"briefing":{"source":"the six briefing passages","steps":[["cinema","ما نفعله","What we do"],["code","قاعدة مختبرة","Tested rule"],["decision","قرار","Decision"],["data","مؤشر","KPI"],["deployment","إصدار","Release"],["projects","لماذا","Why"]]},"company":{"source":"the four steps of how we start","steps":[["problem","مشكلة واحدة","One problem"],["inputs","نطاق ومعيار","Scope and proof"],["automation","بناء خلف البوابات","Build behind gates"],["decision","قرار بالدليل","Decision on evidence"]]},"solutions":{"source":"the solution skeleton: problem, approach, evidence, start","steps":[["problem","مشكلة","Problem"],["ai","طريقة الحل","Approach"],["evidence","دليل","Evidence"],["decision","بداية","Start"]]},"how-we-build":{"source":"the seven method steps","steps":[["inputs","استكشاف","Discover"],["architecture","تصميم","Architect"],["code","بناء","Build"],["integration","تكامل","Integrate"],["evidence","اختبار","Test"],["deployment","نشر","Deploy"],["performance","تحسين","Improve"]]},"work":{"source":"the cases on the projects page","steps":[["projects","سديد","SADEED"],["integration","عرض تجريبي","Demo build"],["data","مؤشر الأداء","The KPI"]]},"contact":{"source":"the four steps of how we start","steps":[["problem","مشكلة واحدة","One problem"],["inputs","نطاق ومعيار","Scope and proof"],["automation","بناء خلف البوابات","Build behind gates"],["decision","قرار بالدليل","Decision on evidence"]]}},"modules":{"cases":{"source":"the cases on the projects page","steps":[["projects","سديد","SADEED"],["integration","عرض تجريبي","Demo build"],["data","مؤشر الأداء","The KPI"]]},"lab":{"source":"the tool lab: each tool by its actual use, categories never added up","steps":[["code","أداة","A tool"],["inputs","سجل استخدام","Usage record"],["data","فئة","Category"],["evidence","حالة","State"]]},"atlas":{"source":"the integration atlas: systems, protocols and the state of each link","steps":[["inputs","نظام","A system"],["integration","بروتوكول","Protocol"],["automation","ربط","Link"],["evidence","حالة الربط","Link state"]]},"quality":{"source":"workflow 08, the release path shown in film 08","steps":[["code","مراجعة","Review"],["automation","اختبار","Test"],["cloud","نشر","Deploy"],["evidence","تحقق","Verify"],["deployment","رجوع","Rollback"]]},"profile":{"source":"the four steps of how we start","steps":[["problem","مشكلة واحدة","One problem"],["inputs","نطاق ومعيار","Scope and proof"],["automation","بناء خلف البوابات","Build behind gates"],["decision","قرار بالدليل","Decision on evidence"]]},"factory":{"source":"the bridge after film 09 (independent tasks, each with its start and end)","steps":[["inputs","تقسيم العمل","Split the work"],["automation","مهام متوازية","Parallel tasks"],["performance","بداية ونهاية","Start and end"],["data","قياس منفصل","Separate measure"]]},"motion":{"source":"the bridge after film 07 (every file is checked after render)","steps":[["code","مشهد من الكود","Scene in code"],["motion","حركة","Motion"],["cinema","تصيير","Render"],["evidence","فحص الملف","File check"]]}},"cases":{"SADEED":{"source":"the method line 'the model proposes, a person approves' (SADEED decision path)","steps":[["inputs","بلاغ","Report"],["ai","النموذج يقترح","Model proposes"],["decision","الإنسان يعتمد","Person approves"],["evidence","دليل جديد","New evidence"]]},"BILTIX Risk AI":{"source":"the BILTIX demo: an observation becomes a risk with an owner","steps":[["inputs","ملاحظة ميدانية","Field note"],["data","خطر بأولوية","Ranked risk"],["decision","مالك وموعد","Owner and date"],["result","سجل المخاطر","Risk register"]]},"KPI calculator":{"source":"the KPI engine's reference cases","steps":[["data","١٦ من ٢٠","16 of 20"],["performance","وزن ٦٠/٤٠","60/40 weight"],["result","٨٨٪","88%"],["problem","بلا مستهدف","No target"],["decision","قيد المراجعة","Under review"]]},"Evidence portfolio":{"source":"the bridge after film 01 (a figure links to its formula and its test)","steps":[["data","رقم","A figure"],["code","معادلة","Formula"],["automation","اختبار","Test"],["evidence","حالة","State"]]}}},"icons3d":{}};
  
 
 const STATUS = {
@@ -664,7 +664,7 @@ window.I18N = I18N; window.STATUS = STATUS; window.LEDGER = LEDGER;
     rect.setAttribute('rx', '12'); rect.setAttribute('pathLength', '1');
     svg.appendChild(rect); surf.appendChild(svg);
     var dir = D.documentElement.dir === 'rtl' ? -1 : 1;
-    var a = rect.animate([{ strokeDashoffset: 0, opacity: 1 }, { strokeDashoffset: -dir * 1, opacity: 1, offset: .86 }, { strokeDashoffset: -dir * 1, opacity: 0 }], { duration: 520, easing: 'cubic-bezier(.65, 0, .35, 1)' });
+    var a = rect.animate([{ strokeDashoffset: 0, opacity: 1 }, { strokeDashoffset: -dir * 1, opacity: 1, offset: .86 }, { strokeDashoffset: -dir * 1, opacity: 0 }], { duration: 300, easing: 'cubic-bezier(.65, 0, .35, 1)' });
     a.onfinish = a.oncancel = function () { svg.remove(); };
   }
   function bootIcon(cardEl) {
@@ -720,7 +720,7 @@ window.I18N = I18N; window.STATUS = STATUS; window.LEDGER = LEDGER;
     setTimeout(function () {
       wfEl.classList.remove('fx-run');
       edges.forEach(function (e) { e.removeAttribute('pathLength'); });
-      if (S && S.pulse && svg && edges.length) S.pulse(svg, Array.prototype.slice.call(edges), { duration: 760 });
+      if (S && S.pulse && svg && edges.length) S.pulse(svg, Array.prototype.slice.call(edges), { duration: 450 });
     }, 200 + edges.length * 45 + 280);
   }
    
@@ -1129,6 +1129,64 @@ window.I18N = I18N; window.STATUS = STATUS; window.LEDGER = LEDGER;
 
 ;
  
+(function (W) {
+  'use strict';
+  var D = W.document, NS = 'http://www.w3.org/2000/svg', n = 0;
+  var SHAPES = {
+    play: [['circle', { cx: 24, cy: 24, r: 18, role: 'body' }], ['path', { d: 'M20 15.5L33 24L20 32.5Z', role: 'accentBody' }]],
+    pause: [['circle', { cx: 24, cy: 24, r: 18, role: 'body' }], ['rect', { x: 17.5, y: 15.5, width: 4.6, height: 17, rx: 1.4, role: 'accentBody' }], ['rect', { x: 25.9, y: 15.5, width: 4.6, height: 17, rx: 1.4, role: 'accentBody' }]],
+    prev: [['circle', { cx: 24, cy: 24, r: 18, role: 'body' }], ['path', { d: 'M17 16V32', role: 'accent' }], ['path', { d: 'M32 16L20.5 24L32 32Z', role: 'accentBody' }]],
+    next: [['circle', { cx: 24, cy: 24, r: 18, role: 'body' }], ['path', { d: 'M31 16V32', role: 'accent' }], ['path', { d: 'M16 16L27.5 24L16 32Z', role: 'accentBody' }]],
+    soundOn: [['path', { d: 'M8 19H15L24 11V37L15 29H8Z', role: 'body' }], ['path', { d: 'M30 18.5A8 8 0 0 1 30 29.5M34.5 14A14 14 0 0 1 34.5 34', role: 'accent' }]],
+    soundOff: [['path', { d: 'M8 19H15L24 11V37L15 29H8Z', role: 'body' }], ['path', { d: 'M30.5 19L39.5 28M39.5 19L30.5 28', role: 'accent' }]],
+    fullscreen: [['rect', { x: 8, y: 11, width: 32, height: 26, rx: 3, role: 'body' }], ['path', { d: 'M13 21V16H18M30 16H35V21M35 27V32H30M18 32H13V27', role: 'accent' }]],
+     
+    solutions: [['path', { d: 'M8 29L24 37L40 29L24 21Z', role: 'body' }], ['path', { d: 'M8 22L24 30L40 22L24 14Z', role: 'body' }], ['path', { d: 'M24 6.5L27.5 10L24 13.5L20.5 10Z', role: 'accentBody' }]],
+    how: [['path', { d: 'M8 40V31H17V40ZM19.5 40V24H28.5V40ZM31 40V16H40V40Z', role: 'body' }], ['path', { d: 'M8.5 25L19.5 18L30.5 10.5M30.5 10.5H25.5M30.5 10.5V15.5', role: 'accent' }]],
+    contact: [['path', { d: 'M11 11H37A4 4 0 0 1 41 15V29A4 4 0 0 1 37 33H22L14 40V33H11A4 4 0 0 1 7 29V15A4 4 0 0 1 11 11Z', role: 'body' }], ['path', { d: 'M14 20H34M14 26H27', role: 'accent' }]],
+    more: [['rect', { x: 8, y: 8, width: 13, height: 13, rx: 3, role: 'body' }], ['rect', { x: 27, y: 8, width: 13, height: 13, rx: 3, role: 'body' }], ['rect', { x: 8, y: 27, width: 13, height: 13, rx: 3, role: 'body' }], ['rect', { x: 27, y: 27, width: 13, height: 13, rx: 3, role: 'accentBody' }]],
+  };
+   
+  var PAGE = { home: 'home', solutions: '@solutions', 'how-we-build': '@how', work: 'projects', films: 'cinema', evidence: 'evidence', company: 'company', contact: '@contact',
+    briefing: 'briefing', workflows: 'workflows', capabilities: 'capabilities', more: '@more' };
+  function page(id, size) {
+    var k = PAGE[id] || (id && id.indexOf('sol-') === 0 ? '@solutions' : 'systems');
+    if (k.charAt(0) === '@') return icon(k.slice(1), size);
+    try { return W.SQDS.icon(k, { label: false, size: size }); } catch (e) { return icon('solutions', size); }
+  }
+  function icon(name, size) {
+    var def = SHAPES[name]; if (!def) return null;
+    var id = 'fjtg' + (++n);
+    var svg = D.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'sqds-icon fj-transport'); svg.setAttribute('viewBox', '0 0 48 48'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('focusable', 'false');
+    svg.setAttribute('data-icon', 'transport-' + name); svg.setAttribute('data-detail', 'lite');
+    if (size) svg.style.setProperty('--sqds-icon-size', size + 'px');
+    var defs = D.createElementNS(NS, 'defs'), g = D.createElementNS(NS, 'linearGradient');
+    g.setAttribute('id', id); g.setAttribute('x1', '0'); g.setAttribute('y1', '0'); g.setAttribute('x2', '0.35'); g.setAttribute('y2', '1');
+    [['0', 'rgba(247, 250, 255, .26)'], ['0.55', 'rgba(41, 229, 242, .10)'], ['1', 'rgba(71, 123, 255, .07)']].forEach(function (st) { var s = D.createElementNS(NS, 'stop'); s.setAttribute('offset', st[0]); s.setAttribute('stop-color', st[1]); g.appendChild(s); });
+    defs.appendChild(g); svg.appendChild(defs);
+    def.forEach(function (it) {
+      var e = D.createElementNS(NS, it[0]);
+      Object.keys(it[1]).forEach(function (k) { if (k !== 'role') e.setAttribute(k, it[1][k]); });
+      e.setAttribute('data-role', it[1].role);
+      if (it[1].role === 'body') e.setAttribute('fill', 'url(#' + id + ')');
+      svg.appendChild(e);
+    });
+    return svg;
+  }
+  function upgrade(root) {
+    Array.prototype.forEach.call((root || D).querySelectorAll('[data-transport]'), function (slot) {
+      var s = icon(slot.getAttribute('data-transport'), Number(slot.getAttribute('data-size')) || 26);
+      if (!s) return;
+      if (slot.classList.contains('flip')) s.classList.add('flip-rtl');
+      slot.replaceWith(s);
+    });
+  }
+  W.FJTransport = { icon: icon, upgrade: upgrade, page: page, names: Object.keys(SHAPES) };
+})(window);
+
+;
+ 
 (function () {
   'use strict';
   var W = window, D = document, root = D.documentElement;
@@ -1353,7 +1411,7 @@ window.I18N = I18N; window.STATUS = STATUS; window.LEDGER = LEDGER;
     loopIO = new W.IntersectionObserver(function (es) {
       es.forEach(function (e) {
         var v = e.target;
-        if (e.isIntersecting && e.intersectionRatio >= 0.5 && !D.hidden && !root.classList.contains('bf-open')) {
+        if (e.isIntersecting && e.intersectionRatio >= 0.5 && !D.hidden && !root.classList.contains('bf-open') && !root.classList.contains('motion-paused')) {
           if (!v.getAttribute('src') && v.dataset.src) { v.src = v.dataset.src; }
           var p = v.play(); if (p && p.catch) p.catch(function () {   });
         } else if (!v.paused) v.pause();
@@ -1373,8 +1431,8 @@ window.I18N = I18N; window.STATUS = STATUS; window.LEDGER = LEDGER;
   function stepPairs(sc) { return (sc && sc.steps || []).map(function (s) { return Array.isArray(s) ? [s[1], s[2]] : s.label; }); }
   function loopSlot(name, sc, o) {
     o = o || {};
-    var f = (PAGE.loops || {})[name] || null;
-    var slot = el('div', { class: 'loop-slot', 'data-loop': name });
+    var f = name ? (PAGE.loops || {})[name] || null : null;
+    var slot = el('div', { class: 'loop-slot', 'data-loop': name || 'scenario' });
     if (f && (f.mp4 || f.webm || f.webp)) {
       slot.setAttribute('data-kind', 'video');
       var media = el('div', { class: 'loop-media' });
@@ -1405,7 +1463,25 @@ window.I18N = I18N; window.STATUS = STATUS; window.LEDGER = LEDGER;
 
    
    
+  var PAGE_SCN = { home: 'films', films: 'films', workflows: 'workflows', capabilities: 'capabilities', work: 'work', evidence: 'evidence', briefing: 'briefing', company: 'company',
+    solutions: 'solutions', 'how-we-build': 'how-we-build', contact: 'contact' };
+  function defaultScenario() {
+    var H = (SITE.scenarios || {}).home || {}, k = PAGE_SCN[PAGE.id] || PAGE_SCN[PAGE.navCurrent] || 'evidence';
+    return H[k] || H.evidence || null;
+  }
   function card(spec) {
+     
+    var hasScn = spec.slot && spec.slot.getAttribute && spec.slot.hasAttribute('data-loop');
+    if (!hasScn && spec.scn !== false) {
+      var sc = spec.scn ? { steps: spec.scn } : defaultScenario();
+      if (sc && sc.steps) {
+        var extra = el('div', { class: 'card-scn' }, loopSlot(null, { steps: sc.steps }), el('p', { class: 'scn-note' }, bi(STR['mp.scenario.note'])));
+        var d = spec.details;
+        if (d && d.nodeType) { if (!d.querySelector('.loop-slot')) d.appendChild(extra); }
+        else if (d) spec.details = el('div', { class: 'det-wrap' }, Array.isArray(d) && Array.isArray(d[0]) ? d.map(function (x) { return bi(x, 'p'); }) : bi(d, 'p'), extra);
+        else spec.details = el('div', { class: 'det-wrap' }, extra);
+      }
+    }
     var c = S.card(spec);
     var content = c.el.querySelector('.sqds-card__content'), foot = c.el.querySelector('.sqds-card__foot');
     if (spec.before && content && foot) content.insertBefore(spec.before, foot);
@@ -1417,6 +1493,40 @@ window.I18N = I18N; window.STATUS = STATUS; window.LEDGER = LEDGER;
     }
     if (spec.fx) c.el.setAttribute('data-fx', spec.fx);
     return c;
+  }
+
+   
+   
+  function capPanels(host, caps) {
+    if (!host || !caps || !caps.length) return;
+    var ns = 'http://www.w3.org/2000/svg', svg = D.createElementNS(ns, 'svg');
+    svg.setAttribute('class', 'cap-links'); svg.setAttribute('aria-hidden', 'true');
+    var ul = el('ul', { class: 'cap-grid' });
+    caps.forEach(function (c) {
+      ul.append(el('li', null, el('a', { class: 'cap-panel sqds-mat-crystal sqds-icon-host', href: '/capabilities/#cap-' + c.slug, 'data-slug': c.slug },
+        icon(c.icon, { size: 34 }), el('span', { class: 'cap-panel-t' }, bi(c.title)), chip(c.status.key, c.status.label))));
+    });
+    host.append(svg, ul);
+    function layout() {
+      var box = host.getBoundingClientRect(); if (!box.width) return;
+      svg.setAttribute('viewBox', '0 0 ' + box.width.toFixed(0) + ' ' + box.height.toFixed(0));
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+      var pts = Array.prototype.map.call(ul.querySelectorAll('.cap-panel .sqds-icon'), function (n) { var r = n.getBoundingClientRect(); return [r.left - box.left + r.width / 2, r.top - box.top + r.height / 2]; });
+      var paths = [];
+      for (var i = 0; i < pts.length - 1; i++) {
+        var a = pts[i], b = pts[i + 1], p = D.createElementNS(ns, 'path');
+        var mx = (a[0] + b[0]) / 2;
+        p.setAttribute('d', 'M' + a[0].toFixed(1) + ' ' + a[1].toFixed(1) + 'C' + mx.toFixed(1) + ' ' + a[1].toFixed(1) + ' ' + mx.toFixed(1) + ' ' + b[1].toFixed(1) + ' ' + b[0].toFixed(1) + ' ' + b[1].toFixed(1));
+        p.setAttribute('class', 'cap-link'); svg.appendChild(p); paths.push(p);
+      }
+      host.__paths = paths;
+    }
+    layout();
+    if (W.ResizeObserver) new W.ResizeObserver(layout).observe(host);
+    if (!reduced && W.IntersectionObserver && S.pulse) {
+      var io = new W.IntersectionObserver(function (es) { if (es[0].isIntersecting) { io.disconnect(); setTimeout(function () { if (host.__paths && host.__paths.length) S.pulse(svg, host.__paths, { duration: 700 }); }, 200); } }, { threshold: 0.3 });
+      io.observe(host);
+    }
   }
 
    
@@ -1486,25 +1596,86 @@ window.I18N = I18N; window.STATUS = STATUS; window.LEDGER = LEDGER;
   var nav = null, bg = null;
   function buildNav() {
     var slot = $('navSlot'); if (!slot) return;
-    nav = S.nav({ id: 'siteNav', mode: 'pages', current: PAGE.id, sticky: false, label: ['صفحات الموقع', 'Site pages'],
+    var navIds = SITE.nav || SITE.pages.map(function (p) { return p.id; });
+    var brief = button({ id: 'navBrief', kind: 'secondary', size: 'md', icon: 'cinema', label: STR['mp.brief.cta'] || pair('brief.btn'), href: '/briefing/' });
+    brief.el.classList.add('nav-brief');
+    if (PAGE.id === 'briefing') brief.el.setAttribute('aria-current', 'page');
+    nav = S.nav({ id: 'siteNav', mode: 'pages', current: PAGE.navCurrent || null, sticky: false, label: ['صفحات الموقع', 'Site pages'],
       brand: { mark: 'FJ', label: pair('brand.name') || ['فيصل الجهيمي', 'Faisal Al-Juhaimy'], href: '/' },
-      links: SITE.pages.map(function (p) { return { id: p.id, href: p.path, label: p.nav }; }),
-      actions: [langSwitch()] });
+      links: navIds.map(function (id) { var p = pageById(id); return { id: p.id, href: p.path, label: p.nav }; }),
+      actions: [brief.el, langSwitch()] });
     nav.el.querySelector('.sqds-nav__mark').setAttribute('data-brand-mark', '');
+     
+    if (W.FJTransport) Array.prototype.forEach.call(nav.el.querySelectorAll('.sqds-nav__link, .sqds-nav__sheet-link'), function (a) {
+      var ic = W.FJTransport.page(a.getAttribute('data-id'), a.classList.contains('sqds-nav__link') ? 24 : 22);
+      if (!ic) return;
+      a.insertBefore(ic, a.querySelector('.sqds-nav__t') || a.firstChild);
+      a.setAttribute('data-sqds-icon-host', '');
+    });
+    nav.el.classList.add('icon-nav');
     var st = slot.querySelector('.nav-static');
     if (st) st.replaceWith(nav.el); else slot.append(nav.el);
      
     var prev = store.get('fj.navPrev');
     store.del('fj.navPrev');
-    if (prev && prev !== PAGE.id && !reduced) {
+    if (prev && prev !== PAGE.id && PAGE.navCurrent && !reduced) {
       W.requestAnimationFrame(function () { W.requestAnimationFrame(function () {
         var ind = nav.el.querySelector('.sqds-nav__indicator'), links = nav.el.querySelector('.sqds-nav__links');
-        var a = nav.el.querySelector('.sqds-nav__link[data-id="' + prev + '"]'), b = nav.el.querySelector('.sqds-nav__link[data-id="' + PAGE.id + '"]');
+        var pp = pageById(prev), pv = pp && pp.parent && navIds.indexOf(prev) < 0 ? pp.parent : prev;
+        var a = nav.el.querySelector('.sqds-nav__link[data-id="' + pv + '"]'), b = nav.el.querySelector('.sqds-nav__link[data-id="' + PAGE.navCurrent + '"]');
         if (!ind || !a || !b || !links || !links.offsetParent || !ind.animate) return;
         var nb = links.getBoundingClientRect(), ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
         ind.animate([{ transform: 'translateX(' + (ra.left - nb.left).toFixed(1) + 'px)', width: ra.width.toFixed(1) + 'px', opacity: 1 }, { transform: 'translateX(' + (rb.left - nb.left).toFixed(1) + 'px)', width: rb.width.toFixed(1) + 'px', opacity: 1 }], { duration: 280, easing: 'cubic-bezier(.16, 1, .3, 1)' });
       }); });
     }
+  }
+   
+  var DOCK = ['home', 'solutions', 'work', 'films', 'contact'];
+  var SHORT = { home: ['الرئيسية', 'Home'], solutions: ['الحلول', 'Solutions'], work: ['الأعمال', 'Work'], films: ['الأفلام', 'Films'], contact: ['تواصل', 'Contact'] };
+  function buildDock() {
+    if (!W.FJTransport) return;
+    var cur = PAGE.navCurrent || PAGE.id;
+    var ul = el('ul', { class: 'dock-list' });
+    var dock = el('nav', { class: 'dock', id: 'dock', 'data-i-label': 'nav.label', 'aria-label': T('nav.label') }, ul);
+    DOCK.forEach(function (id) {
+      var p = pageById(id); if (!p) return;
+      var a = el('a', { class: 'dock-link', href: p.path, 'data-id': id, 'data-sqds-icon-host': '' }, W.FJTransport.page(id, 26), el('span', { class: 'dock-t' }, bi(SHORT[id] || p.nav)));
+      if (id === cur) a.setAttribute('aria-current', 'page');
+      ul.append(el('li', null, a));
+    });
+    var rest = SITE.pages.filter(function (p) { return DOCK.indexOf(p.id) < 0 && !p.parent || ['briefing', 'workflows', 'capabilities'].indexOf(p.id) >= 0; }).filter(function (p) { return DOCK.indexOf(p.id) < 0 && p.id.indexOf('sol-') !== 0; });
+    var sheet = el('div', { class: 'dock-sheet', id: 'dockSheet', hidden: true }, el('ul', null, rest.map(function (p) {
+      var a = el('a', { class: 'dock-sheet-link', href: p.path, 'data-id': p.id }, W.FJTransport.page(p.id, 24), bi(p.nav));
+      if (p.id === PAGE.id || p.id === cur) a.setAttribute('aria-current', 'page');
+      return el('li', null, a);
+    })));
+    var moreLabel = el('span', { class: 'dock-t' }, bi(['المزيد', 'More']));
+    var more = el('button', { type: 'button', class: 'dock-link dock-more', 'aria-expanded': 'false', 'aria-controls': 'dockSheet', 'data-sqds-icon-host': '' }, W.FJTransport.page('more', 26), moreLabel);
+    if (rest.some(function (p) { return p.id === PAGE.id || p.id === cur; })) more.setAttribute('data-current', '');
+    ul.append(el('li', null, more));
+    dock.append(sheet);
+    D.body.append(dock);
+    function open(want) {
+      var o = want == null ? sheet.hidden : !!want;
+      sheet.hidden = !o; more.setAttribute('aria-expanded', String(o)); dock.classList.toggle('is-open', o);
+      if (o) { dock.classList.remove('is-hidden'); var f = sheet.querySelector('a'); if (f) f.focus(); }
+    }
+    more.addEventListener('click', function () { open(); });
+    dock.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !sheet.hidden) { e.stopPropagation(); open(false); more.focus(); } });
+    D.addEventListener('pointerdown', function (e) { if (!sheet.hidden && !dock.contains(e.target)) open(false); });
+     
+    var lastY = W.scrollY, raf = 0;
+    W.addEventListener('scroll', function () {
+      if (raf || reduced) return;
+      raf = W.requestAnimationFrame(function () {
+        raf = 0;
+        var y = W.scrollY, dy = y - lastY; lastY = y;
+        var nearEnd = W.innerHeight + y > D.documentElement.scrollHeight - 160;
+        if (dock.contains(D.activeElement) || !sheet.hidden || nearEnd || y < 80) { dock.classList.remove('is-hidden'); return; }
+        if (dy > 6) dock.classList.add('is-hidden'); else if (dy < -6) dock.classList.remove('is-hidden');
+      });
+    }, { passive: true });
+    dock.addEventListener('focusin', function () { dock.classList.remove('is-hidden'); });
   }
   function fxQuality() {
     var m = /[?&]fx=(off|low|mid|high)\b/.exec(W.location.search);
@@ -1520,7 +1691,7 @@ window.I18N = I18N; window.STATUS = STATUS; window.LEDGER = LEDGER;
     bg = S.background({ image: PAGE.bgUrl || null, sections: PAGE.sections || [], quality: 'low', credit: false });
     bg.el.setAttribute('data-scrim', PAGE.scrim === 'hero' ? 'hero' : 'strong');
     bg.el.setAttribute('data-scene', PAGE.scene || 'none');
-    if (W.FJScene && PAGE.scene) {
+    if (W.FJScene && PAGE.scene && !PAGE.spatial) {    
       var cv = el('canvas', { class: 'mp-scene', width: '2', height: '2', 'aria-hidden': 'true' });
       var after = bg.el.querySelector('.sqds-bg__haze');
       bg.el.insertBefore(cv, after ? after.nextSibling : null);
@@ -1539,6 +1710,26 @@ window.I18N = I18N; window.STATUS = STATUS; window.LEDGER = LEDGER;
       try { var ic = S.icon(ph.getAttribute('data-sqds-icon'), { label: false, size: Number(ph.getAttribute('data-size')) || 20 }); ph.replaceWith(ic); } catch (e) {   }
     });
     Array.prototype.forEach.call(D.querySelectorAll('.sqds-btn--lg[data-magnetic-ph]'), function (b) { if (S.magnetic) S.magnetic(b, { max: 6 }); });
+  }
+
+   
+  var motionPaused = store.get('fj.motion') === 'paused';
+  function setMotion(paused) {
+    motionPaused = !!paused; store.set('fj.motion', motionPaused ? 'paused' : 'on');
+    root.classList.toggle('motion-paused', motionPaused);
+    if (bg) { if (motionPaused) bg.pause(); else if (!D.hidden) bg.resume(); }
+    D.querySelectorAll('.loop-slot video').forEach(function (v) { if (motionPaused) v.pause(); });
+    if (motionBtn) { motionBtn.el.setAttribute('aria-pressed', String(motionPaused)); motionBtn.el.querySelector('.sqds-btn__label').textContent = T(motionPaused ? 'mp.motion.play' : 'mp.motion.pause'); }
+  }
+  var motionBtn = null;
+  function buildMotionToggle() {
+    if (reduced) return;    
+    var h = D.querySelector('.hero .wrap'); if (!h) return;
+    motionBtn = button({ id: 'motionToggle', kind: 'tertiary', size: 'md', label: STR['mp.motion.pause'], onClick: function () { setMotion(!motionPaused); } });
+    motionBtn.el.classList.add('motion-toggle');
+    h.append(motionBtn.el);
+    api.onLang(function () { setMotion(motionPaused); });
+    if (motionPaused) setMotion(true); else motionBtn.el.setAttribute('aria-pressed', 'false');
   }
 
    
@@ -1571,7 +1762,7 @@ window.I18N = I18N; window.STATUS = STATUS; window.LEDGER = LEDGER;
     data: {},
      
     bi: bi, biNum: biNum, rich: rich, ltr: ltr, clear: clear, add: add, icon: icon, button: button, card: card, ladder: ladder, pad2: pad2,
-    loopSlot: loopSlot, scenario: scenarioStrip, store: store, reveal: reveal, navigate: navigate, page: PAGE, site: SITE, strings: STR, pair: pair,
+    loopSlot: loopSlot, scenario: scenarioStrip, capPanels: capPanels, store: store, reveal: reveal, navigate: navigate, page: PAGE, site: SITE, strings: STR, pair: pair,
     release: REL, releaseNode: releaseNode, filmHash: filmHash, background: function () { return bg; }, nav: function () { return nav; },
     langPending: function () { return langPending || !!langReq; },
   };
@@ -1585,14 +1776,16 @@ window.I18N = I18N; window.STATUS = STATUS; window.LEDGER = LEDGER;
    
   function boot() {
     buildNav();
+    buildDock();
     buildBackground();
     buildFooter();
     upgradeStatic();
     if (S.pageTransition) { var pt = S.pageTransition(); root.setAttribute('data-transition', pt.mode); }
     applyLangAttrs();
-    var render = W.FJPages[PAGE.id];
+    var render = W.FJPages[PAGE.renderer || PAGE.id];
     if (render) { try { render(api); } catch (e) { if (W.console) console.error('page ' + PAGE.id + ' failed to render:', e); } }
     if (W.FJFx) W.FJFx.init(api);
+    buildMotionToggle();
     var h = (W.location.hash || '').slice(1);
     if (!restoreReturn() && h && /^[A-Za-z][\w-]{0,63}$/.test(h) && $(h)) {
       var t = $(h); reveal(t);

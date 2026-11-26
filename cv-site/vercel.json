@@ -1,6 +1,22 @@
 {
   "trailingSlash": true,
+  "redirects": [
+    {
+      "source": "/projects/",
+      "destination": "/work/",
+      "permanent": true
+    }
+  ],
   "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
     {
       "source": "/(.*)",
       "headers": [
@@ -73,6 +89,15 @@
     },
     {
       "source": "/icons3d/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400"
+        }
+      ]
+    },
+    {
+      "source": "/spatial/(.*)",
       "headers": [
         {
           "key": "Cache-Control",

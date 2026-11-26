@@ -118,3 +118,17 @@
 .ftile-play:focus-visible { outline: 2px solid var(--sqds-cyan); outline-offset: 2px; }
 .ftile .sqds-icon { --sqds-icon-size: 22px; }
 .bridge-note { font-size: var(--sqds-fs-caption); color: var(--sqds-text-3); }
+.ib .sqds-icon, .ctl .sqds-icon, .ov-play .sqds-icon { --sqds-icon-size: 26px; }
+.ib.main .sqds-icon { --sqds-icon-size: 34px; }
+.ov-play .sqds-icon { --sqds-icon-size: 46px; }
+.ib.main .fj-transport [data-role="body"], .ov-play .fj-transport [data-role="body"] { fill: rgba(2, 18, 25, .18); stroke: rgba(2, 18, 25, .55); }
+.ib.main .fj-transport [data-role="accentBody"], .ov-play .fj-transport [data-role="accentBody"] { fill: #021219; stroke: #021219; }
+[dir="rtl"] .flip-rtl { transform: scaleX(-1); }
+
+.cin-side .sqds-card { min-width: 0; }
+.ftile-scn { position: relative; z-index: 4; pointer-events: none; }
+.ftile-scn .sqds-scn { gap: .35rem; }
+.ftile-scn .sqds-scn__orb { inline-size: 30px; block-size: 30px; border-radius: 9px; --sqds-icon-size: 20px; }
+.ftile-scn .sqds-scn__link { inset-block-start: 14px; inset-inline-start: calc(50% + 18px); inline-size: calc(100% - 36px); }
+.ftile-scn .sqds-scn__text { font-size: .68rem; }
+.ftile-scn .sqds-scn__title { display: none; }

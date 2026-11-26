@@ -1,5 +1,5 @@
  
-(window.FJPages = window.FJPages || {}).projects = function (api) {
+(window.FJPages = window.FJPages || {}).work = function (api) {
   'use strict';
   var D = document, S = window.SQDS, $ = function (id) { return D.getElementById(id); };
   var el = api.el, bi = api.bi, STR = api.strings, P = api.P, T = api.T, num = api.num, clear = api.clear, ltr = api.ltr;
@@ -22,8 +22,15 @@
         }))) : null,
         SCASE[p.name] ? api.loopSlot('case-' + i, { steps: SCASE[p.name].steps }, { id: 'scn-case-' + i }) : null,
         SCASE[p.name] ? el('p', { class: 'scn-note' }, bi(STR['mp.scenario.note'])) : null);
-      var c = api.card({ id: 'case-' + i, icon: PICON[p.name] || 'projects', kicker: ['الحالة ' + String(i + 1).replace(/[0-9]/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'[d]; }), 'Case ' + (i + 1)], title: name, capability: p.what, status: api.ladder(p.status), statusLabel: (window.STATUS[p.status] || {}).label,
+       
+      var rows = (p.evidence_ids || []).map(function (id) { return (window.LEDGER || []).filter(function (r) { return r.id === id; })[0]; }).filter(Boolean);
+      var envRow = rows.filter(function (r) { return ['production', 'uat', 'demo', 'site'].indexOf(r.env) >= 0; })[0] || rows[0] || null;
+      var env = envRow ? envRow.env || 'none' : 'none', envL = api.pair('ledger.envH.' + env) || [env, env];
+      var date = rows.map(function (r) { return r.asOf; }).sort().pop() || '';
+      var c = api.card({ id: 'case-' + i, icon: PICON[p.name] || 'projects', kicker: [envL[0] + ' · ' + date, envL[1] + ' · ' + date], title: name, capability: p.what,
+        example: envRow ? envRow.proves : null, exampleLabel: STR['mp.work.method'], status: api.ladder(p.status), statusLabel: (window.STATUS[p.status] || {}).label,
         details: details, variant: 'c', focusMode: false, headingLevel: 3, fx: 'card-cap' });
+      c.el.setAttribute('data-env', env);
       cases.append(c.el);
     });
     cases.append(moduleCard('cases', 'projects', ['الملف الكامل', 'Full file'], STR['mp.proj.caseFile'], api.pair('sec.cases.p')).el);

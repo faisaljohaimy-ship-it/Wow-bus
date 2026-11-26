@@ -456,17 +456,28 @@
     $('bPause').setAttribute('aria-pressed', String(C.bridgeHold));
   }
   function paintNotice() { $('cinNotice').hidden = !C.noticeText; $('cinNoticeText').textContent = C.noticeText; }
-  var scnTopic = 0, scnComp = null;
+  var scnTopic = 0, scnCard = null;
+  function topicSteps(t) { return CH_IDS.map(function (c) { var lab = (t.labels || {})[c] || [c, c]; return [c === 'method' ? TOPIC_ICON[t.id] : CH_ICON[c], lab[0], lab[1]]; }); }
+   
   function paintScenario(t) {
     if (!t || scnTopic === t.id) return;
     scnTopic = t.id;
-    if (scnComp) scnComp.destroy();
-    var box = clear($('cinScenario'));
-    var steps = CH_IDS.map(function (c) { return [c === 'method' ? TOPIC_ICON[t.id] : CH_ICON[c], (t.labels[c] || [c, c])[0], (t.labels[c] || [c, c])[1]]; });
-    scnComp = api.scenario({ steps: steps, label: t.title }, { id: 'cinScn', trigger: 'view' });
-    if (scnComp) box.append(scnComp.el);
-    $('cinScnH').textContent = T('cin.topic', { n: num(pad2(t.id)) }) + ' · ' + P(t.title);
+    var box = $('cinScnCard'); if (!box) return;
+    if (scnCard) scnCard.destroy();
+    var nn = [String(pad2(t.id)).replace(/[0-9]/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'[d]; }), pad2(t.id)];
+    scnCard = api.card({ id: 'cinScenarioCard', icon: TOPIC_ICON[t.id], kicker: api.TP('cin.topic', { n: nn }), title: t.title, capability: t.tagline,
+      slot: api.loopSlot(null, { steps: topicSteps(t) }, { id: 'cinScn' }), details: [t.disclosure, t.caveat], variant: 'b', focusMode: false, headingLevel: 2, status: api.ladder(t.state.key), statusLabel: t.state.label });
+    api.clear(box); box.append(scnCard.el);
   }
+  var orbitCard = (function () {
+    var box = $('cinOrbitCard'); if (!box) return null;
+    var orbit = el('div', { class: 'orbit', id: 'cinOrbit', role: 'group', 'data-i-label': 'cin.list', 'aria-label': T('cin.list') },
+      el('span', { class: 'orbit-ring', 'aria-hidden': 'true' }), el('span', { class: 'orbit-core', 'aria-hidden': 'true' }, el('b', { id: 'orbitNum' }), el('span', { id: 'orbitTitle' })));
+    var c = api.card({ id: 'cinOrbitCard_', icon: 'cinema', kicker: ['١٠ موضوعات · ٢٠ فيلمًا', '10 topics · 20 films'], title: api.pair('cin.listH'), capability: ['اختر موضوعًا لتشغيل فيلمه بلغة الصفحة.', 'Pick a topic to play its film in the page language.'],
+      slot: orbit, details: api.pair('cin.listP'), variant: 'b', focusMode: false, headingLevel: 2 });
+    box.append(c.el);
+    return c;
+  })();
   function paint() {
     var it = current(), t = it ? topicOf(it.topic) : null, f = it && it.kind === 'film' ? filmOf(it) : null;
     var cin = $('cin');
@@ -515,8 +526,8 @@
     var playing = C.mode === 'film' ? (!v.paused && !v.ended) : C.mode === 'bridge' ? (!!C.bridgeTimer && !C.bridgeHold) : false;
     var pb = $('cinPlay');
     pb.setAttribute('aria-label', playing ? T('cin.pause') : T('cin.play'));
-    var glyph = playing ? 'M7 5h4v14H7zM13 5h4v14h-4z' : 'M8 5v14l11-7z';
-    if ($('cinPlayIcon').getAttribute('d') !== glyph) { $('cinPlayIcon').setAttribute('d', glyph); if (W.FJMotion && C.started) W.FJMotion.swapIcon(pb.querySelector('svg')); }
+    var want = playing ? 'pause' : 'play', cur = pb.querySelector('svg');
+    if (W.FJTransport && (!cur || cur.getAttribute('data-icon') !== 'transport-' + want)) { var ni = W.FJTransport.icon(want, 30); if (cur) cur.replaceWith(ni); else pb.append(ni); if (W.FJMotion && C.started) W.FJMotion.swapIcon(ni); }
     $('cinFrame').classList.toggle('is-playing', C.mode === 'film' && playing);
     if (W.FJHooks) {
       var chNow = f ? chapterAt(f, C.pendingTime != null ? C.pendingTime : v.currentTime) : null;
@@ -530,7 +541,8 @@
     $('cinSound').setAttribute('aria-pressed', String(!C.muted));
     $('cinSound').setAttribute('aria-label', T('cin.soundLabel') + ': ' + (C.muted ? T('cin.soundOff') : T('cin.soundOn')));
     $('cinSoundText').textContent = C.muted ? T('cin.soundOff') : T('cin.soundOn');
-    $('cinSoundWave').setAttribute('d', C.muted ? 'M16 9l5 6M21 9l-5 6' : 'M16 8.5a5 5 0 010 7M18.5 6a8.5 8.5 0 010 12');
+    var sic = $('cinSoundIc'), sw = C.muted ? 'soundOff' : 'soundOn', sv = sic && sic.querySelector('svg');
+    if (sic && W.FJTransport && (!sv || sv.getAttribute('data-icon') !== 'transport-' + sw)) { api.clear(sic); sic.append(W.FJTransport.icon(sw, 22)); }
     var other = lang === 'ar' ? 'en' : 'ar';
     $('cinSwapText').textContent = T('cin.swap', { l: langName(other) });
     $('cinSwap').setAttribute('aria-label', T('cin.swap', { l: langName(other) }) + ' — ' + T('cin.swapLabel', { l: langName(other) }));
@@ -620,6 +632,8 @@
           el('button', { class: 'ftile-play', type: 'button', 'data-key': key,
             'aria-label': T('cin.badge', { n: num(item.n), total: num(FILM_TOTAL), title: P(t.title) }) + (f && f.media === 'missing' ? ' — ' + T('cin.badgeMissing') : ''),
             onclick: function () { notice(''); loadItem(i, { play: true }); scrollToCinema(); } }));
+        var scn = api.scenario({ steps: topicSteps(t) }, { trigger: 'view', id: 'scn-tile-' + t.id });
+        if (scn) li.append(el('div', { class: 'ftile-scn' }, scn.el));
         if (t.bridge) li.append(el('span', { class: 'bridge-note' }, T('cin.bridgeLabel') + ' · ' + num(pad2(t.id)) + (lang === 'ar' ? ' ← ' : ' → ') + num(pad2(t.id + 1))));
         list.append(li);
       });
@@ -673,6 +687,7 @@
   });
 
    
+  if (W.FJTransport) W.FJTransport.upgrade($('cin'));
   buildOrbit(); buildList();
   var initial = parseHash(W.location.hash);
   var saved = store.get('fj.cinema');

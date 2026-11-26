@@ -23,29 +23,7 @@
   moduleCard('motion', 'motionHost', 'motion', ['الحركة', 'Motion'], api.pair('cap.motion.t'), api.pair('cap.motion.s'), { fx: 'card-cap' });
 
    
-  var cc = $('contactCards'); if (!cc) return;
-  var SC = ((api.site.scenarios || {}).home || {}).company;
-  var how = el('ol', { class: 'det-ol' }, [1, 2, 3, 4].map(function (i) { return el('li', null, el('b', null, bi(api.pair('contact.s' + i + 'h'))), ' — ', bi(api.pair('contact.s' + i))); }));
-  var c1 = api.card({ id: 'card-how', icon: 'decision', kicker: ['أربع خطوات', 'Four steps'], title: api.pair('contact.steps'), capability: api.pair('take.p1'), details: how, variant: 'b', focusMode: false, headingLevel: 3,
-    slot: SC ? api.loopSlot('page-company', { steps: SC.steps }, { id: 'scn-contact' }) : null, fx: 'card-cap' });
-  var bring = el('ul', { class: 'det-list' }, [1, 2, 3, 4].map(function (i) { return el('li', null, bi(api.pair('contact.b' + i))); }));
-  var status = el('p', { class: 'contact-status', id: 'contactStatus', role: 'status', 'aria-live': 'polite' });
-  function copyText(text) {
-    function fallback() {
-      var old = cc.querySelector('.copy-fallback'); if (old) old.remove();
-      var ta = el('textarea', { class: 'copy-fallback', readonly: true, 'aria-label': T('contact.copyFail') }); ta.value = text;
-      status.textContent = T('contact.copyFail'); status.parentNode.insertBefore(ta, status.nextSibling); ta.focus(); ta.select();
-    }
-    try { if (!navigator.clipboard || !navigator.clipboard.writeText) return fallback(); navigator.clipboard.writeText(text).then(function () { status.textContent = T('contact.copied'); }, fallback); } catch (e) { fallback(); }
-  }
-  var copyBtn = api.button({ id: 'briefCopy', kind: 'primary', icon: 'inputs', label: api.pair('contact.copy'), onClick: function () { copyText(T('contact.brief')); } });
-  var pdfBtn = api.button({ id: 'saveProfile', kind: 'secondary', icon: 'projects', label: api.pair('contact.profile'), onClick: function () {
-    var name = 'faisal-al-juhaimy-profile-' + api.lang() + '.pdf';
-    api.saveFile('/docs/' + name, name).then(function () { status.textContent = T('contact.saved'); });
-  } });
-  var est = el('p', { class: 'det-row' }, api.chip('proposed', api.pair('contact.estimateChip')), ' ', bi(api.pair('contact.estimate')));
-  var c2 = api.card({ id: 'card-bring', icon: 'inputs', kicker: ['قبل البدء', 'Before we start'], title: api.pair('contact.bring'), capability: api.pair('contact.b1'), details: el('div', { class: 'det-wrap' }, bring, est), variant: 'b', focusMode: false, headingLevel: 3,
-    actions: [copyBtn, pdfBtn], fx: 'card-cap' });
-  cc.append(c1.el, c2.el);
-  cc.append(el('div', { class: 'wide' }, status));
+  var co = $('coCta');
+  if (co) co.append(api.button({ id: 'coDemo', kind: 'primary', icon: 'decision', label: STR['mp.cta.meeting'], href: '/contact/?type=demo' }).el,
+    api.button({ id: 'coProposal', kind: 'secondary', icon: 'projects', label: STR['mp.cta.proposal'], href: '/contact/?type=proposal' }).el);
 };
