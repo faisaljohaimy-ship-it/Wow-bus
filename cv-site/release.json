@@ -3,5 +3,31 @@
  "commit": "8508f757702621ac27eb96fecd48a373949bf923",
  "source": "release",
  "builtAt": "2026-11-26T23:03:51Z",
- "build": "0b52c45f1c5b"
+ "build": "0b52c45f1c5b",
+ "patches": [
+  {
+   "label": "film-05-music-dip",
+   "date": "2026-11-26",
+   "films": [
+    "ar-05",
+    "en-05"
+   ],
+   "files": "films, briefing passages, d-sequence (commit 67357c5)"
+  },
+  {
+   "label": "films-grammar-d-batch-1",
+   "date": "2026-11-26T23:38:33Z",
+   "films": [
+    "ar-01",
+    "en-01",
+    "ar-03",
+    "en-03",
+    "ar-04",
+    "en-04",
+    "ar-05",
+    "en-05"
+   ],
+   "files": "films, posters, thumbnails, briefing passages, d-sequence, d-filmqa"
+  }
+ ]
 }
