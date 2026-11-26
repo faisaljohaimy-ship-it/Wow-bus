@@ -14,6 +14,8 @@ ends in concrete defensive actions.
 """
 from __future__ import annotations
 
+import re
+
 _W = {"high": 3, "medium": 2, "low": 1}
 
 
@@ -277,32 +279,60 @@ def assess(answers: dict | None) -> dict:
     }
 
 
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+# Curated, conservative links from a finding's CLASS to the controls that
+# genuinely reduce that class on the assets a person owns. Signals are matched
+# as WHOLE tokens (so "port" never matches inside "report"/"export"), and only
+# against defensible topics — a control is never pulled in by a generic
+# domain word. A finding whose class has no home-hardening counterpart (a weak
+# web-TLS cipher, a missing HTTP header, a code smell) correctly yields nothing
+# rather than irrelevant Wi-Fi/router advice.
+_TOPIC_LINKS = (
+    (("credential", "credentials", "password", "passwords", "secret", "secrets",
+      "hardcoded"), ("net.default_creds", "net.mfa")),
+    (("cve", "outdated", "vulnerable", "vulnerability", "dependency", "dependencies",
+      "unpatched", "eol"), ("net.patch", "usb.patch", "wifi.firmware")),
+    (("firewall", "upnp", "unauthenticated", "exposed", "exposure"),
+     ("net.firewall", "net.least_services", "wifi.remote_admin_off")),
+    (("mfa", "2fa", "otp"), ("net.mfa",)),
+    (("backup", "backups", "ransomware"), ("net.backups",)),
+    (("cleartext", "unencrypted", "plaintext"), ("usb.disk_encryption",)),
+)
+# A connector whose whole output belongs to one class signals that class even
+# when the individual finding text does not spell it out.
+_CONNECTOR_LINKS = {
+    "gitleaks": ("net.default_creds", "net.mfa"),
+    "pip_audit": ("net.patch", "usb.patch", "wifi.firmware"),
+    "osv_scanner": ("net.patch", "usb.patch", "wifi.firmware"),
+    "trivy": ("net.patch", "usb.patch", "wifi.firmware"),
+}
+
+
 def recommend_for_findings(findings: list[dict], limit: int = 8) -> list[dict]:
     """Link real scan findings to the hardening controls that would reduce them,
-    so the analyzer ends in concrete defensive actions. Matches on a finding's
-    connector/tags/cwe keywords against each control's tags."""
-    hay_terms = {
-        "password": ("password", "credential", "secret", "auth"),
-        "default-credentials": ("default", "credential"),
-        "crypto": ("tls", "ssl", "cipher", "crypto", "certificate"),
-        "patch": ("outdated", "version", "cve", "update", "dependency"),
-        "network": ("port", "http", "header", "network", "exposure"),
-        "firewall": ("port", "exposed", "open"),
-        "auth": ("auth", "login", "session", "token"),
-    }
+    so the analyzer ends in concrete defensive actions.
+
+    Matching is deliberately conservative: a finding's text and tags are split
+    into whole tokens and tested against a curated topic vocabulary, and its
+    connector family is used as a second signal. A finding class with no
+    home-hardening counterpart recommends nothing, rather than surfacing
+    irrelevant controls."""
     scored: dict[str, int] = {}
     for f in findings or []:
-        blob = " ".join(str(f.get(k, "")) for k in
-                        ("connector", "rule_id", "title", "cwe", "description")).lower()
-        tags = [str(t).lower() for t in (f.get("tags") or [])]
-        blob += " " + " ".join(tags)
-        for c in CONTROLS:
-            for tag in c["tags"]:
-                terms = hay_terms.get(tag, (tag,))
-                if any(term in blob for term in terms):
-                    scored[c["id"]] = scored.get(c["id"], 0) + 1
-                    break
+        text = " ".join(str(f.get(k, "")) for k in ("rule_id", "title", "cwe", "description"))
+        tags = " ".join(str(t) for t in (f.get("tags") or []))
+        tokens = set(_TOKEN_RE.findall((text + " " + tags).lower()))
+        hits: dict[str, int] = {}
+        for signal, control_ids in _TOPIC_LINKS:
+            if tokens.intersection(signal):
+                for cid in control_ids:
+                    hits[cid] = hits.get(cid, 0) + 1
+        for cid in _CONNECTOR_LINKS.get(str(f.get("connector", "")).lower(), ()):
+            hits[cid] = hits.get(cid, 0) + 1
+        for cid, n in hits.items():
+            scored[cid] = scored.get(cid, 0) + n
     ranked = sorted(scored.items(),
                     key=lambda kv: (-kv[1], {"high": 0, "medium": 1, "low": 2}.get(
-                        _BY_ID[kv[0]]["priority"], 9)))
-    return [_BY_ID[cid] for cid, _ in ranked[:limit]]
+                        _BY_ID[kv[0]]["priority"], 9), kv[0]))
+    return [_BY_ID[cid] for cid, _ in ranked[:limit] if cid in _BY_ID]

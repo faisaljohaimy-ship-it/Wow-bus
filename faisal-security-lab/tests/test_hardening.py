@@ -134,14 +134,37 @@ class TestRecommendForFindings(unittest.TestCase):
         self.assertTrue({"net.default_creds", "net.mfa"} & ids,
                         "a credentials finding should surface a credentials control")
 
-    def test_a_tls_finding_recommends_an_encryption_control(self):
-        findings = [{"connector": "tls_certificate", "rule_id": "weak-cipher",
-                     "title": "Weak TLS cipher suite", "cwe": "CWE-326",
-                     "description": "server offers an old SSL cipher", "tags": ["crypto"]}]
-        rec = hardening.recommend_for_findings(findings)
-        ids = {c["id"] for c in rec}
-        self.assertTrue(any(c in ids for c in ("wifi.encryption", "usb.disk_encryption")),
-                        "a crypto finding should surface an encryption control")
+    def test_cleartext_storage_finding_recommends_disk_encryption(self):
+        findings = [{"connector": "bandit", "rule_id": "cleartext-storage",
+                     "title": "Cleartext storage of sensitive data", "cwe": "CWE-312",
+                     "description": "secrets written unencrypted to disk", "tags": []}]
+        ids = {c["id"] for c in hardening.recommend_for_findings(findings)}
+        self.assertIn("usb.disk_encryption", ids)
+
+    def test_a_web_tls_or_header_finding_does_not_surface_wifi_controls(self):
+        # Regression: a weak web-TLS cipher and a missing HTTP header have no
+        # home-hardening counterpart, so they must NOT surface Wi-Fi/router
+        # advice (WPA3, router admin password, WAN admin ...). Returning nothing
+        # is the honest answer.
+        tls = [{"connector": "tls_certificate", "rule_id": "weak-cipher",
+                "title": "Weak TLS cipher suite", "cwe": "CWE-326",
+                "description": "server offers an old SSL cipher", "tags": ["crypto"]}]
+        hsts = [{"connector": "http_headers", "rule_id": "missing-hsts",
+                 "title": "Missing Strict-Transport-Security header", "cwe": "CWE-319",
+                 "description": "the server response lacks the HSTS header.", "tags": []}]
+        wifi_ids = {c["id"] for c in hardening.checklist("wifi")}
+        for finding in (tls, hsts):
+            ids = {c["id"] for c in hardening.recommend_for_findings(finding)}
+            self.assertEqual(ids & wifi_ids, set(),
+                             f"no Wi-Fi control should be recommended for {finding[0]['rule_id']}")
+
+    def test_substring_only_matches_do_not_recommend_anything(self):
+        # Regression: whole-token matching — "report"/"export"/"important" must
+        # not match the signal token "port"; a content-free finding yields none.
+        noise = [{"connector": "reporter", "rule_id": "export-available",
+                  "title": "Export report available", "description": "important note",
+                  "tags": []}]
+        self.assertEqual(hardening.recommend_for_findings(noise), [])
 
     def test_no_findings_recommends_nothing(self):
         self.assertEqual(hardening.recommend_for_findings([]), [])
