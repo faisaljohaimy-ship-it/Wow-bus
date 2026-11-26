@@ -27,6 +27,8 @@
 <script>
 /* Interface language and direction before first paint. The film language is chosen separately in the cinema. */
 (function () { var l = 'ar'; try { var s = localStorage.getItem('fj.lang'); if (s === 'en' || s === 'ar') l = s; } catch (e) {} document.documentElement.lang = l; document.documentElement.dir = l === 'ar' ? 'rtl' : 'ltr'; })();
+/* Low-power devices get the static background (no animated layers, no backdrop blur). */
+(function () { try { var n = navigator, m = n.deviceMemory, c = n.hardwareConcurrency; if ((m && m <= 4) || (c && c <= 4) || /[?&]fx=low\b/.test(location.search)) document.documentElement.classList.add('low-fx'); } catch (e) {} })();
 </script>
 <style>
 /* Executive launch page: charcoal and deep navy field, white type, one electric cyan signal, gold only for evidence.
@@ -44,6 +46,9 @@
   --font-body: "IBM Plex Sans Arabic", "IBM Plex Sans", "Noto Sans Arabic", "Segoe UI", Tahoma, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --gutter: clamp(16px, 4vw, 48px);
+  --glass: linear-gradient(160deg, rgba(20, 40, 57, .62), rgba(10, 18, 28, .55));
+  --edge: rgba(176, 196, 212, .22); --edge-hi: rgba(214, 228, 238, .38);
+  --fx-a: rgba(58, 215, 255, .10); --fx-b: rgba(36, 70, 130, .28); --fx-c: rgba(58, 215, 255, .05);
   color-scheme: dark;
 }
 :root[lang="en"] { --font-body: "IBM Plex Sans", "IBM Plex Sans Arabic", "Segoe UI", system-ui, sans-serif; }
@@ -56,6 +61,9 @@
     --gold: #87600f; --gold-soft: rgba(135, 96, 15, .10);
     --ok: #0b7043; --amber: #8a5005; --violet: #5a3fc9; --off: #5c6e7b;
     --shadow: 0 26px 50px -36px rgba(10, 24, 35, .4);
+    --glass: linear-gradient(160deg, rgba(255, 255, 255, .86), rgba(237, 242, 246, .78));
+    --edge: rgba(83, 104, 121, .25); --edge-hi: rgba(83, 104, 121, .4);
+    --fx-a: rgba(0, 111, 150, .06); --fx-b: rgba(90, 120, 170, .10); --fx-c: rgba(0, 111, 150, .03);
     color-scheme: light;
   }
 }
@@ -67,6 +75,9 @@
   --gold: #87600f; --gold-soft: rgba(135, 96, 15, .10);
   --ok: #0b7043; --amber: #8a5005; --violet: #5a3fc9; --off: #5c6e7b;
   --shadow: 0 26px 50px -36px rgba(10, 24, 35, .4);
+  --glass: linear-gradient(160deg, rgba(255, 255, 255, .86), rgba(237, 242, 246, .78));
+  --edge: rgba(83, 104, 121, .25); --edge-hi: rgba(83, 104, 121, .4);
+  --fx-a: rgba(0, 111, 150, .06); --fx-b: rgba(90, 120, 170, .10); --fx-c: rgba(0, 111, 150, .03);
   color-scheme: light;
 }
 
@@ -412,6 +423,25 @@ footer { padding-block: clamp(2rem, 5vw, 3rem); border-top: 1px solid var(--line
 @media (max-width: 860px) { .foot { grid-template-columns: minmax(0, 1fr); } }
 .foot h3 { font-size: .84rem; color: var(--ink); font-weight: 600; margin-bottom: .45rem; }
 .foot ul { display: grid; gap: .35rem; }
+
+
+/* ---------- V600: one slow multilayer background (transforms only) and the shared glass panel ---------- */
+.bgfx { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; contain: strict; }
+.bgfx i { position: absolute; display: block; will-change: transform; }
+.bgfx .l1 { width: 90vmax; height: 90vmax; top: -40vmax; inset-inline-start: -25vmax; border-radius: 50%; background: radial-gradient(closest-side, var(--fx-b), transparent 70%); animation: fx1 70s ease-in-out infinite alternate; }
+.bgfx .l2 { width: 70vmax; height: 70vmax; bottom: -35vmax; inset-inline-end: -20vmax; border-radius: 50%; background: radial-gradient(closest-side, var(--fx-a), transparent 70%); animation: fx2 90s ease-in-out infinite alternate; }
+.bgfx .l3 { inset: -20%; background: repeating-linear-gradient(115deg, transparent 0 140px, var(--fx-c) 140px 141px); animation: fx3 120s linear infinite alternate; }
+@keyframes fx1 { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(18vw, 22vh, 0) scale(1.12); } }
+@keyframes fx2 { from { transform: translate3d(0, 0, 0) scale(1.05); } to { transform: translate3d(-16vw, -18vh, 0) scale(.95); } }
+@keyframes fx3 { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-6%, 3%, 0); } }
+:root.low-fx .bgfx i { animation: none; will-change: auto; }
+:root.is-briefing .bgfx i, :root.bf-open .bgfx i { animation-play-state: paused; }
+.glass { background: var(--glass); border: 1px solid var(--edge); box-shadow: 0 1px 0 0 var(--edge-hi) inset, var(--shadow); -webkit-backdrop-filter: blur(10px) saturate(1.1); backdrop-filter: blur(10px) saturate(1.1); }
+:root.low-fx .glass { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.cinema { background: transparent; }
+.band.alt { background: color-mix(in srgb, var(--bg-2) 55%, transparent); }
+.cin-frame { border-color: var(--edge-hi); border-radius: 8px; box-shadow: 0 0 0 1px rgba(255, 255, 255, .03) inset, 0 40px 80px -50px rgba(0, 0, 0, .9); }
+@media (prefers-reduced-motion: reduce) { .bgfx i { animation: none !important; will-change: auto; } }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -1733,8 +1763,140 @@ footer { padding-block: clamp(2rem, 5vw, 3rem); border-top: 1px solid var(--line
 .m-profile-not li::after { transform: rotate(-45deg); }
 
 </style>
+<style data-module="capabilities">
+/* V600 structure: six-step workflow line inside each hypothesis row, and compact capability cards.
+   Colours come only from the page variables (glass tokens are defined on :root in page.html). */
+
+/* ---------- six-step workflow line ---------- */
+.f6-key { display: flex; flex-wrap: wrap; gap: .35rem .2rem; margin-top: .35rem; font-size: .78rem; color: var(--ink-3); font-weight: 600; }
+.f6-key li { display: inline-flex; align-items: center; gap: .2rem; }
+.f6-key li + li::before { content: ""; width: .9rem; height: 1px; background: var(--signal); opacity: .7; margin-inline: .25rem; }
+:root[lang="en"] .f6-key { text-transform: uppercase; letter-spacing: .08em; font-size: .68rem; }
+
+.f6 { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; margin: -.4rem 0 1.3rem; padding-inline-start: calc(.9rem + 3.4rem + 1.5rem); counter-reset: f6; }
+.f6-step { position: relative; display: grid; align-content: start; gap: .3rem; min-width: 0; padding: .7rem .8rem .75rem; border-block-start: 1px solid var(--line-2); }
+.f6-step::before { content: ""; position: absolute; top: -4px; inset-inline-start: .8rem; width: 7px; height: 7px; border-radius: 50%; background: var(--bg-2); border: 1px solid var(--signal); }
+.f6-step:first-child { padding-inline-start: 0; } .f6-step:first-child::before { inset-inline-start: 0; }
+.f6-ai { background: linear-gradient(180deg, var(--signal-soft), transparent 70%); }
+.f6-ai::before { background: var(--signal); }
+.f6-evidence::before { border-color: var(--gold); background: var(--gold); }
+.f6-n { position: absolute; top: .7rem; inset-inline-end: .7rem; font-family: var(--font-mono); font-size: .66rem; color: var(--ink-3); }
+.f6-k { font-size: .72rem; font-weight: 700; color: var(--signal); line-height: 1.4; padding-inline-end: 1.2rem; }
+.f6-evidence .f6-k { color: var(--gold); }
+:root[lang="en"] .f6-k { text-transform: uppercase; letter-spacing: .08em; font-size: .64rem; }
+.f6-t { font-size: .82rem; line-height: 1.6; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.f6-tag { font-size: .68rem; color: var(--ink-3); border: 1px dashed var(--line-2); border-radius: 999px; padding: 0 .5rem; justify-self: start; line-height: 1.7; }
+.f6-st .st { font-size: .7rem; }
+@media (max-width: 1100px) {
+  .f6 { grid-template-columns: repeat(3, minmax(0, 1fr)); padding-inline-start: calc(.9rem + 3rem + 1.5rem); row-gap: .4rem; }
+  .f6-step:nth-child(4) { padding-inline-start: 0; } .f6-step:nth-child(4)::before { inset-inline-start: 0; }
+}
+@media (max-width: 640px) {
+  .f6 { grid-template-columns: minmax(0, 1fr); padding-inline-start: .6rem; row-gap: 0; margin-top: -.2rem; }
+  .f6-step, .f6-step:nth-child(4) { grid-template-columns: 6.2rem minmax(0, 1fr); column-gap: .6rem; padding: .5rem 0 .5rem 0; padding-inline-start: 1.1rem; border-block-start: 0; border-inline-start: 1px solid var(--line-2); }
+  .f6-step::before, .f6-step:first-child::before, .f6-step:nth-child(4)::before { top: .95rem; inset-inline-start: -4px; }
+  .f6-step:first-child { padding-inline-start: 1.1rem; }
+  .f6-n { display: none; }
+  .f6-k { padding: 0; }
+  .f6-t, .f6-tag, .f6-st { grid-column: 2; }
+  .f6-t { -webkit-line-clamp: 3; }
+  .f6-ai { background: none; }
+}
+
+/* ---------- capability cards ---------- */
+.caps-band { padding-block: clamp(2.2rem, 5vw, 4rem); }
+.caps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; align-items: start; }
+.caps-ref-h { font-size: .8rem; color: var(--ink-3); font-weight: 600; margin: 1.6rem 0 .6rem; }
+:root[lang="en"] .caps-ref-h { text-transform: uppercase; letter-spacing: .1em; font-size: .7rem; }
+@media (max-width: 760px) { .caps { grid-template-columns: minmax(0, 1fr); } }
+.cap { min-width: 0; border-radius: 10px; scroll-margin-top: 68px; }
+.cap[data-open="true"] { grid-column: 1 / -1; }
+.cap-h { margin: 0; font-size: inherit; font-weight: inherit; }
+.cap-toggle { appearance: none; width: 100%; background: none; border: 0; color: var(--ink); font: inherit; text-align: start; cursor: pointer; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "kind chev" "title chev" "line chev"; gap: .1rem 1rem; padding: 1rem 1.15rem; border-radius: 10px; min-height: 44px; }
+.cap-kind { grid-area: kind; font-size: .72rem; font-weight: 700; color: var(--signal); }
+:root[lang="en"] .cap-kind { text-transform: uppercase; letter-spacing: .1em; font-size: .64rem; }
+.cap-title { grid-area: title; font-family: var(--font-display); font-weight: 700; font-size: 1.06rem; line-height: 1.45; }
+.cap-line { grid-area: line; font-size: .86rem; color: var(--ink-2); line-height: 1.6; }
+.cap-chev { grid-area: chev; align-self: center; width: 2rem; height: 2rem; border-radius: 50%; border: 1px solid var(--line-2); position: relative; }
+.cap-chev::after { content: ""; position: absolute; inset: 0; margin: auto; width: .45rem; height: .45rem; border-inline-end: 2px solid var(--ink-2); border-bottom: 2px solid var(--ink-2); transform: translateY(-.1rem) rotate(45deg); transition: transform .25s ease; }
+.cap-toggle[aria-expanded="true"] .cap-chev { border-color: var(--signal); }
+.cap-toggle[aria-expanded="true"] .cap-chev::after { transform: translateY(.1rem) rotate(225deg); border-color: var(--signal); }
+.cap-toggle:hover .cap-title { text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: .3em; }
+.cap-body { padding: 0 1.15rem 1.3rem; border-top: 1px solid var(--line); min-width: 0; }
+.cap-body .wrap { padding-left: 0; padding-right: 0; max-width: none; }
+.cap-sec { padding-top: 1rem; scroll-margin-top: 68px; min-width: 0; }
+.cap-inner-head { margin-bottom: 1rem; }
+.cap-inner-head p, .cap-intro { color: var(--ink-2); font-size: .95rem; margin-bottom: 1rem; }
+.cap .take { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 1rem 2.5rem; padding-bottom: 1.4rem; margin-bottom: 1.4rem; border-bottom: 1px solid var(--line); }
+@media (max-width: 900px) { .cap .take { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 480px) { .cap-toggle { padding: .85rem .9rem; } .cap-body { padding-inline: .9rem; } }
+@media (prefers-reduced-motion: reduce) { .cap-chev::after { transition: none; } }
+
+</style>
+<style data-module="briefing">
+/* V600 Executive Briefing layer. The cinema frame (with the page's single <video>) is moved into .bf-stage while open. */
+.bf { --bg: #0a0f14; --bg-2: #0b1826; --panel: #0e1c2a; --panel-2: #142839; --line: #1b2a39; --line-2: #2a3f52; --ink: #f3f7f9; --ink-2: #bccad5; --ink-3: #93a7b6; --signal: #3ad7ff; --signal-ink: #021019; --signal-soft: rgba(58, 215, 255, .11); --gold: #e7bd6f; --ok: #62e2a8; --amber: #f5b85a; color-scheme: dark;
+  position: fixed; inset: 0; z-index: 100; display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto auto; gap: .6rem; padding: max(14px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(14px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  background: radial-gradient(120% 90% at 50% 0%, var(--bg-2) 0%, var(--well) 70%); color: var(--ink); overflow: hidden; }
+.bf:fullscreen { background: radial-gradient(120% 90% at 50% 0%, var(--bg-2) 0%, var(--well) 70%); }
+:root.bf-open body { overflow: hidden; }
+.bf-top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-width: 0; }
+.bf-id { min-width: 0; }
+.bf-id h2 { font-family: var(--font-display); font-weight: 700; font-size: clamp(1rem, 2vw, 1.3rem); line-height: 1.3; }
+.bf-id p { font-size: .8rem; color: var(--ink-3); }
+.bf-exit { display: inline-flex; align-items: center; gap: .5rem; min-height: 44px; padding: .3rem .9rem; border-radius: 6px; border: 1px solid var(--line-2); background: transparent; color: var(--ink); font-weight: 600; flex: none; }
+.bf-exit kbd, .brief-kbd { font-family: var(--font-mono); font-size: .68rem; border: 1px solid var(--line-2); border-radius: 3px; padding: 0 .3rem; color: var(--ink-3); }
+.bf-stage { position: relative; min-height: 0; display: grid; place-items: center; }
+.bf-stage .cin-frame { width: min(100%, calc((100dvh - 230px) * 16 / 9)); max-height: 100%; border-radius: 8px; border-color: var(--edge, var(--line-2)); box-shadow: 0 40px 90px -50px #000, 0 0 0 1px rgba(255,255,255,.04) inset; }
+.bf-stage .cin-frame .ov, .bf-stage .cin-frame .notice { display: none !important; }
+.bf-stage .cin-frame.is-held .cin-cap { visibility: visible; }
+.bf-stage .cin-frame.dim video, .bf-stage .cin-frame.dim .cin-cap { opacity: 1; }
+.bf-card, .bf-end { position: absolute; inset: 0; margin: auto; width: min(100%, calc((100dvh - 230px) * 16 / 9)); aspect-ratio: 16 / 9; max-height: 100%; display: grid; align-content: center; justify-items: start; gap: .35rem; padding: clamp(1rem, 5vw, 3.5rem);
+  background: linear-gradient(135deg, rgba(4, 8, 12, .92), rgba(11, 24, 38, .86)); border-radius: 8px; color: #f3f7f9; z-index: 2; overflow: hidden; }
+.bf-card::after { content: ""; position: absolute; inset-inline-start: clamp(1rem, 5vw, 3.5rem); bottom: 14%; width: 64px; height: 2px; background: var(--signal); }
+.bf-of { font-size: .8rem; color: #93a7b6; }
+.bf-num { font-family: var(--font-mono); font-size: clamp(2rem, 7vw, 4.5rem); line-height: 1; color: var(--signal); }
+:root[lang="ar"] .bf-num { font-family: var(--font-display); font-weight: 800; }
+.bf-ttl { font-family: var(--font-display); font-weight: 800; font-size: clamp(1.2rem, 3.6vw, 2.4rem); line-height: 1.3; }
+.bf-ch { font-size: clamp(.85rem, 1.8vw, 1.1rem); color: #bccad5; }
+.bf-proof { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: .6rem; font-size: clamp(.82rem, 1.7vw, 1.02rem); max-width: 60ch; }
+.bf-proof .caret { width: 3px; height: 1.1em; background: var(--gold); border-radius: 2px; display: inline-block; }
+.bf-end { justify-items: center; text-align: center; gap: .8rem; }
+.bf-end h3 { font-family: var(--font-display); font-weight: 800; font-size: clamp(1.2rem, 3.4vw, 2rem); }
+.bf-end p { color: #bccad5; }
+.bf-end-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem; }
+.bf-end .btn:not(.btn-primary) { color: #f3f7f9; border-color: rgba(243, 247, 249, .4); }
+.bf-lower { position: absolute; z-index: 2; top: .8rem; inset-inline-start: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: .55rem; max-width: calc(100% - 1.6rem); padding: .25rem .8rem; border-radius: 999px; background: rgba(4, 8, 12, .72); color: #f3f7f9; font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+[dir="rtl"] .bf-lower { transform: translateX(50%); }
+.bf-ln { font-family: var(--font-mono); color: var(--signal); }
+.bf-bar { position: relative; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.bf-bar > i { position: absolute; inset: 0; background: var(--signal); transform-origin: left center; transform: scaleX(0); }
+[dir="rtl"] .bf-bar > i { transform-origin: right center; }
+.bf-ticks i { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--well); }
+.bf-ctl { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; }
+.bf-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; min-width: 0; }
+.bf-ib { display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line-2); background: transparent; color: var(--ink); }
+.bf-ib:hover { border-color: var(--signal); }
+.bf-ib:disabled { opacity: .4; cursor: default; }
+#bfPlay { width: 52px; height: 52px; background: var(--signal); color: var(--signal-ink); border-color: var(--signal); }
+[dir="rtl"] #bfPrev .ic, [dir="rtl"] #bfNext .ic { transform: scaleX(-1); }
+.bf-time { font-size: .82rem; color: var(--ink-2); margin-inline-start: .4rem; }
+.bf-lang button { min-width: 44px; }
+.bf-keys { font-size: .72rem; color: var(--ink-3); text-align: center; }
+@media (max-width: 640px) { .bf-keys { display: none; } .bf-ctl { justify-content: center; } .bf-stage .cin-frame, .bf-card, .bf-end { width: 100%; } .bf-card, .bf-end { aspect-ratio: auto; height: 100%; } }
+@media (max-height: 520px) { .bf-keys { display: none; } }
+
+/* top-bar button */
+.brief-btn { display: inline-flex; align-items: center; gap: .45rem; min-height: 40px; padding: .2rem .75rem; border-radius: 6px; border: 1px solid var(--signal); background: var(--signal-soft); color: var(--ink); font-size: .86rem; font-weight: 600; white-space: nowrap; flex: none; }
+.brief-btn .ic { color: var(--signal); }
+.brief-btn:hover { background: var(--signal); color: var(--signal-ink); } .brief-btn:hover .ic { color: var(--signal-ink); }
+@media (max-width: 560px) { .brief-btn-t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } .brief-kbd { display: none; } .brief-btn { padding: .2rem .6rem; min-width: 44px; justify-content: center; } }
+@media (max-width: 1100px) { .bar .brief-btn { margin-inline-start: auto; } .bar .lang { margin-inline-start: 0; } }
+
+</style>
 </head>
 <body>
+<div class="bgfx" aria-hidden="true"><i class="l1"></i><i class="l2"></i><i class="l3"></i></div>
 <a class="skip" href="#cinema" data-go="cinema" data-i="skip"></a>
 
 <header class="bar">
@@ -1743,12 +1905,11 @@ footer { padding-block: clamp(2rem, 5vw, 3rem); border-top: 1px solid var(--line
     <nav class="nav" data-i-label="nav.label">
       <a href="#cinema" data-go="cinema" data-i="nav.cinema"></a>
       <a href="#hypotheses" data-go="hypotheses" data-i="nav.hypotheses"></a>
-      <a href="#motion" data-go="motion" data-i="nav.motion"></a>
-      <a href="#factory" data-go="factory" data-i="nav.factory"></a>
-      <a href="#cases" data-go="cases" data-i="nav.cases"></a>
+      <a href="#capabilities" data-go="capabilities" data-i="nav.caps"></a>
       <a href="#evidence" data-go="evidence" data-i="nav.evidence"></a>
       <a href="#contact" data-go="contact" data-i="nav.contact"></a>
     </nav>
+    <button type="button" class="brief-btn" id="briefBtn" aria-keyshortcuts="B"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v12H3zM8 21h8M12 17v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M10 8.5v5l4-2.5z" fill="currentColor"/></svg><span class="brief-btn-t" data-i="brief.btn"></span><kbd class="brief-kbd" aria-hidden="true">B</kbd></button>
     <div class="lang" role="group" data-i-label="lang.group">
       <button type="button" id="langAr" lang="ar">عربي</button>
       <button type="button" id="langEn" lang="en">English</button>
@@ -1867,11 +2028,61 @@ footer { padding-block: clamp(2rem, 5vw, 3rem); border-top: 1px solid var(--line
     </div>
   </section>
 
-  <section class="band take" id="takeaway" aria-labelledby="takeH">
+  <section class="band flow" id="hypotheses" aria-labelledby="h-hypotheses"><div class="wrap mod-root" id="m-hypotheses"><header class="band-head"><p class="kicker">02</p><h2 id="h-hypotheses" data-i="sec.hypotheses.h"></h2><p data-i="sec.hypotheses.p"></p><ol class="f6-key" id="f6Key" aria-hidden="true"></ol></header></div></section>
+
+  <section class="band caps-band" id="capabilities" aria-labelledby="h-capabilities">
     <div class="wrap">
+      <header class="band-head"><p class="kicker">03</p><h2 id="h-capabilities" data-i="sec.caps.h"></h2><p data-i="sec.caps.p"></p></header>
+      <div class="caps" id="caps">
+      <article class="cap glass" id="cap-skills" data-cap="skills" data-mod="profile">
+        <h3 class="cap-h"><button type="button" class="cap-toggle" id="capt-skills" aria-expanded="false" aria-controls="capb-skills"><span class="cap-kind" data-i="cap.skills.k"></span><span class="cap-title" data-i="cap.skills.t"></span><span class="cap-line" data-i="cap.skills.s"></span><span class="cap-chev" aria-hidden="true"></span></button></h3>
+        <div class="cap-body" id="capb-skills" role="region" aria-labelledby="capt-skills" hidden><section class="cap-sec" id="profile" aria-labelledby="capt-skills"><div class="wrap mod-root" id="m-profile"><header class="band-head cap-inner-head"><p data-i="sec.profile.p"></p></header></div></section></div>
+      </article>
+      <article class="cap glass" id="cap-tools" data-cap="tools" data-mod="lab">
+        <h3 class="cap-h"><button type="button" class="cap-toggle" id="capt-tools" aria-expanded="false" aria-controls="capb-tools"><span class="cap-kind" data-i="cap.tools.k"></span><span class="cap-title" data-i="cap.tools.t"></span><span class="cap-line" data-i="cap.tools.s"></span><span class="cap-chev" aria-hidden="true"></span></button></h3>
+        <div class="cap-body" id="capb-tools" role="region" aria-labelledby="capt-tools" hidden><section class="cap-sec" id="lab" aria-labelledby="capt-tools"><div class="wrap mod-root" id="m-lab"><header class="band-head cap-inner-head"><p data-i="sec.lab.p"></p></header></div></section></div>
+      </article>
+      <article class="cap glass" id="cap-projects" data-cap="projects" data-mod="cases">
+        <h3 class="cap-h"><button type="button" class="cap-toggle" id="capt-projects" aria-expanded="false" aria-controls="capb-projects"><span class="cap-kind" data-i="cap.projects.k"></span><span class="cap-title" data-i="cap.projects.t"></span><span class="cap-line" data-i="cap.projects.s"></span><span class="cap-chev" aria-hidden="true"></span></button></h3>
+        <div class="cap-body" id="capb-projects" role="region" aria-labelledby="capt-projects" hidden><section class="cap-sec" id="cases" aria-labelledby="capt-projects"><div class="wrap mod-root" id="m-cases"><header class="band-head cap-inner-head"><p data-i="sec.cases.p"></p></header><div id="m-cases-kpi"></div></div></section></div>
+      </article>
+      <article class="cap glass" id="cap-integrations" data-cap="integrations" data-mod="atlas">
+        <h3 class="cap-h"><button type="button" class="cap-toggle" id="capt-integrations" aria-expanded="false" aria-controls="capb-integrations"><span class="cap-kind" data-i="cap.integrations.k"></span><span class="cap-title" data-i="cap.integrations.t"></span><span class="cap-line" data-i="cap.integrations.s"></span><span class="cap-chev" aria-hidden="true"></span></button></h3>
+        <div class="cap-body" id="capb-integrations" role="region" aria-labelledby="capt-integrations" hidden><section class="cap-sec" id="atlas" aria-labelledby="capt-integrations"><div class="wrap mod-root" id="m-atlas"><header class="band-head cap-inner-head"><p data-i="sec.atlas.p"></p></header></div></section></div>
+      </article>
+      <article class="cap glass" id="cap-method" data-cap="method" data-mod="factory">
+        <h3 class="cap-h"><button type="button" class="cap-toggle" id="capt-method" aria-expanded="false" aria-controls="capb-method"><span class="cap-kind" data-i="cap.method.k"></span><span class="cap-title" data-i="cap.method.t"></span><span class="cap-line" data-i="cap.method.s"></span><span class="cap-chev" aria-hidden="true"></span></button></h3>
+        <div class="cap-body" id="capb-method" role="region" aria-labelledby="capt-method" hidden><section class="cap-sec" id="factory" aria-labelledby="capt-method"><div class="wrap mod-root" id="m-factory"><header class="band-head cap-inner-head"><p data-i="sec.factory.p"></p></header></div></section></div>
+      </article>
+      <article class="cap glass" id="cap-quality" data-cap="quality" data-mod="quality">
+        <h3 class="cap-h"><button type="button" class="cap-toggle" id="capt-quality" aria-expanded="false" aria-controls="capb-quality"><span class="cap-kind" data-i="cap.quality.k"></span><span class="cap-title" data-i="cap.quality.t"></span><span class="cap-line" data-i="cap.quality.s"></span><span class="cap-chev" aria-hidden="true"></span></button></h3>
+        <div class="cap-body" id="capb-quality" role="region" aria-labelledby="capt-quality" hidden><section class="cap-sec" id="quality" aria-labelledby="capt-quality"><div class="wrap mod-root" id="m-quality"><header class="band-head cap-inner-head"><p data-i="sec.quality.p"></p></header></div></section></div>
+      </article>
+      <article class="cap glass" id="cap-motion" data-cap="motion" data-mod="motion">
+        <h3 class="cap-h"><button type="button" class="cap-toggle" id="capt-motion" aria-expanded="false" aria-controls="capb-motion"><span class="cap-kind" data-i="cap.motion.k"></span><span class="cap-title" data-i="cap.motion.t"></span><span class="cap-line" data-i="cap.motion.s"></span><span class="cap-chev" aria-hidden="true"></span></button></h3>
+        <div class="cap-body" id="capb-motion" role="region" aria-labelledby="capt-motion" hidden><section class="cap-sec" id="motion" aria-labelledby="capt-motion"><div class="wrap mod-root" id="m-motion"><header class="band-head cap-inner-head"><p data-i="sec.motion.p"></p></header></div></section></div>
+      </article>
+      </div>
+      <h3 class="caps-ref-h" data-i="sec.ref.h"></h3>
+      <div class="caps caps-ref" id="capsRef">
+      <article class="cap glass" id="cap-evidence" data-cap="evidence">
+        <h3 class="cap-h"><button type="button" class="cap-toggle" id="capt-evidence" aria-expanded="false" aria-controls="capb-evidence"><span class="cap-kind" data-i="cap.evidence.k"></span><span class="cap-title" data-i="cap.evidence.t"></span><span class="cap-line" data-i="cap.evidence.s"></span><span class="cap-chev" aria-hidden="true"></span></button></h3>
+        <div class="cap-body" id="capb-evidence" role="region" aria-labelledby="capt-evidence" hidden><section class="cap-sec" id="evidence" aria-labelledby="capt-evidence"><div class="wrap">
+      <p class="cap-intro" data-i="ledger.sub"></p>
+      <div class="cover">
+        <div class="cover-head"><b data-i="ledger.cover"></b><span id="coverTotal"></span></div>
+        <div class="cover-bar" id="coverBar" aria-hidden="true"></div>
+      </div>
+      <div class="filters" id="ledgerFilters" role="group" data-i-label="ledger.filter"></div>
+      <div class="rows" id="ledgerRows"></div>
+      <details class="fold legend"><summary data-i="ledger.key"></summary><ul id="legend"></ul></details>
+    </div></section></div>
+      </article>
+      <article class="cap glass" id="cap-contact" data-cap="contact">
+        <h3 class="cap-h"><button type="button" class="cap-toggle" id="capt-contact" aria-expanded="false" aria-controls="capb-contact"><span class="cap-kind" data-i="cap.contact.k"></span><span class="cap-title" data-i="cap.contact.t"></span><span class="cap-line" data-i="cap.contact.s"></span><span class="cap-chev" aria-hidden="true"></span></button></h3>
+        <div class="cap-body" id="capb-contact" role="region" aria-labelledby="capt-contact" hidden><section class="cap-sec" id="contact" aria-labelledby="capt-contact"><div class="wrap"><div class="take" id="takeaway">
       <div>
-        <p class="kicker">03</p>
-        <h2 id="takeH" data-i="take.h"></h2>
+                <h3 class="sub-h" id="takeH" data-i="take.h"></h3>
         <p class="take-lead" data-i="take.p"></p>
         <div class="take-acts">
           <a class="btn btn-primary" href="#hypotheses" data-go="hypotheses"><span data-i="take.cta1"></span><svg class="ic flip" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
@@ -1887,33 +2098,7 @@ footer { padding-block: clamp(2rem, 5vw, 3rem); border-top: 1px solid var(--line
         <div class="take-states"><p class="note" data-i="take.states"></p><ul id="takeStates"></ul></div>
       </div>
     </div>
-  </section>
-
-  <section class="band alt" id="hypotheses" aria-labelledby="h-hypotheses"><div class="wrap mod-root" id="m-hypotheses"><header class="band-head"><p class="kicker">04</p><h2 id="h-hypotheses" data-i="sec.hypotheses.h"></h2><p data-i="sec.hypotheses.p"></p></header></div></section>
-  <section class="band" id="motion" aria-labelledby="h-motion"><div class="wrap mod-root" id="m-motion"><header class="band-head"><p class="kicker">05</p><h2 id="h-motion" data-i="sec.motion.h"></h2><p data-i="sec.motion.p"></p></header></div></section>
-  <section class="band alt" id="factory" aria-labelledby="h-factory"><div class="wrap mod-root" id="m-factory"><header class="band-head"><p class="kicker">06</p><h2 id="h-factory" data-i="sec.factory.h"></h2><p data-i="sec.factory.p"></p></header></div></section>
-  <section class="band" id="atlas" aria-labelledby="h-atlas"><div class="wrap mod-root" id="m-atlas"><header class="band-head"><p class="kicker">07</p><h2 id="h-atlas" data-i="sec.atlas.h"></h2><p data-i="sec.atlas.p"></p></header></div></section>
-  <section class="band alt" id="lab" aria-labelledby="h-lab"><div class="wrap mod-root" id="m-lab"><header class="band-head"><p class="kicker">08</p><h2 id="h-lab" data-i="sec.lab.h"></h2><p data-i="sec.lab.p"></p></header></div></section>
-  <section class="band" id="cases" aria-labelledby="h-cases"><div class="wrap mod-root" id="m-cases"><header class="band-head"><p class="kicker">09</p><h2 id="h-cases" data-i="sec.cases.h"></h2><p data-i="sec.cases.p"></p></header><div id="m-cases-kpi"></div></div></section>
-  <section class="band alt" id="quality" aria-labelledby="h-quality"><div class="wrap mod-root" id="m-quality"><header class="band-head"><p class="kicker">10</p><h2 id="h-quality" data-i="sec.quality.h"></h2><p data-i="sec.quality.p"></p></header></div></section>
-  <section class="band" id="profile" aria-labelledby="h-profile"><div class="wrap mod-root" id="m-profile"><header class="band-head"><p class="kicker">11</p><h2 id="h-profile" data-i="sec.profile.h"></h2><p data-i="sec.profile.p"></p></header></div></section>
-
-  <section class="band alt" id="evidence" aria-labelledby="h-evidence">
-    <div class="wrap">
-      <header class="band-head"><p class="kicker">12</p><h2 id="h-evidence" data-i="ledger.h"></h2><p data-i="ledger.sub"></p></header>
-      <div class="cover">
-        <div class="cover-head"><b data-i="ledger.cover"></b><span id="coverTotal"></span></div>
-        <div class="cover-bar" id="coverBar" aria-hidden="true"></div>
-      </div>
-      <div class="filters" id="ledgerFilters" role="group" data-i-label="ledger.filter"></div>
-      <div class="rows" id="ledgerRows"></div>
-      <details class="fold legend"><summary data-i="ledger.key"></summary><ul id="legend"></ul></details>
-    </div>
-  </section>
-
-  <section class="band" id="contact" aria-labelledby="h-contact">
-    <div class="wrap">
-      <header class="band-head"><p class="kicker">13</p><h2 id="h-contact" data-i="contact.h"></h2><p data-i="contact.sub"></p></header>
+      <p class="cap-intro" data-i="contact.sub"></p>
       <div class="start-grid">
         <div>
           <h3 class="sub-h" data-i="contact.steps"></h3>
@@ -1938,6 +2123,9 @@ footer { padding-block: clamp(2rem, 5vw, 3rem); border-top: 1px solid var(--line
         </div>
       </div>
       <div class="reach"><p data-i="contact.reach"></p></div>
+    </div></section></div>
+      </article>
+      </div>
     </div>
   </section>
 </main>
@@ -1975,7 +2163,7 @@ const I18N = {
   'brand.studio': ['استوديو هندسة الأنظمة والذكاء الاصطناعي', 'Systems and AI engineering studio'],
   'nav.label': ['أقسام الصفحة', 'Page sections'],
   'nav.cinema': ['الأفلام', 'Films'],
-  'nav.hypotheses': ['الفرضيات', 'Hypotheses'],
+  'nav.hypotheses': ['سير العمل', 'Workflows'],
   'nav.motion': ['الحركة', 'Motion'],
   'nav.factory': ['المصنع', 'Factory'],
   'nav.cases': ['الحالات', 'Cases'],
@@ -2069,8 +2257,8 @@ const I18N = {
   'take.cta2': ['ابدأ مشروعًا واحدًا محدد النطاق', 'Start one scoped project'],
 
   /* module sections (shell headings) */
-  'sec.hypotheses.h': ['عشر فرضيات قابلة للاختبار', 'Ten testable hypotheses'],
-  'sec.hypotheses.p': ['لكل فرضية شروط وخطوات ونتيجة متوقعة ومعيار قبول وحالة، ورابط إلى مشهدها في الفيلم.', 'Each hypothesis has conditions, steps, an expected result, an acceptance test and a state, with a link to its scene in the film.'],
+  'sec.hypotheses.h': ['سير العمل: عشر فرضيات قابلة للاختبار', 'Workflows: ten testable hypotheses'],
+  'sec.hypotheses.p': ['كل فرضية في خط واحد: المشكلة، المدخلات، الذكاء الاصطناعي، المعالجة، القرار، الدليل؛ وزر يفتح فصلها في الفيلم.', 'Each hypothesis on one line: problem, inputs, AI, processing, decision, evidence, with a button to its film chapter.'],
   'sec.motion.h': ['مكتبة الحركة', 'The motion library'],
   'sec.motion.p': ['كل حركة مرتبطة بفيلمها وفصلها وسبب استخدامها، ومعها بديل لتقليل الحركة.', 'Each motion pattern is tied to its film, its chapter and its reason, with a reduced-motion alternative.'],
   'sec.factory.h': ['مصنع الهندسة السريعة', 'The rapid engineering factory'],
@@ -2166,6 +2354,49 @@ const I18N = {
   'foot.r2': ['طبقات الصور في لوحة الحركة رسوم توضيحية مولّدة بالذكاء الاصطناعي، لا صور منتجات.', 'The image layers in the motion panel are AI-generated illustrations, not product photographs.'],
   'foot.r3': ['الخطوط: IBM Plex وAlexandria برخصة SIL OFL. لا شعارات لجهات أخرى.', 'Fonts: IBM Plex and Alexandria under the SIL OFL. No third-party logos.'],
   'foot.made': ['صفحة واحدة ثابتة: HTML وCSS وJavaScript، بلا تتبّع.', 'One static page: HTML, CSS and JavaScript, with no tracking.'],
+  /* ---- V600 executive structure ---- */
+  'nav.caps': ['القدرات', 'Capabilities'],
+  'brief.btn': ['إحاطة ٩٠ ثانية', '90-second briefing'],
+  'sec.workflows.k': ['سير العمل', 'Workflows'],
+  'sec.caps.h': ['القدرات', 'Capabilities'],
+  'sec.caps.p': ['ملخص من سطر واحد لكل قدرة. افتح البطاقة لترى التفاصيل وحالتها ودليلها.', 'One line per capability. Open a card for the detail, its state and its evidence.'],
+  'sec.ref.h': ['المرجع', 'Reference'],
+  'cap.skills.k': ['المهارات', 'Skills'],
+  'cap.skills.t': ['فيصل الجهيمي، القائد التقني', 'Faisal Al-Juhaimy, technical lead'],
+  'cap.skills.s': ['الخبرة والمهارات في سيرة مختصرة قابلة للطباعة.', 'Experience and skills in a short printable profile.'],
+  'cap.tools.k': ['الأدوات', 'Tools'],
+  'cap.tools.t': ['مختبر الأدوات', 'The tool lab'],
+  'cap.tools.s': ['الأدوات بحسب استخدامها الفعلي، دون جمع الفئات في رقم واحد.', 'Tools by actual use, never added into one number.'],
+  'cap.projects.k': ['المشاريع', 'Projects'],
+  'cap.projects.t': ['سديد، BILTIX، ومؤشر الأداء', 'SADEED, BILTIX and the KPI'],
+  'cap.projects.s': ['حالتان ونسخة تجريبية، مع حاسبة مؤشر حية.', 'Two cases and a demo build, with a live KPI calculator.'],
+  'cap.integrations.k': ['التكاملات', 'Integrations'],
+  'cap.integrations.t': ['أطلس التكامل', 'The integration atlas'],
+  'cap.integrations.s': ['الطبقات والبروتوكولات والأنظمة التي نربطها، وحالة كل ربط.', 'The layers, protocols and systems we connect, and the state of each link.'],
+  'cap.method.k': ['المنهج', 'Method'],
+  'cap.method.t': ['مصنع الهندسة السريعة', 'The rapid engineering factory'],
+  'cap.method.s': ['المسار والحاسبة؛ هدف تخطيطي من ٢ إلى ٦ أسابيع، وليس ضمانًا.', 'The path and the calculator; a 2–6 week planning target, not a guarantee.'],
+  'cap.quality.k': ['الجودة', 'Quality'],
+  'cap.quality.t': ['الجودة وبوابات الإصدار', 'Quality and release gates'],
+  'cap.quality.s': ['البوابات ونتائج الفحص كما رُصدت؛ ما لم يُقس يبقى غير مقاس.', 'Gates and check results as observed; what was not measured stays not measured.'],
+  'cap.motion.k': ['الحركة', 'Motion'],
+  'cap.motion.t': ['مكتبة الحركة', 'The motion library'],
+  'cap.motion.s': ['كل حركة مرتبطة بفيلمها وفصلها، ومعها بديل لتقليل الحركة.', 'Each pattern tied to its film and chapter, with a reduced-motion alternative.'],
+  'cap.evidence.k': ['الأدلة', 'Evidence'],
+  'cap.evidence.t': ['سجل الأدلة', 'The evidence ledger'],
+  'cap.evidence.s': ['كل ادعاء مع ما يثبته وحدوده ومصدره وتاريخه.', 'Every claim with what it proves, its limit, its source and its date.'],
+  'cap.contact.k': ['ابدأ', 'Start'],
+  'cap.contact.t': ['ابدأ مشروعًا واحدًا محدد النطاق', 'Start one scoped project'],
+  'cap.contact.s': ['أربع خطوات وما تحتاج إلى إحضاره. لا تفاصيل اتصال عامة.', 'Four steps and what to bring. No public contact details.'],
+  'f6.label': ['سير العمل في ست خطوات', 'The workflow in six steps'],
+  'f6.problem': ['المشكلة', 'Problem'],
+  'f6.inputs': ['المدخلات', 'Inputs'],
+  'f6.ai': ['الذكاء الاصطناعي', 'AI'],
+  'f6.process': ['المعالجة', 'Processing'],
+  'f6.decision': ['القرار', 'Decision'],
+  'f6.evidence': ['الدليل', 'Evidence'],
+  'f6.nSteps': ['{n} خطوات', '{n} steps'],
+  'f6.expectedTag': ['نتيجة متوقعة، لا إنجاز', 'Expected, not an achievement'],
 };
 
 /* Source text quoted verbatim in the ledger (Latin, left to right). */
@@ -5551,6 +5782,451 @@ const LEDGER = [
 })();
 
 </script>
+<script data-module="capabilities">
+/* V600 executive structure (cinema track).
+   1. Workflow line: every hypothesis row from modules/hypotheses gets a six-step line
+      Problem -> Inputs -> AI -> Processing -> Decision -> Evidence, built only from data/hypotheses.json and the
+      film data in data/sequence.json (the AI step is the film's own "method" line, so it matches the chapter the
+      row's watch button opens). The module keeps rendering its rows; this only adds the line beneath each head.
+   2. Capability cards: compact cards (skills, tools, projects, integrations, method, quality, motion, plus the
+      evidence ledger and contact) that open in place. A card's module mounts the first time it opens. */
+(window.StudioModules = window.StudioModules || {}).capabilities = {
+  init: function (api) {
+    'use strict';
+    var $ = function (id) { return document.getElementById(id); };
+    var P = api.P, T = api.T, el = api.el, num = api.num;
+    var reduced = api.reducedMotion;
+
+    /* ---------------- six-step workflow line ---------------- */
+    var HYP = (api.data.hypotheses && api.data.hypotheses.hypotheses) || [];
+    var TOPICS = (api.data.sequence && api.data.sequence.topics) || [];
+    var STEPS = ['problem', 'inputs', 'ai', 'process', 'decision', 'evidence'];
+    var DEC_RE = /approv|confirm|review|decid|accept|sign/i;
+    function firstSentence(s) { var m = String(s || '').match(/^.*?[.؛;](\s|$)/); return (m ? m[0] : String(s || '')).trim(); }
+    function flowFor(h) {
+      var t = TOPICS[(h.topic && h.topic.film || 0) - 1] || {};
+      var steps = h.steps || [], inputs = h.inputs || [];
+      var dec = null;
+      for (var i = steps.length - 1; i >= 0; i--) if (DEC_RE.test(steps[i][1] || '')) { dec = steps[i]; break; }
+      var more = inputs.length > 2 ? ' +' + num(inputs.length - 2) : '';
+      return {
+        problem: P(h.problem),
+        inputs: inputs.slice(0, 2).map(P).join(' · ') + more,
+        ai: (t.script && t.script.method) ? P(t.script.method) : P(h.statement && h.statement.then),
+        aiTag: t.tool ? P(t.tool) : '',
+        process: steps.length ? P(steps[0]) + (steps.length > 1 ? ' … ' + P(steps[steps.length - 1]) : '') : '',
+        processTag: steps.length ? T('f6.nSteps', { n: num(steps.length) }) : '',
+        decision: dec ? P(dec) : P(h.expected),
+        decisionTag: dec ? '' : T('f6.expectedTag'),
+        evidence: firstSentence(P(h.evidence && h.evidence.text)),
+        state: h.state,
+      };
+    }
+    function buildLine(h) {
+      var f = flowFor(h);
+      var ol = el('ol', { class: 'f6', 'aria-label': T('f6.label') });
+      STEPS.forEach(function (k, i) {
+        var tag = f[k + 'Tag'];
+        ol.append(el('li', { class: 'f6-step f6-' + k },
+          el('span', { class: 'f6-n', 'aria-hidden': 'true' }, num(String(i + 1))),
+          el('span', { class: 'f6-k' }, T('f6.' + k)),
+          k === 'evidence' ? el('span', { class: 'f6-st' }, api.chip(f.state)) : null,
+          el('span', { class: 'f6-t' }, f[k]),
+          tag ? el('span', { class: 'f6-tag' }, tag) : null));
+      });
+      return ol;
+    }
+    function decorate() {
+      var root = $('m-hypotheses'); if (!root) return;
+      HYP.forEach(function (h) {
+        var row = document.getElementById(h.id); if (!row || !root.contains(row)) return;
+        var have = row.querySelector(':scope > .f6');
+        if (have && have.getAttribute('data-lang') === api.lang()) return;
+        if (have) have.remove();
+        var line = buildLine(h); line.setAttribute('data-lang', api.lang());
+        var head = row.querySelector('.m-hyp-head');
+        if (head && head.nextSibling) row.insertBefore(line, head.nextSibling); else row.append(line);
+      });
+      var key = $('f6Key');
+      if (key && key.getAttribute('data-lang') !== api.lang()) {
+        while (key.firstChild) key.removeChild(key.firstChild);
+        STEPS.forEach(function (k) { key.append(el('li', null, T('f6.' + k))); });
+        key.setAttribute('data-lang', api.lang());
+      }
+    }
+    decorate();
+    var hr = $('m-hypotheses');
+    if (hr && 'MutationObserver' in window) {
+      var queued = false;
+      new MutationObserver(function () {
+        if (queued) return; queued = true;
+        Promise.resolve().then(function () { queued = false; decorate(); });
+      }).observe(hr, { childList: true, subtree: true });
+    }
+    api.onLang(function () { decorate(); });
+
+    /* ---------------- capability cards ---------------- */
+    var cards = Array.prototype.slice.call(document.querySelectorAll('.cap[data-cap]'));
+    function byId(id) { for (var i = 0; i < cards.length; i++) if (cards[i].getAttribute('data-cap') === id) return cards[i]; return null; }
+    function setOpen(card, open, opts) {
+      opts = opts || {};
+      var btn = card.querySelector('.cap-toggle'), body = card.querySelector('.cap-body');
+      if (!btn || !body) return;
+      if (open) {
+        body.hidden = false;
+        card.setAttribute('data-open', 'true'); btn.setAttribute('aria-expanded', 'true');
+        var mod = card.getAttribute('data-mod');
+        if (mod && !card.hasAttribute('data-mounted')) {
+          card.setAttribute('data-mounted', api.mountModule(mod) ? 'ok' : 'none');
+        }
+        if (opts.scroll) card.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+      } else {
+        body.hidden = true;
+        card.setAttribute('data-open', 'false'); btn.setAttribute('aria-expanded', 'false');
+        /* a closing card must not leave a preview playing inside it */
+        Array.prototype.forEach.call(body.querySelectorAll('video, audio'), function (m) { try { m.pause(); } catch (e) { /* ignore */ } });
+        if (opts.focus !== false && body.contains(document.activeElement)) btn.focus({ preventScroll: true });
+      }
+    }
+    cards.forEach(function (card) {
+      card.setAttribute('data-open', 'false');
+      var btn = card.querySelector('.cap-toggle');
+      if (btn) btn.addEventListener('click', function () {
+        var open = card.getAttribute('data-open') === 'true';
+        setOpen(card, !open, {});
+        /* keep the header of a card the reader just opened in view */
+        if (!open) { var r = card.getBoundingClientRect(); if (r.top < 56 || r.top > (window.innerHeight || 800) * 0.7) card.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' }); }
+      });
+    });
+    return {
+      open: function (id, opts) { var c = byId(id); if (c) setOpen(c, true, opts); return !!c; },
+      close: function (id) { var c = byId(id); if (c) setOpen(c, false, {}); return !!c; },
+      isOpen: function (id) { var c = byId(id); return !!c && c.getAttribute('data-open') === 'true'; },
+      decorate: decorate,
+    };
+  },
+};
+
+</script>
+<script data-module="briefing">
+/* V600 Executive Briefing (cinema track).
+   A fixed sequence of chapters from the existing films, played on the page's single <video> (one media source):
+   hook of 01, method + result of 02, result of 05, result of 08, result of 09, closing of 10.
+   Segment times come only from data/sequence.json. A short title card before each segment names the topic, the
+   chapter and the proof with its state; card length is computed so the whole briefing lands near 90 seconds.
+   Fullscreen through requestFullscreen when allowed, otherwise a fixed full-viewport layer. Esc exits. */
+(window.StudioModules = window.StudioModules || {}).briefing = {
+  init: function (api, host) {
+    'use strict';
+    var $ = function (id) { return document.getElementById(id); };
+    var P = api.P, el = api.el, num = api.num;
+    var TOPICS = host.topics || [];
+    var v = host.video;
+    var S = {
+      title: ['الإحاطة التنفيذية', 'Executive briefing'],
+      sub: ['ستة مقاطع من الأفلام العشرة', 'Six passages from the ten films'],
+      prev: ['المقطع السابق', 'Previous passage'], next: ['المقطع التالي', 'Next passage'],
+      play: ['تشغيل', 'Play'], pause: ['إيقاف مؤقت', 'Pause'],
+      soundOn: ['الصوت يعمل', 'Sound on'], soundOff: ['الصوت مكتوم', 'Sound off'],
+      cc: ['الترجمة النصية', 'Captions'], exit: ['خروج', 'Exit'], exitKey: ['Esc', 'Esc'],
+      filmLang: ['لغة الأفلام', 'Film language'],
+      of: ['المقطع {a} من {b}', 'Passage {a} of {b}'],
+      progress: ['تقدم الإحاطة', 'Briefing progress'],
+      endH: ['انتهت الإحاطة', 'Briefing complete'],
+      endP: ['الأفلام كاملة وسير العمل والأدلة في الصفحة.', 'The full films, the workflows and the evidence are on the page.'],
+      endFilms: ['شاهد الأفلام كاملة', 'Watch the full films'], endFlows: ['سير العمل والفرضيات', 'Workflows and hypotheses'], again: ['أعد الإحاطة', 'Replay the briefing'],
+      missing: ['هذا المقطع غير متاح الآن، ننتقل إلى التالي.', 'This passage is not available now; moving to the next one.'],
+      fsNo: ['ملء الشاشة غير متاح هنا؛ تُعرض الإحاطة على كامل النافذة.', 'Fullscreen is not available here; the briefing fills the window instead.'],
+      keys: ['مسافة: تشغيل/إيقاف · الأسهم: السابق/التالي · M: الصوت · Esc: خروج', 'Space: play/pause · Arrows: previous/next · M: sound · Esc: exit'],
+      approx: ['نحو {t}', 'About {t}'],
+    };
+    function L(k, vars) { var s = P(S[k]); if (vars) Object.keys(vars).forEach(function (x) { s = s.split('{' + x + '}').join(String(vars[x])); }); return s; }
+    function pad2(n) { return String(n).padStart(2, '0'); }
+    function fmt(t) { t = Math.max(0, Math.round(t || 0)); return num(pad2(Math.floor(t / 60)) + ':' + pad2(t % 60)); }
+
+    /* ---- the fixed plan, measured from the generated chapter times ---- */
+    var PLAN = [{ film: 1, ch: ['hook'] }, { film: 2, ch: ['method', 'result'] }, { film: 5, ch: ['result'] },
+      { film: 8, ch: ['result'] }, { film: 9, ch: ['result'] }, { film: 10, ch: ['closing'] }];
+    var TARGET = 90;
+    function range(seg, l) {
+      var t = TOPICS[seg.film - 1], f = t && t.films && t.films[l];
+      if (!f || !f.chapters) return null;
+      var cs = f.chapters.filter(function (c) { return seg.ch.indexOf(c.id) >= 0; });
+      if (!cs.length) return null;
+      return { key: f.key || (l + '-' + pad2(seg.film)), start: Math.min.apply(null, cs.map(function (c) { return c.start; })), end: Math.max.apply(null, cs.map(function (c) { return c.end; })), ok: f.media !== 'missing' && !!f.src };
+    }
+    function plan(l) {
+      var film = 0;
+      PLAN.forEach(function (s) { var r = range(s, l); if (r) film += r.end - r.start; });
+      var card = Math.round(Math.min(8, Math.max(3, (TARGET - film) / PLAN.length)) * 2) / 2;
+      var steps = [];
+      PLAN.forEach(function (s, i) {
+        var r = range(s, l);
+        steps.push({ kind: 'card', seg: i, dur: card });
+        steps.push({ kind: 'film', seg: i, dur: r ? r.end - r.start : 0, r: r });
+      });
+      return { steps: steps, card: card, film: film, total: steps.reduce(function (a, s) { return a + s.dur; }, 0) };
+    }
+
+    /* ---- the layer ---- */
+    var B = { on: false, lang: 'ar', plan: null, i: 0, paused: false, cardLeft: 0, tick: null, last: 0, fs: false, slot: null, done: false, ret: null };
+    function ib(id, label, d) {
+      return el('button', { type: 'button', class: 'bf-ib', id: id, 'aria-label': label },
+        (function () { var ns = 'http://www.w3.org/2000/svg', s = document.createElementNS(ns, 'svg'), p = document.createElementNS(ns, 'path'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true'); s.setAttribute('class', 'ic'); p.setAttribute('d', d); p.setAttribute('fill', 'currentColor'); s.appendChild(p); return s; })());
+    }
+    var layer = el('div', { class: 'bf', id: 'brief', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'bfTitle', hidden: true });
+    var stage = el('div', { class: 'bf-stage', id: 'bfStage' });
+    var card = el('div', { class: 'bf-card', id: 'bfCard', hidden: true });
+    var lower = el('div', { class: 'bf-lower', id: 'bfLower', hidden: true });
+    var end = el('div', { class: 'bf-end', id: 'bfEnd', hidden: true });
+    var bar = el('div', { class: 'bf-bar', id: 'bfBar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100' }, el('i', { id: 'bfFill' }), el('span', { class: 'bf-ticks', id: 'bfTicks', 'aria-hidden': 'true' }));
+    var top = el('div', { class: 'bf-top' },
+      el('div', { class: 'bf-id' }, el('h2', { id: 'bfTitle' }), el('p', { id: 'bfSub' })),
+      el('button', { type: 'button', class: 'bf-exit', id: 'bfExit' }, el('span', { id: 'bfExitT' }), el('kbd', null, 'Esc')));
+    var ctl = el('div', { class: 'bf-ctl' },
+      el('div', { class: 'bf-row' },
+        ib('bfPrev', '', 'M7 5h2v14H7zM19 6v12l-9-6z'),
+        ib('bfPlay', '', 'M8 5v14l11-7z'),
+        ib('bfNext', '', 'M15 5h2v14h-2zM5 6v12l9-6z'),
+        el('span', { class: 'bf-time mono', id: 'bfTime' })),
+      el('div', { class: 'bf-row bf-row-b' },
+        el('div', { class: 'seg bf-lang', role: 'group', id: 'bfLang' },
+          el('button', { type: 'button', id: 'bfLangAr', lang: 'ar', 'data-l': 'ar' }, 'AR'),
+          el('button', { type: 'button', id: 'bfLangEn', lang: 'en', 'data-l': 'en' }, 'EN')),
+        el('button', { type: 'button', class: 'ctl bf-snd', id: 'bfSound', 'aria-pressed': 'false' }, el('span', { id: 'bfSoundT' })),
+        el('button', { type: 'button', class: 'ctl', id: 'bfCC', 'aria-pressed': 'true' }, el('span', { class: 'mono', 'aria-hidden': 'true' }, 'CC'), el('span', { class: 'sr', id: 'bfCCT' }))));
+    var live = el('p', { class: 'sr', id: 'bfLive', role: 'status', 'aria-live': 'polite' });
+    var keys = el('p', { class: 'bf-keys', id: 'bfKeys' });
+    stage.append(card, lower, end);
+    layer.append(top, stage, bar, ctl, keys, live);
+    document.body.append(layer);
+
+    function paintStatic() {
+      $('bfTitle').textContent = L('title');
+      $('bfSub').textContent = L('sub') + ' · ' + L('approx', { t: fmt((B.plan || plan(B.lang)).total) });
+      $('bfExitT').textContent = L('exit');
+      $('bfPrev').setAttribute('aria-label', L('prev')); $('bfNext').setAttribute('aria-label', L('next'));
+      $('bfLang').setAttribute('aria-label', L('filmLang'));
+      $('bfCCT').textContent = L('cc');
+      bar.setAttribute('aria-label', L('progress'));
+      keys.textContent = L('keys');
+      var btn = $('briefBtn');
+      if (btn) btn.setAttribute('title', L('title') + ' · ' + L('approx', { t: fmt(plan(api.lang()).total) }) + ' (B)');
+    }
+    function paintCtl() {
+      var playing = B.on && !B.paused && !B.done;
+      var pp = $('bfPlay'); pp.setAttribute('aria-label', playing ? L('pause') : L('play'));
+      pp.querySelector('path').setAttribute('d', playing ? 'M7 5h4v14H7zM13 5h4v14h-4z' : 'M8 5v14l11-7z');
+      var m = host.muted();
+      $('bfSound').setAttribute('aria-pressed', String(!m)); $('bfSoundT').textContent = m ? L('soundOff') : L('soundOn');
+      $('bfCC').setAttribute('aria-pressed', String(host.cc()));
+      $('bfLangAr').setAttribute('aria-pressed', String(B.lang === 'ar')); $('bfLangEn').setAttribute('aria-pressed', String(B.lang === 'en'));
+      var segI = B.plan ? B.plan.steps[Math.min(B.i, B.plan.steps.length - 1)].seg : 0;
+      $('bfPrev').disabled = B.done ? false : segI <= 0;
+      $('bfNext').disabled = B.done;
+    }
+    function ticks() {
+      var tk = $('bfTicks'); while (tk.firstChild) tk.removeChild(tk.firstChild);
+      var acc = 0;
+      B.plan.steps.forEach(function (s, i) { if (s.kind === 'card' && i > 0) tk.append(el('i', { style: 'inset-inline-start:' + (acc / B.plan.total * 100).toFixed(2) + '%' })); acc += s.dur; });
+    }
+    function elapsed() {
+      if (!B.plan) return 0;
+      if (B.done) return B.plan.total;
+      var acc = 0;
+      for (var k = 0; k < B.i && k < B.plan.steps.length; k++) acc += B.plan.steps[k].dur;
+      var s = B.plan.steps[B.i];
+      if (s) acc += s.kind === 'card' ? (s.dur - B.cardLeft) : (s.r ? Math.max(0, Math.min(s.dur, v.currentTime - s.r.start)) : 0);
+      return acc;
+    }
+    function paintBar() {
+      var pct = B.plan ? Math.min(100, elapsed() / B.plan.total * 100) : 0;
+      $('bfFill').style.transform = 'scaleX(' + (pct / 100).toFixed(4) + ')';
+      bar.setAttribute('aria-valuenow', String(Math.round(pct)));
+      bar.setAttribute('aria-valuetext', fmt(elapsed()) + ' / ' + fmt(B.plan ? B.plan.total : 0));
+      $('bfTime').textContent = fmt(elapsed()) + ' / ' + fmt(B.plan ? B.plan.total : 0);
+    }
+    function topicLine(seg) {
+      var t = TOPICS[PLAN[seg].film - 1] || {};
+      var chs = PLAN[seg].ch.map(function (c) { return t.labels && t.labels[c] ? P(t.labels[c]) : c; }).join(' + ');
+      return { t: t, n: num(pad2(PLAN[seg].film)), title: P(t.title), ch: chs };
+    }
+    function showCard(seg) {
+      var x = topicLine(seg), t = x.t;
+      while (card.firstChild) card.removeChild(card.firstChild);
+      card.append(
+        el('p', { class: 'bf-of' }, L('of', { a: num(seg + 1), b: num(PLAN.length) })),
+        el('p', { class: 'bf-num', 'aria-hidden': 'true' }, x.n),
+        el('h3', { class: 'bf-ttl' }, x.title),
+        el('p', { class: 'bf-ch' }, x.ch),
+        t.proof ? el('p', { class: 'bf-proof' }, el('span', { class: 'caret', 'aria-hidden': 'true' }), el('span', null, P(t.proof)), ' ', api.chip(t.proofState || (t.state && t.state.key) || 'proposed')) : null);
+      card.hidden = false; lower.hidden = true;
+      live.textContent = L('of', { a: num(seg + 1), b: num(PLAN.length) }) + ' · ' + x.title + ' · ' + x.ch;
+    }
+    function showLower(seg, text) {
+      var x = topicLine(seg);
+      while (lower.firstChild) lower.removeChild(lower.firstChild);
+      lower.append(el('span', { class: 'bf-ln' }, x.n), el('span', null, text || (x.title + ' · ' + x.ch)));
+      lower.hidden = false; card.hidden = true;
+    }
+
+    function stopTick() { if (B.tick) { clearInterval(B.tick); B.tick = null; } }
+    function startTick() {
+      stopTick(); B.last = Date.now();
+      B.tick = setInterval(function () {
+        var now = Date.now(), dt = (now - B.last) / 1000; B.last = now;
+        var s = B.plan && B.plan.steps[B.i]; if (!s || B.done) return;
+        if (s.kind === 'card') {
+          if (!B.paused) { B.cardLeft = Math.max(0, B.cardLeft - dt); if (B.cardLeft <= 0) { step(B.i + 1); return; } }
+        } else if (s.r && !B.loading) {
+          if (host.missing() && !B.missAt) { B.missAt = now; showLower(s.seg, L('missing')); }
+          if (B.missAt && now - B.missAt > 2200) { B.missAt = 0; step(B.i + 1); return; }
+          if (!B.paused && !host.missing() && (v.currentTime >= s.r.end - 0.08 || v.ended)) { step(B.i + 1); return; }
+        }
+        paintBar();
+      }, 100);
+    }
+    function load(r, play) {
+      if (!r || !r.ok) return Promise.resolve(false);
+      B.loading = true;
+      return host.load(r.key, r.start, play).then(function (ok) { B.loading = false; return ok; }, function () { B.loading = false; return false; });
+    }
+    function step(i) {
+      if (!B.on) return;
+      B.missAt = 0;
+      if (i >= B.plan.steps.length) { finish(); return; }
+      if (i < 0) i = 0;
+      B.i = i; B.done = false; end.hidden = true;
+      var s = B.plan.steps[i];
+      if (s.kind === 'card') {
+        host.pause();
+        B.cardLeft = s.dur;
+        showCard(s.seg);
+        var nx = B.plan.steps[i + 1];
+        if (nx && nx.r) load(nx.r, false);   /* seek the next passage while its title card is up */
+      } else {
+        showLower(s.seg);
+        if (!s.r || !s.r.ok) { B.missAt = Date.now(); showLower(s.seg, L('missing')); }
+        else if (v.getAttribute('src') === 'media/' + s.r.key + '.mp4' && Math.abs(v.currentTime - s.r.start) < 0.3 && !B.loading) { if (!B.paused) host.play(); }
+        else load(s.r, !B.paused);
+      }
+      paintCtl(); paintBar();
+    }
+    function segStep(seg) { return seg * 2; }
+    function curSeg() { var s = B.plan.steps[Math.min(B.i, B.plan.steps.length - 1)]; return s ? s.seg : 0; }
+    function finish() {
+      host.pause(); B.done = true; B.i = B.plan.steps.length;
+      card.hidden = true; lower.hidden = true;
+      while (end.firstChild) end.removeChild(end.firstChild);
+      end.append(el('h3', null, L('endH')), el('p', null, L('endP')),
+        el('div', { class: 'bf-end-acts' },
+          el('button', { type: 'button', class: 'btn btn-primary', id: 'bfEndFilms', onclick: function () { close('cinema'); } }, L('endFilms')),
+          el('button', { type: 'button', class: 'btn', id: 'bfEndFlows', onclick: function () { close('hypotheses'); } }, L('endFlows')),
+          el('button', { type: 'button', class: 'btn', id: 'bfAgain', onclick: function () { B.paused = false; step(0); } }, L('again'))));
+      end.hidden = false; live.textContent = L('endH');
+      paintCtl(); paintBar();
+      try { $('bfEndFilms').focus({ preventScroll: true }); } catch (e) { /* ignore */ }
+    }
+    function setPaused(p) {
+      if (B.done) return;
+      B.paused = p;
+      var s = B.plan.steps[B.i];
+      if (s && s.kind === 'film') { if (p) host.pause(); else host.play(); }
+      paintCtl();
+    }
+    function setLang(l) {
+      if (l === B.lang || (l !== 'ar' && l !== 'en')) return;
+      var keepI = B.i, keepLeft = B.cardLeft;
+      B.lang = l; B.plan = plan(l); ticks(); paintStatic();
+      if (B.done) { paintCtl(); return; }
+      var s = B.plan.steps[keepI];
+      if (s.kind === 'card') { B.cardLeft = Math.min(keepLeft, s.dur); var nx = B.plan.steps[keepI + 1]; if (nx && nx.r) load(nx.r, false); }
+      else { showLower(s.seg); load(s.r, !B.paused); }   /* same passage, other language, from the passage's chapter start */
+      paintCtl(); paintBar();
+    }
+
+    function open() {
+      if (B.on) return;
+      B.ret = document.activeElement;
+      B.on = true; B.done = false; B.paused = false;
+      B.lang = api.lang(); B.plan = plan(B.lang);
+      host.enter();
+      B.slot = document.createComment('cinFrame');
+      host.frame.parentNode.insertBefore(B.slot, host.frame);
+      stage.insertBefore(host.frame, stage.firstChild);
+      layer.hidden = false; document.documentElement.classList.add('bf-open');
+      paintStatic(); ticks();
+      host.setMuted(false); host.setCC(host.cc());
+      B.fs = false;
+      var req = layer.requestFullscreen || layer.webkitRequestFullscreen;
+      if (req) {
+        try {
+          var pr = req.call(layer);
+          if (pr && pr.then) pr.then(function () { B.fs = true; }, function () { live.textContent = L('fsNo'); });
+          else B.fs = true;
+        } catch (e) { live.textContent = L('fsNo'); }
+      } else live.textContent = L('fsNo');
+      startTick(); step(0);
+      try { $('bfPlay').focus({ preventScroll: true }); } catch (e) { /* ignore */ }
+    }
+    function close(goTo) {
+      if (!B.on) return;
+      B.on = false; stopTick(); host.pause();
+      var fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+      if (fsEl) { try { (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch (e) { /* ignore */ } }
+      B.fs = false;
+      if (B.slot && B.slot.parentNode) { B.slot.parentNode.insertBefore(host.frame, B.slot); B.slot.remove(); }
+      B.slot = null;
+      layer.hidden = true; document.documentElement.classList.remove('bf-open');
+      card.hidden = true; lower.hidden = true; end.hidden = true;
+      var p = host.leave();
+      var back = goTo ? null : (B.ret && document.contains(B.ret) ? B.ret : $('briefBtn'));
+      if (goTo) { if (p && p.then) p.then(function () { api.go(goTo); }); else api.go(goTo); }
+      else if (back) { try { back.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
+    }
+
+    $('bfExit').addEventListener('click', function () { close(); });
+    $('bfPlay').addEventListener('click', function () { if (B.done) { B.paused = false; step(0); } else setPaused(!B.paused); });
+    $('bfNext').addEventListener('click', function () { if (!B.done) step(segStep(curSeg() + 1)); });
+    $('bfPrev').addEventListener('click', function () { if (B.done) step(segStep(PLAN.length - 1)); else step(segStep(Math.max(0, curSeg() - 1))); });
+    $('bfLangAr').addEventListener('click', function () { setLang('ar'); });
+    $('bfLangEn').addEventListener('click', function () { setLang('en'); });
+    $('bfSound').addEventListener('click', function () { host.setMuted(!host.muted()); paintCtl(); });
+    $('bfCC').addEventListener('click', function () { host.setCC(!host.cc()); paintCtl(); });
+    layer.addEventListener('keydown', function (e) {
+      if (!B.on || e.ctrlKey || e.metaKey || e.altKey) return;
+      var rtl = document.documentElement.dir === 'rtl';
+      if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+      if (e.key === ' ' || e.key === 'k' || e.key === 'K') { if (e.target && e.target.tagName === 'BUTTON' && e.key === ' ') return; e.preventDefault(); $('bfPlay').click(); return; }
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); ((e.key === 'ArrowRight') !== rtl ? $('bfNext') : $('bfPrev')).click(); return; }
+      if (e.key === 'm' || e.key === 'M') { e.preventDefault(); $('bfSound').click(); return; }
+      if (e.key === 'c' || e.key === 'C') { e.preventDefault(); $('bfCC').click(); return; }
+      if (e.key === 'Tab') {   /* keep focus inside the dialog */
+        var f = Array.prototype.filter.call(layer.querySelectorAll('button:not([disabled]), [href]'), function (n) { return n.offsetParent !== null || n === document.activeElement; });
+        if (!f.length) return;
+        var first = f[0], last = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    });
+    /* Esc while fullscreen is consumed by the browser: leaving fullscreen ends the briefing too */
+    ['fullscreenchange', 'webkitfullscreenchange'].forEach(function (ev) {
+      document.addEventListener(ev, function () { if (B.on && B.fs && !(document.fullscreenElement || document.webkitFullscreenElement)) close(); });
+    });
+    document.addEventListener('visibilitychange', function () { if (B.on && document.hidden && !B.paused) setPaused(true); });
+    api.onLang(function () { paintStatic(); if (B.on && !B.done) { var s = B.plan.steps[B.i]; if (s) { if (s.kind === 'card') showCard(s.seg); else showLower(s.seg); } } if (B.done && B.on) finish(); });
+    var btn = $('briefBtn'); if (btn) btn.addEventListener('click', function () { open(); });
+    paintStatic(); paintCtl();
+
+    return {
+      open: open, close: function () { close(); }, toggle: function () { if (B.on) close(); else open(); },
+      state: function () { var s = B.plan && B.plan.steps[B.i]; return { on: B.on, lang: B.lang, i: B.i, seg: s ? s.seg : null, kind: s ? s.kind : (B.done ? 'end' : null), done: B.done, paused: B.paused, total: B.plan ? B.plan.total : plan(api.lang()).total, card: B.plan ? B.plan.card : null, film: B.plan ? B.plan.film : null, elapsed: elapsed(), fs: B.fs, key: s && s.r ? s.r.key : null, range: s && s.r ? [s.r.start, s.r.end] : null }; },
+      plan: function (l) { return plan(l || api.lang()); },
+    };
+  },
+};
+
+</script>
 <script>/* Edition 4 page shell (V8.1, cinema first).
    One <video> plays a data-driven playlist: 01-ar, 01-en, bridge, 02-ar … 10-en, then an end state (no loop).
    Interface language and film language are separate. Deep links seek to semantic chapters and return to the
@@ -5620,6 +6296,7 @@ const LEDGER = [
   function filmHashActive() { return /(^|[#&])film=/.test(location.hash || ''); }
   function go(id) {
     var target = $(id); if (!target) return;
+    reveal(target);
     target.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
     if (!filmHashActive()) { try { history.replaceState(history.state, '', '#' + id); } catch (e) { /* convenience */ } }
     var f = target.querySelector('h2, h1') || target;
@@ -5674,7 +6351,7 @@ const LEDGER = [
     started: false, autoTried: false, blocked: false, userPaused: false, held: null, expectPause: false,
     pendingTime: null, wantPlay: false, rev: 0, onReady: null, seekTimer: null,
     bridgeLeft: 0, bridgeTotal: 0, bridgeHold: false, bridgeTimer: null, ptrAt: 0,
-    from: null, inView: false, played: {}, warmed: {}, noticeText: '',
+    from: null, inView: false, played: {}, warmed: {}, noticeText: '', brief: null,
   };
 
   function topicOf(n) { return TOPICS[n - 1] || null; }
@@ -5808,6 +6485,7 @@ const LEDGER = [
   v.addEventListener('timeupdate', function () { paintProgress(); warmNext(); });
 
   function onEnded() {
+    if (C.brief) return;   /* the executive briefing drives its own sequence on the same element */
     var it = current(); if (!it || it.kind !== 'film' || C.mode !== 'film') return;
     C.played[it.key] = true;
     var next = C.idx + 1;
@@ -5822,6 +6500,7 @@ const LEDGER = [
     return i < ITEMS.length ? i : -1;
   }
   function warmNext() {
+    if (C.brief) return;
     if (!(v.duration > 0) || v.currentTime / v.duration < 0.8) return;
     for (var i = C.idx + 1; i < ITEMS.length; i++) {
       if (ITEMS[i].kind !== 'film') continue;
@@ -6048,6 +6727,7 @@ const LEDGER = [
       entries.forEach(function (e) {
         var was = C.inView;
         C.inView = e.isIntersecting && e.intersectionRatio >= 0.5;
+        if (C.brief) return;
         if (!C.inView && was) hold('view'); else if (C.inView) maybeAutostart();
       });
     }, { threshold: [0, 0.5, 1] }).observe($('cinFrame'));
@@ -6287,6 +6967,7 @@ const LEDGER = [
   }
   function openEvidence(ids) {
     hold('evidence');
+    reveal($('evidence'));
     L.filter = 'all';
     ids.forEach(function (id) { L.open[id] = true; });
     renderLedger();
@@ -6334,7 +7015,7 @@ const LEDGER = [
     if (r.film) acts.append(el('button', { class: 'btn', type: 'button', id: 'lw-' + r.id,
       onclick: function () { playFilm({ film: r.film, lang: lang, chapter: 'result', from: 'lw-' + r.id }); } },
       svgIcon(ICON.play), T('ledger.watch', { n: num(pad2(r.film)) })));
-    if (r.go === 'kpi') acts.append(el('button', { class: 'btn', type: 'button', onclick: function () { var k = $('m-cases-kpi'); if (k) { k.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' }); var i = $('kpiActual'); if (i) i.focus({ preventScroll: true }); } } }, T('ledger.tryCalc'), svgIcon(ICON.next, 'flip')));
+    if (r.go === 'kpi') acts.append(el('button', { class: 'btn', type: 'button', onclick: function () { reveal($('m-cases')); var k = $('m-cases-kpi'); if (k) { k.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' }); var i = $('kpiActual'); if (i) i.focus({ preventScroll: true }); } } }, T('ledger.tryCalc'), svgIcon(ICON.next, 'flip')));
     if (r.go === 'factory') acts.append(el('button', { class: 'btn', type: 'button', onclick: function () { go('factory'); } }, T('ledger.openFactory'), svgIcon(ICON.next, 'flip')));
     var side = el('div', { class: 'ev-side' }, r.text ? el('pre', { class: 'src', tabindex: '0', 'aria-label': P(r.source) }, r.text) : null, acts.childNodes.length ? acts : null);
     return el('div', { class: 'row-body', id: 'body-' + r.id }, dl, side);
@@ -6440,6 +7121,7 @@ const LEDGER = [
      MODULES
      ===================================================================== */
   var MODS = ['hypotheses', 'motion', 'factory', 'atlas', 'lab', 'cases', 'quality', 'profile'];
+  var mounted = {};
   var api = {
     lang: function () { return lang; }, P: P, num: num, el: el, chip: chip, go: go, T: T,
     playFilm: function (o) { return playFilm(o); },
@@ -6448,26 +7130,77 @@ const LEDGER = [
     onLang: function (fn) { if (typeof fn === 'function') langFns.push(fn); },
     reducedMotion: reduced,
     saveFile: saveFile,
+    mountModule: function (n) { return mountOne(n); },
     data: { catalog: DATA.catalog, atlas: DATA.atlas, metrics: DATA.metrics, profile: DATA.profile, quality: DATA.quality || null, sequence: SEQ, hypotheses: DATA.hypotheses || null, motion: DATA.motion || null },
   };
   function stripToHead(rootEl) {
     Array.prototype.slice.call(rootEl.children).forEach(function (c) { if (!c.classList.contains('band-head') && c.id !== 'm-cases-kpi') c.remove(); });
   }
-  function mountModules() {
-    var reg = window.StudioModules || {};
-    MODS.forEach(function (name) {
-      var r = $('m-' + name), mod = reg[name];
-      if (!r || !mod || typeof mod.mount !== 'function') return;
-      try { mod.mount(r, api); }
-      catch (e) { stripToHead(r); if (window.console) console.error('module ' + name + ' failed to mount:', e); }
-    });
-    /* the KPI sits after the cases module's own content unless the module placed #m-cases-kpi itself */
-    var kpi = $('m-cases-kpi'), mc = $('m-cases');
-    if (kpi && mc && kpi.parentNode === mc && kpi.previousElementSibling && kpi.previousElementSibling.classList.contains('band-head') && kpi.nextElementSibling) mc.append(kpi);
-    buildKpi();
-    var h = (location.hash || '').slice(1);
-    if (h && !parseHash(location.hash) && FROM_RE.test(h) && $(h)) $(h).scrollIntoView({ block: 'start', behavior: 'instant' });
+  /* V600: only the workflows mount at load; every capability module mounts the first time its card opens */
+  function mountOne(name) {
+    if (mounted[name]) return true;
+    var r = $('m-' + name), mod = (window.StudioModules || {})[name];
+    if (!r || !mod || typeof mod.mount !== 'function') return false;
+    mounted[name] = true;
+    try { mod.mount(r, api); }
+    catch (e) { stripToHead(r); if (window.console) console.error('module ' + name + ' failed to mount:', e); }
+    if (name === 'cases') {
+      var kpi = $('m-cases-kpi'), mc = $('m-cases');
+      if (kpi && mc && kpi.parentNode === mc && kpi.previousElementSibling && kpi.previousElementSibling.classList.contains('band-head') && kpi.nextElementSibling) mc.append(kpi);
+      buildKpi();
+    }
+    return true;
   }
+  /* open the capability card (or the reference card) that holds a node, mounting its module */
+  function reveal(node) {
+    var card = node && node.closest ? node.closest('.cap') : null;
+    if (card && caps && card.getAttribute('data-open') !== 'true') caps.open(card.getAttribute('data-cap'), { focus: false });
+  }
+  var caps = null, briefing = null;
+  function mountModules() {
+    mountOne('hypotheses');
+    var reg = window.StudioModules || {};
+    if (reg.capabilities && reg.capabilities.init) { try { caps = reg.capabilities.init(api); } catch (e) { if (window.console) console.error('capabilities failed:', e); } }
+    if (reg.briefing && reg.briefing.init) { try { briefing = reg.briefing.init(api, briefHost); } catch (e) { if (window.console) console.error('briefing failed:', e); } }
+    window.StudioBriefing = briefing; window.StudioCaps = caps;
+    var h = (location.hash || '').slice(1);
+    if (h && !parseHash(location.hash) && FROM_RE.test(h) && $(h)) { reveal($(h)); $(h).scrollIntoView({ block: 'start', behavior: 'instant' }); }
+  }
+
+  /* ---- host for the executive briefing: the same single <video>, driven segment by segment ---- */
+  var briefHost = {
+    video: v, frame: $('cinFrame'), topics: TOPICS, captions: CAP,
+    enter: function () {
+      var it = current();
+      var saved = { idx: C.idx, time: v.currentTime || 0, auto: C.auto };
+      pauseClaimed(); sysPause(); stopBridgeTimer();
+      C.brief = saved; C.held = null; C.userPaused = false; C.nextUp = false;
+      root.classList.add('is-briefing');
+      return true;
+    },
+    leave: function () {
+      var saved = C.brief; if (!saved) return;
+      sysPause();
+      C.brief = null; root.classList.remove('is-briefing');
+      var i = saved.idx >= 0 && saved.idx < ITEMS.length ? saved.idx : 0;
+      return loadItem(i, ITEMS[i].kind === 'film' ? { time: saved.time } : { manual: true }).then(function () {
+        if (C.mode === 'film') { C.userPaused = true; C.started = true; }
+        paint();
+        if (!frameInView()) hold('view');
+      });
+    },
+    load: function (key, time, play) {
+      var i = idxOfKey(key); if (i < 0) return Promise.resolve(false);
+      return loadItem(i, { time: time, play: play !== false });
+    },
+    pause: function () { sysPause(); },
+    play: function () { C.userPaused = false; C.held = null; playSafe(); },
+    muted: function () { return C.muted; },
+    setMuted: function (m) { C.muted = !!m; v.muted = C.muted; paint(); },
+    cc: function () { return C.cc; },
+    setCC: function (b) { C.cc = !!b; capLast = -2; paint(); paintCaption(); },
+    missing: function () { return C.missing; },
+  };
 
   /* =====================================================================
      LANGUAGE (interface only: the film, its position and its play state are never touched)
@@ -6479,7 +7212,7 @@ const LEDGER = [
     applyStatic(); buildList(); buildChapters(); scriptKey = '';
     renderTakeaway(); renderLedger(); renderLegend(); paint();
     langFns.forEach(function (fn) { try { fn(lang); } catch (e) { if (window.console) console.error(e); } });
-    buildKpi();
+    if (mounted.cases) buildKpi();
   }
   $('langAr').addEventListener('click', function () { setLang('ar'); });
   $('langEn').addEventListener('click', function () { setLang('en'); });
@@ -6490,6 +7223,13 @@ const LEDGER = [
   $('saveProfile').addEventListener('click', function () {
     var name = 'faisal-al-juhaimy-profile-' + lang + '.pdf';
     saveFile('docs/' + name, name).then(function () { $('contactStatus').textContent = T('contact.saved'); });
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+    var t = e.target, tag = t && t.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+    if ((e.key === 'b' || e.key === 'B' || e.code === 'KeyB') && briefing) { e.preventDefault(); briefing.toggle(); }
   });
 
   /* ---------- boot ---------- */
