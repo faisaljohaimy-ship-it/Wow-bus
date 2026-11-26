@@ -1,0 +1,1022 @@
+/* ==========================================================================
+   BILTIX Risk AI — chart chrome (css/charts.css) — v3 tokens
+   SVG chart text, gridlines, axes, legends, the singleton tooltip, crosshair,
+   table twins, radar canvas frames, gauge type, heatmap matrix, sparklines
+   and mark hover states. Series colours come from JS as CSS variables;
+   text is always an ink token, never a series colour.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Chart container & SVG text
+   -------------------------------------------------------------------------- */
+
+.chart {
+  position: relative;
+  inline-size: 100%;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.chart svg {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  overflow: visible;
+  font-family: var(--font-sans);
+}
+.chart svg:focus-visible { outline-offset: 4px; border-radius: 6px; }
+/* charts.js mounts legends (≥2 series) into this host above the svg */
+.chart-legend-host { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-inline-size: 0; }
+.chart-legend-host:empty { display: none; }
+.chart text {
+  fill: var(--ink-2);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* Axis ticks: 11px, tabular figures; category labels stay in the sans face */
+.chart .tick text,
+.chart .axis-tick,
+.chart text.tick,
+.chart .axis text {
+  fill: var(--ink-3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.chart .tick.is-numeric text, .chart .axis-tick.is-numeric, .chart text.num { font-family: var(--font-mono-mixed); }
+.chart .label, .chart text.label, .chart .value-label, .chart .axis-title {
+  fill: var(--ink-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.chart .value-label { font-family: var(--font-mono-mixed); font-weight: 500; }
+.chart .label.is-strong, .chart .value-label.is-strong, .chart text.is-strong { fill: var(--ink-1); font-weight: 600; }
+.chart .label.is-muted, .chart text.is-muted { fill: var(--ink-3); }
+.chart .axis-title { fill: var(--ink-2); font-size: 11px; letter-spacing: 0; }
+.chart .label.is-inside, .chart text.is-inside { fill: var(--ink-on-dark); font-weight: 600; }
+.chart .label.is-inside-light, .chart text.is-inside-light { fill: var(--ink-on-light); font-weight: 600; }
+
+/* Gridlines and axis baselines: hairline solid, never dashed */
+.grid-line, .chart .grid line, .chart line.grid {
+  stroke: var(--line);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.axis-line, .chart .axis path, .chart .domain, .chart line.axis {
+  stroke: var(--line-2);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+  fill: none;
+}
+.chart .tick line { stroke: var(--line-2); stroke-width: 1; shape-rendering: crispEdges; }
+.chart .zero-line { stroke: var(--line-2); stroke-width: 1; }
+.chart .target-line { stroke: var(--ink-3); stroke-width: 1; }
+
+/* Series marks */
+.chart .line, .chart path.series { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.chart .area { opacity: .14; }
+.chart .marker, .chart circle.point { stroke: var(--bg-1); stroke-width: 2; }
+/* Dumbbell (inherent → residual, one axis). charts.dumbbell() sets the series colours inline:
+   g.dumbbell-row[.is-unassessed] > line.dumbbell-link + circle.dumbbell-from (hollow) + circle.marker.dumbbell-to */
+.chart .dumbbell-row { outline: none; }
+.chart .dumbbell-row[role="button"] { cursor: pointer; }
+.chart .dumbbell-link { stroke-linecap: round; transition: stroke-width var(--dur-micro) var(--ease-out); }
+.chart .dumbbell-row:hover .dumbbell-link, .chart .dumbbell-row:focus-visible .dumbbell-link, .chart .dumbbell-row.is-active .dumbbell-link { stroke-width: 5; }
+.chart .dumbbell-from { stroke-width: 2; }
+.chart .dumbbell-to.marker { stroke: var(--bg-1); stroke-width: 2; }
+.chart .dumbbell-row:focus-visible .dumbbell-to, .chart .dumbbell-row:focus-visible .dumbbell-from { stroke: var(--focus); stroke-width: 2.5; }
+/* Not yet assessed: no residual mark; the link and the inherent ring read as provisional */
+.chart .dumbbell-row.is-unassessed .dumbbell-link { stroke-dasharray: 3 4; }
+.chart .dumbbell-row.is-unassessed .dumbbell-from { stroke-dasharray: 3 2; }
+.chart .dumbbell-row.is-unassessed text, .chart .dumbbell-row.is-unassessed .value-label { fill: var(--ink-3); }
+.chart .dumbbell-label { fill: var(--ink-2); font-size: 12px; }
+.chart .dumbbell-value { fill: var(--ink-1); font-family: var(--font-mono-mixed); font-size: 11px; font-variant-numeric: tabular-nums; }
+/* Legend key for the hollow "from" marker */
+.legend-key.is-ring { inline-size: 10px; block-size: 10px; border-radius: 50%; background: transparent; border: 2px solid var(--key, currentColor); }
+.chart .bar, .chart rect.bar { shape-rendering: geometricPrecision; }
+.chart .surface-ring { fill: none; stroke: var(--bg-1); stroke-width: 2; }
+
+/* Hover / focus on any mark (bars, cells, points, segments) */
+.mark {
+  transition: filter var(--dur-1) var(--ease), opacity var(--dur-1) var(--ease);
+  outline: none;
+}
+.mark:hover, .mark:focus-visible { filter: brightness(1.15); }
+.mark:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.chart.has-active .mark:not(.is-active):not(:hover) { opacity: .55; }
+.mark.is-active { filter: brightness(1.15); }
+.mark[tabindex] { cursor: pointer; }
+.chart .hit-area { fill: transparent; stroke: none; pointer-events: all; }
+
+/* Crosshair */
+.crosshair, .chart line.crosshair {
+  stroke: var(--ink-3);
+  stroke-width: 1;
+  pointer-events: none;
+  shape-rendering: crispEdges;
+}
+.crosshair-dot { fill: var(--bg-1); stroke-width: 2; pointer-events: none; }
+
+/* Empty / loading overlays */
+.chart-empty {
+  display: grid;
+  place-items: center;
+  min-block-size: 120px;
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-2) 50%, transparent);
+}
+.chart-note { font-size: var(--fs-xs); color: var(--ink-3); }
+.chart-title { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }
+
+/* --------------------------------------------------------------------------
+   Legend (≥2 series only)
+   -------------------------------------------------------------------------- */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  list-style: none;
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+}
+.legend.is-end { justify-content: flex-end; }
+.legend.is-center { justify-content: center; }
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+  color: inherit;
+  font: inherit;
+  border-radius: 6px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  transition: opacity var(--dur-1) var(--ease);
+}
+button.legend-item { cursor: pointer; }
+button.legend-item:hover { color: var(--ink-1); }
+.legend-item.is-muted, .legend-item[aria-pressed="false"] { opacity: .45; }
+/* Legend markers (v3.2.1): a soft rounded key with a top-light sheen and a faint halo in its own colour,
+   instead of a flat square. Shapes keep their meaning (line = series line, dot = point series, ring = hollow
+   marker); the label beside each key carries the identity, never the colour alone. */
+.legend-key {
+  flex: none;
+  inline-size: 10px;
+  block-size: 10px;
+  border-radius: 3.5px;
+  background: var(--key, currentColor);
+  background-image: linear-gradient(165deg, rgba(255, 255, 255, .42), rgba(255, 255, 255, 0) 62%);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--key, currentColor) 16%, transparent), inset 0 0 0 1px rgba(8, 15, 27, .08);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.legend-key.is-line { inline-size: 16px; block-size: 4px; border-radius: var(--radius-pill); box-shadow: 0 0 0 2px color-mix(in srgb, var(--key, currentColor) 13%, transparent); }
+.legend-key.is-dot { inline-size: 9px; block-size: 9px; border-radius: 50%; box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--key, currentColor) 20%, transparent), inset 0 0 0 1px rgba(8, 15, 27, .08); }
+@media (forced-colors: active) { .legend-key { forced-color-adjust: none; background-image: none; box-shadow: none; } }
+@media print { .legend-key, .legend-key.is-dot, .legend-key.is-line { background-image: none; box-shadow: none; } }
+.legend-key.is-ring { background: transparent; border: 2px solid var(--key, currentColor); }
+.legend-key.is-diamond { transform: rotate(45deg) scale(.85); border-radius: 1px; }
+.legend-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legend-value { font-family: var(--font-mono-mixed); font-variant-numeric: tabular-nums; color: var(--ink-3); }
+
+/* Tone legend (radar blips / matrix tiers): icon + label, never colour alone */
+.tone-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--fs-xs); color: var(--ink-2); }
+.tone-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.tone-legend-item .legend-key { background: var(--tone); }
+.tone-legend-item svg { inline-size: 12px; block-size: 12px; color: var(--tone-ink); }
+
+/* --------------------------------------------------------------------------
+   Tooltip (singleton #tooltip; DOM built with textContent by charts.js)
+   -------------------------------------------------------------------------- */
+
+/* charts.js positions the singleton with inline styles on inset-block-start /
+   inset-inline-start (it converts clientX to an inline-start offset in RTL), so the
+   stylesheet anchors the same two edges and leaves inline-end alone. */
+#tooltip, .tooltip {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  z-index: var(--z-tooltip);
+  pointer-events: none;
+  min-inline-size: 120px;
+  max-inline-size: 280px;
+  padding: 9px 11px;
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elev-2);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--ink-1);
+  will-change: transform;
+}
+:root[data-theme="light"] #tooltip, :root[data-theme="light"] .tooltip { background: var(--bg-1); border-color: var(--line-2); }
+#tooltip[hidden], .tooltip[hidden] { display: none; }
+/* overview.js clones the tooltip look for radar hover inside the frame (absolute, z 2) */
+.radar-frame .tooltip, .radar-tip { position: absolute; max-inline-size: 240px; }
+.tooltip-title {
+  margin-block-end: 6px;
+  padding-block-end: 6px;
+  border-block-end: 1px solid var(--line-2);
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  color: var(--ink-1);
+  overflow-wrap: anywhere;
+}
+.tooltip-rows, .tooltip ul, .tooltip dl { list-style: none; display: flex; flex-direction: column; gap: 3px; }
+.tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+/* Value first (strong, mono), then the label */
+.tooltip-row strong, .tooltip-value {
+  order: -1;
+  font-family: var(--font-mono-mixed);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--ink-1);
+  white-space: nowrap;
+}
+.tooltip-row span:not(.tooltip-swatch):not(.tooltip-value), .tooltip-label {
+  flex: 1;
+  min-inline-size: 0;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tooltip-swatch, .tooltip-row i {
+  order: -2;
+  flex: none;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 3px;
+  background: var(--key, currentColor);
+}
+.tooltip-swatch.is-line { inline-size: 12px; block-size: 3px; border-radius: var(--radius-pill); }
+.tooltip-swatch.is-dot { border-radius: 50%; box-shadow: 0 0 0 2px color-mix(in srgb, var(--key, currentColor) 18%, transparent); }
+.tooltip-note { margin-block-start: 6px; font-size: 11px; color: var(--ink-2); }
+.tooltip-kbd { font-family: var(--font-mono-mixed); font-size: 10px; color: var(--ink-2); }
+
+/* --------------------------------------------------------------------------
+   Table twin (chart "جدول" view)
+   -------------------------------------------------------------------------- */
+
+.chart-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.chart-table caption { text-align: start; padding-block-end: 6px; font-size: var(--fs-xs); color: var(--ink-3); }
+.chart-table th, .chart-table td {
+  padding: 8px 10px;
+  text-align: start;
+  border-block-end: 1px solid var(--line);
+  vertical-align: middle;
+}
+.chart-table thead th {
+  position: sticky;
+  inset-block-start: 0;
+  background: var(--bg-1);
+  color: var(--ink-2);
+  font-weight: 600;
+  box-shadow: inset 0 -1px 0 var(--line-2);
+  border-block-end: 0;
+  white-space: nowrap;
+}
+.chart-table tbody tr:hover { background: color-mix(in srgb, var(--bg-2) 70%, transparent); }
+.chart-table tbody tr:last-child td { border-block-end: 0; }
+.chart-table td.num, .chart-table th.num, .chart-table .align-end { text-align: end; font-family: var(--font-mono-mixed); }
+.chart-table td .legend-key { display: inline-block; vertical-align: middle; margin-inline-end: 6px; }
+.chart-table tfoot td { font-weight: 600; color: var(--ink-1); border-block-start: 1px solid var(--line-2); }
+
+/* --------------------------------------------------------------------------
+   Radar canvases
+   Frame: rounded, inset hairline, four accent corner ticks, faint radial glow.
+   -------------------------------------------------------------------------- */
+
+.radar-frame {
+  --tick: color-mix(in srgb, var(--accent) 55%, transparent);
+  position: relative;
+  inline-size: 100%;
+  max-inline-size: 560px;
+  aspect-ratio: 1;
+  margin-inline: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line-2) 45%, transparent), inset 0 0 60px -30px color-mix(in srgb, var(--accent) 18%, transparent);
+  background-color: color-mix(in srgb, var(--bg-0) 55%, var(--bg-1));
+  background-image:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent) 9%, transparent) 0%, transparent 62%),
+    linear-gradient(var(--tick), var(--tick)), linear-gradient(var(--tick), var(--tick)),
+    linear-gradient(var(--tick), var(--tick)), linear-gradient(var(--tick), var(--tick)),
+    linear-gradient(var(--tick), var(--tick)), linear-gradient(var(--tick), var(--tick)),
+    linear-gradient(var(--tick), var(--tick)), linear-gradient(var(--tick), var(--tick));
+  background-repeat: no-repeat;
+  background-size:
+    100% 100%,
+    12px 1px, 1px 12px, 12px 1px, 1px 12px, 12px 1px, 1px 12px, 12px 1px, 1px 12px;
+  background-position:
+    0 0,
+    8px 8px, 8px 8px,
+    calc(100% - 8px) 8px, calc(100% - 8px) 8px,
+    8px calc(100% - 8px), 8px calc(100% - 8px),
+    calc(100% - 8px) calc(100% - 8px), calc(100% - 8px) calc(100% - 8px);
+  overflow: hidden;
+  contain: layout paint;
+}
+.radar-frame.is-wide { max-inline-size: none; }
+.radar-frame.is-landscape { aspect-ratio: 4 / 3; max-inline-size: none; }
+.radar-frame.is-lg { max-inline-size: 720px; }
+.radar-frame.is-hero { --tick: color-mix(in srgb, var(--gold) 55%, transparent); }
+.radar-canvas {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: inherit;
+  touch-action: none;
+}
+.radar-frame:focus-within { box-shadow: inset 0 0 0 2px var(--focus); }
+/* Status corner chip inside the frame (e.g. "مباشر" + live dot) */
+.radar-status {
+  /* Status chip inside the frame: honest wording comes from the view (Demo / Simulated) */
+  position: absolute;
+  inset-block-start: 12px;
+  inset-inline-start: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--bg-1) 80%, transparent);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono-mixed);
+  font-size: 10px;
+  letter-spacing: 0;          /* Arabic status text ("مباشر") must not be tracked */
+  text-transform: uppercase;
+  color: var(--ink-2);
+  pointer-events: none;
+  z-index: 1;
+}
+.radar-caption {
+  position: absolute;
+  inset-block-end: 10px;
+  inset-inline-end: 12px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-1) 78%, transparent);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono-mixed);
+  font-size: 10px;
+  letter-spacing: .06em;
+  color: var(--ink-2);
+  pointer-events: none;
+  z-index: 1;
+  unicode-bidi: plaintext;   /* Latin captions read LTR, but the chip keeps its logical (inline-end) position */
+}
+.radar-frame.is-paused .radar-canvas { filter: saturate(.6) brightness(.9); }
+
+/* Radar card internals: canvas + telemetry side strip */
+.radar-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 190px;
+  gap: var(--space-4);
+  align-items: start;
+}
+.radar-layout.is-stacked { grid-template-columns: minmax(0, 1fr); }
+.radar-side { display: flex; flex-direction: column; gap: var(--space-3); min-inline-size: 0; }
+.radar-side-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.radar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+}
+.radar-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.radar-legend-item .legend-key { background: var(--tone, var(--accent)); border-radius: 50%; box-shadow: 0 0 0 2px var(--bg-1); }
+.radar-legend-item svg { inline-size: 12px; block-size: 12px; color: var(--tone-ink, var(--ink-2)); }
+.radar-telemetry {
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  font-family: var(--font-mono-mixed);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.radar-telemetry li, .tele-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--bg-2) 80%, transparent);
+  border: 1px solid var(--line);
+  min-inline-size: 0;
+}
+.tele-label { font-family: var(--font-sans); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 0; }
+.tele-value { color: var(--ink-1); font-weight: 500; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+.tele-unit { color: var(--ink-2); font-weight: 400; font-size: 10px; }
+.tele-row.is-alert .tele-value, .radar-telemetry li.is-alert .tele-value { color: var(--critical-text); }
+.tele-row.is-warn .tele-value,  .radar-telemetry li.is-warn  .tele-value { color: var(--warning-text); }
+.tele-row.is-alert, .radar-telemetry li.is-alert { border-color: color-mix(in srgb, var(--critical) 40%, transparent); background: color-mix(in srgb, var(--critical) 10%, transparent); }
+.tele-updated { font-size: 11px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+
+/* Radar page grid (2×2) */
+.radar-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.radar-grid > .is-wide { grid-column: 1 / -1; }
+
+/* Radar hover tooltip reuses the chart tooltip; blip code is mono */
+.tooltip .blip-code { font-family: var(--font-mono-mixed); font-size: 10px; letter-spacing: .06em; color: var(--ink-2); }
+
+/* --------------------------------------------------------------------------
+   Gauge, meters, rings
+   -------------------------------------------------------------------------- */
+
+.gauge { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.gauge > svg, .gauge-svg { inline-size: 100%; max-inline-size: 260px; margin-inline: auto; }
+.gauge-value, .chart text.gauge-value {
+  font-size: var(--fs-hero);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  font-variant-numeric: proportional-nums;
+  fill: var(--ink-1);
+  color: var(--ink-1);
+}
+.gauge-value small, .gauge-unit { font-size: var(--fs-md); font-weight: 500; color: var(--ink-3); letter-spacing: 0; }
+.gauge-label, .chart text.gauge-label { font-size: var(--fs-sm); font-weight: 500; fill: var(--ink-2); color: var(--ink-2); }
+.gauge-sublabel, .chart text.gauge-sublabel { font-size: var(--fs-xs); fill: var(--ink-3); color: var(--ink-3); }
+.gauge-track { stroke: var(--bg-3); fill: none; stroke-linecap: round; }
+.gauge-arc { fill: none; stroke-linecap: round; transition: stroke-dashoffset var(--dur-2) var(--ease), stroke var(--dur-2) var(--ease); }
+.gauge-tick { stroke: var(--line-2); }
+.gauge-needle { stroke: var(--ink-1); stroke-width: 2; stroke-linecap: round; }
+
+.meter { display: flex; flex-direction: column; gap: 4px; min-inline-size: 0; }
+.meter-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: var(--fs-xs); color: var(--ink-2); }
+.meter-value { font-family: var(--font-mono-mixed); font-variant-numeric: tabular-nums; color: var(--ink-1); font-weight: 500; }
+.meter-track { position: relative; block-size: 10px; border-radius: var(--radius-pill); background: var(--bg-3); overflow: hidden; }
+.meter-fill { block-size: 100%; border-radius: inherit; background: var(--tone, var(--brand)); transition: inline-size var(--dur-2) var(--ease), background var(--dur-2) var(--ease); }
+.meter-threshold { position: absolute; inset-block: 0; inline-size: 2px; background: var(--ink-3); }
+.meter svg { display: block; inline-size: 100%; }
+
+.ring { position: relative; display: inline-grid; place-items: center; }
+.ring svg { inline-size: 100%; block-size: 100%; overflow: visible; }
+.ring-track { stroke: var(--bg-3); fill: none; }
+.ring-arc { fill: none; stroke-linecap: round; transition: stroke-dashoffset var(--dur-2) var(--ease); }
+.ring-value, .chart text.ring-value {
+  font-family: var(--font-mono-mixed);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  fill: var(--ink-1);
+  color: var(--ink-1);
+}
+.ring-label { font-size: var(--fs-xs); color: var(--ink-2); text-align: center; }
+.ring-row { display: flex; align-items: center; gap: var(--space-3); min-inline-size: 0; }
+.ring-row .ring { flex: none; }
+.ring-row .ring-text { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; }
+
+/* --------------------------------------------------------------------------
+   Radar trend (charts.radarTrend, v3.2.1) — a time series on a dial
+   div.chart.chart-radar[data-state="empty"|"one"|"shape"]
+     > .rt-stage[data-enter="wait"]   block size from JS; direction: ltr (the dial is identical in both languages,
+                                       the period labels set the document direction on their own svg)
+         > .rt-layer.rt-grid > svg     disc, rings + ring glow, spokes, start tick, ring values, period labels
+         + .rt-sweep                   one radar sweep on entrance (opacity 0 at rest)
+         + .rt-layer.rt-shapes(.is-multi) > .rt-layer.rt-shape > svg   gradient area, glow, seam, outline
+         + .rt-layer.rt-dots > .rt-pt(.is-latest)[--key] > .rt-dot
+         + .rt-layer.rt-values > .rt-value[--key]                       latest value pill
+         + svg.rt-top                  hit wedges (roving tabindex) + hover layer
+     + p.chart-note.rt-note + .chart-legend-host
+   Layers are HTML boxes so the entrance (opacity / scale) and the point pops run on the compositor; no idle
+   animation. Colours: series colours only on marks; text is ink.
+   -------------------------------------------------------------------------- */
+.chart-radar { --rt-sweep: var(--accent); }
+.chart-radar .rt-stage {
+  position: relative;
+  inline-size: 100%;
+  min-block-size: 120px;
+  overflow: hidden;          /* layers keep their laid-out width until the debounced redraw: clip, never overflow */
+  direction: ltr;
+  contain: layout style;
+  isolation: isolate;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.chart-radar .rt-layer { position: absolute; inset: 0; pointer-events: none; }
+.chart-radar .rt-layer > svg,
+.chart-radar .rt-stage > svg.rt-top { position: absolute; inset-block-start: 0; inset-inline-start: 0; inline-size: 100%; max-inline-size: none; block-size: 100%; overflow: visible; }
+.chart-radar .rt-stage > svg.rt-top { touch-action: pan-y; }
+
+/* Grid: a quiet scope — tinted disc, hairline rings, a faint glow on the outer ring, crisp spokes. */
+.chart-radar .rt-bg-stop.is-in  { stop-color: var(--accent); stop-opacity: .07; }
+.chart-radar .rt-bg-stop.is-mid { stop-color: var(--accent); stop-opacity: .02; }
+.chart-radar .rt-bg-stop.is-out { stop-color: var(--accent); stop-opacity: .06; }
+:root[data-theme="light"] .chart-radar .rt-bg-stop.is-in  { stop-color: var(--brand); stop-opacity: .045; }
+:root[data-theme="light"] .chart-radar .rt-bg-stop.is-mid { stop-color: var(--brand); stop-opacity: .012; }
+:root[data-theme="light"] .chart-radar .rt-bg-stop.is-out { stop-color: var(--brand); stop-opacity: .04; }
+.chart-radar .rt-ring { fill: none; stroke: var(--line); stroke-width: 1; }
+.chart-radar .rt-ring.is-outer { stroke: color-mix(in srgb, var(--accent) 40%, var(--line-2)); }
+.chart-radar .rt-ring.is-empty { stroke: color-mix(in srgb, var(--ink-3) 40%, transparent); stroke-dasharray: 3 4; }
+.chart-radar .rt-ring-glow { fill: none; stroke: var(--accent); stroke-opacity: .12; stroke-width: 7; }
+:root[data-theme="light"] .chart-radar .rt-ring-glow { stroke-opacity: .08; }
+.chart-radar[data-state="empty"] .rt-ring-glow { display: none; }
+.chart-radar .rt-spoke { stroke: var(--line); stroke-width: 1; }
+.chart-radar .rt-spoke.is-start { stroke: var(--line-2); }
+.chart-radar .rt-start-tick { stroke: var(--ink-3); stroke-width: 1.5; stroke-linecap: round; }
+.chart-radar .rt-hub { fill: var(--line-2); }
+.chart-radar text.rt-tick {
+  fill: var(--ink-3);
+  font-family: var(--font-mono-mixed);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  paint-order: stroke fill;
+  stroke: var(--bg-1);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.chart-radar text.rt-rim-label { fill: var(--ink-3); font-size: 11px; }
+.chart-radar text.rt-empty-label { fill: var(--ink-3); paint-order: stroke fill; stroke: var(--bg-1); stroke-width: 5px; stroke-linejoin: round; }
+.chart-radar text.rt-rim-label.is-latest { fill: var(--ink-1); font-weight: 600; }
+
+/* Series: soft radial gradient in the series colour (denser toward the rim), a glow under a 2 px outline,
+   dashed seam for joins that are not one measured step (the closing edge latest → first, unknown periods). */
+.chart-radar .rt-fill-stop.is-in  { stop-opacity: .08; }
+.chart-radar .rt-fill-stop.is-mid { stop-opacity: .2; }
+.chart-radar .rt-fill-stop.is-out { stop-opacity: .4; }
+:root[data-theme="light"] .chart-radar .rt-fill-stop.is-in  { stop-opacity: .05; }
+:root[data-theme="light"] .chart-radar .rt-fill-stop.is-mid { stop-opacity: .14; }
+:root[data-theme="light"] .chart-radar .rt-fill-stop.is-out { stop-opacity: .3; }
+.chart-radar .rt-shapes.is-multi .rt-fill-stop.is-in  { stop-opacity: .03; }
+.chart-radar .rt-shapes.is-multi .rt-fill-stop.is-mid { stop-opacity: .09; }
+.chart-radar .rt-shapes.is-multi .rt-fill-stop.is-out { stop-opacity: .2; }
+:root[data-theme="light"] .chart-radar .rt-shapes.is-multi .rt-fill-stop.is-in  { stop-opacity: .02; }
+:root[data-theme="light"] .chart-radar .rt-shapes.is-multi .rt-fill-stop.is-mid { stop-opacity: .06; }
+:root[data-theme="light"] .chart-radar .rt-shapes.is-multi .rt-fill-stop.is-out { stop-opacity: .15; }
+.chart-radar .rt-area { stroke: none; }
+.chart-radar .rt-outline { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-radar .rt-glow { fill: none; stroke-width: 7; stroke-opacity: .14; stroke-linejoin: round; stroke-linecap: round; }
+:root[data-theme="light"] .chart-radar .rt-glow { stroke-opacity: .1; }
+.chart-radar .rt-seam { fill: none; stroke-width: 1.5; stroke-dasharray: 2 4; stroke-linecap: round; stroke-opacity: .8; }
+
+/* Points: 8 px with a 2 px surface ring; the latest is larger, with a halo in its colour. */
+.chart-radar .rt-pt { position: absolute; inset-block-start: 0; inset-inline-start: 0; inline-size: 0; block-size: 0; }
+.chart-radar .rt-pt[hidden] { display: none; }
+.chart-radar .rt-dot {
+  position: absolute;
+  inline-size: 8px;
+  block-size: 8px;
+  margin-block-start: -4px;
+  margin-inline-start: -4px;
+  border-radius: 50%;
+  background: var(--key, var(--brand));
+  box-shadow: 0 0 0 2px var(--bg-1);
+}
+.chart-radar .rt-pt.is-latest .rt-dot {
+  inline-size: 12px;
+  block-size: 12px;
+  margin-block-start: -6px;
+  margin-inline-start: -6px;
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--key, var(--brand)) 60%, #FFFFFF), var(--key, var(--brand)) 62%);
+  box-shadow: 0 0 0 2px var(--bg-1), 0 0 0 5px color-mix(in srgb, var(--key, var(--brand)) 24%, transparent), 0 0 16px 3px color-mix(in srgb, var(--key, var(--brand)) 32%, transparent);
+}
+.chart-radar .rt-value {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--key, var(--brand)) 48%, var(--line));
+  background: color-mix(in srgb, var(--bg-1) 94%, transparent);
+  box-shadow: 0 3px 10px -5px color-mix(in srgb, var(--key, var(--brand)) 55%, transparent);
+  color: var(--ink-1);
+  font-family: var(--font-mono-mixed);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 15px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.chart-radar .rt-value[hidden] { display: none; }
+
+/* One sweep on entrance: the bright edge leads clockwise from 12 o'clock, a soft wake trails it. */
+.chart-radar .rt-sweep {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  background: conic-gradient(from 0deg,
+    transparent 0deg 250deg,
+    color-mix(in srgb, var(--rt-sweep) 0%, transparent) 250deg,
+    color-mix(in srgb, var(--rt-sweep) 22%, transparent) 356deg,
+    color-mix(in srgb, var(--rt-sweep) 62%, transparent) 359.3deg,
+    transparent 360deg);
+}
+
+/* Entrance pending (first values, not yet on screen): hidden until the first frame on screen plays it. */
+.chart-radar .rt-stage[data-enter="wait"] .rt-layer { opacity: 0; }
+
+/* Hover / focus: the period's wedge, its spoke and a ring round each series point. */
+.chart-radar .rt-hit { outline: none; }
+.chart-radar .rt-wedge { fill: color-mix(in srgb, var(--ink-3) 8%, transparent); stroke: none; pointer-events: none; }
+.chart-radar .rt-wedge.is-focus { stroke: var(--focus); stroke-width: 2; }
+.chart-radar .hover-layer .crosshair { stroke: var(--ink-3); }
+.chart-radar .rt-note { text-align: center; }
+.chart-radar .rt-anchor { fill: transparent; stroke: none; }
+
+:root[data-motion="reduce"] .chart-radar .rt-sweep, :root[data-motion="reduced"] .chart-radar .rt-sweep, :root[data-bg="static"] .chart-radar .rt-sweep { display: none; }
+:root[data-motion="reduce"] .chart-radar .rt-stage[data-enter] .rt-layer, :root[data-motion="reduced"] .chart-radar .rt-stage[data-enter] .rt-layer { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .chart-radar .rt-sweep { display: none; }
+  :root:not([data-motion="full"]) .chart-radar .rt-stage[data-enter] .rt-layer { opacity: 1; }
+}
+@media (forced-colors: active) {
+  .chart-radar .rt-dot, .chart-radar .rt-value { forced-color-adjust: none; }
+  .chart-radar .rt-sweep, .chart-radar .rt-ring-glow, .chart-radar .rt-glow { display: none; }
+}
+/* Print marks (SVG twins of the points and value pills): hidden on screen, shown in print. */
+.chart-radar .rt-print { display: none; }
+.chart-radar .rt-print-dot { stroke: var(--bg-1); stroke-width: 2; }
+.chart-radar .rt-print-halo { fill: none; stroke-width: 3; stroke-opacity: .3; }
+.chart-radar .rt-print-pill { fill: var(--bg-1); stroke-width: 1; stroke-opacity: .6; }
+.chart-radar text.rt-print-value { fill: var(--ink-1); font-family: var(--font-mono-mixed); font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+@media print {
+  .chart-radar .rt-print { display: inline; }
+  .chart-radar .rt-dots, .chart-radar .rt-values, .chart-radar .rt-stage > svg.rt-top { display: none; }
+  .chart-radar .rt-layer > svg { inline-size: 100% !important; max-inline-size: 100% !important; }
+  .chart-radar .rt-stage { overflow: visible; }
+  /* Important declarations outrank running animations: print is always the final, complete state. */
+  .chart-radar .rt-layer { opacity: 1 !important; transform: none !important; }
+  .chart-radar .rt-sweep { display: none; }
+  .chart-radar { break-inside: avoid; }
+}
+
+/* Spider / compliance static radar */
+.spider-grid { stroke: var(--line); fill: none; }
+.spider-axis { stroke: var(--line-2); }
+.spider-target { stroke: var(--ink-3); fill: none; }
+.spider-area { fill-opacity: .18; stroke-width: 2; stroke-linejoin: round; }
+.spider-label { fill: var(--ink-2); font-size: 11px; }
+
+/* --------------------------------------------------------------------------
+   Heatmap matrix (risk 5×5, training matrix)
+   DOM variant (.matrix grid) and SVG variant (rect.cell) share the look.
+   -------------------------------------------------------------------------- */
+
+.matrix-wrap { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 8px; align-items: stretch; }
+.matrix {
+  display: grid;
+  gap: 4px;
+  grid-auto-rows: 1fr;
+}
+.matrix-cell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  min-inline-size: 0;
+  border-radius: 6px;
+  background: var(--cell, var(--bg-2));
+  color: var(--cell-ink, var(--ink-1));
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  border: 0;
+  padding: 0;
+  transition: filter var(--dur-1) var(--ease), transform var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+.matrix-cell[data-ink="dark"], .matrix-cell.is-on-light { color: var(--ink-on-light); }
+.matrix-cell[data-ink="light"], .matrix-cell.is-on-dark { color: var(--ink-on-dark); }
+.matrix-cell.is-empty, .matrix-cell[data-value="0"] { color: var(--ink-3); font-weight: 500; background: var(--cell, color-mix(in srgb, var(--bg-2) 70%, transparent)); box-shadow: inset 0 0 0 1px var(--line); }
+.matrix-cell.is-clickable, button.matrix-cell { cursor: pointer; }
+.matrix-cell:hover, .matrix-cell:focus-visible { filter: brightness(1.15); z-index: 1; }
+.matrix-cell:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.matrix-cell.is-selected, .matrix-cell[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--bg-1), 0 0 0 4px var(--focus); }
+.matrix-cell small { font-size: 10px; font-weight: 500; opacity: .8; }
+.matrix-cell svg { inline-size: 12px; block-size: 12px; }
+.matrix.is-compact { gap: 3px; }
+.matrix.is-compact .matrix-cell { border-radius: 4px; font-size: var(--fs-xs); }
+
+/* SVG heatmap */
+.matrix rect.cell, .chart rect.cell { stroke: var(--bg-1); stroke-width: 2; transition: filter var(--dur-1) var(--ease); }
+/* Cell labels are inked for the cell's own fill (charts.js insideInk), so a hovered / active cell is ringed instead
+   of brightened, and the other cells are not dimmed (both moved labels below 4.5:1). Coloured cells carry an
+   inline stroke:none, hence an outline ring; keyboard focus keeps the --focus ring (declared last). */
+.chart rect.cell.mark:hover, .chart rect.cell.mark.is-active { filter: none; outline: 2px solid var(--ink-1); outline-offset: -2px; }
+.chart rect.cell.mark:focus-visible { filter: none; outline: 2px solid var(--focus); outline-offset: 1px; }
+.chart-heatmap.has-active .mark:not(.is-active):not(:hover) { opacity: 1; }
+.chart text.cell-label { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; pointer-events: none; }
+.chart text.cell-label.is-on-light { fill: var(--ink-on-light); }
+.chart text.cell-label.is-on-dark { fill: var(--ink-on-dark); }
+/* A soft halo in the opposite ink smooths the glyph edge (paint-order keeps the glyph shape); the ≥ 4.5:1
+   guarantee comes from the ink choice and the .cell-plate, not from the halo. */
+.chart text.cell-label.is-on-dark { paint-order: stroke fill; stroke: rgba(4, 8, 15, .55); stroke-width: 3px; stroke-linejoin: round; }
+.chart text.cell-label.is-on-light { paint-order: stroke fill; stroke: rgba(255, 255, 255, .55); stroke-width: 3px; stroke-linejoin: round; }
+.chart text.cell-label.is-empty { fill: var(--ink-3); font-weight: 500; }
+.chart rect.cell-plate { fill: var(--bg-1); stroke: none; pointer-events: none; }
+.chart text.cell-label.is-on-plate { fill: var(--ink-1); stroke: none; }
+
+/* Axis labels around the matrix */
+.matrix-labels { display: grid; gap: 4px; }
+.matrix-labels.is-rows { grid-auto-rows: 1fr; align-items: center; justify-items: end; padding-inline-end: 4px; }
+.matrix-labels.is-cols { grid-auto-flow: column; grid-auto-columns: 1fr; justify-items: center; text-align: center; }
+.matrix-label { font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.2; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-inline-size: 100%; }
+.matrix-axis-title {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--ink-2);
+  text-align: center;
+  letter-spacing: 0;
+}
+.matrix-axis-title.is-y { writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; }
+.matrix-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--fs-xs); color: var(--ink-2); margin-block-start: var(--space-2); }
+.matrix-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.matrix-legend-item .legend-key { inline-size: 12px; block-size: 12px; border-radius: 3px; background: var(--tone, var(--key, currentColor)); }
+
+/* Training matrix: wide, scrolls horizontally, sticky worker names */
+.matrix-scroll { overflow: auto; max-block-size: 560px; border: 1px solid var(--line); border-radius: 10px; }
+.matrix-scroll .matrix-sticky { position: sticky; inset-inline-start: 0; background: var(--bg-1); z-index: 1; }
+
+/* --------------------------------------------------------------------------
+   Sparklines
+   -------------------------------------------------------------------------- */
+
+.spark { display: inline-flex; align-items: center; line-height: 0; color: var(--ink-3); }
+.spark svg { display: block; overflow: visible; inline-size: auto; block-size: auto; }
+.spark path, .spark polyline { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.spark .spark-area { fill: currentColor; opacity: .12; stroke: none; }
+.spark .spark-dot, .spark circle { fill: currentColor; stroke: var(--bg-1); stroke-width: 1.5; }
+.spark.is-up { color: var(--good-text); }
+.spark.is-down { color: var(--critical-text); }
+.spark.is-brand { color: var(--brand-text); }
+
+/* --------------------------------------------------------------------------
+   Ring gauge (charts.ringGauge) — ratio ring + radial weekly bars
+   span.ring-gauge[data-size][data-tone][data-state="value"|"empty"][data-zero][data-idle="on"]
+     > .rg-bars > .rg-spoke(.is-current|.is-unknown) > .rg-slot > .rg-fill
+     + .rg-ring > .rg-face + .rg-track + .rg-half.is-a|is-b > .rg-arc + .rg-start + .rg-cap + .rg-sheen
+     + .rg-center (optional)
+   HTML layers only; JS sets transforms (rotate / scaleY) and animates them with Web Animations, so the
+   browser composites every frame and nothing is repainted. The box is a fixed square per size (no layout
+   shift). Geometry is a dial: clockwise from 12 o'clock in both languages (direction: ltr on the root).
+   Sizes (px): box / ring diameter / ring stroke / bar inner radius / bar length / bar width — all integers
+   so the two half-ring clips meet on whole pixels.
+   -------------------------------------------------------------------------- */
+
+.ring-gauge {
+  --g-size: 80px; --g-ring: 52px; --g-stroke: 6px; --g-bar-in: 30px; --g-bar-len: 9px; --g-bar-w: 3px; --g-center: 13px;
+  --rg-tone: var(--brand);
+  --rg-track: color-mix(in srgb, var(--rg-tone) 15%, var(--bg-2));
+  --rg-slot: color-mix(in srgb, var(--ink-3) 13%, transparent);
+  --rg-bar: color-mix(in srgb, var(--rg-tone) 50%, var(--bg-2));   /* past weeks: a lighter step of the same hue */
+  --rg-glow: color-mix(in srgb, var(--rg-tone) 55%, transparent);
+  position: relative;
+  display: block;
+  flex: none;
+  inline-size: var(--g-size);
+  block-size: var(--g-size);
+  direction: ltr;
+  /* The root takes the pointer so its title (names the ring's ratio and the weekly bars) shows on hover;
+     its parts ignore it, and a click still reaches the clickable tile around it. */
+  pointer-events: auto;
+  cursor: inherit;
+  user-select: none;
+  -webkit-user-select: none;
+  contain: layout style;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.ring-gauge[data-size="sm"] { --g-size: 64px; --g-ring: 40px; --g-stroke: 5px; --g-bar-in: 24px; --g-bar-len: 7px; --g-bar-w: 3px; --g-center: 11px; }
+.ring-gauge[data-size="lg"] { --g-size: 104px; --g-ring: 68px; --g-stroke: 7px; --g-bar-in: 39px; --g-bar-len: 12px; --g-bar-w: 3px; --g-center: 15px; }
+.ring-gauge[data-size="xl"] { --g-size: 120px; --g-ring: 78px; --g-stroke: 8px; --g-bar-in: 45px; --g-bar-len: 14px; --g-bar-w: 4px; --g-center: 17px; }
+.ring-gauge[data-tone="accent"]   { --rg-tone: var(--accent); }
+.ring-gauge[data-tone="good"]     { --rg-tone: var(--good); }
+.ring-gauge[data-tone="warning"]  { --rg-tone: var(--warning); }
+.ring-gauge[data-tone="serious"]  { --rg-tone: var(--serious); }
+.ring-gauge[data-tone="critical"] { --rg-tone: var(--critical); }
+.ring-gauge[data-tone="neutral"]  { --rg-tone: var(--ink-3); }
+/* Amber on white is too faint for a 6 px stroke: the light theme deepens it toward its text tone. */
+:root[data-theme="light"] .ring-gauge[data-tone="warning"] { --rg-tone: color-mix(in srgb, var(--warning) 72%, var(--warning-text)); }
+:root[data-theme="light"] .ring-gauge { --rg-slot: color-mix(in srgb, var(--ink-3) 11%, transparent); }
+.ring-gauge span { position: absolute; display: block; box-sizing: border-box; }
+
+/* Radial bars: a fixed spoke per week, the fill scales along its length from the inner end. */
+.ring-gauge .rg-bars { inset: 0; }
+.ring-gauge .rg-spoke { inset-block-start: 50%; inset-inline-start: 50%; inline-size: 0; block-size: 0; }
+.ring-gauge .rg-slot {
+  inset-block-end: var(--g-bar-in);
+  inset-inline-start: calc(var(--g-bar-w) / -2);
+  inline-size: var(--g-bar-w);
+  block-size: var(--g-bar-len);
+  border-radius: var(--g-bar-w);
+  background: var(--rg-slot);
+}
+.ring-gauge .rg-fill { inset: 0; border-radius: inherit; background: var(--rg-bar); transform-origin: 50% 100%; transform: scaleY(0); }
+.ring-gauge .rg-spoke.is-current .rg-slot {
+  inline-size: calc(var(--g-bar-w) + 1px);
+  inset-inline-start: calc((var(--g-bar-w) + 1px) / -2);
+  background: color-mix(in srgb, var(--rg-tone) 16%, transparent);
+}
+.ring-gauge .rg-spoke.is-current .rg-fill { background: var(--rg-tone); box-shadow: 0 0 6px 0 var(--rg-glow); }
+.ring-gauge .rg-spoke.is-unknown .rg-slot { opacity: .7; }
+
+/* Ring: face, track, two half-ring clips, start cap, rotating end cap, idle sheen. */
+.ring-gauge .rg-ring {
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: var(--g-ring);
+  block-size: var(--g-ring);
+  margin-block-start: calc(var(--g-ring) / -2);
+  margin-inline-start: calc(var(--g-ring) / -2);
+  border-radius: 50%;
+}
+.ring-gauge .rg-face {
+  inset: var(--g-stroke);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 28%, color-mix(in srgb, var(--rg-tone) 10%, var(--bg-1)), var(--bg-1) 72%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rg-tone) 12%, transparent);
+}
+.ring-gauge .rg-track { inset: 0; border-radius: 50%; border: var(--g-stroke) solid var(--rg-track); }
+.ring-gauge .rg-half { inset-block: 0; inline-size: 50%; overflow: hidden; }
+.ring-gauge .rg-half.is-a { inset-inline-start: 50%; }
+.ring-gauge .rg-half.is-b { inset-inline-start: 0; }
+.ring-gauge .rg-arc {
+  inset-block: 0;
+  inline-size: var(--g-ring);
+  border-radius: 50%;
+  border: var(--g-stroke) solid transparent;
+  transform: rotate(45deg);
+}
+/* a: the half-ring through 6 and 9 o'clock, swept into the 12 → 6 half; b: the half through 12 and 3, swept into 6 → 12. */
+.ring-gauge .rg-half.is-a .rg-arc { inset-inline-start: calc(var(--g-ring) / -2); border-block-end-color: var(--rg-tone); border-inline-start-color: var(--rg-tone); }
+.ring-gauge .rg-half.is-b .rg-arc { inset-inline-start: 0; border-block-start-color: var(--rg-tone); border-inline-end-color: var(--rg-tone); }
+.ring-gauge .rg-start, .ring-gauge .rg-cap, .ring-gauge .rg-sheen { inset: 0; border-radius: 50%; }
+.ring-gauge .rg-start::before, .ring-gauge .rg-cap::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 50%;
+  inline-size: var(--g-stroke);
+  block-size: var(--g-stroke);
+  margin-inline-start: calc(var(--g-stroke) / -2);
+  border-radius: 50%;
+  background: var(--rg-tone);
+}
+.ring-gauge .rg-cap::before {
+  background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--rg-tone) 55%, #FFFFFF), var(--rg-tone) 70%);
+  box-shadow: 0 0 7px 1px var(--rg-glow);
+}
+.ring-gauge[data-zero] .rg-start, .ring-gauge[data-zero] .rg-cap { opacity: 0; }
+.ring-gauge .rg-sheen { opacity: 0; transition: opacity var(--dur-slow) var(--ease-out); }
+.ring-gauge .rg-sheen::before {
+  content: "";
+  position: absolute;
+  inset-block-start: calc(var(--g-stroke) * -0.3);
+  inset-inline-start: 50%;
+  inline-size: calc(var(--g-stroke) * 3.6);
+  block-size: calc(var(--g-stroke) * 1.6);
+  margin-inline-start: calc(var(--g-stroke) * -1.8);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, .4), rgba(255, 255, 255, .1) 60%, transparent);
+}
+.ring-gauge[data-idle="on"] .rg-sheen { opacity: 1; }
+:root[data-theme="light"] .ring-gauge .rg-sheen::before { background: radial-gradient(closest-side, rgba(255, 255, 255, .72), rgba(255, 255, 255, .2) 60%, transparent); }
+
+/* Centre value: the ring's own ratio (tabular, ink; the document direction orders "٪"). */
+.ring-gauge .rg-center {
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-sans);
+  font-size: var(--g-center);
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -.01em;
+  color: var(--ink-1);
+  white-space: nowrap;
+}
+:root[dir="rtl"] .ring-gauge .rg-center { direction: rtl; }
+
+/* Honest empty state: no ratio → dashed neutral track, no arc, no caps, centre "—". */
+.ring-gauge[data-state="empty"] .rg-track { border-style: dashed; border-color: color-mix(in srgb, var(--ink-3) 38%, transparent); }
+.ring-gauge[data-state="empty"] .rg-half, .ring-gauge[data-state="empty"] .rg-start, .ring-gauge[data-state="empty"] .rg-cap, .ring-gauge[data-state="empty"] .rg-sheen { display: none; }
+.ring-gauge[data-state="empty"] .rg-face { background: var(--bg-1); box-shadow: none; }
+.ring-gauge[data-state="empty"] .rg-center { color: var(--ink-3); font-weight: 500; }
+
+/* No idle motion under reduced motion, the Static background, forced colours or print (JS pauses it too). */
+:root[data-bg="static"] .ring-gauge .rg-sheen, :root[data-motion="reduce"] .ring-gauge .rg-sheen, :root[data-motion="reduced"] .ring-gauge .rg-sheen { display: none; }
+@media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .ring-gauge .rg-sheen { display: none; } }
+@media (forced-colors: active) {
+  .ring-gauge, .ring-gauge[data-tone] { forced-color-adjust: none; --rg-tone: Highlight; --rg-track: GrayText; --rg-slot: transparent; --rg-bar: CanvasText; --rg-glow: transparent; }
+  .ring-gauge .rg-track { opacity: .55; }
+  .ring-gauge .rg-face { background: Canvas; box-shadow: none; }
+  .ring-gauge .rg-center { color: CanvasText; }
+  .ring-gauge .rg-sheen { display: none; }
+}
+@media print {
+  .ring-gauge .rg-sheen { display: none; }
+  .ring-gauge .rg-face { background: #FFFFFF; }
+  .ring-gauge { break-inside: avoid; }
+}
+
+/* Segmented bar (replaces donuts). The .segbar-part rules style the HTML bar; the SVG bar (charts.segmentedBar) reuses the
+   class on <rect>, so rect.segbar-part drops the HTML background (it confused contrast checkers; SVG paints with fill). */
+rect.segbar-part { background: none; }
+/* Inside labels (charts.segmentedBar → insideInk) are chosen against the segment's own fill, so the SVG bar never
+   changes a fill's luminance: no brightness filter on hover / focus / active (white on a brightened --s1 fell to
+   4.0:1) and no dimming of the other segments (labels on a 55 % faded fill fell to 2.2:1). A ring marks the
+   segment instead; keyboard focus keeps the --focus outline from .mark:focus-visible. */
+.chart-segbar rect.segbar-part.mark:hover,
+.chart-segbar rect.segbar-part.mark:focus-visible,
+.chart-segbar rect.segbar-part.mark.is-active { filter: none; stroke: var(--ink-1); stroke-width: 2px; }
+.chart-segbar.has-active .mark:not(.is-active):not(:hover) { opacity: 1; }
+.segbar { display: flex; flex-direction: column; gap: 8px; }
+.segbar-track { display: flex; block-size: 28px; border-radius: 8px; overflow: hidden; background: var(--bg-3); }
+.segbar-track.is-thin { block-size: 10px; border-radius: var(--radius-pill); }
+.segbar-part {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-inline-size: 0;
+  overflow: hidden;
+  background: var(--part, var(--s1));
+  color: var(--ink-on-dark);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transition: filter var(--dur-1) var(--ease);
+}
+.segbar-part + .segbar-part { box-shadow: inset calc(var(--dir) * 1px) 0 0 var(--bg-1); }
+.segbar-part.is-light { color: var(--ink-on-light); }
+.segbar-part:hover, .segbar-part:focus-visible { filter: brightness(1.15); }
+/* Inside labels sit on a fixed dark plate so they stay ≥7:1 on any series colour
+   (white on raw --s1 is only 3.4:1); the plate is theme-independent by design. */
+.segbar-part .segbar-label {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(7, 13, 24, .5);
+  color: var(--ink-on-dark);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.segbar-part.is-light .segbar-label { color: var(--ink-on-dark); }
+
+/* --------------------------------------------------------------------------
+   Pareto, ranked bars and small type helpers used by charts.js
+   -------------------------------------------------------------------------- */
+
+.chart .cum-label { font-family: var(--font-mono-mixed); font-size: 11px; fill: var(--ink-2); }
+.chart .bar-label { font-size: 12px; fill: var(--ink-2); }
+.chart .bar-value { font-family: var(--font-mono-mixed); font-size: 11px; fill: var(--ink-1); font-weight: 500; }
+.chart .bar.is-muted { opacity: .55; }
+
+/* --------------------------------------------------------------------------
+   Responsive
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 1279.98px) {
+  .radar-layout { grid-template-columns: minmax(0, 1fr); }
+  .radar-side { flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
+  .radar-telemetry { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); flex: 1 1 100%; }
+}
+@media (max-width: 959.98px) {
+  .radar-grid { grid-template-columns: minmax(0, 1fr); }
+  .radar-frame { max-inline-size: none; }
+  .gauge-value, .chart text.gauge-value { font-size: 40px; }
+  .matrix-cell { font-size: var(--fs-xs); border-radius: 5px; }
+  .chart text { font-size: 11px; }
+  .legend { gap: 4px 10px; }
+  #tooltip, .tooltip { max-inline-size: 240px; }
+}
+
+
+/* Legends: never overflow the card — long labels ellipsize, items wrap */
+.legend, .chart-legend-host { max-inline-size: 100%; }
+.legend-item { min-inline-size: 0; max-inline-size: 100%; }
+.legend-item > :not(.legend-key) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 0; }
