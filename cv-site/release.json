@@ -28,6 +28,21 @@
     "en-05"
    ],
    "files": "films, posters, thumbnails, briefing passages, d-sequence, d-filmqa"
+  },
+  {
+   "label": "films-grammar-d-batch-2",
+   "date": "2026-11-26T23:54:44Z",
+   "films": [
+    "ar-06",
+    "en-06",
+    "ar-07",
+    "en-07",
+    "ar-08",
+    "en-08",
+    "ar-09",
+    "en-09"
+   ],
+   "files": "films, posters, thumbnails, briefing passages, d-sequence, d-filmqa"
   }
  ]
 }
