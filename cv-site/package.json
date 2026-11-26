@@ -1,0 +1,7 @@
+{
+  "name": "faisal-aljuhaimy-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Static company site with one dependency-free serverless function (api/lead.js). Keeps Vercel's install step inside this folder instead of the repository root.",
+  "dependencies": {}
+}
