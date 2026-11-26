@@ -1,7 +1,7 @@
 {
- "id": "V900-2026-11-26",
+ "id": "local build",
  "commit": null,
- "source": "cli",
- "builtAt": "2026-11-26T18:32:54Z",
- "build": "a121c7f509dd"
+ "source": "default",
+ "builtAt": "2026-11-26T19:31:58Z",
+ "build": "20d1816c2234"
 }

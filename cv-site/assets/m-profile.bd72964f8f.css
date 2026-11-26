@@ -1,0 +1,76 @@
+
+.m-profile { display: grid; gap: clamp(2.4rem, 5vw, 3.6rem); }
+.m-profile-top { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(1.8rem, 5vw, 4.5rem); align-items: start; }
+@media (max-width: 940px) { .m-profile-top { grid-template-columns: minmax(0, 1fr); } }
+.m-profile-ident { display: grid; gap: .5rem; align-content: start; min-width: 0; }
+.m-profile-role { color: var(--signal); font-weight: 600; font-size: .95rem; }
+:root[lang="en"] .m-profile-role { text-transform: uppercase; letter-spacing: .14em; font-size: .76rem; }
+.m-profile-name { font-family: var(--font-display); font-weight: 800; font-size: clamp(2rem, 4.6vw, 3.2rem); line-height: 1.3; color: var(--ink); }
+:root[lang="en"] .m-profile-name { line-height: 1.1; letter-spacing: -.02em; }
+.m-profile-alt { color: var(--ink-3); font-size: 1rem; }
+.m-profile-rnote { color: var(--ink-2); font-size: .94rem; max-width: 46ch; margin-top: .4rem; }
+
+.m-profile-cv { margin-top: 1.4rem; padding-top: 1.1rem; border-top: 2px solid var(--mark); display: grid; gap: .55rem; justify-items: start; max-width: 460px; }
+.m-profile-k { font-size: .8rem; font-weight: 600; color: var(--ink-3); }
+:root[lang="en"] .m-profile-k { text-transform: uppercase; letter-spacing: .12em; font-size: .72rem; }
+.m-profile-cvp { color: var(--ink-2); font-size: .92rem; }
+.m-profile-cvact { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.2rem; margin-top: .2rem; }
+.m-profile-cvbtn { max-width: 100%; }
+.m-profile-ic { width: 1.15em; height: 1.15em; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.m-profile-cvother { font-size: .92rem; }
+.m-profile-cvstatus:empty { display: none; }
+
+.m-profile-story { display: grid; gap: 1.6rem; min-width: 0; align-content: start; }
+.m-profile-summary { font-size: clamp(1.05rem, 1.6vw, 1.2rem); line-height: 1.85; color: var(--ink); max-width: 64ch; }
+:root[lang="en"] .m-profile-summary { line-height: 1.65; }
+.m-profile-quote { margin: 0; padding-inline-start: 1.2rem; border-inline-start: 2px solid var(--mark); display: grid; gap: .7rem; }
+.m-profile-quote blockquote { margin: 0; }
+.m-profile-quote blockquote p { color: var(--ink-2); font-size: 1rem; line-height: 1.85; max-width: 66ch; }
+:root[lang="en"] .m-profile-quote blockquote p { line-height: 1.7; }
+.m-profile-quote figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; }
+.m-profile-src { color: var(--ink-3); font-size: .8rem; }
+
+.m-profile-sec { display: grid; gap: 1rem; min-width: 0; align-content: start; }
+.m-profile-sech { display: grid; gap: .3rem; max-width: 72ch; }
+.m-profile-h { font-family: var(--font-display); font-weight: 700; font-size: 1.2rem; line-height: 1.5; }
+.m-profile-lead { color: var(--ink-2); font-size: .94rem; }
+
+.m-profile-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); column-gap: clamp(1.5rem, 4vw, 3rem); border-top: 1px solid var(--line); }
+.m-profile-list li { display: grid; gap: .3rem; padding: .9rem 0; border-bottom: 1px solid var(--line); align-content: start; }
+.m-profile-it { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .3rem .8rem; }
+.m-profile-it b { font-weight: 600; }
+.m-profile-list p { font-size: .92rem; color: var(--ink-2); line-height: 1.75; }
+.m-profile-list p.m-profile-src { color: var(--ink-3); font-size: .8rem; }
+
+.m-profile-projects { display: grid; border-top: 1px solid var(--line); }
+.m-profile-projects > li { display: grid; gap: .6rem; padding: 1.1rem 0; border-bottom: 1px solid var(--line); }
+.m-profile-ph { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .9rem; }
+.m-profile-pn { font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; }
+.m-profile-alt2 { color: var(--ink-3); font-size: .86rem; }
+.m-profile-pdl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: .5rem 2rem; }
+@media (max-width: 760px) { .m-profile-pdl { grid-template-columns: minmax(0, 1fr); } }
+.m-profile-pdl > div { display: grid; gap: .1rem; min-width: 0; }
+.m-profile-wide { grid-column: 1 / -1; }
+.m-profile-pdl dt { font-size: .76rem; font-weight: 600; color: var(--ink-3); }
+.m-profile-pdl dd { margin: 0; font-size: .93rem; line-height: 1.75; }
+.m-profile-wide dd { color: var(--ink-2); }
+.m-profile-prole { font-weight: 600; }
+.m-profile-case { justify-self: start; font-size: .9rem; }
+
+.m-profile-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.6rem clamp(1.5rem, 3vw, 2.5rem); }
+@media (max-width: 1060px) { .m-profile-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .m-profile-groups { grid-template-columns: minmax(0, 1fr); } }
+.m-profile-group { border-top: 1px solid var(--line-2); padding-top: .8rem; min-width: 0; }
+.m-profile-gh { font-weight: 700; font-size: .98rem; margin-bottom: .4rem; }
+.m-profile-group li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .2rem .7rem; padding: .55rem 0; border-bottom: 1px solid var(--line); align-items: start; }
+.m-profile-sk { font-size: .92rem; line-height: 1.7; }
+.m-profile-group .st { margin-top: .2rem; }
+.m-profile-skev { grid-column: 1 / -1; font-size: .8rem; color: var(--ink-3); line-height: 1.65; }
+
+.m-profile-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(2rem, 4vw, 3.5rem); }
+@media (max-width: 900px) { .m-profile-pair { grid-template-columns: minmax(0, 1fr); } }
+.m-profile-pair .m-profile-list { grid-template-columns: minmax(0, 1fr); }
+.m-profile-not { display: grid; border-top: 1px solid var(--line); }
+.m-profile-not li { position: relative; padding: .6rem 0; padding-inline-start: 1.5rem; border-bottom: 1px solid var(--line); font-size: .93rem; color: var(--ink-2); }
+.m-profile-not li::before, .m-profile-not li::after { content: ""; position: absolute; inset-inline-start: .15rem; top: 1.35rem; width: .7rem; height: 2px; border-radius: 1px; background: var(--ink-3); transform: rotate(45deg); }
+.m-profile-not li::after { transform: rotate(-45deg); }
