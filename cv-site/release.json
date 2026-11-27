@@ -3,5 +3,12 @@
  "commit": "4c69e70edc8a61b5d2f85f7c7230ddee99d7fcc5",
  "source": "release",
  "builtAt": "2026-11-27T14:48:43Z",
- "build": "4880381c50dd"
+ "build": "4880381c50dd",
+ "patches": [
+  {
+   "label": "motion-lab-previews-text-free",
+   "date": "2026-11-27",
+   "files": "motion-lab/media/previews (60 files): language-neutral re-render, no burned-in captions or prose"
+  }
+ ]
 }
