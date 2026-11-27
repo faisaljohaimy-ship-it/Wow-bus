@@ -1,7 +1,7 @@
 {
- "id": "local build",
- "commit": null,
- "source": "default",
+ "id": "V1200-S5",
+ "commit": "4c69e70edc8a61b5d2f85f7c7230ddee99d7fcc5",
+ "source": "release",
  "builtAt": "2026-11-27T14:48:43Z",
  "build": "4880381c50dd"
 }
