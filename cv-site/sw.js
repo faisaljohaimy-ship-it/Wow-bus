@@ -1,6 +1,6 @@
  
 'use strict';
-const BUILD = '4880381c50dd';
+const BUILD = 'fb34176c1b25';
 const CACHE = 'fj-brief-' + BUILD;
 const params = new URL(self.location.href).searchParams;
 const SAVED = params.get('b') === BUILD ? (params.get('l') || '').split(',').filter((l) => l === 'ar' || l === 'en') : [];

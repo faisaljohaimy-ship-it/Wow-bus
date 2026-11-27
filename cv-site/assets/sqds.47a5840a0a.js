@@ -436,6 +436,14 @@
     var glare = h('span', { class: 'sqds-card__glare', 'aria-hidden': 'true' });
     var ic = spec.icon ? icon(spec.icon, { label: false, variant: variant, signal: spec.status === 'verified' ? 'verified' : null }) : null;
     var iconWell = h('div', { class: 'sqds-card__icon', 'aria-hidden': 'true' }, ic);
+     
+    var i3 = spec.icon && W.SITE && W.SITE.icons3d ? W.SITE.icons3d[spec.icon] : null;
+    if (i3 && i3.webp) {
+      var still3 = h('img', { class: 'sqds-card__icon3d', src: i3.webp, alt: '', width: '72', height: '72', loading: 'lazy', decoding: 'async' });
+      still3.addEventListener('error', function () { iconWell.classList.remove('has-3d'); still3.remove(); });
+      iconWell.classList.add('has-3d');
+      iconWell.appendChild(still3);
+    }
     var kicker = spec.kicker ? h('p', { class: 'sqds-card__kicker sqds-eyebrow' }) : null;
     var title = h('h' + hl, { class: 'sqds-card__title', id: titleId });
     var cap = h('p', { class: 'sqds-card__cap' });
@@ -454,6 +462,29 @@
     surface.append(glare, h('div', { class: 'sqds-card__content' }, h('div', { class: 'sqds-card__head' }, iconWell, h('div', { class: 'sqds-card__heading' }, kicker, title)), meta, cap, ex, scn ? scn.el : null, foot, details));
     el.append(shadow, surface);
     var expanded = false, focusOn = false, lastPointer = 'mouse';
+    if (i3 && i3.webp && (i3['-loopwebm'] || i3['-loopmp4'])) {
+      var loop3 = null, hoverOK = W.matchMedia ? W.matchMedia('(hover: hover) and (pointer: fine)') : { matches: false };
+      var play3 = function () {
+        if (reduced() || !iconWell.classList.contains('has-3d')) return;
+        if (!loop3) {
+          loop3 = h('video', { class: 'sqds-card__icon3d-loop', muted: '', playsinline: '', preload: 'none', 'aria-hidden': 'true', tabindex: '-1' });
+          loop3.muted = true;
+          loop3.addEventListener('ended', function () { iconWell.classList.remove('is-playing'); });
+          if (i3['-loopwebm']) loop3.appendChild(h('source', { src: i3['-loopwebm'], type: 'video/webm' }));
+          if (i3['-loopmp4']) loop3.appendChild(h('source', { src: i3['-loopmp4'], type: 'video/mp4' }));
+          iconWell.appendChild(loop3);
+        }
+        if (iconWell.classList.contains('is-playing')) return;
+        try { loop3.currentTime = 0; } catch (e) {}
+        iconWell.classList.add('is-playing');
+        var pr = loop3.play(); if (pr && pr.catch) pr.catch(function () { iconWell.classList.remove('is-playing'); });
+      };
+      var stop3 = function () { iconWell.classList.remove('is-playing'); if (loop3) { loop3.pause(); try { loop3.currentTime = 0; } catch (e) {} } };
+      el.addEventListener('pointerenter', function (e) { if (e.pointerType === 'mouse' && hoverOK.matches) play3(); });
+      el.addEventListener('pointerleave', stop3);
+      el.addEventListener('focusin', play3);
+      el.addEventListener('focusout', function (e) { if (!el.contains(e.relatedTarget)) stop3(); });
+    }
 
     function renderDetails(l) {
       clear(detInner);

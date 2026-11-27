@@ -1,19 +1,7 @@
 {
- "id": "V1200-S5",
- "commit": "4c69e70edc8a61b5d2f85f7c7230ddee99d7fcc5",
- "source": "release",
- "builtAt": "2026-11-27T14:48:43Z",
- "build": "4880381c50dd",
- "patches": [
-  {
-   "label": "motion-lab-previews-text-free",
-   "date": "2026-11-27",
-   "files": "motion-lab/media/previews (60 files): language-neutral re-render, no burned-in captions or prose"
-  },
-  {
-   "label": "company-film-ar",
-   "date": "2026-11-27",
-   "files": "media/company/company-film-ar.mp4 + poster; home film slot (Arabic page only)"
-  }
- ]
+ "id": "local build",
+ "commit": null,
+ "source": "default",
+ "builtAt": "2026-11-27T20:07:01Z",
+ "build": "fb34176c1b25"
 }
