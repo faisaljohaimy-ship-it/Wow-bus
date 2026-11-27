@@ -80,7 +80,7 @@
   var fs = $('filmSlot'), CF = api.page.companyFilm || {};
   function paintFilm() {
     api.clear(fs);
-    var l = api.lang(), f = CF[l] || CF.ar;
+    var l = api.lang(), f = CF[l];
     if (f && f.src) {
       var v = el('video', { controls: true, preload: 'none', playsinline: true, poster: f.poster || null, src: f.src, class: 'company-film', 'aria-label': api.T('mp.home.film') });
       v.addEventListener('play', function () { api.claimMedia(v); });
