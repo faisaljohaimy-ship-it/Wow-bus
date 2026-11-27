@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "id": "ui-slide-inline-start",
+  "name": "Slide inline start",
+  "duration_ms": 280,
+  "easing": "ease-out",
+  "direction": "Enters from the inline-start edge: the left in LTR, the right in RTL.",
+  "keyframes": [
+    {"offset": 0, "opacity": 0, "transform": "translateX(calc(var(--hub-inline-sign, 1) * -24px))"},
+    {"offset": 1, "opacity": 1, "transform": "translateX(0px)"}
+  ],
+  "reduced_motion": {"opacity": 1, "transform": "none"}
+}

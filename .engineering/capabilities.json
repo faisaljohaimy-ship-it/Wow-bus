@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "hub_url": "https://github.com/faisaljohaimy-ship-it/Global-AI-Engneering-Hub",
+  "hub_revision": "3ae6c455f48348e369218ed3170740f6e54facf1",
+  "project": {
+    "id": "wow-bus",
+    "repository": "https://github.com/faisaljohaimy-ship-it/Wow-bus"
+  },
+  "capabilities": [
+    {
+      "id": "skill:hub-capabilities",
+      "files": [
+        {
+          "path": ".claude/skills/hub-capabilities/SKILL.md",
+          "source": "skills/hub-capabilities/SKILL.md",
+          "mode": "copy",
+          "sha256": "4fbb6a6099b1ea07289301024c564db334912af04c5f3d15ddadbd19f5dcf07d"
+        },
+        {
+          "path": ".agents/skills/hub-capabilities/SKILL.md",
+          "source": "skills/hub-capabilities/SKILL.md",
+          "mode": "copy",
+          "sha256": "4fbb6a6099b1ea07289301024c564db334912af04c5f3d15ddadbd19f5dcf07d"
+        }
+      ]
+    },
+    {
+      "id": "skill:digital-motion",
+      "files": [
+        {
+          "path": ".claude/skills/digital-motion/SKILL.md",
+          "source": "skills/digital-motion/SKILL.md",
+          "mode": "copy",
+          "sha256": "431c89e6ef404fb8e8d9016f6ee73beeaa65552cde5e3b66acb8328870ece710"
+        },
+        {
+          "path": ".agents/skills/digital-motion/SKILL.md",
+          "source": "skills/digital-motion/SKILL.md",
+          "mode": "copy",
+          "sha256": "431c89e6ef404fb8e8d9016f6ee73beeaa65552cde5e3b66acb8328870ece710"
+        }
+      ]
+    },
+    {
+      "id": "skill:cinematic-production",
+      "files": [
+        {
+          "path": ".claude/skills/cinematic-production/SKILL.md",
+          "source": "skills/cinematic-production/SKILL.md",
+          "mode": "copy",
+          "sha256": "04fd7c906754b332589def6846b5d9224988637735dff32d48e1cd5c971899ec"
+        },
+        {
+          "path": ".agents/skills/cinematic-production/SKILL.md",
+          "source": "skills/cinematic-production/SKILL.md",
+          "mode": "copy",
+          "sha256": "04fd7c906754b332589def6846b5d9224988637735dff32d48e1cd5c971899ec"
+        }
+      ]
+    },
+    {
+      "id": "skill:release-engineering",
+      "files": [
+        {
+          "path": ".claude/skills/release-engineering/SKILL.md",
+          "source": "skills/release-engineering/SKILL.md",
+          "mode": "copy",
+          "sha256": "6c2c40c2ccb5b62dddf655be5d9f09fafd637eaac7b1d5a8e5b073c92851bf58"
+        },
+        {
+          "path": ".agents/skills/release-engineering/SKILL.md",
+          "source": "skills/release-engineering/SKILL.md",
+          "mode": "copy",
+          "sha256": "6c2c40c2ccb5b62dddf655be5d9f09fafd637eaac7b1d5a8e5b073c92851bf58"
+        }
+      ]
+    },
+    {
+      "id": "pack:catalog-media-tools",
+      "files": [
+        {
+          "path": ".claude/skills/catalog-media-tools/SKILL.md",
+          "source": "skills/catalog-media-tools/SKILL.md",
+          "mode": "copy",
+          "sha256": "b705ab94448e27e2ce08ff07bdadeb5e5e65e6300bb52c6a59e49f1a50a7a559"
+        },
+        {
+          "path": ".agents/skills/catalog-media-tools/SKILL.md",
+          "source": "skills/catalog-media-tools/SKILL.md",
+          "mode": "copy",
+          "sha256": "b705ab94448e27e2ce08ff07bdadeb5e5e65e6300bb52c6a59e49f1a50a7a559"
+        },
+        {
+          "path": "tools/media_tools.py",
+          "source": "tools/media_tools.py",
+          "mode": "copy",
+          "sha256": "eb3bc264baa0b3f01e302a0aa3ae2c23670a5a2c3190a62c1730b224eab02d8e"
+        },
+        {
+          "path": "tools/shared_catalog.py",
+          "source": "tools/shared_catalog.py",
+          "mode": "copy",
+          "sha256": "705fb5b456fe9cdeb31703556ae37c4b566eb898c33c4c5d507e826ff17497cf"
+        }
+      ]
+    },
+    {
+      "id": "pack:motion-runtime",
+      "files": [
+        {
+          "path": ".engineering/vendor/hub-motion/hub-motion-base.css",
+          "source": "motion-library/runtime/hub-motion-base.css",
+          "mode": "copy",
+          "sha256": "0a81c0d27c03f067ea5e7ea653097b82b5c4702131800eff95d2bb971b62f907"
+        },
+        {
+          "path": ".engineering/vendor/hub-motion/hub-motion.mjs",
+          "source": "motion-library/runtime/hub-motion.mjs",
+          "mode": "copy",
+          "sha256": "3aee1810d78938a68250b3e9812a79769086c4e5860a4cccc15910f6c3cbe5e3"
+        }
+      ]
+    },
+    {
+      "id": "motion:ui-fade-in",
+      "files": [
+        {
+          "path": ".engineering/vendor/hub-motion/ui-fade-in.json",
+          "source": "motion-library/specs/fade-in.json",
+          "mode": "copy",
+          "sha256": "c7a8a4c596a0954ad54fcc5af831f8a560543c19afaaba92be7252a449ba1fb1"
+        },
+        {
+          "path": ".engineering/vendor/hub-motion/ui-fade-in.css",
+          "source": "motion-library/specs/fade-in.json",
+          "mode": "css",
+          "sha256": "3f51ca1d6dc5137ef2054f391464452c2af6456331c64fe37e313309fa5ef193"
+        }
+      ]
+    },
+    {
+      "id": "motion:ui-slide-up",
+      "files": [
+        {
+          "path": ".engineering/vendor/hub-motion/ui-slide-up.json",
+          "source": "motion-library/specs/ui-slide-up.json",
+          "mode": "copy",
+          "sha256": "5046d615a6233376bd3bd3e2021b913875fcdf50b87c6b841ff196c5127ee604"
+        },
+        {
+          "path": ".engineering/vendor/hub-motion/ui-slide-up.css",
+          "source": "motion-library/specs/ui-slide-up.json",
+          "mode": "css",
+          "sha256": "946576239f19b1545dfd884bb310252645af9bb39d1318b0356f5778c2d61dc8"
+        }
+      ]
+    },
+    {
+      "id": "motion:ui-slide-inline-start",
+      "files": [
+        {
+          "path": ".engineering/vendor/hub-motion/ui-slide-inline-start.json",
+          "source": "motion-library/specs/ui-slide-inline-start.json",
+          "mode": "copy",
+          "sha256": "1c64947ab133a5b3bfe122a687c22fa57482072c46b37a8c0e44cca000ec863d"
+        },
+        {
+          "path": ".engineering/vendor/hub-motion/ui-slide-inline-start.css",
+          "source": "motion-library/specs/ui-slide-inline-start.json",
+          "mode": "css",
+          "sha256": "f7ec459de337fa36d7bd9bb44512e93b23cbcb9f339730494b7c3f7a24425cd2"
+        }
+      ]
+    },
+    {
+      "id": "motion:ui-press-feedback",
+      "files": [
+        {
+          "path": ".engineering/vendor/hub-motion/ui-press-feedback.json",
+          "source": "motion-library/specs/ui-press-feedback.json",
+          "mode": "copy",
+          "sha256": "8fe9255fda02c56696545563e84b26808dc8ccdd483d14546c55c0f945cda495"
+        },
+        {
+          "path": ".engineering/vendor/hub-motion/ui-press-feedback.css",
+          "source": "motion-library/specs/ui-press-feedback.json",
+          "mode": "css",
+          "sha256": "6de4de1096363d29ea0befd5c8caf0ff424de92c8434289e67c3276a771a91a4"
+        }
+      ]
+    },
+    {
+      "id": "motion:ui-dialog-reveal",
+      "files": [
+        {
+          "path": ".engineering/vendor/hub-motion/ui-dialog-reveal.json",
+          "source": "motion-library/specs/ui-dialog-reveal.json",
+          "mode": "copy",
+          "sha256": "6d24c7815a12e423e6cdc997db7ebf41e320c209a280a04bee669311039b711d"
+        },
+        {
+          "path": ".engineering/vendor/hub-motion/ui-dialog-reveal.css",
+          "source": "motion-library/specs/ui-dialog-reveal.json",
+          "mode": "css",
+          "sha256": "9f445f3364fa0f5e2c37c8be009a9b1d2fa8d9ddfb0097c1f2b5d65f49d356a0"
+        }
+      ]
+    }
+  ],
+  "budget_additional_sar": 0,
+  "production_runtime_dependency": false
+}

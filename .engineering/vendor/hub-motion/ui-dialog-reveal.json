@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "ui-dialog-reveal",
+  "name": "Dialog reveal",
+  "duration_ms": 220,
+  "easing": "ease-out",
+  "keyframes": [
+    {"offset": 0, "opacity": 0, "transform": "translateY(8px) scale(0.96)"},
+    {"offset": 1, "opacity": 1, "transform": "translateY(0px) scale(1)"}
+  ],
+  "reduced_motion": {"opacity": 1, "transform": "none"}
+}
