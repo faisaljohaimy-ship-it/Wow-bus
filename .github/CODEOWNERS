@@ -1,0 +1,7 @@
+# The owner reviews build and deployment ownership changes.
+/package.json @faisaljohaimy-ship-it
+/package-lock.json @faisaljohaimy-ship-it
+/vite.config.ts @faisaljohaimy-ship-it
+/.github/ @faisaljohaimy-ship-it
+/RELEASE_MANIFEST.json @faisaljohaimy-ship-it
+/DEPLOYMENT.md @faisaljohaimy-ship-it

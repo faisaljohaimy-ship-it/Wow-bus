@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "project": "Wow-bus",
+  "repository": "faisaljohaimy-ship-it/Wow-bus",
+  "productionBranch": "main",
+  "sourceDirectory": ".",
+  "applications": ["static-neexios", "tanstack-transportation-shell"],
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build",
+  "testCommand": "npm run check",
+  "runtime": "nodejs24.x",
+  "deploymentTarget": null,
+  "productionReleaseStatus": "blocked-target-identity-and-integration-verification",
+  "releaseOwner": "faisaljohaimy-ship-it",
+  "rollbackDeploymentId": null
+}
