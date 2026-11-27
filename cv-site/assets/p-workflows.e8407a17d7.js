@@ -75,8 +75,7 @@
   var host = $('flowCards');
   if (!host) return;
   var stateLabel = META.states || {};
-  HYP.forEach(function (h, i) {
-    var film = h.scene && h.scene.film || (h.topic && h.topic.film) || i + 1, t = TOPICS[film - 1] || {};
+  HYP.map(function (h, i) { return [h, h.scene && h.scene.film || (h.topic && h.topic.film) || i + 1]; }).sort(function (a, b) { return (((TOPICS[a[1] - 1] || {}).pos) || a[1]) - (((TOPICS[b[1] - 1] || {}).pos) || b[1]); }).forEach(function (hf, i) {     var h = hf[0], film = hf[1], t = TOPICS[film - 1] || {};
     var flow = flowFor(h), det = details(h, flow);
      
     var steps = [['inputs', 'wf.inputs'], ['ai', 'wf.ai'], [PROCESS[film] || 'automation', 'wf.process'], ['decision', 'wf.decision'], ['evidence', 'wf.evidence']].map(function (x) { var lab = api.pair(x[1]) || [x[1], x[1]]; return [x[0], lab[0], lab[1]]; });
@@ -86,7 +85,7 @@
       api.playFilm({ film: film, lang: api.lang(), chapter: (h.scene && h.scene.chapter) || 'hook', from: h.id });
     } });
     watch.el.setAttribute('data-film', String(film));
-    var num = [dig(pad2(film), 'ar'), pad2(film)];
+    var fpos = ((TOPICS[film - 1] || {}).pos) || film; var num = [dig(pad2(fpos), 'ar'), pad2(fpos)];
     var c = api.card({ id: h.id, icon: TOPIC_ICON[film] || 'decision', kicker: api.TP('mp.flows.wfCard', { n: num }), title: (h.topic && h.topic.title) || t.title || h.id,
       capability: h.short, example: h.problem, exampleLabel: STR['mp.flows.problem'], status: api.ladder(h.state), statusLabel: stateLabel[h.state] || null,
       details: det.node, detailsLabel: STR['mp.flows.details'], variant: 'a', focusMode: false, headingLevel: 2, before: rail(flow), slot: slot, actions: [watch], fx: 'card-wf',

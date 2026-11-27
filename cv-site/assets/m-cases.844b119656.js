@@ -52,7 +52,7 @@
       return null;
     }
     function pad(n) { return (n < 10 ? '0' : '') + n; }
-    function filmTitle(n) {
+    function fpos(n) { var s = data.sequence, x = s && s.topics && s.topics[n - 1]; return (x && x.pos) || n; }     function filmTitle(n) {
       var s = data.sequence;
       try {
         var pools = [].concat((s && s.topics) || [], (s && s.films) || []);
@@ -204,7 +204,7 @@
           } catch (e) { status.textContent = P(T.unavailable); }
         },
       }, svg('M8 5v14l11-7z'), api.el('span', { class: 'm-cases-film-t' },
-        api.el('b', null, P(T.watch) + (lang() === 'ar' ? api.num(pad(f.n)) : pad(f.n))),
+        api.el('b', null, P(T.watch) + (lang() === 'ar' ? api.num(pad(fpos(f.n))) : pad(fpos(f.n)))),
         api.el('small', null, P(filmTitle(f.n)) + ' — ' + P(f.what))));
       return api.el('div', { class: 'm-cases-filmwrap' }, btn, status);
     }

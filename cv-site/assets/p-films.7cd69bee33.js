@@ -49,7 +49,7 @@
   var bFlows = api.button({ id: 'cinToHyp', kind: 'tertiary', label: api.pair('cin.toHyp'), trailing: true, href: '/workflows/' });
   $('cinToFlows').append(bFlows.el);
 
-  function topicOf(n) { return TOPICS[n - 1] || null; }
+  function topicOf(n) { return TOPICS[n - 1] || null; }   function posOf(n) { var t = topicOf(n); return (t && t.pos) || n; }   function ordered() { var seen = {}, out = []; ITEMS.forEach(function (i) { if (i.kind === 'film' && !seen[i.topic] && topicOf(i.topic)) { seen[i.topic] = 1; out.push(topicOf(i.topic)); } }); TOPICS.forEach(function (x) { if (!seen[x.id]) out.push(x); }); return out; }
   function current() { return ITEMS[C.idx] || null; }
   function filmOf(it) { var t = it && topicOf(it.topic); return t && t.films ? t.films[it.lang] || null : null; }
   function idxOfKey(key) { for (var i = 0; i < ITEMS.length; i++) if (ITEMS[i].kind === 'film' && ITEMS[i].key === key) return i; return -1; }
@@ -464,7 +464,7 @@
     scnTopic = t.id;
     var box = $('cinScnCard'); if (!box) return;
     if (scnCard) scnCard.destroy();
-    var nn = [String(pad2(t.id)).replace(/[0-9]/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'[d]; }), pad2(t.id)];
+    var nn = [String(pad2(posOf(t.id))).replace(/[0-9]/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'[d]; }), pad2(posOf(t.id))];
     scnCard = api.card({ id: 'cinScenarioCard', icon: TOPIC_ICON[t.id], kicker: api.TP('cin.topic', { n: nn }), title: t.title, capability: t.tagline,
       slot: api.loopSlot(null, { steps: topicSteps(t) }, { id: 'cinScn' }), details: [t.disclosure, t.caveat], variant: 'b', focusMode: false, headingLevel: 2, status: api.ladder(t.state.key), statusLabel: t.state.label });
     api.clear(box); box.append(scnCard.el);
@@ -487,11 +487,11 @@
     var count = $('cinCount'), topicEl = $('cinTopic'), tag = $('cinLangTag'), st = clear($('cinState')), ph = $('cinPh');
     if (C.mode === 'end') { count.textContent = T('cin.endOf'); topicEl.textContent = ''; tag.hidden = true; ph.hidden = true; }
     else if (C.mode === 'bridge') {
-      count.textContent = T('cin.bridgeOf', { a: num(pad2(it.topic)), b: num(pad2(it.topic + 1)) });
+      count.textContent = T('cin.bridgeOf', { a: num(pad2(posOf(it.topic))), b: num(pad2(posOf(it.to != null ? it.to : it.topic + 1))) });
       topicEl.textContent = T('cin.bridgeLabel'); tag.hidden = true; ph.hidden = true;
     } else if (it && t) {
       count.textContent = T('cin.filmOf', { n: num(it.n), total: num(FILM_TOTAL) });
-      topicEl.textContent = T('cin.topic', { n: num(pad2(it.topic)) }) + ' · ' + P(t.title);
+      topicEl.textContent = T('cin.topic', { n: num(pad2(posOf(it.topic))) }) + ' · ' + P(t.title);
       tag.hidden = false; tag.textContent = langName(it.lang); tag.setAttribute('title', T('cin.filmLang', { l: langName(it.lang) }));
       st.append(chip(t.state.key, t.state.label));
       ph.hidden = !(f && f.media === 'placeholder-e3'); ph.textContent = T('cin.placeholderTag'); ph.title = T('cin.placeholder');
@@ -504,7 +504,7 @@
     $('cinFrame').classList.toggle('is-held', showHold);
     $('ovHoldText').textContent = C.held ? T('cin.hold.' + C.held) : T('cin.hold.user');
     $('ovMissing').hidden = !(C.mode === 'film' && C.missing);
-    $('ovMissingText').textContent = T('cin.missingP', { n: it ? num(pad2(it.topic)) : '' });
+    $('ovMissingText').textContent = T('cin.missingP', { n: it ? num(pad2(posOf(it.topic))) : '' });
     var ei = C.missing && C.errInfo;
     $('ovMissingErr').textContent = ei ? (ei.http ? T('cin.errHttp', { s: num(ei.http) }) : ei.http === 0 ? T('cin.errNet') : ei.code === 4 ? T('cin.errFormat') : '') : '';
     var nt = nextTarget();
@@ -517,9 +517,9 @@
     $('ovBridge').hidden = C.mode !== 'bridge';
     if (C.mode === 'bridge' && t) {
       var b = t.bridge || {};
-      $('bLabel').textContent = T('cin.bridgeLabel') + ' · ' + num(pad2(it.topic)) + (lang === 'ar' ? ' ← ' : ' → ') + num(pad2(it.topic + 1));
+      $('bLabel').textContent = T('cin.bridgeLabel') + ' · ' + num(pad2(posOf(it.topic))) + (lang === 'ar' ? ' ← ' : ' → ') + num(pad2(posOf(it.to != null ? it.to : it.topic + 1)));
       $('bIdea').textContent = P(b.idea); $('bEx').textContent = P(b.example); $('bQ').textContent = P(b.question);
-      bBridgeGo.el.querySelector('.sqds-btn__label').textContent = T('cin.bridgeGo', { n: num(pad2(it.topic + 1)) });
+      bBridgeGo.el.querySelector('.sqds-btn__label').textContent = T('cin.bridgeGo', { n: num(pad2(posOf(it.to != null ? it.to : it.topic + 1))) });
       paintBridgeTimer();
     }
     paintNotice();
@@ -584,14 +584,13 @@
   function buildOrbit() {
     var box = $('cinOrbit');
     orbitNodes.forEach(function (n) { n.remove(); }); orbitNodes = [];
-    var n = TOPICS.length || 10;
-    TOPICS.forEach(function (t, i) {
+    var n = TOPICS.length || 10;     ordered().forEach(function (t, i) {
       var a = -Math.PI / 2 + (i / n) * Math.PI * 2 * (lang === 'ar' ? -1 : 1);
       var x = 50 + 44 * Math.cos(a), y = 50 + 40 * Math.sin(a);
       var key = lang + '-' + pad2(t.id), f = t.films[lang];
       var b = el('button', { type: 'button', class: 'orbit-node' + (f && f.media === 'missing' ? ' missing' : ''), 'data-key': key, 'data-topic': t.id, tabindex: '-1', style: 'left:' + x.toFixed(2) + '%;top:' + y.toFixed(2) + '%',
         'aria-label': T('cin.badge', { n: num(t.id), total: num(FILM_TOTAL), title: P(t.title) }) + (f && f.media === 'missing' ? ' — ' + T('cin.badgeMissing') : ''),
-        onclick: function () { notice(''); loadItem(idxOfKey(key), { play: true }); } }, num(pad2(t.id)));
+        onclick: function () { notice(''); loadItem(idxOfKey(key), { play: true }); } }, num(pad2(posOf(t.id))));
       b.addEventListener('keydown', function (e) {
         var j = null, rtl = root.dir === 'rtl';
         if (e.key === 'ArrowRight' || e.key === 'ArrowDown') j = (i + ((e.key === 'ArrowRight' && rtl) ? -1 : 1) + n) % n;
@@ -613,7 +612,7 @@
       b.classList.toggle('played', !!C.played[b.getAttribute('data-key')]);
     });
     if (!orbitNodes.some(function (b) { return b.tabIndex === 0; }) && orbitNodes[0]) orbitNodes[0].tabIndex = 0;
-    $('orbitNum').textContent = num(pad2(t.id));
+    $('orbitNum').textContent = num(pad2(posOf(t.id)));
     $('orbitTitle').textContent = P(t.title);
     void cur;
   }
@@ -621,12 +620,11 @@
   function buildList() {
     keepFocus(function () {
       var list = clear($('cinList'));
-      TOPICS.forEach(function (t) {
-        var key = lang + '-' + pad2(t.id), i = idxOfKey(key), item = ITEMS[i] || { n: t.id }, f = t.films[lang];
+      ordered().forEach(function (t) {         var key = lang + '-' + pad2(t.id), i = idxOfKey(key), item = ITEMS[i] || { n: posOf(t.id) }, f = t.films[lang];
         var thumb = f && (f.thumb || f.poster);
         var li = el('li', { class: 'ftile', 'data-topic': t.id, 'data-fx': 'tile' },
           el('div', { class: 'ftile-poster fx-wipe' }, thumb ? el('img', { src: thumb, alt: '', loading: 'lazy', decoding: 'async', width: '480', height: '270' }) : null,
-            el('span', { class: 'ftile-num' }, num(pad2(t.id)))),
+            el('span', { class: 'ftile-num' }, num(pad2(posOf(t.id))))),
           el('div', { class: 'ftile-title' }, P(t.title)),
           el('div', { class: 'ftile-meta' }, api.icon(TOPIC_ICON[t.id], { size: 22 }), el('span', null, P(t.tool)), chip(t.state.key, t.state.label), el('span', { class: 'mono' }, num(fmt(f ? f.duration : 0)))),
           el('button', { class: 'ftile-play', type: 'button', 'data-key': key,
@@ -634,7 +632,7 @@
             onclick: function () { notice(''); loadItem(i, { play: true }); scrollToCinema(); } }));
         var scn = api.scenario({ steps: topicSteps(t) }, { trigger: 'view', id: 'scn-tile-' + t.id });
         if (scn) li.append(el('div', { class: 'ftile-scn' }, scn.el));
-        if (t.bridge) li.append(el('span', { class: 'bridge-note' }, T('cin.bridgeLabel') + ' · ' + num(pad2(t.id)) + (lang === 'ar' ? ' ← ' : ' → ') + num(pad2(t.id + 1))));
+        if (t.bridge) li.append(el('span', { class: 'bridge-note' }, T('cin.bridgeLabel') + ' · ' + num(pad2(posOf(t.id))) + (lang === 'ar' ? ' ← ' : ' → ') + num(pad2(posOf(t.id) + 1))));
         list.append(li);
       });
     });

@@ -375,7 +375,7 @@
     function topicLine(seg) {
       var t = TOPICS[PLAN[seg].film - 1] || {};
       var chs = PLAN[seg].ch.map(function (c) { return t.labels && t.labels[c] ? P(t.labels[c]) : c; }).join(' + ');
-      return { t: t, n: num(pad2(PLAN[seg].film)), title: P(t.title), ch: chs };
+      return { t: t, n: num(pad2(((TOPICS[PLAN[seg].film - 1] || {}).pos) || PLAN[seg].film)), title: P(t.title), ch: chs };
     }
 
      
@@ -793,7 +793,7 @@
       (durA || durE) ? el('p', { class: 'det-ev' }, bi([dig((durA || 0).toFixed(1), 'ar') + ' ثانية', (durE || 0).toFixed(1) + ' s'])) : null,
       api.loopSlot('topic-' + pad2(s.film), { steps: steps, label: t.title }, { id: 'scn-brief-' + i }),
       el('p', { class: 'scn-note' }, bi(STR['mp.scenario.note'])));
-    var c = api.card({ id: 'brief-' + (i + 1), icon: TOPIC_ICON[s.film] || 'cinema', kicker: [dig('المقطع ' + (i + 1) + ' · الفيلم ' + pad2(s.film), 'ar'), 'Passage ' + (i + 1) + ' · Film ' + pad2(s.film)],
+    var c = api.card({ id: 'brief-' + (i + 1), icon: TOPIC_ICON[s.film] || 'cinema', kicker: [dig('المقطع ' + (i + 1) + ' · الفيلم ' + pad2(((TOPICS[s.film - 1] || {}).pos) || s.film), 'ar'), 'Passage ' + (i + 1) + ' · Film ' + pad2(((TOPICS[s.film - 1] || {}).pos) || s.film)],
       title: t.title, capability: [labs.map(function (x) { return x[0]; }).join(' + '), labs.map(function (x) { return x[1]; }).join(' + ')], status: api.ladder((t.state || {}).key), statusLabel: (t.state || {}).label,
       details: details, variant: 'b', focusMode: false, headingLevel: 3, fx: 'card-cap' });
     cards.append(c.el);
