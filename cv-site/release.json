@@ -43,6 +43,17 @@
     "en-09"
    ],
    "files": "films, posters, thumbnails, briefing passages, d-sequence, d-filmqa"
+  },
+  {
+   "label": "films-grammar-d-batch-3",
+   "date": "2026-11-27T00:05:37Z",
+   "films": [
+    "ar-02",
+    "en-02",
+    "ar-10",
+    "en-10"
+   ],
+   "files": "films, posters, thumbnails, briefing passages, d-sequence, d-filmqa"
   }
  ]
 }
