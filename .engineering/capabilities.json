@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "hub_url": "https://github.com/faisaljohaimy-ship-it/Global-AI-Engneering-Hub",
-  "hub_revision": "3ae6c455f48348e369218ed3170740f6e54facf1",
+  "hub_revision": "2d9cb8c42377a7bd09b04386e5cb6300f140548e",
   "project": {
     "id": "wow-bus",
     "repository": "https://github.com/faisaljohaimy-ship-it/Wow-bus"
@@ -14,13 +14,13 @@
           "path": ".claude/skills/hub-capabilities/SKILL.md",
           "source": "skills/hub-capabilities/SKILL.md",
           "mode": "copy",
-          "sha256": "4fbb6a6099b1ea07289301024c564db334912af04c5f3d15ddadbd19f5dcf07d"
+          "sha256": "39d9a60f67b4618a90280589fa9006692623154369a9890deb3f3dbfe40f92dd"
         },
         {
           "path": ".agents/skills/hub-capabilities/SKILL.md",
           "source": "skills/hub-capabilities/SKILL.md",
           "mode": "copy",
-          "sha256": "4fbb6a6099b1ea07289301024c564db334912af04c5f3d15ddadbd19f5dcf07d"
+          "sha256": "39d9a60f67b4618a90280589fa9006692623154369a9890deb3f3dbfe40f92dd"
         }
       ]
     },
@@ -31,13 +31,13 @@
           "path": ".claude/skills/digital-motion/SKILL.md",
           "source": "skills/digital-motion/SKILL.md",
           "mode": "copy",
-          "sha256": "431c89e6ef404fb8e8d9016f6ee73beeaa65552cde5e3b66acb8328870ece710"
+          "sha256": "fac480ce080a555cb1a3e3d35c3d1d357d870a6c8ba125d85fd3f971256594dd"
         },
         {
           "path": ".agents/skills/digital-motion/SKILL.md",
           "source": "skills/digital-motion/SKILL.md",
           "mode": "copy",
-          "sha256": "431c89e6ef404fb8e8d9016f6ee73beeaa65552cde5e3b66acb8328870ece710"
+          "sha256": "fac480ce080a555cb1a3e3d35c3d1d357d870a6c8ba125d85fd3f971256594dd"
         }
       ]
     },
@@ -108,16 +108,16 @@
       "id": "pack:motion-runtime",
       "files": [
         {
-          "path": ".engineering/vendor/hub-motion/hub-motion-base.css",
-          "source": "motion-library/runtime/hub-motion-base.css",
+          "path": ".engineering/vendor/hub-motion/core.mjs",
+          "source": "motion-library/runtime/core.mjs",
           "mode": "copy",
-          "sha256": "0a81c0d27c03f067ea5e7ea653097b82b5c4702131800eff95d2bb971b62f907"
+          "sha256": "8832c7b790987ba362e4dab511bdac190e8b074abe63ed0f6da1c2acdab5d304"
         },
         {
           "path": ".engineering/vendor/hub-motion/hub-motion.mjs",
           "source": "motion-library/runtime/hub-motion.mjs",
           "mode": "copy",
-          "sha256": "3aee1810d78938a68250b3e9812a79769086c4e5860a4cccc15910f6c3cbe5e3"
+          "sha256": "e975f8e37bcd47b7ea7de562f041a479dcd048bef9f6442c77efc73303724564"
         }
       ]
     },
@@ -160,15 +160,15 @@
       "files": [
         {
           "path": ".engineering/vendor/hub-motion/ui-slide-inline-start.json",
-          "source": "motion-library/specs/ui-slide-inline-start.json",
+          "source": "motion-library/specs/slide-inline-start.json",
           "mode": "copy",
-          "sha256": "1c64947ab133a5b3bfe122a687c22fa57482072c46b37a8c0e44cca000ec863d"
+          "sha256": "72edf31805aa45c8fe2dc5c746b4bae81ab639c2bc6223c3e618f10ff3493982"
         },
         {
           "path": ".engineering/vendor/hub-motion/ui-slide-inline-start.css",
-          "source": "motion-library/specs/ui-slide-inline-start.json",
+          "source": "motion-library/specs/slide-inline-start.json",
           "mode": "css",
-          "sha256": "f7ec459de337fa36d7bd9bb44512e93b23cbcb9f339730494b7c3f7a24425cd2"
+          "sha256": "d87e18342f811510b2fce42ca5ccf42e58022335147ea1416afdd3edfe84abed"
         }
       ]
     },
@@ -177,15 +177,15 @@
       "files": [
         {
           "path": ".engineering/vendor/hub-motion/ui-press-feedback.json",
-          "source": "motion-library/specs/ui-press-feedback.json",
+          "source": "motion-library/specs/press-feedback.json",
           "mode": "copy",
-          "sha256": "8fe9255fda02c56696545563e84b26808dc8ccdd483d14546c55c0f945cda495"
+          "sha256": "53a5d8ae16a04baa4285fc9349b2ea53c657f255db00ef553ddf9f814dd22d9c"
         },
         {
           "path": ".engineering/vendor/hub-motion/ui-press-feedback.css",
-          "source": "motion-library/specs/ui-press-feedback.json",
+          "source": "motion-library/specs/press-feedback.json",
           "mode": "css",
-          "sha256": "6de4de1096363d29ea0befd5c8caf0ff424de92c8434289e67c3276a771a91a4"
+          "sha256": "c9d8af31955f8c52e58786b409846760e4721c07e4b06aa133099e28c29aac78"
         }
       ]
     },

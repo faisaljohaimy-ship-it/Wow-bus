@@ -4,6 +4,8 @@
 // typewriter text and number counters. Every animated value is a pure function of time,
 // so a scene can be seeked frame by frame for deterministic rendering.
 
+import { mirroredKeyframes } from './core.mjs';
+
 const EASINGS = {
   linear: [0, 0, 1, 1],
   ease: [0.25, 0.1, 0.25, 1],
@@ -13,12 +15,30 @@ const EASINGS = {
 };
 const PROPERTIES = ['opacity', 'transform', 'filter', 'color', 'background-color'];
 const SAFE_ID = /^[a-z][a-z0-9-]{1,63}$/;
+// The three value grammars below are the ones in motion-library/compiler.py.
+const TRANSFORM = /^(?:none|(?:(?:translate[XYZ]?\(-?\d+(?:\.\d+)?(?:px|%|rem|em)?\)|scale[XYZ]?\(\d+(?:\.\d+)?\)|rotate[XYZ]?\(-?\d+(?:\.\d+)?deg\))\s*)+)$/;
+const FILTER = /^(?:none|(?:(?:blur\(\d+(?:\.\d+)?px\)|(?:brightness|contrast|opacity|saturate)\(\d+(?:\.\d+)?(?:%?)\))\s*)+)$/;
+const COLOR = /^(?:transparent|#[0-9a-fA-F]{3,8}|rgba?\([\d.,%\s]+\)|hsla?\([\d.,%\s]+\))$/;
+const UNSAFE = [';', '{', '}', 'url(', 'var(', '@', '\\'];
 
 const fail = (message) => {
   throw new Error(message);
 };
 
-/** Same acceptance rules as motion-library/compiler.py. Returns the spec or throws. */
+function declaration(name, value) {
+  if (typeof value !== 'string' && typeof value !== 'number') fail('Property values must be strings or numbers');
+  const text = String(value).trim();
+  if (UNSAFE.some((token) => text.toLowerCase().includes(token))) fail('Unsafe CSS value');
+  if (Array.from(text).some((character) => character.codePointAt(0) < 32)) fail('Control characters are not allowed');
+  if (name === 'opacity') {
+    if (typeof value !== 'number' || !(value >= 0 && value <= 1)) fail('Opacity must be a number from 0 to 1');
+  } else if (name === 'transform' && !TRANSFORM.test(text)) fail('Unsupported transform value');
+  else if (name === 'filter' && !FILTER.test(text)) fail('Unsupported filter value');
+  else if ((name === 'color' || name === 'background-color') && !COLOR.test(text)) fail('Unsupported color value');
+  return text;
+}
+
+/** Same acceptance rules as motion-library/compiler.py; verify/rejections.json holds the shared cases. */
 export function validateSpec(spec) {
   if (!spec || spec.schema_version !== 1) fail('Unsupported schema version');
   if (typeof spec.id !== 'string' || !SAFE_ID.test(spec.id)) fail('Invalid motion id');
@@ -26,34 +46,29 @@ export function validateSpec(spec) {
     fail('duration_ms must be an integer from 1 to 10000');
   }
   if (!Object.hasOwn(EASINGS, spec.easing)) fail('Unsupported easing');
+  if ('rtl_mirror' in spec && typeof spec.rtl_mirror !== 'boolean') fail('rtl_mirror must be true or false');
   const frames = spec.keyframes;
-  if (!Array.isArray(frames) || frames.length < 2) fail('At least two keyframes are required');
+  if (!Array.isArray(frames) || frames.length < 2 || frames.length > 64) fail('Two to 64 keyframes are required');
   const offsets = frames.map((frame) => {
     if (typeof frame.offset !== 'number' || !(frame.offset >= 0 && frame.offset <= 1)) {
       fail('Keyframe offsets must be between 0 and 1');
     }
     const names = Object.keys(frame).filter((name) => name !== 'offset');
-    if (!names.length || !names.every((name) => PROPERTIES.includes(name))) {
+    if (!names.length || names.length > 5 || !names.every((name) => PROPERTIES.includes(name))) {
       fail('Unsupported or empty keyframe properties');
     }
-    names.forEach((name) => safeValue(frame[name]));
+    names.forEach((name) => declaration(name, frame[name]));
     return frame.offset;
   });
   const ordered = offsets.every((offset, index) => index === 0 || offsets[index - 1] <= offset);
   if (!ordered || offsets[0] !== 0 || offsets.at(-1) !== 1) fail('Keyframes must be ordered from offset 0 to 1');
   const reduced = spec.reduced_motion;
-  const reducedNames = reduced && typeof reduced === 'object' ? Object.keys(reduced) : [];
+  const reducedNames = reduced && typeof reduced === 'object' && !Array.isArray(reduced) ? Object.keys(reduced) : [];
   if (!reducedNames.length || !reducedNames.every((name) => PROPERTIES.includes(name))) {
     fail('A safe reduced_motion state is required');
   }
-  reducedNames.forEach((name) => safeValue(reduced[name]));
+  reducedNames.forEach((name) => declaration(name, reduced[name]));
   return spec;
-}
-
-function safeValue(value) {
-  if (typeof value !== 'string' && typeof value !== 'number') fail('Property values must be strings or numbers');
-  if (/[;{}]/.test(String(value))) fail('Unsafe CSS value');
-  return String(value);
 }
 
 /** CSS cubic-bezier timing function as progress in, eased progress out. */
@@ -92,9 +107,10 @@ export function ease(name, progress) {
  * Keyframes in the shape Element.animate() accepts. The easing is attached to every
  * keyframe because CSS applies animation-timing-function to each interval between
  * keyframes, not once across the whole animation; this keeps both paths identical.
+ * With `mirror`, a specification marked rtl_mirror has its horizontal travel reversed.
  */
-export function toKeyframes(spec) {
-  return spec.keyframes.map((frame) => {
+export function toKeyframes(spec, { mirror = false } = {}) {
+  return mirroredKeyframes(spec.keyframes, mirror && spec.rtl_mirror === true).map((frame) => {
     const keyframe = { offset: frame.offset, easing: spec.easing };
     for (const [name, value] of Object.entries(frame)) {
       if (name !== 'offset') keyframe[name === 'background-color' ? 'backgroundColor' : name] = String(value);
@@ -114,16 +130,18 @@ export function applyReducedState(element, spec) {
 
 /**
  * Play a specification on an element. Returns the Animation, or null when reduced
- * motion applies and the element was placed directly in its end state.
+ * motion applies and the element was placed directly in its end state. Travel is
+ * mirrored when the element's computed direction (or `direction`) is right-to-left.
  */
-export function play(element, spec, { delay = 0, reducedMotion } = {}) {
+export function play(element, spec, { delay = 0, reducedMotion, direction } = {}) {
   validateSpec(spec);
-  const reduce = reducedMotion ?? prefersReducedMotion(element.ownerDocument.defaultView);
-  if (reduce) {
+  const view = element.ownerDocument.defaultView;
+  if (reducedMotion ?? prefersReducedMotion(view)) {
     applyReducedState(element, spec);
     return null;
   }
-  return element.animate(toKeyframes(spec), { duration: spec.duration_ms, delay, easing: 'linear', fill: 'both' });
+  const mirror = (direction ?? view.getComputedStyle(element).direction) === 'rtl';
+  return element.animate(toKeyframes(spec, { mirror }), { duration: spec.duration_ms, delay, easing: 'linear', fill: 'both' });
 }
 
 /** Start delay in milliseconds for each of `count` items. */

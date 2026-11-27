@@ -21,8 +21,9 @@ Claude Code command.
 
 ## What it does not change
 
-- No page loads `vendor/hub-motion/` yet. To use a motion, link its `.css` (and
-  `hub-motion-base.css` for the inline-direction ones) or import `hub-motion.mjs`.
+- No page loads `vendor/hub-motion/` yet. To use a motion, link its `.css` and add the
+  class `hub-motion-<id>`, or import `hub-motion.mjs` and call `play(element, spec)`.
+  Inline motions mirror by themselves on right-to-left pages.
 - No build, test, deployment setting or existing instruction file was modified. The
   workflow runs only when link files change, so nothing here waits on the hub.
 

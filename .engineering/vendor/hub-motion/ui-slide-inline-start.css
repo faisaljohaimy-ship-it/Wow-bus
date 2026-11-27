@@ -1,12 +1,19 @@
 @keyframes hub-ui-slide-inline-start {
-  0% { opacity: 0; transform: translateX(calc(var(--hub-inline-sign, 1) * -24px)); }
-  100% { opacity: 1; transform: translateX(0px); }
+  0% { opacity: 0; transform: translateX(-24px); }
+  100% { opacity: 1; transform: translateX(0); }
 }
 .hub-motion-ui-slide-inline-start {
   animation: hub-ui-slide-inline-start 280ms ease-out both;
 }
+@keyframes hub-ui-slide-inline-start-rtl {
+  0% { opacity: 0; transform: translateX(24px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+.hub-motion-ui-slide-inline-start:dir(rtl) {
+  animation-name: hub-ui-slide-inline-start-rtl;
+}
 @media (prefers-reduced-motion: reduce) {
-  .hub-motion-ui-slide-inline-start {
+  .hub-motion-ui-slide-inline-start, .hub-motion-ui-slide-inline-start:dir(rtl) {
     animation: none;
     opacity: 1;
     transform: none;
