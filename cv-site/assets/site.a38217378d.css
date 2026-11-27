@@ -309,10 +309,13 @@ details.fold[open] > summary::before { transform: rotate(45deg); }
 .spatial-slot { position: relative; aspect-ratio: 16 / 9; width: 100%; border-radius: var(--sqds-radius-lg); overflow: hidden; background: #050B16 center / cover no-repeat; box-shadow: inset 0 0 0 1px var(--sqds-line); contain: layout paint; }
 :root[lang="ar"] .spatial-slot { background-image: var(--still-ar); }
 :root[lang="en"] .spatial-slot { background-image: var(--still-en); }
+.spatial-fig { display: grid; gap: .5rem; margin: 0; width: 100%; min-width: 0; }
+.spatial-cap { font-size: var(--sqds-fs-caption); color: var(--sqds-text-2); line-height: 1.5; max-width: 60ch; }
+.spatial-cap .sp-tag { color: var(--sqds-cyan); font-weight: 600; }
 @media (min-width: 1025px) {
-  [data-page="home"] .hero .wrap { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); column-gap: clamp(1.5rem, 3vw, 3rem); align-items: center; }
-  [data-page="home"] .hero .wrap > :not(.spatial-slot):not(.motion-toggle) { grid-column: 1; }
-  [data-page="home"] .hero .spatial-slot { grid-column: 2; grid-row: 1 / span 6; }
+  .hero.has-spatial .wrap { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); column-gap: clamp(1.5rem, 3vw, 3rem); align-items: center; }
+  .hero.has-spatial .wrap > :not(.spatial-fig):not(.motion-toggle) { grid-column: 1; }
+  .hero.has-spatial .spatial-fig { grid-column: 2; grid-row: 1 / span 6; }
 }
 
 
@@ -656,6 +659,11 @@ details.fold[open] > summary::before { transform: rotate(45deg); }
 
 
 .sqds-wf__node.is-cued { box-shadow: 0 0 0 2px rgba(var(--sqds-cyan-rgb) / .55), 0 0 18px -4px rgba(var(--sqds-cyan-rgb) / .8); transition: box-shadow var(--sqds-dur-base) var(--sqds-ease-standard); }
+
+
+.lab-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.lab-checks { margin-top: clamp(1.2rem, 3vw, 2rem); padding: clamp(1rem, 2vw, 1.4rem); border-radius: var(--sqds-radius-lg); display: grid; gap: .45rem; max-width: 80ch; }
+.lab-checks p { color: var(--sqds-text-2); font-size: var(--sqds-fs-small); }
 
 
 .cap { transition: transform var(--t-base) var(--ease-standard), box-shadow var(--t-base) var(--ease-standard); }

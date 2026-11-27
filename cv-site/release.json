@@ -1,7 +1,7 @@
 {
- "id": "V1200-S4",
- "commit": "a27a4a59bca8e8f9546952f9ce5e794a97613903",
- "source": "release",
- "builtAt": "2026-11-27T14:19:58Z",
- "build": "a671154d1259"
+ "id": "local build",
+ "commit": null,
+ "source": "default",
+ "builtAt": "2026-11-27T14:48:43Z",
+ "build": "4880381c50dd"
 }

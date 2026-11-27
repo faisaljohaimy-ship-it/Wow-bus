@@ -31,9 +31,17 @@
     dh.append(api.card({ id: 'drv-' + Object.keys(seen).length, icon: 'automation', kicker: ['محرّك', 'Driver'], title: d.label, capability: d.text, example: d.evidence, exampleLabel: ['الدليل', 'Evidence'], status: api.ladder(d.state), statusLabel: (W.STATUS[d.state] || {}).label, variant: 'c', focusMode: false, headingLevel: 3, fx: 'row' }).el); }); });
    
   var CUE = { input: ['discover'], model: ['architect'], processing: ['build', 'integrate'], decision: ['test'], evidence: ['deploy', 'improve'], review: ['test'] };
-  api.mountSpatial($('spatialSlot'), { onEvent: function (e) {
+   
+  var run = false, sp = api.mountSpatial($('spatialSlot'), { mount: { data: { auto: false } }, onEvent: function (e) {
+    if (e && e.type === 'ready' && e.mode === 'live' && !run && !api.reducedMotion) {
+      run = true;
+      var h = sp && sp.handle();
+      if (h && h.emit) setTimeout(function () { try { h.emit('input'); } catch (x) {   } setTimeout(function () { try { h.emit('result', { status: 'approved' }); } catch (x) {   } }, 4400); }, 800);
+      return;
+    }
     if (!e || e.type !== 'stage' || !g) return;
     var on = CUE[e.stage] || [];
+    D.documentElement.setAttribute('data-spatial-stage', e.stage);
     Array.prototype.forEach.call(g.querySelectorAll('.sqds-wf__node'), function (n, i) { n.classList.toggle('is-cued', on.indexOf((STEPS[i] || {}).key) >= 0); });
   } });
   dh.append(el('div', { class: 'cta-row wide' }, api.button({ kind: 'secondary', icon: 'decision', label: STR['mp.how.flows'], href: '/workflows/', trailing: true }).el, api.button({ kind: 'tertiary', label: api.pair('cap.method.t'), href: '/company/#method', trailing: true }).el));

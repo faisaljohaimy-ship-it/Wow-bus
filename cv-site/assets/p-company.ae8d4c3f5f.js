@@ -21,6 +21,8 @@
   if (notClaimed) { var lh = $('leaderHost'); if (lh) lh.append(api.card({ id: 'card-notclaimed', icon: 'security', kicker: ['الحدود', 'Limits'], title: ['ما لا ندّعيه', 'What we do not claim'], capability: PROF.not_claimed || null, details: notClaimed, variant: 'c', focusMode: false, headingLevel: 3, fx: 'rise' }).el); }
   moduleCard('factory', 'methodHost', 'automation', ['المنهج', 'Method'], api.pair('cap.method.t'), api.pair('cap.method.s'), { fx: 'card-cap' });
   moduleCard('motion', 'motionHost', 'motion', ['الحركة', 'Motion'], api.pair('cap.motion.t'), api.pair('cap.motion.s'), { fx: 'card-cap' });
+   
+  var mh = $('motionHost'); if (mh) mh.append(el('div', { class: 'cta-row' }, api.button({ id: 'coLab', kind: 'secondary', icon: 'motion', label: STR['mp.lab.open'], href: '/motion-lab/', trailing: true }).el));
 
    
   var co = $('coCta');
