@@ -310,8 +310,9 @@ export function makeKit({ renderer, tier, lang, seed, ibl }) {
     glowTex = track(new T.CanvasTexture(cv)); canvases.push(cv);
     return glowTex;
   }
-  function glow(color, size, opacity = 1) {
-    const s = new T.Sprite(track(new T.SpriteMaterial({ map: glowTexture(), color: new T.Color(color), transparent: true, opacity, depthWrite: false, blending: T.AdditiveBlending })));
+  function glow(color, size, opacity = 1, inner) {          
+    const s = new T.Sprite(track(new T.SpriteMaterial({ map: glowTexture(), color: new T.Color(color), transparent: true, opacity, depthWrite: false, depthTest: !inner, blending: T.AdditiveBlending })));
+    if (inner) s.renderOrder = 4;
     s.scale.set(size, size, 1); return s;
   }
    

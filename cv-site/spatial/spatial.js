@@ -80,7 +80,7 @@ function mount(target, o = {}) {
   let mode = 'loading', disposed = false, renderer = null, kit = null, sc = null, camera = null, mod = null;
   let tNow = Math.max(0, +o.time || 0), lastDraw = -1, frames = 0, qIdx = 0, size = [0, 0, 1];
   let userPaused = o.autoplay === false, visible = typeof IntersectionObserver === 'undefined', hidden = document.hidden;
-  let raf = 0, lastNow = 0, warm = 0, slow = 0, good = 0, ups = 0, stillTimer = 0;
+  let raf = 0, lastNow = 0, warm = 0, slow = 0, good = 0, ups = 0, stillTimer = 0, boxKey = '';
   let styleLog = [{ t: tNow, style, from: null }], dataLog = [{ t: tNow, d: Object.assign({}, o.data) }], evLog = [], evId = 0;
   let W = null, aI = 0, aS = 0;
   const dts = [], win = [];
@@ -113,7 +113,7 @@ function mount(target, o = {}) {
     let w = el.clientWidth || o.width || 960, h = el.clientHeight || o.height || Math.round(w * 9 / 16);
     const dpr = Math.min(window.devicePixelRatio || 1, o.maxDpr || TIERS[tier].dpr) * SCALES[qIdx];
     renderer.setPixelRatio(dpr); renderer.setSize(w, h, false);
-    camera.aspect = w / h; size = [w, h, +dpr.toFixed(3)];
+    camera.aspect = w / h; size = [w, h, +dpr.toFixed(3)]; boxKey = el.clientWidth + 'x' + el.clientHeight;
   }
 
    
@@ -191,9 +191,9 @@ function mount(target, o = {}) {
     if (running()) raf = requestAnimationFrame(frame); else { lastNow = 0; if (tNow >= restTime()) emit({ type: 'idle', t: tNow }); }
   }
   function adapt(dt) {                                  
-    if (warm < 12) { warm++; return; }
-    win.push(dt); if (win.length < 30) return;
-    const med = win.slice().sort((a, b) => a - b)[15]; win.length = 0;
+    if (warm < (o.adaptWarm ?? 12)) { warm++; return; }
+    win.push(dt); if (win.length < (o.adaptFrames ?? 30)) return;
+    const med = win.slice().sort((a, b) => a - b)[win.length >> 1]; win.length = 0;
     if (med > budget * 1.15) {
       good = 0; if (++slow < 2) return; slow = 0;
       if (qIdx < SCALES.length - 1) { qIdx++; applySize(); emit({ type: 'quality', scale: SCALES[qIdx], dpr: size[2], frameMs: +med.toFixed(1) }); }
@@ -231,7 +231,7 @@ function mount(target, o = {}) {
   if (io) io.observe(isCanvas ? canvas : host);
   const onVis = () => { hidden = document.hidden; if (hidden) halt(); else kick(); };
   document.addEventListener('visibilitychange', onVis);
-  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => { if (mode === 'live' && renderer) { applySize(); drawNow(); } else if (mode === 'poster') scheduleStill(); }) : null;
+  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => { const el = isCanvas ? canvas : host; if (el.clientWidth + 'x' + el.clientHeight === boxKey) return; if (mode === 'live' && renderer) { applySize(); drawNow(); } else if (mode === 'poster') scheduleStill(); }) : null;
   const onLost = e => { if (disposed || mode !== 'live') return; e.preventDefault(); halt(); setState('lost'); showImg(`${posterBase}${env}-${style}-${lang}.webp`); emit({ type: 'contextlost' }); };
   const onRestored = () => { if (disposed || mode !== 'lost') return; setState('live'); img.style.display = 'none'; canvas.style.display = canvasDisplay; applySize(); drawNow(); kick(); emit({ type: 'contextrestored' }); };
   canvas.addEventListener('webglcontextlost', onLost);
@@ -277,7 +277,7 @@ function mount(target, o = {}) {
       if (disposed) return;
       evLog.push({ id: ++evId, t: mode === 'live' ? tNow : 0, type, detail: detail || {} });
       if (evLog.length > 64) evLog.shift();
-      if (mode === 'live') { changed(); drawNow(); kick(); } else scheduleStill();
+      if (mode === 'live') { changed(); lastDraw = Math.min(lastDraw, tNow - 1e-6); drawNow(); kick(); } else scheduleStill();
     },
     setLang(l) { if (disposed) return; lang = pickLang(l); setLabel(); if (mode === 'live') rebuild(); else scheduleStill(); },
     pause() { userPaused = true; halt(); },
@@ -298,8 +298,8 @@ function mount(target, o = {}) {
       const ms = (performance.now() - t0) / n; lastDraw = keep; draw(tNow); return +ms.toFixed(2);
     },
     debug() { return sc && sc.debug ? sc.debug(tNow) : null; },
-    stats() {
-      const s = dts.slice().sort((a, b) => a - b), q = p => s.length ? +s[Math.min(s.length - 1, Math.floor(p * s.length))].toFixed(2) : null;
+    stats(reset) {
+      const s = dts.slice().sort((a, b) => a - b); if (reset) dts.length = 0; const q = p => s.length ? +s[Math.min(s.length - 1, Math.floor(p * s.length))].toFixed(2) : null;
       const info = renderer && renderer.info;
       return {
         env, style, tier, lang, mode, t: +tNow.toFixed(3), frames, scale: SCALES[qIdx], dpr: size[2], size: size.slice(0, 2),
