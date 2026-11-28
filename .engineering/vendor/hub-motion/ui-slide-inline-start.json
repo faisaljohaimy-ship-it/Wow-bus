@@ -1,0 +1,1 @@
+{"schema_version":1,"id":"ui-slide-inline-start","duration_ms":280,"easing":"ease-out","rtl_mirror":true,"keyframes":[{"offset":0,"opacity":0,"transform":"translateX(-24px)"},{"offset":1,"opacity":1,"transform":"translateX(0)"}],"reduced_motion":{"opacity":1,"transform":"none"}}

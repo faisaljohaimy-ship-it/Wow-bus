@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "ui-slide-up",
+  "name": "Slide up",
+  "duration_ms": 280,
+  "easing": "ease-out",
+  "keyframes": [
+    {"offset": 0, "opacity": 0, "transform": "translateY(16px)"},
+    {"offset": 1, "opacity": 1, "transform": "translateY(0px)"}
+  ],
+  "reduced_motion": {"opacity": 1, "transform": "none"}
+}

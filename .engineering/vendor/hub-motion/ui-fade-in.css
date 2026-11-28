@@ -1,0 +1,13 @@
+@keyframes hub-ui-fade-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+.hub-motion-ui-fade-in {
+  animation: hub-ui-fade-in 240ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hub-motion-ui-fade-in {
+    animation: none;
+    opacity: 1;
+  }
+}

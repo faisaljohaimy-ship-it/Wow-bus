@@ -1,0 +1,14 @@
+@keyframes hub-ui-press-feedback {
+  0% { transform: scale(1); }
+  45% { transform: scale(0.94); }
+  100% { transform: scale(1); }
+}
+.hub-motion-ui-press-feedback {
+  animation: hub-ui-press-feedback 160ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hub-motion-ui-press-feedback {
+    animation: none;
+    transform: none;
+  }
+}

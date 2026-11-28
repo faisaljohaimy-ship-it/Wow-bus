@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "id": "ui-fade-in",
+  "duration_ms": 240,
+  "easing": "ease-out",
+  "keyframes": [
+    {"offset": 0, "opacity": 0},
+    {"offset": 1, "opacity": 1}
+  ],
+  "reduced_motion": {"opacity": 1}
+}

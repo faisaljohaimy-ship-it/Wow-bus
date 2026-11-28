@@ -1,0 +1,14 @@
+@keyframes hub-ui-slide-up {
+  0% { opacity: 0; transform: translateY(16px); }
+  100% { opacity: 1; transform: translateY(0px); }
+}
+.hub-motion-ui-slide-up {
+  animation: hub-ui-slide-up 280ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hub-motion-ui-slide-up {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
