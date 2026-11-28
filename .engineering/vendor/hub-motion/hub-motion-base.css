@@ -1,0 +1,11 @@
+/* Logical direction for hub motion: inline-relative specifications multiply their
+   horizontal travel by this sign, so one specification serves LTR and RTL layouts. */
+:root {
+  --hub-inline-sign: 1;
+}
+[dir="rtl"] {
+  --hub-inline-sign: -1;
+}
+[dir="ltr"] {
+  --hub-inline-sign: 1;
+}

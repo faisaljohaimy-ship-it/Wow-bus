@@ -13,11 +13,14 @@ the files; an edited, missing or unlisted file fails the check.
 | `skill:hub-capabilities` | `.claude/skills/`, `.agents/skills/` | Find a fitting hub skill, playbook or motion before a task |
 | `skill:digital-motion`, `skill:cinematic-production` | same | Motion and film work across the sites in this repository |
 | `skill:release-engineering` | same | Releases: this repository feeds several independent deployments |
-| `pack:catalog-media-tools` | skill plus `tools/shared_catalog.py`, `tools/media_tools.py` | Already here before registration; adopted unchanged and now checked against the hub |
 | `pack:motion-runtime`, five `motion:*` | `.engineering/vendor/hub-motion/` | Browser-verified motions, ready to use |
 
 The hub skill `security-review` is not installed: its name collides with a built-in
 Claude Code command.
+
+The `catalog-media-tools` skill and `tools/shared_catalog.py`, `tools/media_tools.py` are
+this repository's own files. The hub no longer offers them as a pack, so they are not
+part of the link and are not checked by it.
 
 ## What it does not change
 

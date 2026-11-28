@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "hub_url": "https://github.com/faisaljohaimy-ship-it/Global-AI-Engneering-Hub",
-  "hub_revision": "2d9cb8c42377a7bd09b04386e5cb6300f140548e",
+  "hub_revision": "4f39e1d115e220629d73e56864813545022acc99",
   "project": {
     "id": "wow-bus",
     "repository": "https://github.com/faisaljohaimy-ship-it/Wow-bus"
@@ -14,13 +14,13 @@
           "path": ".claude/skills/hub-capabilities/SKILL.md",
           "source": "skills/hub-capabilities/SKILL.md",
           "mode": "copy",
-          "sha256": "39d9a60f67b4618a90280589fa9006692623154369a9890deb3f3dbfe40f92dd"
+          "sha256": "ac232c5534860609f70a3a8817f1f09b9ff840d93eeb94cd3e1ea714d9c63573"
         },
         {
           "path": ".agents/skills/hub-capabilities/SKILL.md",
           "source": "skills/hub-capabilities/SKILL.md",
           "mode": "copy",
-          "sha256": "39d9a60f67b4618a90280589fa9006692623154369a9890deb3f3dbfe40f92dd"
+          "sha256": "ac232c5534860609f70a3a8817f1f09b9ff840d93eeb94cd3e1ea714d9c63573"
         }
       ]
     },
@@ -31,13 +31,13 @@
           "path": ".claude/skills/digital-motion/SKILL.md",
           "source": "skills/digital-motion/SKILL.md",
           "mode": "copy",
-          "sha256": "fac480ce080a555cb1a3e3d35c3d1d357d870a6c8ba125d85fd3f971256594dd"
+          "sha256": "a02a886a9f06557c98d1f14753e69f3fa8b15f47105331bdc8ed3eb7c57ed0f0"
         },
         {
           "path": ".agents/skills/digital-motion/SKILL.md",
           "source": "skills/digital-motion/SKILL.md",
           "mode": "copy",
-          "sha256": "fac480ce080a555cb1a3e3d35c3d1d357d870a6c8ba125d85fd3f971256594dd"
+          "sha256": "a02a886a9f06557c98d1f14753e69f3fa8b15f47105331bdc8ed3eb7c57ed0f0"
         }
       ]
     },
@@ -76,48 +76,25 @@
       ]
     },
     {
-      "id": "pack:catalog-media-tools",
-      "files": [
-        {
-          "path": ".claude/skills/catalog-media-tools/SKILL.md",
-          "source": "skills/catalog-media-tools/SKILL.md",
-          "mode": "copy",
-          "sha256": "b705ab94448e27e2ce08ff07bdadeb5e5e65e6300bb52c6a59e49f1a50a7a559"
-        },
-        {
-          "path": ".agents/skills/catalog-media-tools/SKILL.md",
-          "source": "skills/catalog-media-tools/SKILL.md",
-          "mode": "copy",
-          "sha256": "b705ab94448e27e2ce08ff07bdadeb5e5e65e6300bb52c6a59e49f1a50a7a559"
-        },
-        {
-          "path": "tools/media_tools.py",
-          "source": "tools/media_tools.py",
-          "mode": "copy",
-          "sha256": "eb3bc264baa0b3f01e302a0aa3ae2c23670a5a2c3190a62c1730b224eab02d8e"
-        },
-        {
-          "path": "tools/shared_catalog.py",
-          "source": "tools/shared_catalog.py",
-          "mode": "copy",
-          "sha256": "705fb5b456fe9cdeb31703556ae37c4b566eb898c33c4c5d507e826ff17497cf"
-        }
-      ]
-    },
-    {
       "id": "pack:motion-runtime",
       "files": [
         {
           "path": ".engineering/vendor/hub-motion/core.mjs",
           "source": "motion-library/runtime/core.mjs",
           "mode": "copy",
-          "sha256": "8832c7b790987ba362e4dab511bdac190e8b074abe63ed0f6da1c2acdab5d304"
+          "sha256": "34d2917f58f7f539381f962614c7dff0698063568e64175c88f5bb1f6d470ab0"
+        },
+        {
+          "path": ".engineering/vendor/hub-motion/hub-motion-base.css",
+          "source": "motion-library/runtime/hub-motion-base.css",
+          "mode": "copy",
+          "sha256": "0a81c0d27c03f067ea5e7ea653097b82b5c4702131800eff95d2bb971b62f907"
         },
         {
           "path": ".engineering/vendor/hub-motion/hub-motion.mjs",
           "source": "motion-library/runtime/hub-motion.mjs",
           "mode": "copy",
-          "sha256": "e975f8e37bcd47b7ea7de562f041a479dcd048bef9f6442c77efc73303724564"
+          "sha256": "a12e91bfb530bf78c6947b411395e2af13544fa98867f5064d26d023d9bdc30f"
         }
       ]
     },
@@ -168,7 +145,7 @@
           "path": ".engineering/vendor/hub-motion/ui-slide-inline-start.css",
           "source": "motion-library/specs/slide-inline-start.json",
           "mode": "css",
-          "sha256": "d87e18342f811510b2fce42ca5ccf42e58022335147ea1416afdd3edfe84abed"
+          "sha256": "7d80a7b6c0638e1ccbece89d39cc84b95d6b8e4eb036e39aaf42247c670537d1"
         }
       ]
     },
@@ -207,6 +184,7 @@
       ]
     }
   ],
+  "discovery_skill": "hub-capabilities",
   "budget_additional_sar": 0,
   "production_runtime_dependency": false
 }

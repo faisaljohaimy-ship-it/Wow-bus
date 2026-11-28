@@ -12,4 +12,4 @@ Read the project's own instructions first. The shared public engineering hub is 
 4. Import only approved compatible dependencies with pinned versions, through a reviewed project branch. Existing project instructions take precedence.
 5. Record actual installation and runtime evidence separately. Do not disclose private code, credentials or customer information to the public hub.
 6. Keep production build and deployment independent of hub availability. Do not change production targets or disable required checks.
-7. For hub pin updates, run `hub.py update-pin` without `--apply` first and pass the exact expected current SHA. Apply only in an isolated reviewed branch.
+7. For a declaration-only pin update, run `hub.py update-pin` without `--apply` first and pass the exact expected current SHA. For registered capabilities, re-run `hub.py register` at the reviewed target revision so files and checksums update together. Apply only in an isolated reviewed branch.

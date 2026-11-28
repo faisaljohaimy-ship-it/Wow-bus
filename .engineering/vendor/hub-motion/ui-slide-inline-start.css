@@ -13,7 +13,7 @@
   animation-name: hub-ui-slide-inline-start-rtl;
 }
 @media (prefers-reduced-motion: reduce) {
-  .hub-motion-ui-slide-inline-start, .hub-motion-ui-slide-inline-start:dir(rtl) {
+  .hub-motion-ui-slide-inline-start {
     animation: none;
     opacity: 1;
     transform: none;

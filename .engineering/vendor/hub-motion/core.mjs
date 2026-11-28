@@ -1,9 +1,15 @@
-const SAFE_ENGINES = new Set(["css", "waapi", "glsl-webgl", "remotion-adapter", "three-adapter"]);
+const SAFE_ENGINES = new Set(["css", "waapi", "waapi-behavior", "glsl-webgl", "remotion-adapter", "three-adapter"]);
 
 export function validateComponent(component, catalogIds) {
   if (!catalogIds.has(component.id)) throw new Error(`Unknown catalog id: ${component.id}`);
   if (!SAFE_ENGINES.has(component.engine)) throw new Error(`Unknown engine: ${component.engine}`);
   if (component.implementation_status !== "implemented") throw new Error("Invalid implementation state");
+  if (component.engine === "waapi-behavior" && typeof component.implementation !== "string") {
+    throw new Error("Runtime behavior needs an implementation reference");
+  }
+  if (component.engine !== "waapi-behavior" && typeof component.spec !== "string") {
+    throw new Error("Motion component needs a specification");
+  }
   if (!Array.isArray(component.used_by) || !component.used_by.includes("motion-lab")) {
     throw new Error("Missing concrete consumer");
   }
